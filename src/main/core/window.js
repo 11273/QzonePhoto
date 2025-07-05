@@ -88,6 +88,18 @@ export class WindowManager {
       return { action: 'deny' }
     })
 
+    // 防止页面导航到外部链接
+    win.webContents.on('will-navigate', (event, url) => {
+      // 只允许加载应用内的URL
+      if (
+        !url.startsWith('file://') &&
+        !url.startsWith(process.env['ELECTRON_RENDERER_URL'] || '')
+      ) {
+        event.preventDefault()
+        shell.openExternal(url)
+      }
+    })
+
     // 图片防盗链处理
     const filter = { urls: ['*://*.qq.com/*', '*://*.qpic.cn/*'] }
     session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, cb) => {
