@@ -46,7 +46,7 @@ jobs:
       - name: release
         uses: softprops/action-gh-release@v1
         with:
-          name: Release ${GITHUB_REF_NAME}
+          name: Release ${{ github.ref_name }}
           draft: true
           body_path: RELEASE_NOTES.md
           prerelease: true
