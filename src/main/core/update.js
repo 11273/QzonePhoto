@@ -581,7 +581,6 @@ export class AutoUpdateManager extends EventEmitter {
       this.state.downloadProgress = null
 
       logger.info('[更新] 下载已取消')
-      this.sendToRenderer(IPC_UPDATE.DOWNLOAD_CANCELLED)
 
       return { success: true }
     } catch (error) {
@@ -601,9 +600,6 @@ export class AutoUpdateManager extends EventEmitter {
     logger.info('[更新] 准备安装更新...')
 
     try {
-      // 发送安装前的通知
-      this.sendToRenderer(IPC_UPDATE.BEFORE_INSTALL)
-
       // 延迟执行，确保渲染进程有时间保存数据
       setTimeout(() => {
         if (process.platform === 'win32') {
