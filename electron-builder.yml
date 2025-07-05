@@ -86,6 +86,7 @@ mac:
   # 签名配置
   hardenedRuntime: true
   gatekeeperAssess: false
+  notarize: false
   artifactName: QzonePhoto-${version}-${os}-${arch}.${ext}
   target:
     - target: zip
