@@ -382,7 +382,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder, VideoPlay, VideoPause, Refresh, Delete, Loading } from '@element-plus/icons-vue'
 import Pagination from '@renderer/components/Pagination/index.vue'
 import { formatTaskCount } from '@renderer/utils/formatters'
-import { APP_ID } from '@shared/const'
+import { APP_NAME } from '@shared/const'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false }
@@ -442,7 +442,7 @@ const initDownloadPath = async () => {
     }
   } catch (error) {
     console.error('获取下载路径失败:', error)
-    downloadPath.value = '/Users/用户名/Downloads/' + APP_ID
+    downloadPath.value = '/Users/用户名/Downloads/' + APP_NAME
   }
 }
 

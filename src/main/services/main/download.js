@@ -6,13 +6,13 @@ import logger from '@main/core/logger'
 import { is } from '@electron-toolkit/utils'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
-import { APP_ID } from '@shared/const'
+import { APP_NAME } from '@shared/const'
 // 直接定义必要的默认配置，避免使用外部常量系统
 const DEFAULT_CONCURRENCY = 3
 const DEFAULT_PAGE_SIZE = 50
 const DEFAULT_REPLACE_EXISTING = false
 const MAX_ACTIVE_TASKS_IN_MEMORY = 1000
-const DEFAULT_DOWNLOAD_FOLDER = APP_ID
+const DEFAULT_DOWNLOAD_FOLDER = APP_NAME
 
 // 任务状态常量
 export const TASK_STATUS = {
