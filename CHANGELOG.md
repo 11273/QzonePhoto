@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.3](https://github.com/11273/QzonePhoto/compare/v1.0.2...v1.0.3) (2025-07-05)
+
+### 🐛 Bug Fixes | Bug 修复
+
+* 修复自动更新问题 ([66a9014](https://github.com/11273/QzonePhoto/commit/66a901460e528728fb8132eb0e3f2a13a9fbc92a))
+
+### 🔨 Configuration | 配置
+
+* release-it ([20f8bc1](https://github.com/11273/QzonePhoto/commit/20f8bc1dcd7dad0557b5b0d393c43b2270719f42))
+
 ## [1.0.2](https://github.com/11273/QzonePhoto/compare/v1.0.1...v1.0.2) (2025-07-05)
 
 ### 🔨 CONFIG | 配置
