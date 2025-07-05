@@ -126,8 +126,8 @@ export class AutoUpdateManager extends EventEmitter {
       releaseType: this.config.allowPreRelease ? 'prerelease' : 'release'
     })
 
-    // 强制开启差异下载
-    autoUpdater.disableDifferentialDownload = false
+    // 强制关闭差异下载
+    autoUpdater.disableDifferentialDownload = true
 
     // 开发环境配置
     if (process.env.NODE_ENV === 'development') {
