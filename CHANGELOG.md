@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.4](https://github.com/11273/QzonePhoto/compare/v1.0.3...v1.0.4) (2025-07-05)
+
+### 🔨 Configuration | 配置
+
+* 去除mac签名 ([24fb3a8](https://github.com/11273/QzonePhoto/commit/24fb3a8a2bfc36a14a8f36655f60c03e74796920))
+
 ## [1.0.3](https://github.com/11273/QzonePhoto/compare/v1.0.2...v1.0.3) (2025-07-05)
 
 ### 🐛 Bug Fixes | Bug 修复
