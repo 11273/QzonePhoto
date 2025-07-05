@@ -210,6 +210,7 @@
                 </svg>
               </div>
               <p class="error-message">{{ errorInfo.message }}</p>
+              <p class="error-detail">{{ errorInfo.detail }}</p>
             </div>
           </div>
 
@@ -836,6 +837,8 @@ const getFormattedSpeed = () => {
 /* 错误状态 */
 .content-error {
   text-align: center;
+  width: 100%;
+  height: 100%;
 }
 
 .error-icon {
@@ -849,6 +852,18 @@ const getFormattedSpeed = () => {
   font-size: 14px;
   margin: 0;
   line-height: 1.4;
+  user-select: text;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 180px;
+}
+
+.error-detail {
+  color: #f56c6c;
+  font-size: 14px;
+  margin: 0;
+  line-height: 1.4;
+  max-height: 180px;
 }
 
 /* 底部操作区域 */

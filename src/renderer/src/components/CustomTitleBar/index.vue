@@ -483,10 +483,7 @@ const handleUpdateError = (error) => {
   updateState.downloading = false
   updateState.progress = 0
   dialogState.value = 'error'
-  errorInfo.value = {
-    message: error.message || '更新过程中发生错误',
-    canRetry: true
-  }
+  errorInfo.value = error
   console.error('更新错误:', error)
 }
 

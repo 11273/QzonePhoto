@@ -14,7 +14,7 @@ export class AutoUpdateManager extends EventEmitter {
       allowPreRelease: false,
       github: {
         owner: '11273',
-        repo: 'QzonePhoto' // 确保这是你的实际仓库名
+        repo: 'QzonePhoto'
       }
     }
 
@@ -61,34 +61,36 @@ export class AutoUpdateManager extends EventEmitter {
       logger.warn('AutoUpdateManager 已经初始化')
       return
     }
-    autoUpdater.setFeedURL({
-      provider: 'github',
-      owner: this.config.github.owner,
-      repo: this.config.github.repo,
-      private: false
-    })
 
-    // 配置更新器
-    autoUpdater.autoDownload = this.config.autoDownload
-    autoUpdater.allowPrerelease = this.config.allowPreRelease
-    autoUpdater.autoInstallOnAppQuit = false
-    autoUpdater.logger = logger
-    autoUpdater.forceDevUpdateConfig = true
-    autoUpdater.disableDifferentialDownload = true
+    try {
+      autoUpdater.setFeedURL({
+        provider: 'github',
+        owner: this.config.github.owner,
+        repo: this.config.github.repo,
+        private: false
+      })
 
-    // 设置架构相关的更新通道
-    const sysArch = this.getSystemArchitecture()
+      // 配置更新器
+      autoUpdater.autoDownload = this.config.autoDownload
+      autoUpdater.allowPrerelease = this.config.allowPreRelease
+      autoUpdater.autoInstallOnAppQuit = false
+      autoUpdater.logger = logger
+      autoUpdater.forceDevUpdateConfig = true
+      autoUpdater.disableDifferentialDownload = true
 
-    // 如果需要，可以根据架构设置不同的更新源
-    // 例如：autoUpdater.channel = sysArch.identifier
+      // 设置架构相关的更新通道
+      const sysArch = this.getSystemArchitecture()
+      logger.info(`[更新] 系统架构: ${sysArch.identifier}`)
 
-    logger.info(`[更新] 系统架构: ${sysArch.identifier}`)
+      // 绑定事件
+      this.bindEvents()
 
-    // 绑定事件
-    this.bindEvents()
-
-    this.isInitialized = true
-    logger.info('AutoUpdateManager 初始化成功')
+      this.isInitialized = true
+      logger.info('AutoUpdateManager 初始化成功')
+    } catch (error) {
+      logger.error('[更新] 初始化失败:', error)
+      throw new Error('更新服务初始化失败')
+    }
   }
 
   /**
@@ -157,13 +159,14 @@ export class AutoUpdateManager extends EventEmitter {
 
     // 错误处理
     autoUpdater.on('error', (error) => {
-      logger.error(`[更新] 错误: ${error.message}`)
-      logger.error(`[更新] 错误堆栈: ${error.stack}`)
+      // 详细错误信息只记录到日志
+      logger.error('[更新] 错误详情:', error)
 
       this.isDownloading = false
       this.isCheckingForUpdate = false
       this.downloadProgress = null
 
+      // 发送给用户的错误信息
       const errorInfo = this.parseError(error)
       this.sendToRenderer(IPC_UPDATE.ERROR, errorInfo)
     })
@@ -218,44 +221,120 @@ export class AutoUpdateManager extends EventEmitter {
   }
 
   /**
-   * 解析错误信息
+   * 解析错误信息 - 优化版本
    */
   parseError(error) {
-    let userMessage = error.message
-    let canRetry = true
+    const errorMessage = error?.message || ''
+    const errorCode = error?.code || ''
 
-    const errorPatterns = {
+    // 记录原始错误到日志
+    logger.error('[更新] 原始错误信息:', {
+      message: errorMessage,
+      code: errorCode,
+      stack: error?.stack
+    })
+
+    // 错误类型映射
+    const errorMap = {
+      // GitHub Release 相关错误
+      'Unable to find latest version': {
+        message: '暂无可用更新',
+        detail: '请稍后再试或访问官网下载最新版本',
+        canRetry: true,
+        errorType: 'NO_RELEASE'
+      },
+      'HttpError: 406': {
+        message: '更新服务暂时不可用',
+        detail: '请稍后再试',
+        canRetry: true,
+        errorType: 'SERVICE_ERROR'
+      },
+      'HttpError: 404': {
+        message: '更新资源未找到',
+        detail: '请访问官网下载最新版本',
+        canRetry: false,
+        errorType: 'NOT_FOUND'
+      },
+      'HttpError: 403': {
+        message: '更新服务访问受限',
+        detail: '请检查网络设置或稍后再试',
+        canRetry: true,
+        errorType: 'ACCESS_DENIED'
+      },
+
+      // 网络错误
+      'ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|ENETUNREACH': {
+        message: '网络连接失败',
+        detail: '请检查网络连接后重试',
+        canRetry: true,
+        errorType: 'NETWORK_ERROR'
+      },
+      'timeout|Timeout': {
+        message: '连接超时',
+        detail: '请检查网络连接或稍后再试',
+        canRetry: true,
+        errorType: 'TIMEOUT'
+      },
+
+      // 文件系统错误
+      'EACCES|EPERM': {
+        message: '权限不足',
+        detail: '请以管理员身份运行程序',
+        canRetry: false,
+        errorType: 'PERMISSION_ERROR'
+      },
+      ENOSPC: {
+        message: '磁盘空间不足',
+        detail: '请清理磁盘空间后重试',
+        canRetry: true,
+        errorType: 'DISK_FULL'
+      },
+
+      // 更新包错误
       'Could not locate update bundle': {
-        msg: '更新安装失败，建议手动下载最新版本安装',
-        retry: false
+        message: '更新包损坏',
+        detail: '请访问官网下载最新版本',
+        canRetry: false,
+        errorType: 'CORRUPTED_UPDATE'
       },
-      'network|ENOTFOUND|timeout|ECONNRESET|ETIMEDOUT': {
-        msg: '网络连接失败，请检查网络设置后重试',
-        retry: true
+      'signature|verification': {
+        message: '更新包验证失败',
+        detail: '请访问官网下载最新版本',
+        canRetry: false,
+        errorType: 'VERIFICATION_ERROR'
       },
-      'download|404': { msg: '下载失败，建议手动下载最新版本', retry: true },
-      'permission|EACCES': { msg: '权限不足，请以管理员身份运行或手动下载安装', retry: false },
-      'disk|ENOSPC': { msg: '磁盘空间不足，请清理磁盘后重试', retry: true },
-      'signature|验证失败': { msg: '安装包验证失败，建议手动下载最新版本', retry: false }
-    }
 
-    for (const [pattern, config] of Object.entries(errorPatterns)) {
-      if (new RegExp(pattern, 'i').test(error.message)) {
-        userMessage = config.msg
-        canRetry = config.retry
-        break
+      // 取消操作
+      'cancelled|aborted': {
+        message: '操作已取消',
+        detail: '',
+        canRetry: true,
+        errorType: 'CANCELLED'
       }
     }
 
+    // 匹配错误类型
+    for (const [pattern, errorInfo] of Object.entries(errorMap)) {
+      if (new RegExp(pattern, 'i').test(errorMessage) || new RegExp(pattern, 'i').test(errorCode)) {
+        return {
+          ...errorInfo,
+          timestamp: new Date().toISOString()
+        }
+      }
+    }
+
+    // 默认错误信息
     return {
-      message: userMessage,
-      originalError: error.message,
-      canRetry: canRetry
+      message: '更新失败',
+      detail: '请稍后再试或访问官网下载最新版本',
+      canRetry: true,
+      errorType: 'UNKNOWN_ERROR',
+      timestamp: new Date().toISOString()
     }
   }
 
   /**
-   * 检查更新
+   * 检查更新 - 优化错误处理
    */
   async checkForUpdates() {
     if (!this.isInitialized) {
@@ -275,13 +354,15 @@ export class AutoUpdateManager extends EventEmitter {
       return null
     } catch (error) {
       this.isCheckingForUpdate = false
-      logger.error(`[更新] 检查更新失败: ${error.message}`)
-      throw new Error(error.message)
+
+      // 解析错误并返回友好信息
+      const errorInfo = this.parseError(error)
+      throw new Error(errorInfo.message)
     }
   }
 
   /**
-   * 下载更新
+   * 下载更新 - 优化错误处理
    */
   async downloadUpdate() {
     if (!this.isInitialized) {
@@ -307,13 +388,14 @@ export class AutoUpdateManager extends EventEmitter {
       this.isDownloading = false
       this.downloadProgress = null
 
-      if (error.message.includes('cancelled') || error.message.includes('aborted')) {
+      const errorInfo = this.parseError(error)
+
+      if (errorInfo.errorType === 'CANCELLED') {
         logger.info('[更新] 下载已被用户取消')
         return { success: false, cancelled: true }
       }
 
-      logger.error(`[更新] 下载更新失败: ${error.message}`)
-      throw new Error(error.message)
+      throw new Error(errorInfo.message)
     } finally {
       this.downloadCancellationToken = null
     }
@@ -339,8 +421,8 @@ export class AutoUpdateManager extends EventEmitter {
       logger.info('[更新] 下载已取消')
       return { success: true }
     } catch (error) {
-      logger.error(`[更新] 取消下载失败: ${error.message}`)
-      throw new Error(error.message)
+      logger.error('[更新] 取消下载失败:', error)
+      throw new Error('取消下载失败')
     }
   }
 
@@ -365,8 +447,8 @@ export class AutoUpdateManager extends EventEmitter {
 
       return { success: true }
     } catch (error) {
-      logger.error(`[更新] 安装更新失败: ${error.message}`)
-      throw new Error(error.message)
+      logger.error('[更新] 安装更新失败:', error)
+      throw new Error('安装更新失败，请手动安装')
     }
   }
 
