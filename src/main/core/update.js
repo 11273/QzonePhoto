@@ -3,6 +3,8 @@ import { EventEmitter } from 'events'
 import { IPC_UPDATE } from '@shared/ipc-channels'
 import logger from '@main/core/logger'
 import { app } from 'electron'
+import path from 'path'
+import fs from 'fs-extra'
 
 export class AutoUpdateManager extends EventEmitter {
   constructor() {
@@ -12,6 +14,7 @@ export class AutoUpdateManager extends EventEmitter {
     this.config = {
       autoDownload: false,
       allowPreRelease: false,
+      allowDowngrade: false,
       github: {
         owner: '11273',
         repo: 'QzonePhoto'
@@ -19,77 +22,141 @@ export class AutoUpdateManager extends EventEmitter {
     }
 
     // 状态
-    this.downloadProgress = null
-    this.currentWindow = null
-    this.lastUpdateInfo = null
-    this.isInitialized = false
-    this.isDownloading = false
-    this.isCheckingForUpdate = false
-    this.lastProgressTime = 0
-    this.progressThrottle = 100
-    this.downloadCancellationToken = null
+    this.state = {
+      downloadProgress: null,
+      currentWindow: null,
+      lastUpdateInfo: null,
+      isInitialized: false,
+      isDownloading: false,
+      isCheckingForUpdate: false,
+      downloadCancellationToken: null
+    }
+
+    // 性能优化
+    this.performance = {
+      lastProgressTime: 0,
+      progressThrottle: 100
+    }
+
+    // 架构信息
+    this.architecture = this.detectArchitecture()
   }
 
   /**
-   * 获取系统架构信息
+   * 检测系统架构信息
    */
-  getSystemArchitecture() {
+  detectArchitecture() {
     const arch = process.arch
     const platform = process.platform
 
-    // 转换为更新服务器识别的格式
+    // 标准化架构映射
     const archMap = {
       x64: 'x64',
+      x86_64: 'x64',
+      amd64: 'x64',
       ia32: 'x86',
+      x86: 'x86',
       arm64: 'arm64',
-      arm: 'armv7l'
+      aarch64: 'arm64',
+      arm: 'armv7l',
+      armv7l: 'armv7l'
     }
 
+    const normalizedArch = archMap[arch] || arch
+
     return {
-      arch: archMap[arch] || arch,
+      arch: normalizedArch,
       platform,
-      // 生成架构标识符，用于匹配更新文件
-      identifier: `${platform}-${archMap[arch] || arch}`
+      identifier: `${platform}-${normalizedArch}`,
+      raw: {
+        arch: process.arch,
+        platform: process.platform,
+        version: process.versions
+      }
     }
   }
 
   /**
    * 初始化自动更新
    */
-  initialize() {
-    if (this.isInitialized) {
-      logger.warn('AutoUpdateManager 已经初始化')
+  async initialize() {
+    if (this.state.isInitialized) {
+      logger.warn('[更新] AutoUpdateManager 已经初始化')
       return
     }
 
     try {
-      autoUpdater.setFeedURL({
-        provider: 'github',
-        owner: this.config.github.owner,
-        repo: this.config.github.repo,
-        private: false
-      })
-
-      // 配置更新器
-      autoUpdater.autoDownload = this.config.autoDownload
-      autoUpdater.allowPrerelease = this.config.allowPreRelease
-      autoUpdater.autoInstallOnAppQuit = false
-      autoUpdater.logger = logger
-      autoUpdater.forceDevUpdateConfig = true
-      autoUpdater.disableDifferentialDownload = true
-
-      // 设置架构相关的更新通道
-      const sysArch = this.getSystemArchitecture()
-      logger.info(`[更新] 系统架构: ${sysArch.identifier}`)
+      // 配置更新源
+      this.configureUpdater()
 
       // 绑定事件
       this.bindEvents()
 
-      this.isInitialized = true
-      logger.info('AutoUpdateManager 初始化成功')
+      // 设置缓存目录
+      await this.setupCacheDirectory()
+
+      this.state.isInitialized = true
+      logger.info('[更新] AutoUpdateManager 初始化成功', {
+        architecture: this.architecture,
+        version: app.getVersion()
+      })
     } catch (error) {
       logger.error('[更新] 初始化失败:', error)
-      throw new Error('更新服务初始化失败')
+      throw new Error(`更新服务初始化失败: ${error.message}`)
+    }
+  }
+
+  /**
+   * 配置更新器
+   */
+  configureUpdater() {
+    // 基础配置
+    autoUpdater.autoDownload = this.config.autoDownload
+    autoUpdater.allowPrerelease = this.config.allowPreRelease
+    autoUpdater.allowDowngrade = this.config.allowDowngrade
+    autoUpdater.autoInstallOnAppQuit = false
+    autoUpdater.logger = logger
+
+    // 设置更新源
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: this.config.github.owner,
+      repo: this.config.github.repo,
+      private: false,
+      releaseType: this.config.allowPreRelease ? 'prerelease' : 'release'
+    })
+
+    // 强制开启差异下载
+    autoUpdater.disableDifferentialDownload = false
+
+    // 开发环境配置
+    if (process.env.NODE_ENV === 'development') {
+      autoUpdater.forceDevUpdateConfig = true
+    }
+
+    // 自定义请求头，包含架构信息
+    autoUpdater.requestHeaders = {
+      'User-Agent': `${app.getName()}/${app.getVersion()} (${this.architecture.identifier})`
+    }
+  }
+
+  /**
+   * 设置缓存目录
+   */
+  async setupCacheDirectory() {
+    const cacheDir = path.join(app.getPath('userData'), 'updater-cache')
+    await fs.ensureDir(cacheDir)
+
+    // 清理旧的缓存文件
+    const files = await fs.readdir(cacheDir)
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+
+    for (const file of files) {
+      const filePath = path.join(cacheDir, file)
+      const stats = await fs.stat(filePath)
+      if (stats.mtime.getTime() < oneWeekAgo) {
+        await fs.remove(filePath)
+      }
     }
   }
 
@@ -97,236 +164,313 @@ export class AutoUpdateManager extends EventEmitter {
    * 绑定事件监听
    */
   bindEvents() {
+    // 清除所有旧的监听器
     autoUpdater.removeAllListeners()
 
     // 检查更新中
     autoUpdater.on('checking-for-update', () => {
       logger.info('[更新] 正在检查更新...')
-      this.isCheckingForUpdate = true
+      this.state.isCheckingForUpdate = true
       this.sendToRenderer(IPC_UPDATE.CHECKING)
     })
 
-    // 发现更新 - 添加架构验证
+    // 发现更新
     autoUpdater.on('update-available', (info) => {
-      logger.info(`[更新] 发现新版本: ${info.version}`)
-      this.isCheckingForUpdate = false
+      logger.info('[更新] 发现新版本:', info.version)
+      this.state.isCheckingForUpdate = false
 
-      // 验证更新文件是否匹配当前架构
-      if (!this.isUpdateCompatible(info)) {
-        logger.warn('[更新] 更新版本架构不兼容，忽略此更新')
+      // 验证架构兼容性
+      const compatibleAsset = this.findCompatibleAsset(info)
+      if (!compatibleAsset) {
+        logger.warn('[更新] 未找到兼容的更新包')
         this.sendToRenderer(IPC_UPDATE.NOT_AVAILABLE, {
           ...this.formatUpdateInfo(info),
           incompatible: true,
-          reason: '架构不兼容'
+          reason: 'architecture_mismatch'
         })
         return
       }
 
-      this.lastUpdateInfo = this.formatUpdateInfo(info)
-      this.sendToRenderer(IPC_UPDATE.AVAILABLE, this.lastUpdateInfo)
+      // 设置正确的下载URL
+      if (compatibleAsset.url) {
+        info.files = [
+          {
+            url: compatibleAsset.url,
+            size: compatibleAsset.size,
+            sha512: compatibleAsset.sha512
+          }
+        ]
+      }
+
+      this.state.lastUpdateInfo = this.formatUpdateInfo(info)
+      this.sendToRenderer(IPC_UPDATE.AVAILABLE, this.state.lastUpdateInfo)
     })
 
     // 没有更新
     autoUpdater.on('update-not-available', (info) => {
-      logger.info(`[更新] 当前已是最新版本: ${info.version}`)
-      this.isCheckingForUpdate = false
+      logger.info('[更新] 当前已是最新版本')
+      this.state.isCheckingForUpdate = false
       this.sendToRenderer(IPC_UPDATE.NOT_AVAILABLE, this.formatUpdateInfo(info))
     })
 
     // 下载进度
     autoUpdater.on('download-progress', (progress) => {
-      const now = Date.now()
-      if (now - this.lastProgressTime < this.progressThrottle) {
-        return
-      }
-
-      this.lastProgressTime = now
-      this.downloadProgress = progress
-
-      const formattedProgress = this.formatProgress(progress)
-      if (formattedProgress.total > 0) {
-        this.sendToRenderer(IPC_UPDATE.DOWNLOAD_PROGRESS, formattedProgress)
-      }
+      this.handleDownloadProgress(progress)
     })
 
     // 下载完成
     autoUpdater.on('update-downloaded', (info) => {
-      logger.info('[更新] 更新下载完成，等待用户确认安装')
-      this.isDownloading = false
-      this.downloadProgress = null
+      logger.info('[更新] 更新下载完成')
+      this.state.isDownloading = false
+      this.state.downloadProgress = null
       this.sendToRenderer(IPC_UPDATE.DOWNLOADED, this.formatUpdateInfo(info))
     })
 
     // 错误处理
     autoUpdater.on('error', (error) => {
-      // 详细错误信息只记录到日志
-      logger.error('[更新] 错误详情:', error)
+      this.handleError(error)
+    })
 
-      this.isDownloading = false
-      this.isCheckingForUpdate = false
-      this.downloadProgress = null
+    // 差异下载开始
+    autoUpdater.on('differential-download-started', () => {
+      logger.info('[更新] 开始差异下载')
+    })
 
-      // 发送给用户的错误信息
-      const errorInfo = this.parseError(error)
-      this.sendToRenderer(IPC_UPDATE.ERROR, errorInfo)
+    // 差异下载失败，回退到完整下载
+    autoUpdater.on('differential-download-failed', () => {
+      logger.warn('[更新] 差异下载失败，切换到完整下载')
     })
   }
 
   /**
-   * 检查更新是否与当前系统架构兼容
+   * 查找兼容的更新资源
    */
-  isUpdateCompatible(updateInfo) {
-    if (!updateInfo || !updateInfo.files || updateInfo.files.length === 0) {
-      return false
+  findCompatibleAsset(updateInfo) {
+    if (!updateInfo?.files?.length) {
+      return null
     }
 
-    const sysArch = this.getSystemArchitecture()
-    const platform = process.platform
+    const { platform, arch } = this.architecture
 
-    // 查找匹配当前架构的更新文件
-    const compatibleFile = updateInfo.files.find((file) => {
+    // 定义文件名匹配规则
+    const matchers = {
+      win32: {
+        x64: [/x64|win64/i, /\.exe$/i],
+        x86: [/x86|ia32|win32/i, /\.exe$/i, (name) => !name.includes('x64')],
+        arm64: [/arm64/i, /\.exe$/i]
+      },
+      darwin: {
+        x64: [/x64|intel/i, /\.dmg$|\.zip$/i],
+        arm64: [/arm64|apple.?silicon|m1/i, /\.dmg$|\.zip$/i],
+        universal: [/universal/i, /\.dmg$|\.zip$/i]
+      },
+      linux: {
+        x64: [/x86_64|amd64|x64/i, /\.AppImage$|\.deb$|\.rpm$/i],
+        x86: [/i386|i686|x86/i, /\.AppImage$|\.deb$|\.rpm$/i],
+        arm64: [/aarch64|arm64/i, /\.AppImage$|\.deb$|\.rpm$/i],
+        armv7l: [/armv7|armhf/i, /\.AppImage$|\.deb$|\.rpm$/i]
+      }
+    }
+
+    // 获取当前平台的匹配规则
+    const platformMatchers = matchers[platform]
+    if (!platformMatchers) {
+      logger.warn(`[更新] 不支持的平台: ${platform}`)
+      return null
+    }
+
+    // 优先级排序：精确架构 > universal > 默认
+    const priorityOrder = [arch]
+    if (platform === 'darwin') {
+      priorityOrder.push('universal')
+    }
+
+    // 查找最佳匹配
+    for (const targetArch of priorityOrder) {
+      const archMatchers = platformMatchers[targetArch]
+      if (!archMatchers) continue
+
+      const matchedFile = updateInfo.files.find((file) => {
+        const fileName = file.url.toLowerCase()
+        return archMatchers.every((matcher) => {
+          if (typeof matcher === 'function') {
+            return matcher(fileName)
+          }
+          return matcher.test(fileName)
+        })
+      })
+
+      if (matchedFile) {
+        logger.info(`[更新] 找到兼容的更新包: ${matchedFile.url}`)
+        return matchedFile
+      }
+    }
+
+    // 如果没有找到精确匹配，尝试通用匹配
+    const fallbackFile = updateInfo.files.find((file) => {
       const fileName = file.url.toLowerCase()
+      const ext = path.extname(fileName)
 
-      // Windows 架构匹配规则
-      if (platform === 'win32') {
-        if (sysArch.arch === 'x64' && fileName.includes('x64')) return true
-        if (sysArch.arch === 'x86' && !fileName.includes('x64') && !fileName.includes('arm'))
-          return true
-        if (sysArch.arch === 'arm64' && fileName.includes('arm64')) return true
+      // 基于扩展名的平台匹配
+      const platformExtensions = {
+        win32: ['.exe'],
+        darwin: ['.dmg', '.zip'],
+        linux: ['.AppImage', '.deb', '.rpm', '.tar.gz']
       }
 
-      // macOS 架构匹配规则
-      if (platform === 'darwin') {
-        if (sysArch.arch === 'x64' && fileName.includes('x64')) return true
-        if (sysArch.arch === 'arm64' && fileName.includes('arm64')) return true
-        // Universal 包支持所有架构
-        if (fileName.includes('universal')) return true
-      }
-
-      // Linux 架构匹配规则
-      if (platform === 'linux') {
-        if (sysArch.arch === 'x64' && fileName.includes('x86_64')) return true
-        if (sysArch.arch === 'arm64' && fileName.includes('arm64')) return true
-        if (sysArch.arch === 'armv7l' && fileName.includes('armv7l')) return true
-      }
-
-      return false
+      return platformExtensions[platform]?.includes(ext)
     })
 
-    if (!compatibleFile) {
-      logger.warn(`[更新] 未找到适合 ${sysArch.identifier} 架构的更新文件`)
+    if (fallbackFile) {
+      logger.warn(`[更新] 使用通用更新包: ${fallbackFile.url}`)
     }
 
-    return !!compatibleFile
+    return fallbackFile
   }
 
   /**
-   * 解析错误信息 - 优化版本
+   * 处理下载进度
+   */
+  handleDownloadProgress(progress) {
+    const now = Date.now()
+
+    // 节流处理
+    if (now - this.performance.lastProgressTime < this.performance.progressThrottle) {
+      return
+    }
+
+    this.performance.lastProgressTime = now
+    this.state.downloadProgress = progress
+
+    const formattedProgress = this.formatProgress(progress)
+
+    // 只有在有效进度时才发送
+    if (formattedProgress.total > 0 && formattedProgress.percent >= 0) {
+      this.sendToRenderer(IPC_UPDATE.DOWNLOAD_PROGRESS, formattedProgress)
+
+      // 每10%记录一次日志
+      const percentInt = Math.floor(formattedProgress.percent)
+      if (percentInt % 10 === 0 && percentInt !== this._lastLoggedPercent) {
+        this._lastLoggedPercent = percentInt
+        logger.info(`[更新] 下载进度: ${percentInt}% (${formattedProgress.speedFormatted})`)
+      }
+    }
+  }
+
+  /**
+   * 处理错误
+   */
+  handleError(error) {
+    logger.error('[更新] 错误详情:', {
+      message: error?.message,
+      code: error?.code,
+      stack: error?.stack
+    })
+
+    this.state.isDownloading = false
+    this.state.isCheckingForUpdate = false
+    this.state.downloadProgress = null
+
+    const errorInfo = this.parseError(error)
+    this.sendToRenderer(IPC_UPDATE.ERROR, errorInfo)
+  }
+
+  /**
+   * 解析错误信息
    */
   parseError(error) {
     const errorMessage = error?.message || ''
     const errorCode = error?.code || ''
 
-    // 记录原始错误到日志
-    logger.error('[更新] 原始错误信息:', {
-      message: errorMessage,
-      code: errorCode,
-      stack: error?.stack
-    })
-
     // 错误类型映射
-    const errorMap = {
-      // GitHub Release 相关错误
-      'Unable to find latest version': {
-        message: '暂无可用更新',
-        detail: '请稍后再试或访问官网下载最新版本',
-        canRetry: true,
-        errorType: 'NO_RELEASE'
+    const errorPatterns = [
+      // Release 相关
+      {
+        pattern: /Unable to find latest version|No release found/i,
+        info: {
+          message: '暂无可用更新',
+          detail: '当前已是最新版本',
+          canRetry: false,
+          errorType: 'NO_RELEASE'
+        }
       },
-      'HttpError: 406': {
-        message: '更新服务暂时不可用',
-        detail: '请稍后再试',
-        canRetry: true,
-        errorType: 'SERVICE_ERROR'
+      // HTTP 错误
+      {
+        pattern: /HttpError:\s*4\d{2}/i,
+        info: {
+          message: '更新服务访问失败',
+          detail: '请检查网络连接或稍后再试',
+          canRetry: true,
+          errorType: 'HTTP_ERROR'
+        }
       },
-      'HttpError: 404': {
-        message: '更新资源未找到',
-        detail: '请访问官网下载最新版本',
-        canRetry: false,
-        errorType: 'NOT_FOUND'
-      },
-      'HttpError: 403': {
-        message: '更新服务访问受限',
-        detail: '请检查网络设置或稍后再试',
-        canRetry: true,
-        errorType: 'ACCESS_DENIED'
-      },
-
       // 网络错误
-      'ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|ENETUNREACH': {
-        message: '网络连接失败',
-        detail: '请检查网络连接后重试',
-        canRetry: true,
-        errorType: 'NETWORK_ERROR'
+      {
+        pattern: /ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|ENETUNREACH/i,
+        info: {
+          message: '网络连接失败',
+          detail: '请检查网络连接后重试',
+          canRetry: true,
+          errorType: 'NETWORK_ERROR'
+        }
       },
-      'timeout|Timeout': {
-        message: '连接超时',
-        detail: '请检查网络连接或稍后再试',
-        canRetry: true,
-        errorType: 'TIMEOUT'
+      // 权限错误
+      {
+        pattern: /EACCES|EPERM|Permission denied/i,
+        info: {
+          message: '权限不足',
+          detail: '请以管理员身份运行程序',
+          canRetry: false,
+          errorType: 'PERMISSION_ERROR'
+        }
       },
-
-      // 文件系统错误
-      'EACCES|EPERM': {
-        message: '权限不足',
-        detail: '请以管理员身份运行程序',
-        canRetry: false,
-        errorType: 'PERMISSION_ERROR'
+      // 空间不足
+      {
+        pattern: /ENOSPC|No space/i,
+        info: {
+          message: '磁盘空间不足',
+          detail: '请清理磁盘空间后重试',
+          canRetry: true,
+          errorType: 'DISK_FULL'
+        }
       },
-      ENOSPC: {
-        message: '磁盘空间不足',
-        detail: '请清理磁盘空间后重试',
-        canRetry: true,
-        errorType: 'DISK_FULL'
+      // 签名验证
+      {
+        pattern: /signature|verification|checksum/i,
+        info: {
+          message: '更新包验证失败',
+          detail: '更新包可能已损坏，请重试',
+          canRetry: true,
+          errorType: 'VERIFICATION_ERROR'
+        }
       },
-
-      // 更新包错误
-      'Could not locate update bundle': {
-        message: '更新包损坏',
-        detail: '请访问官网下载最新版本',
-        canRetry: false,
-        errorType: 'CORRUPTED_UPDATE'
-      },
-      'signature|verification': {
-        message: '更新包验证失败',
-        detail: '请访问官网下载最新版本',
-        canRetry: false,
-        errorType: 'VERIFICATION_ERROR'
-      },
-
       // 取消操作
-      'cancelled|aborted': {
-        message: '操作已取消',
-        detail: '',
-        canRetry: true,
-        errorType: 'CANCELLED'
+      {
+        pattern: /cancelled|aborted|CancellationError/i,
+        info: {
+          message: '下载已取消',
+          detail: '',
+          canRetry: true,
+          errorType: 'CANCELLED'
+        }
       }
-    }
+    ]
 
     // 匹配错误类型
-    for (const [pattern, errorInfo] of Object.entries(errorMap)) {
-      if (new RegExp(pattern, 'i').test(errorMessage) || new RegExp(pattern, 'i').test(errorCode)) {
+    for (const { pattern, info } of errorPatterns) {
+      if (pattern.test(errorMessage) || pattern.test(errorCode)) {
         return {
-          ...errorInfo,
-          timestamp: new Date().toISOString()
+          ...info,
+          timestamp: new Date().toISOString(),
+          originalError: process.env.NODE_ENV === 'development' ? errorMessage : undefined
         }
       }
     }
 
-    // 默认错误信息
+    // 默认错误
     return {
       message: '更新失败',
-      detail: '请稍后再试或访问官网下载最新版本',
+      detail: '请稍后再试或访问官网下载',
       canRetry: true,
       errorType: 'UNKNOWN_ERROR',
       timestamp: new Date().toISOString()
@@ -334,70 +478,86 @@ export class AutoUpdateManager extends EventEmitter {
   }
 
   /**
-   * 检查更新 - 优化错误处理
+   * 检查更新
    */
   async checkForUpdates() {
-    if (!this.isInitialized) {
-      this.initialize()
+    if (!this.state.isInitialized) {
+      await this.initialize()
     }
 
-    if (this.isCheckingForUpdate) {
+    if (this.state.isCheckingForUpdate) {
       logger.warn('[更新] 正在检查更新中，忽略重复请求')
       return null
     }
 
     try {
+      logger.info('[更新] 开始检查更新', {
+        currentVersion: app.getVersion(),
+        architecture: this.architecture.identifier
+      })
+
       const result = await autoUpdater.checkForUpdates()
-      if (result && result.updateInfo) {
+
+      if (result?.updateInfo) {
         return this.formatUpdateInfo(result.updateInfo)
       }
+
       return null
     } catch (error) {
-      this.isCheckingForUpdate = false
-
-      // 解析错误并返回友好信息
+      this.state.isCheckingForUpdate = false
       const errorInfo = this.parseError(error)
       throw new Error(errorInfo.message)
     }
   }
 
   /**
-   * 下载更新 - 优化错误处理
+   * 下载更新
    */
   async downloadUpdate() {
-    if (!this.isInitialized) {
-      this.initialize()
+    if (!this.state.isInitialized) {
+      await this.initialize()
     }
 
-    if (this.isDownloading) {
+    if (this.state.isDownloading) {
       logger.warn('[更新] 正在下载中，忽略重复请求')
-      return { success: false, message: '正在下载中，请勿重复操作' }
+      return {
+        success: false,
+        message: '正在下载中，请勿重复操作',
+        isDownloading: true
+      }
     }
 
     try {
-      this.isDownloading = true
-      this.downloadProgress = null
-      this.downloadCancellationToken = new CancellationToken()
+      this.state.isDownloading = true
+      this.state.downloadProgress = null
+      this.state.downloadCancellationToken = new CancellationToken()
 
       logger.info('[更新] 开始下载更新...')
-      await autoUpdater.downloadUpdate(this.downloadCancellationToken)
 
-      logger.info('[更新] 下载更新完成')
+      // 启用差异下载
+      autoUpdater.disableDifferentialDownload = false
+
+      await autoUpdater.downloadUpdate(this.state.downloadCancellationToken)
+
+      logger.info('[更新] 下载完成')
       return { success: true }
     } catch (error) {
-      this.isDownloading = false
-      this.downloadProgress = null
+      this.state.isDownloading = false
+      this.state.downloadProgress = null
 
       const errorInfo = this.parseError(error)
 
       if (errorInfo.errorType === 'CANCELLED') {
-        logger.info('[更新] 下载已被用户取消')
-        return { success: false, cancelled: true }
+        return {
+          success: false,
+          cancelled: true,
+          message: '下载已取消'
+        }
       }
 
       throw new Error(errorInfo.message)
     } finally {
-      this.downloadCancellationToken = null
+      this.state.downloadCancellationToken = null
     }
   }
 
@@ -406,19 +566,23 @@ export class AutoUpdateManager extends EventEmitter {
    */
   async cancelDownload() {
     try {
-      if (!this.isDownloading) {
-        logger.warn('[更新] 没有正在进行的下载任务')
-        return { success: false, message: '没有正在进行的下载任务' }
+      if (!this.state.isDownloading) {
+        return {
+          success: false,
+          message: '没有正在进行的下载任务'
+        }
       }
 
-      if (this.downloadCancellationToken) {
-        this.downloadCancellationToken.cancel()
+      if (this.state.downloadCancellationToken) {
+        this.state.downloadCancellationToken.cancel()
       }
 
-      this.isDownloading = false
-      this.downloadProgress = null
+      this.state.isDownloading = false
+      this.state.downloadProgress = null
 
       logger.info('[更新] 下载已取消')
+      this.sendToRenderer(IPC_UPDATE.DOWNLOAD_CANCELLED)
+
       return { success: true }
     } catch (error) {
       logger.error('[更新] 取消下载失败:', error)
@@ -430,20 +594,25 @@ export class AutoUpdateManager extends EventEmitter {
    * 退出并安装更新
    */
   async quitAndInstall() {
-    if (!this.isInitialized) {
-      this.initialize()
+    if (!this.state.isInitialized) {
+      await this.initialize()
     }
 
-    logger.info('[更新] 用户确认安装更新，准备退出并安装...')
+    logger.info('[更新] 准备安装更新...')
 
     try {
-      setImmediate(() => {
+      // 发送安装前的通知
+      this.sendToRenderer(IPC_UPDATE.BEFORE_INSTALL)
+
+      // 延迟执行，确保渲染进程有时间保存数据
+      setTimeout(() => {
         if (process.platform === 'win32') {
+          // Windows 需要特殊处理
           autoUpdater.quitAndInstall(false, true)
         } else {
           autoUpdater.quitAndInstall()
         }
-      })
+      }, 100)
 
       return { success: true }
     } catch (error) {
@@ -462,22 +631,48 @@ export class AutoUpdateManager extends EventEmitter {
         releaseDate: null,
         releaseNotes: '',
         files: [],
-        architecture: this.getSystemArchitecture(),
-        currentVersion: app.getVersion()
+        architecture: this.architecture,
+        currentVersion: app.getVersion(),
+        updateSize: 0
       }
     }
+
+    // 计算更新包大小
+    const updateSize = info.files?.reduce((total, file) => total + (file.size || 0), 0) || 0
 
     return {
       version: info.version || '',
       releaseDate: info.releaseDate || null,
-      releaseNotes: info.releaseNotes || '',
+      releaseNotes: this.parseReleaseNotes(info.releaseNotes),
       files: (info.files || []).map((f) => ({
         url: f.url || '',
-        size: f.size || 0
+        size: f.size || 0,
+        sha512: f.sha512 || ''
       })),
-      architecture: this.getSystemArchitecture(),
-      currentVersion: app.getVersion()
+      architecture: this.architecture,
+      currentVersion: app.getVersion(),
+      updateSize,
+      updateSizeFormatted: this.formatFileSize(updateSize)
     }
+  }
+
+  /**
+   * 解析发布说明
+   */
+  parseReleaseNotes(notes) {
+    if (!notes) return ''
+
+    // 如果是数组，合并为字符串
+    if (Array.isArray(notes)) {
+      return notes.map((note) => note.note || note).join('\n')
+    }
+
+    // 如果是对象，提取内容
+    if (typeof notes === 'object') {
+      return notes.note || notes.notes || ''
+    }
+
+    return String(notes)
   }
 
   /**
@@ -487,18 +682,24 @@ export class AutoUpdateManager extends EventEmitter {
     const transferred = Math.max(0, progress.transferred || 0)
     const total = Math.max(0, progress.total || 0)
     const bytesPerSecond = Math.max(0, progress.bytesPerSecond || 0)
-    const actualPercent = total > 0 ? (transferred / total) * 100 : 0
+    const percent = total > 0 ? (transferred / total) * 100 : 0
+
+    // 计算剩余时间
+    const remainingBytes = total - transferred
+    const remainingSeconds = bytesPerSecond > 0 ? remainingBytes / bytesPerSecond : 0
+    const remainingTime = this.formatTime(remainingSeconds)
 
     return {
-      percent: Math.round(actualPercent * 100) / 100,
-      transferred: transferred,
-      total: total,
-      bytesPerSecond: bytesPerSecond,
+      percent: Math.round(percent * 100) / 100,
+      transferred,
+      total,
+      bytesPerSecond,
       downloaded: Math.round((transferred / 1024 / 1024) * 100) / 100,
       speed: Math.round(bytesPerSecond / 1024),
       transferredFormatted: this.formatFileSize(transferred),
       totalFormatted: this.formatFileSize(total),
-      speedFormatted: this.formatFileSize(bytesPerSecond) + '/s'
+      speedFormatted: this.formatFileSize(bytesPerSecond) + '/s',
+      remainingTime
     }
   }
 
@@ -514,45 +715,95 @@ export class AutoUpdateManager extends EventEmitter {
   }
 
   /**
-   * 其他方法保持不变...
+   * 格式化时间
+   */
+  formatTime(seconds) {
+    if (seconds <= 0 || !isFinite(seconds)) return '计算中...'
+
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = Math.floor(seconds % 60)
+
+    if (hours > 0) {
+      return `${hours}小时${minutes}分钟`
+    } else if (minutes > 0) {
+      return `${minutes}分钟${secs}秒`
+    } else {
+      return `${secs}秒`
+    }
+  }
+
+  /**
+   * 获取下载状态
    */
   getDownloadStatus() {
     return {
-      isDownloading: this.isDownloading,
-      isCheckingForUpdate: this.isCheckingForUpdate,
-      progress: this.getDownloadProgress()
+      isDownloading: this.state.isDownloading,
+      isCheckingForUpdate: this.state.isCheckingForUpdate,
+      progress: this.getDownloadProgress(),
+      lastUpdateInfo: this.state.lastUpdateInfo
     }
   }
 
+  /**
+   * 获取下载进度
+   */
   getDownloadProgress() {
-    if (!this.downloadProgress) {
+    if (!this.state.downloadProgress) {
       return null
     }
-    return this.formatProgress(this.downloadProgress)
+    return this.formatProgress(this.state.downloadProgress)
   }
 
+  /**
+   * 设置关联窗口
+   */
   setAssociatedWindow(window) {
-    this.currentWindow = window
-    if (!this.isInitialized) {
+    this.state.currentWindow = window
+    if (!this.state.isInitialized) {
       this.initialize()
     }
   }
 
+  /**
+   * 发送消息到渲染进程
+   */
   sendToRenderer(channel, data) {
-    if (this.currentWindow && !this.currentWindow.isDestroyed()) {
-      this.currentWindow.webContents.send(channel, data)
+    if (this.state.currentWindow && !this.state.currentWindow.isDestroyed()) {
+      this.state.currentWindow.webContents.send(channel, data)
     }
     this.emit(channel, data)
   }
 
+  /**
+   * 销毁更新管理器
+   */
   destroy() {
-    if (this.isInitialized) {
+    if (this.state.isInitialized) {
+      // 取消正在进行的下载
+      if (this.state.isDownloading && this.state.downloadCancellationToken) {
+        this.state.downloadCancellationToken.cancel()
+      }
+
+      // 清理事件监听
       autoUpdater.removeAllListeners()
-      this.isInitialized = false
-      this.isDownloading = false
-      this.isCheckingForUpdate = false
-      this.downloadProgress = null
-      logger.info('AutoUpdateManager 已销毁')
+      this.removeAllListeners()
+
+      // 重置状态
+      this.state = {
+        downloadProgress: null,
+        currentWindow: null,
+        lastUpdateInfo: null,
+        isInitialized: false,
+        isDownloading: false,
+        isCheckingForUpdate: false,
+        downloadCancellationToken: null
+      }
+
+      logger.info('[更新] AutoUpdateManager 已销毁')
     }
   }
 }
+
+// 导出单例
+export default new AutoUpdateManager()
