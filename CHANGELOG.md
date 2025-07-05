@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.2](https://github.com/11273/QzonePhoto/compare/v1.0.1...v1.0.2) (2025-07-05)
+
+### 🔨 CONFIG | 配置
+
+* note ([d87c052](https://github.com/11273/QzonePhoto/commit/d87c052a27bf9c61e5b7bbcebe150bfa6fdec680))
+
 ## 1.0.1 (2025-07-05)
 
 ### ✨ Features | 新功能
