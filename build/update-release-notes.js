@@ -45,8 +45,8 @@ const generateBadges = (version) => {
   // 徽标配置
   const badges = [
     {
-      name: 'GitHub Release',
-      url: `https://img.shields.io/github/v/release/${GITHUB_OWNER}/${GITHUB_REPO}?style=flat-square&logo=github&color=blue`,
+      name: '总下载量',
+      url: `https://img.shields.io/github/downloads/${GITHUB_OWNER}/${GITHUB_REPO}/total?style=flat-square&logo=github&color=blue`,
       link: releaseUrl
     },
     {
