@@ -373,7 +373,7 @@ export class DownloadService {
     // 分批处理照片
     for (let i = 0; i < photos.length; i += batchSize) {
       const batch = photos.slice(i, i + batchSize)
-      const batchIds = await this.processBatch(batch, albumDir, album, i)
+      const batchIds = await this.processBatch(batch, albumDir, album)
       taskIds.push(...batchIds)
 
       // 触发批量更新
@@ -395,16 +395,16 @@ export class DownloadService {
   }
 
   // 处理单批次任务
-  async processBatch(photos, albumDir, album, startIndex) {
+  async processBatch(photos, albumDir, album) {
     const tasks = []
     const taskIds = []
 
     // 创建任务对象
     for (let i = 0; i < photos.length; i++) {
       const photo = photos[i]
-      const filename = this.generatePhotoFilename(photo, startIndex + i)
+      const filename = this.generatePhotoFilename(photo)
       const task = this.createTask({
-        url: photo.url || photo.pre,
+        url: photo.raw || photo.url || photo.pre,
         filename,
         directory: albumDir,
         total: photo.size || 0,
@@ -1080,15 +1080,63 @@ export class DownloadService {
     )
   }
 
-  generatePhotoFilename(photo, index = 0) {
-    const timestamp = photo.modifytime || Date.now()
-    const date = new Date(typeof timestamp === 'string' ? timestamp : timestamp * 1000)
-    const dateStr = date.toISOString().split('T')[0].replace(/-/g, '')
-    const timeStr = date.toTimeString().split(' ')[0].replace(/:/g, '')
+  generatePhotoFilename(photo) {
+    // 获取真正的唯一标识符 - lloc 是最可靠的唯一标识符
+    const uniqueId = photo.lloc || photo.id || Date.now()
+
+    // 获取拍摄时间或修改时间 - 避免使用本地时间
+    let dateStr = ''
+    let timeStr = ''
+
+    // 优先使用 exif 中的原始拍摄时间
+    if (photo.exif && photo.exif.originalTime) {
+      const originalTime = photo.exif.originalTime.replace(/:/g, '-')
+      const date = new Date(originalTime)
+      if (!isNaN(date.getTime())) {
+        dateStr = date.toISOString().split('T')[0].replace(/-/g, '')
+        timeStr = date.toTimeString().split(' ')[0].replace(/:/g, '')
+      }
+    }
+
+    // 如果没有 exif 时间，使用 modifytime（Unix 时间戳）
+    if (!dateStr && photo.modifytime) {
+      const timestamp = photo.modifytime * 1000 // Unix 时间戳转毫秒
+      const date = new Date(timestamp)
+      if (!isNaN(date.getTime())) {
+        dateStr = date.toISOString().split('T')[0].replace(/-/g, '')
+        timeStr = date.toTimeString().split(' ')[0].replace(/:/g, '')
+      }
+    }
+
+    // 如果还没有时间，使用 rawshoottime 或 shoottime
+    if (!dateStr) {
+      const shootTime = photo.rawshoottime || photo.shoottime
+      if (shootTime) {
+        const date = new Date(shootTime)
+        if (!isNaN(date.getTime())) {
+          dateStr = date.toISOString().split('T')[0].replace(/-/g, '')
+          timeStr = date.toTimeString().split(' ')[0].replace(/:/g, '')
+        }
+      }
+    }
+
+    // 最后兜底：使用照片名称中的日期信息
+    if (!dateStr && photo.name && photo.name.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      dateStr = photo.name.replace(/-/g, '')
+      timeStr = '000000' // 默认时间
+    }
+
+    // 文件扩展名
     const extension = photo.is_video ? '.mp4' : '.jpg'
-    const baseName = photo.name || `photo_${photo.id || photo.lloc}`
-    const indexStr = String(index + 1).padStart(4, '0')
-    return `${indexStr}_${dateStr}_${timeStr}_${this.sanitizeFilename(baseName)}${extension}`
+
+    // 基础文件名
+    const baseName = photo.name || `photo_${uniqueId}`
+
+    // 生成文件名格式：日期_时间_唯一ID_名称.扩展名
+    // 使用 lloc 的后8位作为短标识符（保持可读性）
+    const shortId = this.sanitizeFilename(uniqueId)
+
+    return `${dateStr}_${timeStr}_${this.sanitizeFilename(baseName)}_${shortId}${extension}`
   }
 
   // 清理资源

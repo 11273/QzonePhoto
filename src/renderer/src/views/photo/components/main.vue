@@ -265,6 +265,7 @@ const cleanPhotoData = (photos) => {
     name: photo.name,
     url: photo.url,
     pre: photo.pre,
+    raw: photo.raw,
     lloc: photo.lloc,
     modifytime: photo.modifytime,
     is_video: photo.is_video,
