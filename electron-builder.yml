@@ -3,7 +3,6 @@ appId: com.qzonephoto.app
 
 # 产品名称 (显示在界面/安装包中的名称)
 productName: Qzone Photo
-fileNamePrefix: QzonePhoto
 
 # 构建资源配置
 directories:
@@ -51,7 +50,7 @@ win:
         - x64
         - ia32
 nsis:
-  artifactName: ${fileNamePrefix}-${version}-${os}-${arch}-setup.${ext} # 安装包命名格式
+  artifactName: QzonePhoto-${version}-${os}-${arch}-setup.${ext} # 安装包命名格式
   shortcutName: ${productName} # 快捷方式名称
   uninstallDisplayName: ${productName} # 卸载程序显示名称
   createDesktopShortcut: always # 始终创建桌面快捷方式
@@ -95,18 +94,18 @@ mac:
 
 # macOS DMG配置
 dmg:
-  artifactName: ${fileNamePrefix}-${version}-${os}-${arch}.${ext} # DMG包命名格式
+  artifactName: QzonePhoto-${version}-${os}-${arch}.${ext} # DMG包命名格式
   format: UDZO
 
 # AppImage配置
 appImage:
-  artifactName: ${fileNamePrefix}-${version}-${os}-${arch}.${ext} # 命名格式
+  artifactName: QzonePhoto-${version}-${os}-${arch}.${ext} # 命名格式
   synopsis: QzonePhoto
   category: Utility
 
 # DEB包配置
 deb:
-  artifactName: ${fileNamePrefix}-${version}-linux-${arch}.${ext}
+  artifactName: QzonePhoto-${version}-linux-${arch}.${ext}
   depends:
     - libgtk-3-0
     - libnotify4
