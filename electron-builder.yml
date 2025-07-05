@@ -1,43 +1,131 @@
-appId: com.electron.app
-productName: qzone-helper
+# 应用唯一标识符 (采用反向域名格式)
+appId: com.qzonephoto.app
+
+# 产品名称 (显示在界面/安装包中的名称)
+productName: Qzone Photo
+
+# 构建资源配置
 directories:
-  buildResources: build
+  buildResources: build # 指定构建资源目录（图标等）
+
+# 包含/排除文件规则
 files:
   - '!**/.vscode/*'
-  - '!src/*'
-  - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
-  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!**/.git/**'
+  - '!src/**'
+  - '!**/*.{map,local}'
+  - '!**/*.config.{js,ts,mjs,cjs}'
+  - '!**/test/**'
+  - '!**/mock/**'
+  - '!.{editorconfig,npmrc,prettierrc*,eslintrc*}'
+  - '!{README.md,CHANGELOG.md,LICENSE}'
+  - '!{pnpm-lock.yaml,yarn.lock,package-lock.json}'
+  - '!dev-app-update.yml'
+  - '!.release-it.json'
+  - '!jsconfig.json'
+  - '!tailwind.config.js'
+  - '!**/*.{iml,hprof,orig}'
+  - '!.idea'
+  - '!.vscode'
+  - '!.github'
+
+# ASAR解压配置（指定不需要压缩的文件）
 asarUnpack:
-  - resources/**
+  - resources/** # 保持resources目录未压缩
+  - out/preload/** # 保持preload脚本未压缩，确保IPC通信正常
+
+# 签名后钩子（用于苹果公证等操作，脚本内部会检查平台）
+afterSign: build/afterSign.js
+
+# 打包后钩子（自定义处理打包文件）
+afterPack: build/afterPack.js
+
+# Windows平台配置
 win:
-  executableName: qzone-helper
+  icon: build/icons/icon.ico
+  executableName: QzonePhoto # 生成的可执行文件名称，不支持环境变量
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - ia32
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
-  shortcutName: ${productName}
-  uninstallDisplayName: ${productName}
-  createDesktopShortcut: always
+  artifactName: ${productName}-${version}-${os}-${arch}-setup.${ext} # 安装包命名格式
+  shortcutName: ${productName} # 快捷方式名称
+  uninstallDisplayName: ${productName} # 卸载程序显示名称
+  createDesktopShortcut: always # 始终创建桌面快捷方式
+  oneClick: false # 禁用一键安装
+  allowElevation: true # 允许权限提升
+  allowToChangeInstallationDirectory: true # 允许修改安装目录
+  runAfterFinish: true # 安装完成后自动运行
+  perMachine: false # false = 当前用户安装，true = 所有用户
+  deleteAppDataOnUninstall: false # 卸载时不删除用户数据
+
+# Linux平台配置
+linux:
+  icon: build/icons
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  maintainer: github.com/11273
+  category: Utility
+  synopsis: QzonePhoto - 相册管理工具
+  description: 一个简单易用的相册管理工具
+
+# macOS平台配置
 mac:
+  icon: build/icons/icon.icns
+  # 添加类别
+  category: public.app-category.utilities
+  # 权限配置文件
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize: false
-dmg:
-  artifactName: ${name}-${version}.${ext}
-linux:
+    NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
+  # 签名配置
+  hardenedRuntime: true
+  gatekeeperAssess: false
   target:
-    - AppImage
-    - snap
-    - deb
-  maintainer: electronjs.org
-  category: Utility
+    - target: zip
+      arch: [x64, arm64]
+    - target: dmg
+      arch: [x64, arm64]
+
+# macOS DMG配置
+dmg:
+  artifactName: ${productName}-${version}-${os}-${arch}.${ext} # DMG包命名格式
+  format: UDZO
+
+# AppImage配置
 appImage:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${productName}-${version}-${os}-${arch}.${ext} # 命名格式
+  synopsis: QzonePhoto
+  category: Utility
+
+# DEB包配置
+deb:
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+  category: utils
+  priority: optional
+
+releaseInfo:
+  releaseNotesFile: RELEASE_NOTES.md
+
+# 禁止自动重建原生模块
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates
+# 自动更新配置
+# publish:
+#   provider: github # 使用 GitHub 作为发布平台
+#   owner: 11273 # GitHub 用户名或组织名
+#   repo: QzonePhoto # 仓库名

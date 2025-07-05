@@ -1,3 +1,11 @@
-provider: generic
-url: https://example.com/auto-updates
-updaterCacheDirName: qzone-helper-updater
+# owner: 11273
+# repo: QzonePhoto
+# provider: github
+
+# MinIO 公开仓库配置
+provider: s3
+endpoint: http://192.168.5.128:39000
+bucket: qzone
+public: true # 标记为公开
+region: us-east-1
+path_style: true

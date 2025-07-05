@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "allowJs": true,
+    "jsx": "preserve",
+    "allowSyntheticDefaultImports": true,
+    "paths": {
+      "@renderer/*": ["src/renderer/src/*"],
+      "@preload/*": ["src/preload/*"],
+      "@shared/*": ["src/shared/*"],
+      "@main/*": ["src/main/*"]
+    }
+  },
+  "include": [
+    "src",
+    "types",
+    "src/**/*.vue",
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/renderer/src/**/*",
+    "src/renderer/src/**/*.vue",
+    "src/renderer/auto-imports.d.ts",
+    "src/renderer/components.d.ts"
+  ],
+  "exclude": ["node_modules", "dist", "out", "build"]
+}
