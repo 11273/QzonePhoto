@@ -445,21 +445,15 @@ const handleUpdateAvailable = (info) => {
   console.log('发现新版本:', info)
 }
 
-const handleUpdateNotAvailable = () => {
+const handleUpdateNotAvailable = (info) => {
+  console.log('没有更新:', info)
   updateState.checking = false
   updateState.hasUpdate = false
 
   // 如果对话框是打开的，显示无更新状态
   if (dialogVisible.value) {
+    updateInfo.value = info
     dialogState.value = 'no-update'
-
-    // 2秒后自动关闭对话框
-    setTimeout(() => {
-      if (dialogState.value === 'no-update') {
-        dialogVisible.value = false
-        dialogState.value = 'idle'
-      }
-    }, 2000)
   } else {
     dialogState.value = 'idle'
   }

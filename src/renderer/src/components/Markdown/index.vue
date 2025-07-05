@@ -4,7 +4,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
@@ -30,6 +30,15 @@ marked.setOptions({
   },
   breaks: true,
   gfm: true
+})
+
+// 配置 DOMPurify 钩子，为所有链接添加 target="_blank"
+DOMPurify.addHook('afterSanitizeAttributes', function (node) {
+  // 如果是 a 标签
+  if (node.tagName === 'A') {
+    node.setAttribute('target', '_blank')
+    node.setAttribute('rel', 'noopener noreferrer')
+  }
 })
 
 // 渲染并清理 HTML
@@ -61,6 +70,7 @@ const sanitizedHtml = computed(() => {
       'pre',
       'blockquote',
       'a',
+      'img', // 添加 img 标签
       'table',
       'thead',
       'tbody',
@@ -68,8 +78,24 @@ const sanitizedHtml = computed(() => {
       'th',
       'td'
     ],
-    ALLOWED_ATTR: ['href', 'target', 'rel', 'class']
+    ALLOWED_ATTR: [
+      'href',
+      'target',
+      'rel',
+      'class',
+      'src', // 图片源
+      'alt', // 图片替代文本
+      'title', // 标题
+      'width', // 宽度
+      'height', // 高度
+      'style' // 样式（如果需要）
+    ]
   })
+})
+
+// 组件卸载时移除钩子
+onUnmounted(() => {
+  DOMPurify.removeAllHooks()
 })
 </script>
 
@@ -83,6 +109,28 @@ const sanitizedHtml = computed(() => {
   line-height: 1.6;
   word-wrap: break-word;
   user-select: text;
+}
+
+/* 添加图片样式 */
+.markdown-content :deep(img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 8px 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* 徽章样式优化 */
+.markdown-content :deep(a img) {
+  margin: 0 2px;
+  vertical-align: middle;
+  display: inline;
+}
+
+/* 徽章链接不显示外链图标 */
+.markdown-content :deep(a:has(img)):after {
+  display: none;
 }
 
 /* 标题样式 */

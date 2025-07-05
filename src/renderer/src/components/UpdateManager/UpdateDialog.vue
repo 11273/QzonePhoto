@@ -90,7 +90,10 @@
             <div class="header-right">
               <div class="update-title">
                 {{ getTitle() }}
-                <span class="version-info">{{ updateInfo.version }}</span>
+                <span class="version-info-current">{{ updateInfo.currentVersion }}</span>
+                <span v-if="updateState === 'available'" class="version-info-new">
+                  <el-icon><Right /></el-icon> {{ updateInfo.version }}
+                </span>
               </div>
               <div class="update-subtitle">{{ getSubtitle() }}</div>
             </div>
@@ -167,8 +170,8 @@
             </div>
 
             <!-- 暂无更新 -->
-            <div v-if="updateState === 'no-update'" class="content-no-update">
-              <div class="latest-icon">
+            <div v-if="updateState === 'no-update'" class="content-available">
+              <!-- <div class="latest-icon">
                 <svg
                   width="48"
                   height="48"
@@ -184,7 +187,10 @@
                   <line x1="12" y1="2" x2="12" y2="14"></line>
                 </svg>
               </div>
-              <p class="latest-text">您正在使用最新版本 🎉</p>
+              <p class="latest-text">您正在使用最新版本 🎉</p> -->
+              <div v-if="updateInfo.releaseNotes" class="release-notes">
+                <Markdown :content="updateInfo.releaseNotes" />
+              </div>
             </div>
 
             <!-- 更新错误 -->
@@ -292,6 +298,7 @@ import { formatBytes } from '@renderer/utils/formatters'
 import { APP_HOMEPAGE } from '@shared/const'
 import { computed } from 'vue'
 import Markdown from '@renderer/components/Markdown/index.vue'
+import { Right } from '@element-plus/icons-vue'
 
 const props = defineProps({
   visible: {
@@ -594,7 +601,30 @@ const getFormattedSpeed = () => {
   font-weight: 600;
   color: rgba(255, 255, 255, 0.9);
   margin-bottom: 4px;
-  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.version-info-current {
+  color: #909399;
+  font-weight: 600;
+  text-shadow: 0 0 10px rgba(144, 147, 153, 0.3);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.version-info-new {
+  color: #67c23a;
+  font-weight: 600;
+  text-shadow: 0 0 10px rgba(103, 194, 58, 0.3);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
 
 .update-subtitle {
@@ -677,13 +707,6 @@ const getFormattedSpeed = () => {
 .content-available {
   text-align: center;
   width: 100%;
-}
-
-.version-info {
-  color: #67c23a;
-  font-weight: 600;
-  margin-bottom: 4px;
-  text-shadow: 0 0 10px rgba(103, 194, 58, 0.3);
 }
 
 .new-version {

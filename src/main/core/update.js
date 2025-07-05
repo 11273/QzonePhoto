@@ -2,6 +2,7 @@ import { autoUpdater, CancellationToken } from 'electron-updater'
 import { EventEmitter } from 'events'
 import { IPC_UPDATE } from '@shared/ipc-channels'
 import logger from '@main/core/logger'
+import { app } from 'electron'
 
 export class AutoUpdateManager extends EventEmitter {
   constructor() {
@@ -379,7 +380,8 @@ export class AutoUpdateManager extends EventEmitter {
         releaseDate: null,
         releaseNotes: '',
         files: [],
-        architecture: this.getSystemArchitecture()
+        architecture: this.getSystemArchitecture(),
+        currentVersion: app.getVersion()
       }
     }
 
@@ -391,7 +393,8 @@ export class AutoUpdateManager extends EventEmitter {
         url: f.url || '',
         size: f.size || 0
       })),
-      architecture: this.getSystemArchitecture()
+      architecture: this.getSystemArchitecture(),
+      currentVersion: app.getVersion()
     }
   }
 
