@@ -9,9 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: ${{ matrix.os }}
-
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -43,7 +42,29 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: pnpm run build:win -p never
 
-      - name: release
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist-${{ matrix.os }}
+          path: dist/
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v3
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -la artifacts/*/
+
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           name: Release ${{ github.ref_name }}
@@ -51,15 +72,15 @@ jobs:
           body_path: RELEASE_NOTES.md
           prerelease: true
           files: |
-            dist/*.exe
-            dist/*.zip
-            dist/*.dmg
-            dist/*.AppImage
-            dist/*.snap
-            dist/*.deb
-            dist/*.rpm
-            dist/*.tar.gz
-            dist/*.yml
-            dist/*.blockmap
+            artifacts/dist-*/*.exe
+            artifacts/dist-*/*.zip
+            artifacts/dist-*/*.dmg
+            artifacts/dist-*/*.AppImage
+            artifacts/dist-*/*.snap
+            artifacts/dist-*/*.deb
+            artifacts/dist-*/*.rpm
+            artifacts/dist-*/*.tar.gz
+            artifacts/dist-*/*.yml
+            artifacts/dist-*/*.blockmap
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
