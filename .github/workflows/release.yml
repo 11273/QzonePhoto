@@ -17,10 +17,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 22
 
@@ -43,7 +43,7 @@ jobs:
         run: pnpm run build:win -p never
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.os }}
           path: dist/
@@ -54,10 +54,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
@@ -65,7 +65,7 @@ jobs:
         run: ls -la artifacts/*/
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ github.ref_name }}
           draft: true
@@ -76,11 +76,11 @@ jobs:
             artifacts/dist-*/*.zip
             artifacts/dist-*/*.dmg
             artifacts/dist-*/*.AppImage
-            artifacts/dist-*/*.snap
             artifacts/dist-*/*.deb
-            artifacts/dist-*/*.rpm
-            artifacts/dist-*/*.tar.gz
-            artifacts/dist-*/*.yml
-            artifacts/dist-*/*.blockmap
+            artifacts/dist-*/latest*.yml
+            artifacts/dist-*/*.exe.blockmap
+            artifacts/dist-*/*.dmg.blockmap
+            artifacts/dist-*/*.zip.blockmap
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
