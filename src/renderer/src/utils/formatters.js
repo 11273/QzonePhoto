@@ -120,3 +120,52 @@ export const formatFilename = (filename, maxLength = 30) => {
 export const generateUniqueId = (prefix = 'id') => {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
+
+/**
+ * 格式化任务名称
+ * @param {string} name - 任务名称
+ * @returns {string} 格式化后的任务名称
+ */
+export const TASK_NAME_CONFIG = {
+  maxLength: 60, // 最大显示长度
+  prefixLength: 20, // 前缀保留长度
+  suffixLength: 10, // 后缀保留长度（不含扩展名）
+  prefixRatio: 0.5, // 当使用比例计算时，前缀占比
+  suffixRatio: 0.4 // 当使用比例计算时，后缀占比
+}
+export const formatTaskName = (name) => {
+  if (!name) return ''
+
+  const { maxLength, prefixLength, suffixLength, prefixRatio, suffixRatio } = TASK_NAME_CONFIG
+
+  // 获取文件名和扩展名
+  const lastDotIndex = name.lastIndexOf('.')
+  let fileName = name
+  let extension = ''
+
+  if (lastDotIndex > -1) {
+    fileName = name.substring(0, lastDotIndex)
+    extension = name.substring(lastDotIndex)
+  }
+
+  // 如果文件名长度没有超过限制，直接返回
+  if (name.length <= maxLength) {
+    return name
+  }
+
+  // 如果文件名（不含扩展名）长度超过限制，进行截断
+  if (fileName.length > prefixLength + suffixLength + 3) {
+    const prefix = fileName.substring(0, prefixLength)
+    const suffix = fileName.substring(fileName.length - suffixLength)
+    return `${prefix}...${suffix}${extension}`
+  }
+
+  // 如果整个名称超长但文件名部分不够长，直接截断整个名称
+  if (name.length > maxLength) {
+    const totalPrefix = Math.floor(maxLength * prefixRatio)
+    const totalSuffix = Math.floor(maxLength * suffixRatio)
+    return `${name.substring(0, totalPrefix)}...${name.substring(name.length - totalSuffix)}`
+  }
+
+  return name
+}

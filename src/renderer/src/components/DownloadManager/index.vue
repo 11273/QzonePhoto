@@ -233,7 +233,9 @@
                   <!-- 第一行：任务名称、状态、操作 -->
                   <div class="task-top-row">
                     <div class="task-basic">
-                      <div class="task-name">{{ task.name }}</div>
+                      <el-tooltip :content="task.name" placement="top" :show-after="500">
+                        <div class="task-name">{{ formatTaskName(task.name) }}</div>
+                      </el-tooltip>
                     </div>
 
                     <div class="task-right">
@@ -381,7 +383,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder, VideoPlay, VideoPause, Refresh, Delete, Loading } from '@element-plus/icons-vue'
 import Pagination from '@renderer/components/Pagination/index.vue'
-import { formatTaskCount } from '@renderer/utils/formatters'
+import { formatTaskCount, formatTaskName } from '@renderer/utils/formatters'
 import { APP_NAME } from '@shared/const'
 
 const props = defineProps({
@@ -1087,6 +1089,15 @@ const handleReplaceSettingChange = async (newValue) => {
       color: #fff;
     }
   }
+
+  // Tooltip 深色主题样式
+  :deep(.el-tooltip__popper) {
+    &.is-dark {
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #fff;
+    }
+  }
 }
 
 .header-actions {
@@ -1605,6 +1616,27 @@ const handleReplaceSettingChange = async (newValue) => {
                 }
               }
 
+              // 响应式调整
+              @media (max-width: 1200px) {
+                .task-content {
+                  .task-top-row {
+                    .task-basic {
+                      max-width: 250px;
+                    }
+                  }
+                }
+              }
+
+              @media (max-width: 992px) {
+                .task-content {
+                  .task-top-row {
+                    .task-basic {
+                      max-width: 200px;
+                    }
+                  }
+                }
+              }
+
               .task-content {
                 flex: 1;
                 min-width: 0;
@@ -1618,6 +1650,7 @@ const handleReplaceSettingChange = async (newValue) => {
                   .task-basic {
                     flex: 1;
                     min-width: 0;
+                    max-width: 300px; // 设置最大宽度，防止过度占用空间
 
                     .task-name {
                       color: #fff;
@@ -1628,6 +1661,11 @@ const handleReplaceSettingChange = async (newValue) => {
                       text-overflow: ellipsis;
                       flex: 1;
                       min-width: 0;
+                      width: 100%;
+
+                      // 确保自定义的省略文本也能正常显示
+                      display: block;
+                      line-height: 1.4;
                     }
                   }
 
