@@ -5,7 +5,15 @@ import { is } from '@electron-toolkit/utils'
 /**
  * 下载事件推送管理器
  * 负责将下载任务状态变化推送到渲染进程
- * 优化版本：支持差量推送、分页和大量任务处理
+ * 优化版本：支持差量推送、分页和大量任务处理，内置节流功能
+ *
+ * 节流功能说明：
+ * - 活跃任务数量推送：100ms节流，保证UI快速响应
+ * - 统计信息推送：500ms节流，减少重复推送
+ * - 活跃任务列表推送：300ms节流，平衡性能与实时性
+ * - 详细状态推送：200ms节流，用于首页状态显示
+ * - 立即推送：100ms节流，确保重要变化及时响应
+ * - 变化任务推送：200ms节流，避免任务变化推送过于频繁
  */
 export class DownloadEventPusher {
   constructor() {
@@ -36,6 +44,140 @@ export class DownloadEventPusher {
 
     // 新增：详细状态快照
     this.lastDetailedStatusSnapshot = null
+
+    // 节流器存储
+    this.throttlers = new Map()
+
+    // 初始化节流方法
+    this.initThrottledMethods()
+  }
+
+  /**
+   * 创建节流函数
+   * @param {Function} func - 需要节流的函数
+   * @param {number} delay - 节流延迟时间（毫秒）
+   * @param {string} key - 节流器的唯一标识
+   * @returns {Function} 节流后的函数
+   */
+  throttle(func, delay, key) {
+    let timeoutId
+    let lastExecTime = 0
+    let lastArgs = null
+
+    return (...args) => {
+      const currentTime = Date.now()
+      lastArgs = args
+
+      // 如果距离上次执行时间超过delay，立即执行
+      if (currentTime - lastExecTime >= delay) {
+        lastExecTime = currentTime
+        func.apply(this, args)
+        return
+      }
+
+      // 清除之前的定时器
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+        this.throttlers.delete(key)
+      }
+
+      // 计算剩余等待时间
+      const remainingTime = delay - (currentTime - lastExecTime)
+
+      // 设置新的定时器，确保在delay时间后执行最后一次调用
+      timeoutId = setTimeout(
+        () => {
+          lastExecTime = Date.now()
+          func.apply(this, lastArgs)
+          timeoutId = null
+          this.throttlers.delete(key)
+        },
+        Math.max(remainingTime, 10) // 至少10ms延迟
+      )
+
+      // 存储定时器ID，用于清理
+      this.throttlers.set(key, timeoutId)
+    }
+  }
+
+  /**
+   * 初始化节流方法
+   */
+  initThrottledMethods() {
+    // 为各种推送方法创建节流版本
+    this.throttledPushActiveCountUpdate = this.throttle(
+      this._pushActiveCountUpdate.bind(this),
+      100, // 100ms节流
+      'activeCount'
+    )
+
+    this.throttledPushStatsUpdate = this.throttle(
+      this._pushStatsUpdate.bind(this),
+      500, // 500ms节流
+      'stats'
+    )
+
+    this.throttledPushActiveTasksUpdate = this.throttle(
+      this._pushActiveTasksUpdate.bind(this),
+      300, // 300ms节流
+      'activeTasks'
+    )
+
+    this.throttledPushDetailedStatusUpdate = this.throttle(
+      this._pushDetailedStatusUpdate.bind(this),
+      200, // 200ms节流
+      'detailedStatus'
+    )
+
+    this.throttledTriggerImmediatePush = this.throttle(
+      this._triggerImmediatePush.bind(this),
+      100, // 100ms节流，保证及时响应
+      'immediatePush'
+    )
+
+    this.throttledPushChangedTasks = this.throttle(
+      this._pushChangedTasks.bind(this),
+      200, // 200ms节流，避免变化任务推送过于频繁
+      'changedTasks'
+    )
+  }
+
+  /**
+   * 清理所有节流器
+   */
+  clearThrottlers() {
+    this.throttlers.forEach((timeoutId) => {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+    })
+    this.throttlers.clear()
+  }
+
+  /**
+   * 重置特定节流器
+   * @param {string} key - 节流器标识
+   */
+  resetThrottler(key) {
+    const timeoutId = this.throttlers.get(key)
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+      this.throttlers.delete(key)
+    }
+  }
+
+  /**
+   * 获取节流器状态（用于调试）
+   */
+  getThrottleStatus() {
+    const status = {}
+    this.throttlers.forEach((timeoutId, key) => {
+      status[key] = {
+        hasActiveTimeout: !!timeoutId,
+        timeoutId: timeoutId
+      }
+    })
+    return status
   }
 
   // 设置下载服务引用
@@ -58,7 +200,7 @@ export class DownloadEventPusher {
 
     // 任务变化时始终立即推送活跃任务数量
     if (this.changedTaskIds.size > 0) {
-      this.triggerImmediatePush()
+      this.throttledTriggerImmediatePush()
     }
   }
 
@@ -105,20 +247,20 @@ export class DownloadEventPusher {
       if (!mainWindow || mainWindow.isDestroyed()) return
 
       // 始终推送活跃任务数量和详细状态（用于首页下载管理按钮显示）
-      this.pushActiveCountUpdate(mainWindow)
-      this.pushDetailedStatusUpdate(mainWindow)
+      this.throttledPushActiveCountUpdate(mainWindow)
+      this.throttledPushDetailedStatusUpdate(mainWindow)
 
       // 只有在下载管理器打开时才推送详细更新
       if (this.downloadManagerOpen) {
         // 推送统计信息（轻量级，总是推送）
-        this.pushStatsUpdate(mainWindow)
+        this.throttledPushStatsUpdate(mainWindow)
 
         // 推送活跃任务更新（差量推送）
-        this.pushActiveTasksUpdate(mainWindow)
+        this.throttledPushActiveTasksUpdate(mainWindow)
 
         // 如果有特定的变化任务，推送详细信息
         if (this.changedTaskIds.size > 0) {
-          this.pushChangedTasks(mainWindow)
+          this.throttledPushChangedTasks(mainWindow)
         }
       }
     } catch (error) {
@@ -126,8 +268,8 @@ export class DownloadEventPusher {
     }
   }
 
-  // 推送活跃任务数量更新（始终推送，不受弹窗状态影响）
-  pushActiveCountUpdate(mainWindow) {
+  // 推送活跃任务数量更新（始终推送，不受弹窗状态影响） - 内部方法
+  _pushActiveCountUpdate(mainWindow) {
     // 检查下载服务和数据库是否就绪
     if (!this.downloadService || !this.downloadService.dbInitialized) {
       return
@@ -145,8 +287,8 @@ export class DownloadEventPusher {
     }
   }
 
-  // 推送统计信息更新
-  pushStatsUpdate(mainWindow) {
+  // 推送统计信息更新 - 内部方法
+  _pushStatsUpdate(mainWindow) {
     // 检查下载服务和数据库是否就绪
     if (!this.downloadService || !this.downloadService.dbInitialized) {
       return
@@ -157,7 +299,7 @@ export class DownloadEventPusher {
 
     // 检查统计信息是否变化
     if (statsSnapshot !== this.lastStatsSnapshot) {
-      if (is.dev) console.debug('[DownloadEventPusher] 推送统计信息:', currentStats)
+      // if (is.dev) console.debug('[DownloadEventPusher] 推送统计信息:', currentStats)
       mainWindow.webContents.send(IPC_DOWNLOAD.STATS_UPDATE, currentStats)
 
       this.lastStatsSnapshot = statsSnapshot
@@ -167,8 +309,8 @@ export class DownloadEventPusher {
     }
   }
 
-  // 推送活跃任务更新
-  pushActiveTasksUpdate(mainWindow) {
+  // 推送活跃任务更新 - 内部方法
+  _pushActiveTasksUpdate(mainWindow) {
     // 检查下载服务和数据库是否就绪
     if (!this.downloadService || !this.downloadService.dbInitialized) {
       return
@@ -182,14 +324,14 @@ export class DownloadEventPusher {
       // 限制推送的任务数量，优先推送正在下载的任务
       const tasksToSend = this.prioritizeAndLimitTasks(activeTasks)
 
-      if (is.dev) console.debug('[DownloadEventPusher] 推送活跃任务:', tasksToSend.length, '个任务')
+      // if (is.dev) console.debug('[DownloadEventPusher] 推送活跃任务:', tasksToSend.length, '个任务')
       mainWindow.webContents.send(IPC_DOWNLOAD.ACTIVE_TASKS_UPDATE, tasksToSend)
       this.lastActiveTasksSnapshot = activeSnapshot
     }
   }
 
-  // 推送变化的任务
-  pushChangedTasks(mainWindow) {
+  // 推送变化的任务 - 内部方法
+  _pushChangedTasks(mainWindow) {
     if (this.changedTaskIds.size === 0) return
 
     const changedTasksArray = Array.from(this.changedTaskIds)
@@ -273,8 +415,8 @@ export class DownloadEventPusher {
       .join('|')
   }
 
-  // 立即推送（用于重要状态变化）
-  triggerImmediatePush() {
+  // 立即推送（用于重要状态变化） - 内部方法
+  _triggerImmediatePush() {
     // 检查下载服务和数据库是否就绪
     if (!this.downloadService || !this.downloadService.dbInitialized) {
       return
@@ -284,8 +426,8 @@ export class DownloadEventPusher {
       const mainWindow = windowManager.getMainWindow()
       if (mainWindow && !mainWindow.isDestroyed()) {
         // 始终推送活跃任务数量和详细状态
-        this.pushActiveCountUpdate(mainWindow)
-        this.pushDetailedStatusUpdate(mainWindow)
+        this._pushActiveCountUpdate(mainWindow)
+        this._pushDetailedStatusUpdate(mainWindow)
 
         // 只有在下载管理器打开时才推送详细信息
         if (this.downloadManagerOpen) {
@@ -300,7 +442,7 @@ export class DownloadEventPusher {
 
           // 如果有变化的任务，也推送
           if (this.changedTaskIds.size > 0) {
-            this.pushChangedTasks(mainWindow)
+            this._pushChangedTasks(mainWindow)
           }
 
           // 更新快照
@@ -373,7 +515,7 @@ export class DownloadEventPusher {
     if (is.dev) console.debug(`[DownloadEventPusher] 下载管理器状态: ${isOpen ? '打开' : '关闭'}`)
 
     // 无论打开还是关闭，都立即推送一次活跃任务数量
-    this.triggerImmediatePush()
+    this.throttledTriggerImmediatePush()
 
     if (isOpen) {
       if (is.dev) console.debug('[DownloadEventPusher] 管理器打开，开始详细推送')
@@ -392,23 +534,28 @@ export class DownloadEventPusher {
       downloadManagerOpen: this.downloadManagerOpen,
       lastActiveTasksCount: this.lastActiveTasksSnapshot
         ? this.lastActiveTasksSnapshot.split('|').length
-        : 0
+        : 0,
+      activeThrottlers: this.throttlers.size,
+      throttleDetails: this.getThrottleStatus()
     }
   }
 
   // 销毁推送器
   destroy() {
     this.stopPush()
+    this.clearThrottlers()
     this.downloadService = null
     this.lastActiveTasksSnapshot = null
     this.lastStatsSnapshot = null
     this.lastActiveCountSnapshot = null
     this.lastDetailedStatusSnapshot = null
     this.changedTaskIds.clear()
+
+    if (is.dev) console.debug('[DownloadEventPusher] 推送器已销毁')
   }
 
-  // 推送详细状态更新（始终推送，用于首页显示）
-  pushDetailedStatusUpdate(mainWindow) {
+  // 推送详细状态更新（始终推送，用于首页显示） - 内部方法
+  _pushDetailedStatusUpdate(mainWindow) {
     // 检查下载服务和数据库是否就绪
     if (!this.downloadService || !this.downloadService.dbInitialized) {
       return
@@ -443,6 +590,31 @@ export class DownloadEventPusher {
   // 生成详细状态快照
   generateDetailedStatusSnapshot(stats) {
     return `${stats.total}:${stats.waiting}:${stats.downloading}:${stats.completed}:${stats.error}:${stats.paused}:${stats.cancelled}`
+  }
+
+  // 公共方法包装器 - 使用节流版本
+  pushActiveCountUpdate(mainWindow) {
+    this.throttledPushActiveCountUpdate(mainWindow)
+  }
+
+  pushStatsUpdate(mainWindow) {
+    this.throttledPushStatsUpdate(mainWindow)
+  }
+
+  pushActiveTasksUpdate(mainWindow) {
+    this.throttledPushActiveTasksUpdate(mainWindow)
+  }
+
+  pushDetailedStatusUpdate(mainWindow) {
+    this.throttledPushDetailedStatusUpdate(mainWindow)
+  }
+
+  triggerImmediatePush() {
+    this.throttledTriggerImmediatePush()
+  }
+
+  pushChangedTasks(mainWindow) {
+    this.throttledPushChangedTasks(mainWindow)
   }
 }
 
