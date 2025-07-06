@@ -130,9 +130,7 @@ export class AutoUpdateManager extends EventEmitter {
     autoUpdater.disableDifferentialDownload = true
 
     // 开发环境配置
-    if (process.env.NODE_ENV === 'development') {
-      autoUpdater.forceDevUpdateConfig = true
-    }
+    autoUpdater.forceDevUpdateConfig = false
 
     // 自定义请求头，包含架构信息
     autoUpdater.requestHeaders = {
