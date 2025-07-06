@@ -20,7 +20,7 @@ export function createDownloadHandlers(service) {
 
     // 添加相册下载任务
     [IPC_DOWNLOAD.ADD_ALBUM]: async (event, context) => {
-      return await downloadService.addAlbumTasks(context.payload)
+      return await downloadService.addAlbumTasks(context.payload, context.headers)
     },
 
     // 获取任务列表（分页）

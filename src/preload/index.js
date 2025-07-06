@@ -20,6 +20,14 @@ try {
     getPhotoList: (data) => ipcClient.call(IPC_PHOTO.PHOTO_LIST, data),
     // 获取我的相册中的照片
     getPhotoByTopicId: (data) => ipcClient.call(IPC_PHOTO.PHOTO_BY_TOPIC_ID, data),
+    // 获取照片浮层视图列表
+    getPhotoFloatviewList: (data) => ipcClient.call(IPC_PHOTO.PHOTO_FLOATVIEW_LIST, data),
+    // 获取照片或视频信息
+    getPhotoOrVideoInfo: (data) => ipcClient.call(IPC_PHOTO.PHOTO_OR_VIDEO_INFO, data),
+    // 获取视频信息
+    getVideoInfo: (data) => ipcClient.call(IPC_PHOTO.VIDEO_INFO, data),
+    // 批量获取视频信息
+    batchGetVideoInfo: (data) => ipcClient.call(IPC_PHOTO.BATCH_VIDEO_INFO, data),
 
     // 下载相关API
     download: {

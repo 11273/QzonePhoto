@@ -83,13 +83,18 @@
                     <div class="privacy-text">隐私保护</div>
                   </div>
 
+                  <!-- 视频图标 -->
+                  <span v-if="photo.is_video" class="video-badge">
+                    <el-icon><VideoPlay /></el-icon>
+                  </span>
+
                   <!-- 照片信息覆盖层 -->
                   <div class="photo-overlay">
                     <div class="photo-info">
                       <span class="photo-time">{{ formatTime(photo.modifytime) }}</span>
-                      <span v-if="photo.is_video" class="video-badge">
+                      <!-- <span v-if="photo.is_video" class="video-badge">
                         <el-icon><VideoPlay /></el-icon>
-                      </span>
+                      </span> -->
                     </div>
 
                     <!-- 选择框 -->
@@ -145,12 +150,64 @@
 
     <!-- 图片预览 -->
     <el-image-viewer
-      v-if="previewVisible"
+      v-if="previewVisible && !isVideoPreview"
       :url-list="previewImages"
       :initial-index="previewIndex"
       :hide-on-click-modal="true"
       @close="previewVisible = false"
     />
+
+    <!-- 视频预览对话框 -->
+    <el-dialog
+      v-model="videoPreviewVisible"
+      :title="getVideoTitle(currentVideoInfo)"
+      width="60%"
+      :append-to-body="true"
+      :close-on-click-modal="true"
+      class="video-preview-dialog"
+      @close="closeVideoPreview"
+    >
+      <div class="video-preview-container">
+        <video
+          v-if="currentVideoInfo && getVideoPlayUrl(currentVideoInfo)"
+          ref="videoPlayerRef"
+          :src="getVideoPlayUrl(currentVideoInfo)"
+          :poster="currentVideoInfo.cover_url"
+          controls
+          preload="metadata"
+          class="video-player"
+          @error="handleVideoError"
+          @loadstart="handleVideoLoadStart"
+          @loadeddata="handleVideoLoaded"
+        >
+          您的浏览器不支持视频播放
+        </video>
+        <div v-else class="video-loading">
+          <el-icon class="loading-icon"><Loading /></el-icon>
+          <p>正在获取视频信息...</p>
+        </div>
+      </div>
+
+      <!-- 视频信息 -->
+      <div v-if="currentVideoInfo && hasVideoInfo(currentVideoInfo)" class="video-info">
+        <div v-if="currentVideoInfo.video_size > 0" class="info-item">
+          <span class="label">大小:</span>
+          <span class="value">{{ formatFileSize(currentVideoInfo.video_size) }}</span>
+        </div>
+        <div v-if="currentVideoInfo.video_duration > 0" class="info-item">
+          <span class="label">时长:</span>
+          <span class="value">{{ formatDuration(currentVideoInfo.video_duration) }}</span>
+        </div>
+        <div v-if="currentVideoInfo.video_format" class="info-item">
+          <span class="label">格式:</span>
+          <span class="value">{{ currentVideoInfo.video_format.toUpperCase() }}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">播放源:</span>
+          <span class="value">{{ getVideoPlaySource(currentVideoInfo) }}</span>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -203,6 +260,12 @@ const hasMore = ref(true)
 const previewVisible = ref(false)
 const previewIndex = ref(0)
 const previewImages = ref([])
+
+// 视频预览
+const videoPreviewVisible = ref(false)
+const videoPlayerRef = ref(null)
+const currentVideoInfo = ref(null)
+const isVideoPreview = ref(false)
 
 // 取消标志 - 添加到组件顶部
 const cancelFlags = ref(new Map()) // 存储每个相册的取消标志
@@ -269,15 +332,24 @@ const cleanPhotoData = (photos) => {
     lloc: photo.lloc,
     modifytime: photo.modifytime,
     is_video: photo.is_video,
-    size: photo.size || 0
+    size: photo.size || 0,
+    // 保留关键字段
+    picKey: photo.picKey
   }))
 }
 
 // 添加下载任务的公共函数 - 优化批量添加体验
 const addDownloadTask = async (albumData) => {
   try {
+    // 确保传递用户信息
+    const enrichedAlbumData = {
+      ...albumData,
+      uin: userStore.userInfo?.uin || 'unknown',
+      p_skey: userStore.PSkey || null
+    }
+
     // 如果照片数量很多，显示提示
-    const photoCount = albumData.photos?.length || 0
+    const photoCount = enrichedAlbumData.photos?.length || 0
     if (photoCount > 100) {
       const loadingInstance = ElLoading.service({
         lock: true,
@@ -286,7 +358,7 @@ const addDownloadTask = async (albumData) => {
       })
 
       try {
-        await window.QzoneAPI.download.addAlbum(albumData)
+        await window.QzoneAPI.download.addAlbum(enrichedAlbumData)
         loadingInstance.close()
         return { success: true }
       } catch (error) {
@@ -294,7 +366,7 @@ const addDownloadTask = async (albumData) => {
         throw error
       }
     } else {
-      await window.QzoneAPI.download.addAlbum(albumData)
+      await window.QzoneAPI.download.addAlbum(enrichedAlbumData)
       return { success: true }
     }
   } catch (error) {
@@ -777,6 +849,24 @@ const formatTime = (timeStr) => {
   })
 }
 
+// 格式化文件大小
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+// 格式化视频时长
+const formatDuration = (seconds) => {
+  if (seconds === 0) return '00:00'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+}
+
 // 设置IntersectionObserver监听加载更多
 const setupIntersectionObserver = () => {
   if (observer) {
@@ -808,10 +898,56 @@ const setupIntersectionObserver = () => {
 }
 
 // 处理照片点击事件
-const handlePhotoClick = (photo, event, index) => {
+const handlePhotoClick = async (photo, event, index) => {
   event.stopPropagation()
-  // 单击：预览照片
-  previewPhoto(photo, index)
+
+  // 如果是视频，获取详细信息并预览
+  if (photo.is_video) {
+    try {
+      // 显示加载状态
+      currentVideoInfo.value = { ...photo, video_play_url: null }
+      isVideoPreview.value = true
+      videoPreviewVisible.value = true
+
+      // 简化参数提取逻辑 - 使用当前相册的ID作为topicId
+      const topicId = currentAlbum.value?.id
+      const picKey = photo.picKey || photo.lloc
+      const hostUin = userStore.userInfo.uin
+
+      // 参数验证
+      if (!topicId || !picKey) {
+        console.error('视频预览参数不完整:', { topicId, picKey, hostUin })
+        // eslint-disable-next-line no-undef
+        ElMessage.error('视频信息不完整，无法预览')
+        closeVideoPreview()
+        return
+      }
+
+      // 获取视频详细信息
+      const videoInfo = await window.QzoneAPI.getVideoInfo({
+        hostUin,
+        topicId,
+        picKey
+      })
+
+      if (videoInfo) {
+        currentVideoInfo.value = videoInfo
+      } else {
+        console.log('未获取到视频信息')
+        // eslint-disable-next-line no-undef
+        ElMessage.warning('无法获取视频播放地址，可能是权限限制')
+        closeVideoPreview()
+      }
+    } catch (error) {
+      console.error('获取视频信息失败:', error)
+      // eslint-disable-next-line no-undef
+      ElMessage.error('获取视频信息失败')
+      closeVideoPreview()
+    }
+  } else {
+    // 单击：预览图片
+    previewPhoto(photo, index)
+  }
 }
 
 // 选择照片
@@ -841,6 +977,134 @@ const previewPhoto = (photo, index) => {
 
   previewIndex.value = globalIndex >= 0 ? globalIndex : index
   previewVisible.value = true
+}
+
+// 关闭视频预览
+const closeVideoPreview = () => {
+  isVideoPreview.value = false
+  currentVideoInfo.value = null
+  videoPreviewVisible.value = false
+}
+
+// 处理视频加载错误
+const handleVideoError = (event) => {
+  const error = event.target.error
+  console.error('视频加载失败:', error)
+
+  // 获取当前尝试播放的URL
+  const currentSrc = event.target.src
+
+  if (currentVideoInfo.value) {
+    // 如果当前使用的是 download_url，尝试回退到 play_url
+    if (
+      currentSrc === currentVideoInfo.value.video_download_url &&
+      currentVideoInfo.value.video_play_url
+    ) {
+      console.log('MP4格式播放失败，尝试回退到HLS格式')
+      event.target.src = currentVideoInfo.value.video_play_url
+      return
+    }
+  }
+
+  // 根据错误类型给出不同的提示
+  let errorMessage = '视频加载失败'
+  switch (error?.code) {
+    case 1: // MEDIA_ERR_ABORTED
+      errorMessage = '视频播放被中止'
+      break
+    case 2: // MEDIA_ERR_NETWORK
+      errorMessage = '网络错误，无法加载视频'
+      break
+    case 3: // MEDIA_ERR_DECODE
+      errorMessage = '视频解码失败'
+      break
+    case 4: // MEDIA_ERR_SRC_NOT_SUPPORTED
+      errorMessage = '不支持的视频格式或源不可用'
+      break
+    default:
+      errorMessage = `视频播放失败 (错误代码: ${error?.code || '未知'})`
+  }
+
+  // eslint-disable-next-line no-undef
+  ElMessage.error(errorMessage)
+  console.error('视频播放详细错误:', {
+    code: error?.code,
+    message: error?.message,
+    currentSrc,
+    videoInfo: {
+      download_url: currentVideoInfo.value?.video_download_url,
+      play_url: currentVideoInfo.value?.video_play_url
+    }
+  })
+}
+
+// 处理视频加载开始
+const handleVideoLoadStart = () => {
+  // 可以在这里显示加载提示
+}
+
+// 处理视频加载完成
+const handleVideoLoaded = () => {
+  // 可以在这里隐藏加载提示
+}
+
+// 获取视频播放URL
+const getVideoPlayUrl = (videoInfo) => {
+  if (!videoInfo) return null
+
+  // 优先使用 mp4 格式的 download_url，因为浏览器原生支持
+  if (videoInfo.video_download_url) {
+    return videoInfo.video_download_url
+  }
+
+  // 如果没有 download_url，尝试使用 play_url（可能需要 HLS.js 支持）
+  if (videoInfo.video_play_url) {
+    return videoInfo.video_play_url
+  }
+
+  return null
+}
+
+// 获取视频播放源类型
+const getVideoPlaySource = (videoInfo) => {
+  if (!videoInfo) return '未知'
+
+  const playUrl = getVideoPlayUrl(videoInfo)
+  if (!playUrl) return '无可用源'
+
+  if (videoInfo.video_download_url && playUrl === videoInfo.video_download_url) {
+    return 'MP4'
+  }
+
+  if (videoInfo.video_play_url && playUrl === videoInfo.video_play_url) {
+    return 'HLS'
+  }
+
+  return '未知格式'
+}
+
+// 检查视频信息是否有有效数据
+const hasVideoInfo = (videoInfo) => {
+  if (!videoInfo) return false
+
+  return (
+    videoInfo.video_size > 0 ||
+    videoInfo.video_duration > 0 ||
+    videoInfo.video_format ||
+    getVideoPlayUrl(videoInfo)
+  )
+}
+
+// 获取视频标题，处理过长的标题
+const getVideoTitle = (videoInfo) => {
+  if (!videoInfo || !videoInfo.name) return '视频预览'
+
+  const title = videoInfo.name.trim()
+  if (title.length > 30) {
+    return title.substring(0, 30) + '...'
+  }
+
+  return title
 }
 
 // 清除选择
@@ -1126,6 +1390,15 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   height: 100%;
+
+  .video-badge {
+    color: white;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 999;
+  }
 }
 
 .photo-image {
@@ -1183,11 +1456,6 @@ onUnmounted(() => {
 
   .photo-time {
     font-size: 12px;
-    color: white;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-  }
-
-  .video-badge {
     color: white;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
   }
@@ -1376,6 +1644,117 @@ onUnmounted(() => {
     color: rgba(255, 255, 255, 0.8);
     font-weight: 500;
     text-align: center;
+  }
+}
+
+.video-preview-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px;
+  background-color: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.video-player {
+  width: 100%;
+  height: 50vh;
+  border-radius: 4px;
+  object-fit: contain;
+  background: #000;
+}
+
+.video-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: rgba(255, 255, 255, 0.6);
+
+  .loading-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+    animation: spin 1s linear infinite;
+  }
+
+  p {
+    font-size: 14px;
+    margin-top: 8px;
+  }
+}
+
+.video-info {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+  .info-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: linear-gradient(135deg, #409eff 0%, #67c23a 100%);
+    border-radius: 20px;
+    border: none;
+    color: white;
+    font-weight: 500;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+    .label {
+      font-weight: 600;
+      color: white;
+      font-size: 12px;
+    }
+
+    .value {
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+    }
+  }
+
+  @media (max-width: 768px) {
+    gap: 8px;
+    padding: 8px;
+
+    .info-item {
+      padding: 3px 6px;
+      font-size: 11px;
+
+      .label,
+      .value {
+        font-size: 11px;
+      }
+    }
+  }
+}
+
+/* 视频对话框在移动设备上的优化 */
+:deep(.video-preview-dialog) {
+  @media (max-width: 768px) {
+    --el-dialog-width: 95% !important;
+  }
+
+  @media (max-width: 480px) {
+    --el-dialog-width: 98% !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .video-preview-container {
+    padding: 8px;
+  }
+
+  .video-player {
+    height: 40vh;
   }
 }
 </style>

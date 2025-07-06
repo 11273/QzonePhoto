@@ -12,6 +12,18 @@ export function createPhotoHandlers(service) {
     },
     [IPC_PHOTO.PHOTO_BY_TOPIC_ID]: async (_, { payload, headers }) => {
       return photoService.getPhotoByTopicId(payload, headers)
+    },
+    [IPC_PHOTO.PHOTO_FLOATVIEW_LIST]: async (_, { payload, headers }) => {
+      return photoService.getPhotoFloatviewList(payload, headers)
+    },
+    [IPC_PHOTO.PHOTO_OR_VIDEO_INFO]: async (_, { payload, headers }) => {
+      return photoService.getPhotoOrVideoInfo(payload, headers)
+    },
+    [IPC_PHOTO.VIDEO_INFO]: async (_, { payload, headers }) => {
+      return photoService.getVideoInfo(payload, headers)
+    },
+    [IPC_PHOTO.BATCH_VIDEO_INFO]: async (_, { payload, headers }) => {
+      return photoService.batchGetVideoInfo(payload, headers)
     }
   }
 }

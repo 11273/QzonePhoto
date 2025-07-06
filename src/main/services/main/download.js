@@ -7,6 +7,7 @@ import { is } from '@electron-toolkit/utils'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import { APP_NAME } from '@shared/const'
+import { ServiceNames } from '@main/services/service-manager'
 // 直接定义必要的默认配置，避免使用外部常量系统
 const DEFAULT_CONCURRENCY = 3
 const DEFAULT_PAGE_SIZE = 50
@@ -56,6 +57,9 @@ export class DownloadService {
     this.db = null
     this.dbPath = null // 动态设置，基于用户ID
     this.dbInitialized = false // 添加初始化标志
+
+    // 服务管理器引用
+    this.serviceManager = null
 
     // 异步初始化（使用默认数据库）
     this.initializeAsync()
@@ -358,12 +362,18 @@ export class DownloadService {
   }
 
   // 批量添加相册任务 - 优化大批量操作
-  async addAlbumTasks(albumData) {
-    const { album, photos, uin } = albumData
+  async addAlbumTasks(albumData, headers) {
+    const { album, photos, uin, p_skey } = albumData
+
+    // 提取用户信息
+    const userInfo = {
+      uin: uin || this.currentUin,
+      p_skey: p_skey || null
+    }
 
     const albumDir = path.join(
       this.downloadPath,
-      this.sanitizeFilename(uin || 'unknown'),
+      this.sanitizeFilename(userInfo.uin || 'unknown'),
       this.sanitizeFilename(album.name || '未命名相册')
     )
 
@@ -373,7 +383,7 @@ export class DownloadService {
     // 分批处理照片
     for (let i = 0; i < photos.length; i += batchSize) {
       const batch = photos.slice(i, i + batchSize)
-      const batchIds = await this.processBatch(batch, albumDir, album)
+      const batchIds = await this.processBatch(batch, albumDir, album, userInfo, headers)
       taskIds.push(...batchIds)
 
       // 触发批量更新
@@ -395,20 +405,24 @@ export class DownloadService {
   }
 
   // 处理单批次任务
-  async processBatch(photos, albumDir, album) {
+  async processBatch(photos, albumDir, album, userInfo = null, headers = null) {
     const tasks = []
     const taskIds = []
 
-    // 创建任务对象
-    for (let i = 0; i < photos.length; i++) {
-      const photo = photos[i]
+    // 分离视频和图片
+    const videos = photos.filter((photo) => photo.is_video)
+    const images = photos.filter((photo) => !photo.is_video)
+
+    // 首先处理图片（不需要额外的API调用）
+    for (let i = 0; i < images.length; i++) {
+      const photo = images[i]
       const filename = this.generatePhotoFilename(photo)
       const task = this.createTask({
         url: photo.raw || photo.url || photo.pre,
         filename,
         directory: albumDir,
         total: photo.size || 0,
-        type: photo.is_video ? 'video' : 'image',
+        type: 'image',
         thumbnailUrl: photo.pre || photo.url,
         albumId: album.id || album.name,
         albumName: album.name,
@@ -416,6 +430,97 @@ export class DownloadService {
       })
       tasks.push(task)
       taskIds.push(task.id)
+    }
+
+    // 处理视频（需要获取详细信息）
+    if (videos.length > 0) {
+      try {
+        // 如果没有传递用户信息，尝试从当前用户获取
+        if (!userInfo) {
+          userInfo = this.getCurrentUserInfo()
+        }
+
+        if (!userInfo?.uin || !userInfo?.p_skey) {
+          console.error('无法获取用户信息，跳过视频处理')
+          // 如果没有用户信息，使用原始信息处理视频
+          for (const video of videos) {
+            const filename = this.generatePhotoFilename(video)
+            const task = this.createTask({
+              url: video.raw || video.url || video.pre,
+              filename,
+              directory: albumDir,
+              total: video.size || 0,
+              type: 'video',
+              thumbnailUrl: video.pre || video.url,
+              albumId: album.id || album.name,
+              albumName: album.name,
+              priority: PRIORITY.NORMAL
+            })
+            tasks.push(task)
+            taskIds.push(task.id)
+          }
+        } else {
+          // 逐个获取视频详细信息
+          for (const video of videos) {
+            try {
+              const videoInfo = await this.getVideoDetailInfo(video, userInfo, album, headers)
+              if (videoInfo) {
+                const filename = this.generatePhotoFilename(videoInfo)
+                const task = this.createTask({
+                  url:
+                    videoInfo.video_download_url || videoInfo.raw || videoInfo.url || videoInfo.pre,
+                  filename,
+                  directory: albumDir,
+                  total: videoInfo.video_size || videoInfo.size || 0,
+                  type: 'video',
+                  thumbnailUrl: videoInfo.cover_url || videoInfo.pre || videoInfo.url,
+                  albumId: album.id || album.name,
+                  albumName: album.name,
+                  priority: PRIORITY.NORMAL
+                })
+                tasks.push(task)
+                taskIds.push(task.id)
+              } else {
+                // 如果获取视频详细信息失败，使用原始信息
+                console.warn(`获取视频详细信息失败，使用原始信息: ${video.name}`)
+                const filename = this.generatePhotoFilename(video)
+                const task = this.createTask({
+                  url: video.raw || video.url || video.pre,
+                  filename,
+                  directory: albumDir,
+                  total: video.size || 0,
+                  type: 'video',
+                  thumbnailUrl: video.pre || video.url,
+                  albumId: album.id || album.name,
+                  albumName: album.name,
+                  priority: PRIORITY.NORMAL
+                })
+                tasks.push(task)
+                taskIds.push(task.id)
+              }
+            } catch (error) {
+              console.error(`处理视频 ${video.name} 失败:`, error)
+              // 出错时使用原始信息
+              const filename = this.generatePhotoFilename(video)
+              const task = this.createTask({
+                url: video.raw || video.url || video.pre,
+                filename,
+                directory: albumDir,
+                total: video.size || 0,
+                type: 'video',
+                thumbnailUrl: video.pre || video.url,
+                albumId: album.id || album.name,
+                albumName: album.name,
+                priority: PRIORITY.NORMAL
+              })
+              tasks.push(task)
+              taskIds.push(task.id)
+            }
+          }
+        }
+      } catch (error) {
+        console.error('处理视频批次失败:', error)
+      }
     }
 
     // 批量添加到数据库
@@ -680,9 +785,9 @@ export class DownloadService {
           task.speed = 0
           task.downloaded = task.total || 0
 
-          if (is.dev) {
-            console.debug(`[DownloadService] 文件已存在，跳过下载: ${task.filename}`)
-          }
+          // if (is.dev) {
+          //   console.debug(`[DownloadService] 文件已存在，跳过下载: ${task.filename}`)
+          // }
 
           // 完成的任务从内存中移除
           this.activeTasks.delete(task.id)
@@ -1137,6 +1242,66 @@ export class DownloadService {
     const shortId = this.sanitizeFilename(uniqueId)
 
     return `${dateStr}_${timeStr}_${this.sanitizeFilename(baseName)}_${shortId}${extension}`
+  }
+
+  // 获取当前用户信息（从相册数据中提取）
+  getCurrentUserInfo() {
+    // 返回当前用户的 UIN，p_skey 需要从前端传递
+    return {
+      uin: this.currentUin
+    }
+  }
+
+  // 从相册数据中提取用户信息
+  extractUserInfoFromAlbum(albumData) {
+    // 从相册数据中提取用户信息
+    const userInfo = {
+      uin: albumData.uin || this.currentUin,
+      p_skey: albumData.p_skey || null
+    }
+    return userInfo
+  }
+
+  // 获取视频详细信息
+  async getVideoDetailInfo(video, userInfo, albumInfo = null, headers = null) {
+    try {
+      // 从服务管理器获取照片服务
+      const photoService = this.serviceManager?.get(ServiceNames.PHOTO)
+      if (!photoService) {
+        console.error('无法获取照片服务')
+        return null
+      }
+
+      // 使用相册ID作为topicId
+      const topicId = albumInfo?.id
+      const picKey = video.picKey || video.lloc
+      const hostUin = userInfo.uin
+
+      // 参数验证
+      if (!topicId || !picKey) {
+        console.error('获取视频详细信息参数不完整:', { topicId, picKey, hostUin })
+        return null
+      }
+
+      // 准备API参数
+      const params = {
+        hostUin,
+        topicId,
+        picKey
+      }
+
+      // 调用视频信息API
+      const videoInfo = await photoService.getVideoInfo(params, headers)
+      return videoInfo
+    } catch (error) {
+      console.error('获取视频详细信息失败:', error)
+      return null
+    }
+  }
+
+  // 设置服务管理器引用
+  setServiceManager(serviceManager) {
+    this.serviceManager = serviceManager
   }
 
   // 清理资源

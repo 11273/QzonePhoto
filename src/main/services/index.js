@@ -25,5 +25,11 @@ export async function registerService() {
   // 初始化所有
   await services.initAll()
 
+  // 设置下载服务的服务管理器引用
+  const downloadService = services.get(ServiceNames.DOWNLOAD)
+  if (downloadService) {
+    downloadService.setServiceManager(services)
+  }
+
   return services
 }

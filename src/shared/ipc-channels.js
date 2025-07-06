@@ -15,7 +15,15 @@ export const IPC_PHOTO = {
   /** 获取我的相册列表 */
   PHOTO_LIST: 'photo:getPhotoList',
   /** 获取我的相册中的照片 */
-  PHOTO_BY_TOPIC_ID: 'photo:getPhotoByTopicId'
+  PHOTO_BY_TOPIC_ID: 'photo:getPhotoByTopicId',
+  /** 获取照片浮层视图列表 */
+  PHOTO_FLOATVIEW_LIST: 'photo:getPhotoFloatviewList',
+  /** 获取照片或视频信息 */
+  PHOTO_OR_VIDEO_INFO: 'photo:getPhotoOrVideoInfo',
+  /** 获取视频信息 */
+  VIDEO_INFO: 'photo:getVideoInfo',
+  /** 批量获取视频信息 */
+  BATCH_VIDEO_INFO: 'photo:batchGetVideoInfo'
 }
 
 export const IPC_USER = {
