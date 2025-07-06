@@ -100,10 +100,19 @@ export class WindowManager {
       }
     })
 
-    // 图片防盗链处理
-    const filter = { urls: ['*://*.qq.com/*', '*://*.qpic.cn/*'] }
+    const filter = { urls: ['*://*.qq.com/*', '*://*.qpic.cn/*', '*://*/*'] }
+
     session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, cb) => {
-      details.requestHeaders['referer'] = 'https://user.qzone.qq.com/'
+      // 根据 URL 设置对应的 referer
+      let referer = details.url // 默认设置为请求的 URL 本身
+      // 提取域名
+      try {
+        const url = new URL(details.url)
+        referer = url.origin // 设置为请求的源（协议+域名）
+      } catch (e) {
+        console.error('URL 解析失败:', details.url, e)
+      }
+      details.requestHeaders['referer'] = referer
       cb({ requestHeaders: details.requestHeaders })
     })
 

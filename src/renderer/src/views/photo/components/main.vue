@@ -192,7 +192,7 @@
       <div v-if="currentVideoInfo && hasVideoInfo(currentVideoInfo)" class="video-info">
         <div v-if="currentVideoInfo.video_size > 0" class="info-item">
           <span class="label">大小:</span>
-          <span class="value">{{ formatFileSize(currentVideoInfo.video_size) }}</span>
+          <span class="value">{{ formatBytes(currentVideoInfo.video_size) }}</span>
         </div>
         <div v-if="currentVideoInfo.video_duration > 0" class="info-item">
           <span class="label">时长:</span>
@@ -221,6 +221,7 @@ import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import Top from './top.vue'
 import { generateUniqueAlbumName } from '@renderer/utils'
+import { formatBytes } from '@renderer/utils/formatters'
 
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
@@ -847,15 +848,6 @@ const formatTime = (timeStr) => {
     hour: '2-digit',
     minute: '2-digit'
   })
-}
-
-// 格式化文件大小
-const formatFileSize = (bytes) => {
-  if (bytes === 0) return '0 Bytes'
-  const k = 1024
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 // 格式化视频时长

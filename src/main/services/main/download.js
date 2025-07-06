@@ -463,7 +463,10 @@ export class DownloadService {
                 const filename = this.generatePhotoFilename(videoInfo)
                 const task = this.createTask({
                   url:
-                    videoInfo.video_download_url || videoInfo.raw || videoInfo.url || videoInfo.pre,
+                    videoInfo.video_download_url ||
+                    videoInfo.video_play_url ||
+                    videoInfo?.video_info?.video_url ||
+                    videoInfo.pre,
                   filename,
                   directory: albumDir,
                   total: videoInfo.video_size || videoInfo.size || 0,

@@ -233,7 +233,12 @@
                   <!-- 第一行：任务名称、状态、操作 -->
                   <div class="task-top-row">
                     <div class="task-basic">
-                      <el-tooltip :content="task.name" placement="top" :show-after="500">
+                      <el-tooltip
+                        :content="`${task.directory}/${task.name}`"
+                        placement="top"
+                        :show-after="500"
+                        popper-class="custom-tooltip"
+                      >
                         <div class="task-name">{{ formatTaskName(task.name) }}</div>
                       </el-tooltip>
                     </div>
@@ -572,7 +577,7 @@ const cleanupEventListeners = () => {
 const handleStatsUpdate = (...args) => {
   // 通过ipc-client传递时，数据在第一个参数中
   const stats = args[0]
-  console.debug('[DownloadManager] 收到统计信息更新:', stats)
+  // console.debug('[DownloadManager] 收到统计信息更新:', stats)
   taskStats.value = stats || taskStats.value
 }
 
@@ -580,21 +585,21 @@ const handleStatsUpdate = (...args) => {
 const handleActiveTasksUpdate = (...args) => {
   // 通过ipc-client传递时，数据在第一个参数中
   const activeTasks = args[0]
-  console.debug('[DownloadManager] 收到活跃任务更新:', activeTasks?.length || 0, '个任务')
+  // console.debug('[DownloadManager] 收到活跃任务更新:', activeTasks?.length || 0, '个任务')
 
   if (!Array.isArray(activeTasks)) return
 
   // 调试信息：显示下载中任务的速度
   const downloadingTasks = activeTasks.filter((task) => task.status === 'downloading')
   if (downloadingTasks.length > 0) {
-    console.debug(
-      '[DownloadManager] 下载中任务速度:',
-      downloadingTasks.map((task) => ({
-        name: task.name,
-        speed: task.speed,
-        progress: task.progress
-      }))
-    )
+    // console.debug(
+    //   '[DownloadManager] 下载中任务速度:',
+    //   downloadingTasks.map((task) => ({
+    //     name: task.name,
+    //     speed: task.speed,
+    //     progress: task.progress
+    //   }))
+    // )
   }
 
   // 更新当前页面中的活跃任务 - 只更新变化的字段
@@ -622,7 +627,7 @@ const handleActiveTasksUpdate = (...args) => {
 const handleTaskChanges = (...args) => {
   // 通过ipc-client传递时，数据在第一个参数中
   const changedTasks = args[0]
-  console.debug('[DownloadManager] 收到任务变化:', changedTasks?.length || 0, '个任务')
+  // console.debug('[DownloadManager] 收到任务变化:', changedTasks?.length || 0, '个任务')
   if (!Array.isArray(changedTasks)) return
 
   let needReload = false
@@ -654,7 +659,7 @@ const handleTaskChanges = (...args) => {
 const handleTasksPage = (...args) => {
   // 通过ipc-client传递时，数据在第一个参数中
   const pageData = args[0]
-  console.debug('[DownloadManager] 收到分页数据:', pageData)
+  // console.debug('[DownloadManager] 收到分页数据:', pageData)
   if (pageData && pageData.tasks) {
     currentPageTasks.value = pageData.tasks
     if (pageData.pagination) {
@@ -1058,6 +1063,12 @@ const handleReplaceSettingChange = async (newValue) => {
   }
 }
 </script>
+<style lang="scss">
+.custom-tooltip {
+  max-width: 600px !important;
+  word-break: break-all;
+}
+</style>
 
 <style lang="scss" scoped>
 // 原有样式保持不变，从layouts.vue中复制过来
