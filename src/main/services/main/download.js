@@ -363,12 +363,12 @@ export class DownloadService {
 
   // 批量添加相册任务 - 优化大批量操作
   async addAlbumTasks(albumData, headers) {
-    const { album, photos, uin, p_skey } = albumData
+    const { album, photos, uin } = albumData
 
     // 提取用户信息
     const userInfo = {
       uin: uin || this.currentUin,
-      p_skey: p_skey || null
+      p_skey: headers.p_skey || null
     }
 
     const albumDir = path.join(
@@ -435,13 +435,8 @@ export class DownloadService {
     // 处理视频（需要获取详细信息）
     if (videos.length > 0) {
       try {
-        // 如果没有传递用户信息，尝试从当前用户获取
-        if (!userInfo) {
-          userInfo = this.getCurrentUserInfo()
-        }
-
         if (!userInfo?.uin || !userInfo?.p_skey) {
-          console.error('无法获取用户信息，跳过视频处理')
+          console.error('无法获取用户信息，跳过视频处理', userInfo)
           // 如果没有用户信息，使用原始信息处理视频
           for (const video of videos) {
             const filename = this.generatePhotoFilename(video)
@@ -797,9 +792,9 @@ export class DownloadService {
         } else {
           // 设置为替换，删除现有文件
           await fs.promises.unlink(filePath).catch(() => {})
-          if (is.dev) {
-            console.debug(`[DownloadService] 文件已存在，将被替换: ${task.filename}`)
-          }
+          // if (is.dev) {
+          //   console.debug(`[DownloadService] 文件已存在，将被替换: ${task.filename}`)
+          // }
         }
       }
 
@@ -873,11 +868,11 @@ export class DownloadService {
           lastBytes = task.downloaded
 
           // 调试信息：显示速度计算
-          if (is.dev && task.speed > 0) {
-            console.debug(
-              `[DownloadService] 任务 ${task.name} 速度: ${task.speed} B/s (${Math.round(task.speed / 1024)} KB/s)`
-            )
-          }
+          // if (is.dev && task.speed > 0) {
+          //   console.debug(
+          //     `[DownloadService] 任务 ${task.name} 速度: ${task.speed} B/s (${Math.round(task.speed / 1024)} KB/s)`
+          //   )
+          // }
 
           // 速度更新时立即推送
           this.triggerUpdate([task.id])
@@ -1213,15 +1208,24 @@ export class DownloadService {
       }
     }
 
-    // 如果还没有时间，使用 rawshoottime 或 shoottime
+    // 如果还没有时间，使用 rawshoottime 或 shoottime（排除0值）
     if (!dateStr) {
       const shootTime = photo.rawshoottime || photo.shoottime
-      if (shootTime) {
+      if (shootTime && shootTime !== 0) {
         const date = new Date(shootTime)
         if (!isNaN(date.getTime())) {
           dateStr = date.toISOString().split('T')[0].replace(/-/g, '')
           timeStr = date.toTimeString().split(' ')[0].replace(/:/g, '')
         }
+      }
+    }
+
+    // 尝试使用 uploadTime（字符串格式：'2025-03-16 21:56:48'）
+    if (!dateStr && photo.uploadTime) {
+      const uploadDate = new Date(photo.uploadTime)
+      if (!isNaN(uploadDate.getTime())) {
+        dateStr = uploadDate.toISOString().split('T')[0].replace(/-/g, '')
+        timeStr = uploadDate.toTimeString().split(' ')[0].replace(/:/g, '')
       }
     }
 
@@ -1231,17 +1235,24 @@ export class DownloadService {
       timeStr = '000000' // 默认时间
     }
 
+    // 如果还是没有时间信息，使用当前时间作为兜底
+    if (!dateStr) {
+      const now = new Date()
+      dateStr = now.toISOString().split('T')[0].replace(/-/g, '')
+      timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '')
+    }
+
     // 文件扩展名
     const extension = photo.is_video ? '.mp4' : '.jpg'
 
     // 基础文件名
     const baseName = photo.name || `photo_${uniqueId}`
 
-    // 生成文件名格式：日期_时间_唯一ID_名称.扩展名
-    // 使用 lloc 的后8位作为短标识符（保持可读性）
-    const shortId = this.sanitizeFilename(uniqueId)
+    // 生成文件名格式：日期_时间_名称_唯一ID.扩展名
+    const sanitizedBaseName = this.sanitizeFilename(baseName)
+    const sanitizedUniqueId = this.sanitizeFilename(uniqueId)
 
-    return `${dateStr}_${timeStr}_${this.sanitizeFilename(baseName)}_${shortId}${extension}`
+    return `${dateStr}_${timeStr}_${sanitizedBaseName}_${sanitizedUniqueId}${extension}`
   }
 
   // 获取当前用户信息（从相册数据中提取）

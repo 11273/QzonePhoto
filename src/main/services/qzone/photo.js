@@ -49,7 +49,6 @@ export class QzonePhotoService {
 
   // 新增：专门处理视频信息的方法
   async getVideoInfo({ hostUin, topicId, picKey }, { uin, p_skey }) {
-    console.log('getVideoInfo', { hostUin, topicId, picKey }, { uin, p_skey })
     // 参数验证
     if (!topicId || !picKey) {
       console.error('getVideoInfo 参数不完整:', { hostUin, topicId, picKey })
@@ -77,12 +76,12 @@ export class QzonePhotoService {
       cover_url: photoInfo.pre || photoInfo.url
     }
 
-    console.log('视频信息获取成功:', {
-      name: result.name,
-      has_download_url: !!result.video_download_url,
-      has_play_url: !!result.video_play_url,
-      size: result.video_size
-    })
+    // console.log('视频信息获取成功:', {
+    //   name: result.name,
+    //   has_download_url: !!result.video_download_url,
+    //   has_play_url: !!result.video_play_url,
+    //   size: result.video_size
+    // })
 
     return result
   }

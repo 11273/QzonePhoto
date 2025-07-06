@@ -310,11 +310,11 @@ export class DownloadEventPusher {
 
           // 优化日志输出频率
           this.pushCount++
-          if (is.dev && this.pushCount % this.logInterval === 0) {
-            console.debug(
-              `[DownloadEventPusher] 立即推送完成，任务数: ${activeTasks.length} (第${this.pushCount}次推送)`
-            )
-          }
+          // if (is.dev && this.pushCount % this.logInterval === 0) {
+          //   console.debug(
+          //     `[DownloadEventPusher] 立即推送完成，任务数: ${activeTasks.length} (第${this.pushCount}次推送)`
+          //   )
+          // }
         }
       }
     } catch (error) {
