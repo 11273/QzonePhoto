@@ -4,7 +4,17 @@
     <div v-if="currentAlbum" class="album-header">
       <div class="album-info">
         <div class="title-section">
-          <h2 class="album-title">{{ currentAlbum.name }}</h2>
+          <div class="album-title-container">
+            <h2 class="album-title">{{ currentAlbum.name }}</h2>
+
+            <!-- 权限信息显示 - 简化版本 -->
+            <div v-if="albumPermissionText" class="album-permissions">
+              <el-tooltip :content="albumPermissionText" placement="top" :show-after="500">
+                <span class="permission-text">{{ shortPermissionText }}</span>
+              </el-tooltip>
+            </div>
+          </div>
+
           <div v-if="currentAlbum.desc && currentAlbum.desc.trim()" class="album-description">
             {{ currentAlbum.desc }}
           </div>
@@ -26,6 +36,14 @@
               icon="🕒"
               :value="formatDateWithYear(currentAlbum.modifytime)"
               label="最后更新"
+            />
+
+            <!-- 问题信息显示在最后更新旁边 -->
+            <StatCard
+              v-if="currentAlbum.question"
+              icon="🔒"
+              :value="currentAlbum.question"
+              label="相册问题"
             />
           </div>
         </div>
@@ -154,6 +172,7 @@ import { Loading } from '@element-plus/icons-vue'
 import StatCard from '@renderer/components/StatCard/index.vue'
 import { formatDateWithYear } from '@renderer/utils/formatters'
 import { useDownloadStore } from '@renderer/store/download.store'
+import { QZONE_UTILS, QZONE_CONFIG } from '@shared/const'
 
 const downloadStore = useDownloadStore()
 
@@ -167,6 +186,30 @@ const photoSize = inject('photoSize', ref('medium'))
 
 // 隐私模式状态
 const privacyMode = ref(false)
+
+// 计算相册权限文本
+const albumPermissionText = computed(() => {
+  if (!currentAlbum.value) return ''
+  return QZONE_UTILS.getAlbumPermissionText(currentAlbum.value)
+})
+
+// 计算简化的权限文本
+const shortPermissionText = computed(() => {
+  if (!currentAlbum.value) return ''
+
+  const privText = QZONE_CONFIG.privMap[currentAlbum.value.priv] || '未知权限'
+  const features = []
+
+  // if (QZONE_UTILS.checkAllowShare(currentAlbum.value)) features.push('分享')
+  if (QZONE_UTILS.checkShowCameraInfo(currentAlbum.value)) features.push('相机信息')
+
+  // 如果有功能权限，只显示主权限 + 第一个功能
+  if (features.length > 0) {
+    return `${privText} / ${features[0]}${features.length > 1 ? '等' : ''}`
+  }
+
+  return privText
+})
 
 // 从localStorage恢复和保存照片尺寸设置
 onMounted(() => {
@@ -309,6 +352,14 @@ const cancelDownload = () => {
   min-width: 0;
 }
 
+.album-title-container {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
 .title-section {
   margin-bottom: 16px;
 
@@ -316,9 +367,9 @@ const cancelDownload = () => {
     font-size: 22px;
     font-weight: 700;
     color: #ffffff;
-    margin: 0 0 6px 0;
     line-height: 1.3;
     letter-spacing: -0.02em;
+    display: inline-block;
   }
 
   .album-description {
@@ -326,6 +377,22 @@ const cancelDownload = () => {
     color: rgba(255, 255, 255, 0.65);
     line-height: 1.4;
     margin-top: 6px;
+  }
+
+  .album-permissions {
+    display: inline-block;
+
+    .permission-text {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.6);
+      background: rgba(255, 255, 255, 0.05);
+      padding: 2px 6px;
+      border-radius: 3px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 400;
+      line-height: 1.2;
+      cursor: help;
+    }
   }
 }
 
