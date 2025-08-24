@@ -96,3 +96,48 @@ export async function cgi_floatview_photo_list_v2(
   })
   return response.data
 }
+
+/**
+ * 获取视频数据
+ * @param uin qq
+ * @param p_skey 登录后有
+ * @param hostUin 主人QQ
+ * @param getMethod 获取方法
+ * @param start 开始位置
+ * @param count 获取数量
+ * @param need_old 是否需要旧数据
+ * @param getUserInfo 是否获取用户信息
+ * @returns
+ */
+export async function cgi_video_get_data(
+  uin,
+  p_skey,
+  hostUin,
+  getMethod = 2,
+  start = 0,
+  count = 20,
+  need_old = 1,
+  getUserInfo = 1
+) {
+  const url = 'https://user.qzone.qq.com/proxy/domain/taotao.qq.com/cgi-bin/video_get_data'
+  const params = {
+    g_tk: getGTK(p_skey),
+    uin: hostUin,
+    hostUin,
+    appid: 4,
+    getMethod,
+    start,
+    count,
+    need_old,
+    getUserInfo,
+    inCharset: 'utf-8',
+    outCharset: 'utf-8'
+  }
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `p_uin=o${uin};p_skey=${p_skey}`
+    }
+  })
+  return response.data
+}
