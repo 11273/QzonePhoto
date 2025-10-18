@@ -16,6 +16,27 @@
             <div class="nickname">{{ userStore.userInfo?.nick || 'QZone用户' }}</div>
             <div class="uin">{{ userStore.userInfo?.uin }}</div>
           </div>
+          <!-- 登出按钮移到头像右边 -->
+          <div class="header-actions">
+            <el-popconfirm
+              title="确定要登出当前账号吗？"
+              confirm-button-text="确定登出"
+              cancel-button-text="取消"
+              width="200"
+              placement="top"
+              @confirm="confirmLogout"
+            >
+              <template #reference>
+                <el-button
+                  text
+                  :icon="SwitchButton"
+                  class="action-btn logout-btn header-logout"
+                  title="登出"
+                >
+                </el-button>
+              </template>
+            </el-popconfirm>
+          </div>
         </div>
         <div class="card-stats">
           <div class="stat-grid">
@@ -38,17 +59,17 @@
           </div>
         </div>
 
-        <!-- 用户操作区域 -->
-        <div class="card-actions">
-          <div class="action-item">
+        <!-- 用户操作区域 - 管理器按钮并排布局 -->
+        <div class="card-actions managers-layout">
+          <div class="manager-item">
             <el-button
               text
-              class="action-btn download-btn"
+              class="action-btn download-btn manager-btn"
               :class="{ 'has-active-tasks': hasActiveTasks }"
               title="下载管理器"
               @click="showDownloadProgress"
             >
-              <div class="download-btn-content">
+              <div class="manager-btn-content">
                 <div class="icon-wrapper">
                   <el-icon><Download /></el-icon>
                   <!-- 活跃任务指示器 -->
@@ -66,22 +87,32 @@
               </div>
             </el-button>
           </div>
-          <div class="action-divider"></div>
-          <div class="action-item">
-            <el-popconfirm
-              title="确定要登出当前账号吗？"
-              confirm-button-text="确定登出"
-              cancel-button-text="取消"
-              width="200"
-              placement="top"
-              @confirm="confirmLogout"
+
+          <div class="manager-item">
+            <el-button
+              text
+              class="action-btn upload-btn manager-btn"
+              :class="{ 'has-active-tasks': hasActiveUploadTasks }"
+              title="上传管理器"
+              @click="showUploadProgress"
             >
-              <template #reference>
-                <el-button text :icon="Switch" class="action-btn logout-btn" title="登出">
-                  登出
-                </el-button>
-              </template>
-            </el-popconfirm>
+              <div class="manager-btn-content">
+                <div class="icon-wrapper">
+                  <el-icon><Upload /></el-icon>
+                  <!-- 活跃任务指示器 -->
+                  <div v-if="hasActiveUploadTasks" class="active-indicator upload-indicator">
+                    <div class="pulse-ring"></div>
+                    <div class="pulse-dot"></div>
+                  </div>
+                </div>
+                <div class="text-wrapper">
+                  <div class="main-text">上传管理</div>
+                  <div v-if="activeUploadTaskCount > 0" class="status-text">
+                    {{ uploadStatusText }}
+                  </div>
+                </div>
+              </div>
+            </el-button>
           </div>
         </div>
       </div>
@@ -177,17 +208,21 @@
 
     <!-- 下载管理器弹窗 -->
     <DownloadManager v-model="downloadProgressVisible" />
+
+    <!-- 上传管理器弹窗 -->
+    <UploadManager v-model="uploadProgressVisible" />
   </div>
 </template>
 
 <script setup>
-import { onBeforeMount, ref, computed, nextTick, onBeforeUnmount } from 'vue'
+import { onBeforeMount, ref, computed, nextTick, onBeforeUnmount, inject, watch } from 'vue'
 
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
-import { Download, Switch, FolderAdd, Close, Loading } from '@element-plus/icons-vue'
+import { Download, Upload, SwitchButton, FolderAdd, Close, Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
+import UploadManager from '@renderer/components/UploadManager/index.vue'
 import { generateUniqueAlbumName } from '@renderer/utils'
 
 const handleMenuSelect = (index) => {
@@ -206,7 +241,12 @@ const emit = defineEmits(['album-selected'])
 
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
+const refreshAlbumCallback = inject('refreshAlbumCallback', null)
 const loading = ref(false)
+
+// 相册刷新防抖
+let refreshDebounceTimer = null
+const pendingRefreshAlbums = new Set() // 待刷新的相册ID集合
 
 // 下载全部相册状态管理
 const isDownloadingAll = ref(false)
@@ -274,6 +314,17 @@ const detailedStatus = ref({
   primaryStatus: 'idle'
 })
 
+// 上传状态管理
+const activeUploadTaskCount = ref(0)
+const uploadDetailedStatus = ref({
+  uploading: 0,
+  waiting: 0,
+  paused: 0,
+  total: 0,
+  primaryStatus: 'idle'
+})
+const uploadProgressVisible = ref(false)
+
 // 计算是否有活跃任务
 const hasActiveTasks = computed(() => {
   return activeTaskCount.value > 0
@@ -301,9 +352,37 @@ const statusText = computed(() => {
   }
 })
 
+// 上传相关计算属性
+const hasActiveUploadTasks = computed(() => {
+  return activeUploadTaskCount.value > 0
+})
+
+const uploadStatusText = computed(() => {
+  const status = uploadDetailedStatus.value
+  if (status.total === 0) {
+    return ''
+  }
+
+  const activeTasksCount = status.uploading + status.waiting
+  const pausedTasksCount = status.paused
+
+  if (activeTasksCount > 0) {
+    return `${activeTasksCount} 个任务进行中`
+  } else if (pausedTasksCount > 0) {
+    return `暂停 ${pausedTasksCount} 个任务`
+  } else {
+    return ''
+  }
+})
+
 // 显示下载进度
 const showDownloadProgress = () => {
   downloadProgressVisible.value = true
+}
+
+// 显示上传管理器
+const showUploadProgress = () => {
+  uploadProgressVisible.value = true
 }
 
 // 切换下载全部相册状态
@@ -566,6 +645,8 @@ const clickItem = ref({})
 const apiData = ref()
 const selectedAlbumKey = ref('')
 const openedKeys = ref(new Set())
+// 当前相册ID，用于上传任务过滤
+const currentAlbumId = ref(null)
 
 const menuList = computed(() => {
   if (!apiData.value || !apiData.value.albumListModeClass || !apiData.value.classList) {
@@ -586,6 +667,9 @@ const menuList = computed(() => {
 
 const selectAlbum = (album) => {
   clickItem.value = album
+  // 更新当前相册ID（用于 UploadDialog 的相册隔离）
+  const newAlbumId = album?.id || null
+  currentAlbumId.value = newAlbumId
   emit('album-selected', album)
 }
 
@@ -790,22 +874,25 @@ const loadDownloadStats = async () => {
   }
 }
 
+// 下载监听器清理函数
+const downloadListenerCleanups = []
+
 // 设置下载状态监听器
 const setupDownloadListeners = () => {
   // 监听活跃任务数量更新（主要监听器）
-  window.QzoneAPI.download.onActiveCountUpdate((count) => {
+  const cleanup1 = window.QzoneAPI.download.onActiveCountUpdate((count) => {
     activeTaskCount.value = count
   })
 
   // 监听详细状态更新（新增，用于状态文本显示）
-  window.QzoneAPI.download.onDetailedStatusUpdate((status) => {
+  const cleanup2 = window.QzoneAPI.download.onDetailedStatusUpdate((status) => {
     detailedStatus.value = status
     // 同步更新活跃任务数量
     activeTaskCount.value = status.total
   })
 
   // 监听统计信息更新（备用）
-  window.QzoneAPI.download.onStatsUpdate((stats) => {
+  const cleanup3 = window.QzoneAPI.download.onStatsUpdate((stats) => {
     activeTaskCount.value = stats.downloading + stats.waiting + stats.paused
     detailedStatus.value = {
       downloading: stats.downloading,
@@ -816,14 +903,152 @@ const setupDownloadListeners = () => {
         stats.downloading + stats.waiting > 0 ? 'active' : stats.paused > 0 ? 'paused' : 'idle'
     }
   })
+
+  downloadListenerCleanups.push(cleanup1, cleanup2, cleanup3)
 }
 
 // 清理下载监听器
 const cleanupDownloadListeners = () => {
   try {
-    window.QzoneAPI.download.removeAllListeners()
+    downloadListenerCleanups.forEach((cleanup) => cleanup())
+    downloadListenerCleanups.length = 0
   } catch (error) {
     console.error('清理下载监听器失败:', error)
+  }
+}
+
+// 初始化上传任务状态
+const initUploadTasks = async () => {
+  try {
+    // 加载上传统计
+    await loadUploadStats()
+  } catch (error) {
+    console.error('初始化上传任务状态失败:', error)
+  }
+}
+
+// 加载上传统计（全局统计，不按相册过滤）
+const loadUploadStats = async () => {
+  try {
+    console.log('[Left] 正在加载全局上传统计...')
+    const stats = await window.QzoneAPI.upload.getStats()
+    console.log('[Left] 获取到上传统计:', stats)
+
+    const activeCount = stats.uploading + stats.waiting + stats.paused
+    activeUploadTaskCount.value = activeCount
+
+    const detailedStatus = {
+      uploading: stats.uploading,
+      waiting: stats.waiting,
+      paused: stats.paused,
+      total: activeCount,
+      primaryStatus:
+        stats.uploading + stats.waiting > 0 ? 'active' : stats.paused > 0 ? 'paused' : 'idle'
+    }
+    uploadDetailedStatus.value = detailedStatus
+
+    console.log(
+      '[Left] 设置后的状态 - activeCount:',
+      activeCount,
+      'detailedStatus:',
+      detailedStatus
+    )
+    console.log('[Left] hasActiveUploadTasks:', hasActiveUploadTasks.value)
+    console.log('[Left] uploadStatusText:', uploadStatusText.value)
+  } catch (error) {
+    console.error('[Left] 加载上传统计失败:', error)
+  }
+}
+
+// 上传监听器清理函数
+const uploadListenerCleanups = []
+
+// 防抖刷新相册
+const debouncedRefreshAlbum = () => {
+  // 清除之前的定时器
+  if (refreshDebounceTimer) {
+    clearTimeout(refreshDebounceTimer)
+  }
+
+  // 设置新的定时器：2秒后执行刷新
+  refreshDebounceTimer = setTimeout(() => {
+    if (pendingRefreshAlbums.size > 0 && refreshAlbumCallback) {
+      // 检查是否需要刷新当前相册
+      const currentAlbumId = clickItem.value?.id
+      if (currentAlbumId && pendingRefreshAlbums.has(currentAlbumId)) {
+        console.log(`[Left] 刷新相册: ${clickItem.value.name}`)
+        refreshAlbumCallback()
+      }
+      // 清空待刷新列表
+      pendingRefreshAlbums.clear()
+    }
+    refreshDebounceTimer = null
+  }, 2000) // 2秒防抖
+}
+
+// 设置上传状态监听器
+const setupUploadListeners = () => {
+  // 监听活跃任务数量更新（主要监听器）
+  const cleanup1 = window.QzoneAPI.upload.onActiveCountUpdate((count) => {
+    activeUploadTaskCount.value = count
+  })
+
+  // 监听详细状态更新（主要用于状态文本显示）
+  const cleanup2 = window.QzoneAPI.upload.onDetailedStatusUpdate((status) => {
+    uploadDetailedStatus.value = status
+    // 同步更新活跃任务数量
+    activeUploadTaskCount.value = status.total
+  })
+
+  // 监听统计信息更新（备用）
+  const cleanup3 = window.QzoneAPI.upload.onStatsUpdate((stats) => {
+    activeUploadTaskCount.value = stats.uploading + stats.waiting + stats.paused
+    uploadDetailedStatus.value = {
+      uploading: stats.uploading,
+      waiting: stats.waiting,
+      paused: stats.paused,
+      total: stats.uploading + stats.waiting + stats.paused,
+      primaryStatus:
+        stats.uploading + stats.waiting > 0 ? 'active' : stats.paused > 0 ? 'paused' : 'idle'
+    }
+  })
+
+  // 监听任务变化（用于检测任务完成）
+  const cleanup4 = window.QzoneAPI.upload.onTaskChanges((changedTasks) => {
+    if (!Array.isArray(changedTasks)) return
+
+    // 检查是否有任务完成
+    const completedTasks = changedTasks.filter((task) => task.status === 'completed')
+    if (completedTasks.length > 0) {
+      // 收集需要刷新的相册ID
+      completedTasks.forEach((task) => {
+        if (task.albumId) {
+          pendingRefreshAlbums.add(task.albumId)
+        }
+      })
+
+      // 触发防抖刷新
+      debouncedRefreshAlbum()
+    }
+  })
+
+  uploadListenerCleanups.push(cleanup1, cleanup2, cleanup3, cleanup4)
+}
+
+// 清理上传监听器
+const cleanupUploadListeners = () => {
+  try {
+    uploadListenerCleanups.forEach((cleanup) => cleanup())
+    uploadListenerCleanups.length = 0
+
+    // 清理防抖定时器
+    if (refreshDebounceTimer) {
+      clearTimeout(refreshDebounceTimer)
+      refreshDebounceTimer = null
+    }
+    pendingRefreshAlbums.clear()
+  } catch (error) {
+    console.error('清理上传监听器失败:', error)
   }
 }
 
@@ -839,14 +1064,25 @@ const confirmLogout = async () => {
   }
 }
 
+// 监听全局上传管理器关闭，刷新当前相册
+watch(uploadProgressVisible, (newVal, oldVal) => {
+  // 当上传管理器从显示变为隐藏时，刷新当前相册
+  if (oldVal === true && newVal === false && refreshAlbumCallback) {
+    refreshAlbumCallback()
+  }
+})
+
 onBeforeMount(() => {
   fetchPhotoData()
   initDownloadTasks()
   setupDownloadListeners()
+  initUploadTasks()
+  setupUploadListeners()
 })
 
 onBeforeUnmount(() => {
   cleanupDownloadListeners()
+  cleanupUploadListeners()
 })
 </script>
 
@@ -893,6 +1129,26 @@ onBeforeUnmount(() => {
           font-size: 12px;
           color: rgba(255, 255, 255, 0.6);
           line-height: 1.1;
+        }
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+
+        .header-logout {
+          color: rgba(245, 108, 108, 0.8);
+          font-size: 16px;
+          padding: 4px;
+          min-width: unset;
+          width: 28px;
+          height: 28px;
+
+          &:hover {
+            color: #f56c6c;
+            background: rgba(245, 108, 108, 0.1);
+          }
         }
       }
     }
@@ -1101,6 +1357,153 @@ onBeforeUnmount(() => {
         height: 24px;
         background: rgba(255, 255, 255, 0.15);
         margin: 1px;
+      }
+
+      /* 管理器并排布局样式 */
+      &.managers-layout {
+        padding: 0;
+
+        .manager-item {
+          flex: 1;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+
+          &:not(:last-child) {
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+          }
+
+          .manager-btn {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.8);
+            border: none;
+            background: none;
+            padding: 6px 8px;
+            transition: all 0.2s ease;
+            width: 100%;
+            justify-content: center;
+            min-height: 36px;
+
+            &:hover {
+              color: rgba(255, 255, 255, 1);
+              background: rgba(255, 255, 255, 0.1);
+            }
+
+            .manager-btn-content {
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              width: 100%;
+
+              .icon-wrapper {
+                position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 12px;
+                height: 12px;
+
+                .active-indicator {
+                  position: absolute;
+                  top: 50%;
+                  left: 50%;
+                  transform: translate(-50%, -50%);
+
+                  .pulse-ring {
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    width: 16px;
+                    height: 16px;
+                    border: 1px solid rgba(64, 158, 255, 0.4);
+                    border-radius: 50%;
+                    animation: pulse-ring 2s ease-out infinite;
+                  }
+
+                  .pulse-dot {
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    width: 4px;
+                    height: 4px;
+                    background: #409eff;
+                    border-radius: 50%;
+                    animation: pulse-dot 2s ease-out infinite;
+                  }
+
+                  &.upload-indicator {
+                    .pulse-ring {
+                      border-color: rgba(103, 194, 58, 0.4);
+                    }
+
+                    .pulse-dot {
+                      background: #67c23a;
+                    }
+                  }
+                }
+              }
+
+              .text-wrapper {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                min-width: 0;
+
+                .main-text {
+                  font-size: 11px;
+                  line-height: 1.2;
+                  color: inherit;
+                  font-weight: inherit;
+                }
+
+                .status-text {
+                  font-size: 9px;
+                  line-height: 1.1;
+                  margin-top: 1px;
+                  white-space: nowrap;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                  max-width: 100%;
+                }
+              }
+            }
+
+            &.has-active-tasks.download-btn {
+              .icon-wrapper .el-icon {
+                color: #409eff;
+              }
+
+              .main-text {
+                color: #409eff;
+              }
+
+              .status-text {
+                color: rgba(64, 158, 255, 0.8);
+              }
+            }
+
+            &.has-active-tasks.upload-btn {
+              .icon-wrapper .el-icon {
+                color: #67c23a;
+              }
+
+              .main-text {
+                color: #67c23a;
+              }
+
+              .status-text {
+                color: rgba(103, 194, 58, 0.8);
+              }
+            }
+
+            :deep(.el-icon) {
+              font-size: 12px;
+            }
+          }
+        }
       }
     }
   }

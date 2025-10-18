@@ -5,11 +5,29 @@
     </div>
     <div className="login-box">
       <div className="content">
+        <!-- 全屏登录遮罩 -->
+        <div
+          v-if="isLoggingIn"
+          class="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 rounded-lg"
+        >
+          <div class="flex flex-col items-center gap-3">
+            <el-icon :size="40" class="is-loading">
+              <Loading />
+            </el-icon>
+            <span class="text-white text-lg">正在登录中...</span>
+          </div>
+        </div>
+
         <h3>快捷登录</h3>
         <!-- 二维码 -->
-        <el-image v-loading="loading" style="width: 100px; height: 100px" :src="qrcodeInfo.img" />
+        <el-image
+          v-loading="loading"
+          style="width: 100px; height: 100px"
+          :src="qrcodeInfo.img"
+          :class="{ 'opacity-30': isLoggingIn }"
+        />
         <el-text v-if="msg" type="info" size="small">{{ msg }}</el-text>
-        <p>使用QQ手机版扫码登录，或点击头像授权登录。</p>
+        <p :class="{ 'opacity-50': isLoggingIn }">使用QQ手机版扫码登录，或点击头像授权登录。</p>
         <!-- 本地账号头像列表 -->
         <div class="w-full">
           <el-scrollbar>
@@ -17,12 +35,20 @@
               <div
                 v-for="user in localAccounts"
                 :key="user.uin"
-                class="cursor-pointer p-1.5 flex flex-col items-center"
+                class="p-1.5 flex flex-col items-center transition-opacity"
+                :class="{
+                  'cursor-pointer': !isLoggingIn,
+                  'cursor-not-allowed opacity-30': isLoggingIn
+                }"
               >
-                <el-tooltip :content="`${user.uin}`" placement="top">
-                  <el-avatar :src="user.face" size="large" @click="loginWithLocalAccount(user)" />
+                <el-tooltip :content="`${user.uin}`" placement="top" :disabled="isLoggingIn">
+                  <el-avatar
+                    :src="user.face"
+                    size="large"
+                    @click="!isLoggingIn && loginWithLocalAccount(user)"
+                  />
                 </el-tooltip>
-                <span>{{ user.nickname }}</span>
+                <span :class="{ 'opacity-50': isLoggingIn }">{{ user.nickname }}</span>
               </div>
             </div>
           </el-scrollbar>
@@ -34,6 +60,7 @@
 
 <script setup>
 import QZoneLogo from '@renderer/assets/qzone_logo.png'
+import { Loading } from '@element-plus/icons-vue'
 import { onBeforeMount, onUnmounted, ref, toRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@renderer/store/user.store'
@@ -47,6 +74,7 @@ const qrcodeInfo = ref({})
 let qrTimer = null // 用于二维码刷新
 let scanTimer = null // 用于监听扫码状态
 const localAccounts = ref([]) // 本地账号列表
+const isLoggingIn = ref(false) // 专门用于头像登录的等待状态
 
 // 获取二维码
 const getQrcode = () => {
@@ -114,9 +142,17 @@ const getLocalAccounts = async () => {
 
 // 点击本地头像登录
 const loginWithLocalAccount = async (user) => {
+  // 防止重复点击
+  if (isLoggingIn.value) return
+
   try {
+    isLoggingIn.value = true
     loading.value = true
     msg.value = '正在登录...'
+
+    // 停止二维码轮询，避免干扰
+    clearTimers()
+
     const data = await window.QzoneAPI.getLocalLoginJump(toRaw(user))
     console.log('[loginWithLocalAccount] :>> ', data)
     // 假设 userStore.login 支持传入本地账号数据
@@ -124,9 +160,15 @@ const loginWithLocalAccount = async (user) => {
     router.replace('/')
   } catch (err) {
     console.error('本地账号登录失败:', err)
-    msg.value = '登录失败'
+    msg.value = '登录失败，请重试'
+
+    // 登录失败时重新启动二维码轮询
+    setTimeout(() => {
+      getQrcode()
+    }, 1500)
   } finally {
     loading.value = false
+    isLoggingIn.value = false
   }
 }
 
@@ -170,6 +212,7 @@ onUnmounted(() => {
     justify-content: center;
 
     .content {
+      position: relative;
       width: 460px;
       height: 320px;
       display: flex;
@@ -181,6 +224,11 @@ onUnmounted(() => {
       p {
         font-size: 14px;
       }
+    }
+
+    // 平滑过渡效果
+    .transition-opacity {
+      transition: opacity 0.3s ease;
     }
   }
 }

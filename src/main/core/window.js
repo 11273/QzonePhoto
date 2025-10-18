@@ -66,7 +66,8 @@ export class WindowManager {
         preload: preloadPath,
         nodeIntegration: false,
         contextIsolation: true,
-        webSecurity: true
+        webSecurity: true,
+        partition: 'persist:qzone'
       }
     })
 
@@ -102,17 +103,35 @@ export class WindowManager {
 
     const filter = { urls: ['*://*.qq.com/*', '*://*.qpic.cn/*', '*://*/*'] }
 
-    session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, cb) => {
-      // 根据 URL 设置对应的 referer
-      let referer = details.url // 默认设置为请求的 URL 本身
-      // 提取域名
+    // session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, cb) => {
+    //   // 根据 URL 设置对应的 referer
+    //   let referer = details.url // 默认设置为请求的 URL 本身
+    //   // 提取域名
+    //   try {
+    //     const url = new URL(details.url)
+    //     referer = url.origin // 设置为请求的源（协议+域名）
+    //   } catch (e) {
+    //     console.error('URL 解析失败:', details.url, e)
+    //   }
+    //   details.requestHeaders['referer'] = referer
+    //   details.requestHeaders['origin'] = referer
+    //   cb({ requestHeaders: details.requestHeaders })
+    // })
+
+    // 获取 persist:qzone 对应的 session
+    const qzoneSession = session.fromPartition('persist:qzone')
+
+    // 在正确的 session 上监听请求
+    qzoneSession.webRequest.onBeforeSendHeaders(filter, (details, cb) => {
+      let referer = details.url
       try {
         const url = new URL(details.url)
-        referer = url.origin // 设置为请求的源（协议+域名）
+        referer = url.origin
       } catch (e) {
         console.error('URL 解析失败:', details.url, e)
       }
       details.requestHeaders['referer'] = referer
+      details.requestHeaders['origin'] = referer
       cb({ requestHeaders: details.requestHeaders })
     })
 

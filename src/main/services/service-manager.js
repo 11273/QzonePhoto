@@ -7,7 +7,8 @@ export const ServiceNames = {
   PHOTO: Symbol('PhotoService'),
   USER: Symbol('UserService'),
   DOWNLOAD: Symbol('DownloadService'),
-  UPDATE: Symbol('UpdateService')
+  UPDATE: Symbol('UpdateService'),
+  UPLOAD: Symbol('UploadService')
 }
 
 export class ServiceManager {

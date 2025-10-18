@@ -1,5 +1,14 @@
 <template>
   <div class="top-bar">
+    <!-- 上传弹窗 - 相册上下文模式 -->
+    <UploadDialog
+      :visible="showUpload"
+      :album-id="currentAlbum?.id"
+      :album-name="currentAlbum?.name"
+      context-mode="album"
+      @close="handleUploadDialogClose"
+    />
+
     <!-- 优化的详细信息布局 -->
     <div v-if="currentAlbum" class="album-header">
       <div class="album-info">
@@ -13,6 +22,15 @@
                 <span class="permission-text">{{ shortPermissionText }}</span>
               </el-tooltip>
             </div>
+
+            <!-- 相册刷新按钮 -->
+            <el-tooltip content="刷新" placement="top">
+              <el-button class="album-refresh-btn" size="small" text @click="refreshAlbum">
+                <el-icon class="refresh-icon">
+                  <Refresh />
+                </el-icon>
+              </el-button>
+            </el-tooltip>
           </div>
 
           <div v-if="currentAlbum.desc && currentAlbum.desc.trim()" class="album-description">
@@ -59,82 +77,70 @@
 
     <!-- 底部控制行 - 集中所有控制功能 -->
     <div v-if="currentAlbum && hasPhotos" class="bottom-controls">
-      <!-- 左侧：图片大小控制器 -->
-      <div class="photo-size-controls">
-        <el-radio-group v-model="photoSize" size="small">
-          <el-radio-button value="mini">最小</el-radio-button>
-          <el-radio-button value="small">小</el-radio-button>
-          <el-radio-button value="medium">中</el-radio-button>
-          <el-radio-button value="large">大</el-radio-button>
-        </el-radio-group>
-      </div>
-
-      <!-- 隐私模式切换 -->
-      <div class="privacy-controls">
-        <el-tooltip
-          :content="privacyMode ? '关闭隐私模式，显示照片内容' : '开启隐私模式，模糊照片内容'"
-          placement="top"
-        >
-          <el-button
-            :type="privacyMode ? 'warning' : 'default'"
-            size="small"
-            class="privacy-btn"
-            @click="privacyMode = !privacyMode"
+      <!-- 左侧：选择信息和图片大小控制 -->
+      <div class="left-controls">
+        <div class="selection-control">
+          <el-checkbox
+            :model-value="isAllSelected"
+            :indeterminate="isIndeterminate"
+            :disabled="!hasPhotos"
+            @change="selectAllPhotos"
           >
-            <template #icon>
-              <i class="privacy-icon">{{ privacyMode ? '🔒' : '👁️' }}</i>
-            </template>
-            {{ privacyMode ? '隐私模式' : '正常模式' }}
-          </el-button>
-        </el-tooltip>
+            <span class="selection-text">
+              已选 {{ selectedPhotos.size }} / {{ allPhotos.length }} 张
+            </span>
+          </el-checkbox>
+        </div>
+        <div class="photo-size-controls">
+          <span class="control-label">图片大小：</span>
+          <el-radio-group v-model="photoSize" size="small">
+            <el-radio-button value="mini">最小</el-radio-button>
+            <el-radio-button value="small">小</el-radio-button>
+            <el-radio-button value="medium">中</el-radio-button>
+            <el-radio-button value="large">大</el-radio-button>
+          </el-radio-group>
+        </div>
       </div>
 
-      <!-- 左侧：选择信息 -->
-      <div class="quick-stats">
-        <span class="selected-count">
-          已选择 {{ selectedPhotos.size }} / {{ allPhotos.length }} 张
-        </span>
-      </div>
+      <!-- 中间：预留空间 -->
+      <div class="center-spacer"></div>
 
-      <!-- 中间：主要操作按钮 -->
-      <div class="action-buttons">
+      <!-- 右侧：主要操作按钮 -->
+      <div class="right-action-buttons">
+        <!-- 上传照片按钮 -->
         <el-button
-          class="select-btn"
-          :type="isAllSelected ? 'warning' : 'default'"
-          :disabled="!hasPhotos"
-          @click="selectAllPhotos"
+          class="album-action-btn upload-btn"
+          size="default"
+          type="success"
+          :disabled="!currentAlbum"
+          @click="showUploadDialog"
         >
-          <template #icon>
-            <i v-if="isAllSelected" class="btn-icon">✕</i>
-            <i v-else class="btn-icon">✓</i>
-          </template>
-          {{ isAllSelected ? '取消全选' : '全选照片' }}
+          <el-icon><Upload /></el-icon>
+          上传照片
         </el-button>
 
         <!-- 下载相册按钮 -->
         <el-button
           v-if="shouldShowDownloadButton"
-          class="download-btn"
+          class="album-action-btn download-btn"
+          size="default"
           type="primary"
           :disabled="!hasPhotos"
           @click="downloadAllPhotos"
         >
-          <template #icon>
-            <i class="btn-icon">⬇</i>
-          </template>
+          <el-icon><Download /></el-icon>
           下载相册
         </el-button>
 
         <!-- 获取照片状态时的取消按钮 -->
         <el-button
           v-else-if="shouldShowCancelButton"
-          class="cancel-btn"
+          class="album-action-btn cancel-btn"
+          size="default"
           type="warning"
           @click="cancelDownload"
         >
-          <template #icon>
-            <el-icon class="is-loading"><Loading /></el-icon>
-          </template>
+          <el-icon class="is-loading"><Loading /></el-icon>
           <span
             v-if="albumDownloadState.status === 'fetching' && albumDownloadState.totalPhotos > 0"
           >
@@ -146,13 +152,12 @@
         <!-- 下载状态时的进度显示 -->
         <el-button
           v-else-if="shouldShowProgressButton"
-          class="download-progress-btn"
+          class="album-action-btn download-progress-btn"
+          size="default"
           type="primary"
           disabled
         >
-          <template #icon>
-            <el-icon class="is-loading"><Loading /></el-icon>
-          </template>
+          <el-icon class="is-loading"><Loading /></el-icon>
           {{ downloadButtonText }}
 
           <!-- 进度条显示在按钮内部 -->
@@ -168,24 +173,25 @@
 
 <script setup>
 import { computed, ref, inject, onMounted, watch } from 'vue'
-import { Loading } from '@element-plus/icons-vue'
+import { Loading, Upload, Download, Refresh } from '@element-plus/icons-vue'
 import StatCard from '@renderer/components/StatCard/index.vue'
+import UploadDialog from '@renderer/components/UploadDialog/index.vue'
 import { formatDateWithYear } from '@renderer/utils/formatters'
 import { useDownloadStore } from '@renderer/store/download.store'
+import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { QZONE_UTILS, QZONE_CONFIG } from '@shared/const'
 
 const downloadStore = useDownloadStore()
+const privacyStore = usePrivacyStore()
 
 const currentAlbum = inject('currentAlbum', ref(null))
 const selectAllCallback = inject('selectAllCallback', null)
 const downloadAllCallback = inject('downloadAllCallback', null)
 const cancelDownloadCallback = inject('cancelDownloadCallback', null)
+const refreshAlbumCallback = inject('refreshAlbumCallback', null)
 const allPhotos = inject('photoList', ref([]))
 const selectedPhotos = inject('selectedPhotos', ref(new Set()))
 const photoSize = inject('photoSize', ref('medium'))
-
-// 隐私模式状态
-const privacyMode = ref(false)
 
 // 计算相册权限文本
 const albumPermissionText = computed(() => {
@@ -217,10 +223,6 @@ onMounted(() => {
   if (savedSize && ['mini', 'small', 'medium', 'large'].includes(savedSize)) {
     photoSize.value = savedSize
   }
-
-  // 每次登录都默认开启隐私模式
-  privacyMode.value = true
-  localStorage.setItem('privacy-mode', 'true')
 })
 
 // 监听照片尺寸变化，保存到localStorage
@@ -232,18 +234,28 @@ watch(
   { immediate: false }
 )
 
-// 监听隐私模式变化，保存到localStorage
-watch(
-  privacyMode,
-  (newMode) => {
-    localStorage.setItem('privacy-mode', newMode.toString())
-  },
-  { immediate: false }
-)
+// 上传弹窗的显示状态
+const showUpload = ref(false)
 
-// 提供隐私模式状态给其他组件
+// 显示上传弹窗
+const showUploadDialog = () => {
+  showUpload.value = true
+}
+
+// 关闭上传弹窗的回调
+const handleUploadDialogClose = async (shouldRefresh) => {
+  showUpload.value = false
+  if (shouldRefresh && currentAlbum.value) {
+    // 刷新当前相册的照片列表
+    if (refreshAlbumCallback) {
+      await refreshAlbumCallback()
+    }
+  }
+}
+
+// 提供隐私模式状态给其他组件（现在通过全局store）
 defineExpose({
-  privacyMode
+  privacyMode: privacyStore.privacyMode
 })
 
 const hasPhotos = computed(() => allPhotos.value && allPhotos.value.length > 0)
@@ -253,6 +265,12 @@ const isAllSelected = computed(() => {
   return allPhotos.value.every((photo) =>
     selectedPhotos.value.has(photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`)
   )
+})
+
+const isIndeterminate = computed(() => {
+  if (!hasPhotos.value) return false
+  const selectedCount = selectedPhotos.value.size
+  return selectedCount > 0 && selectedCount < allPhotos.value.length
 })
 
 // 计算当前相册的下载状态
@@ -329,6 +347,13 @@ const cancelDownload = () => {
     cancelDownloadCallback()
   }
 }
+
+// 刷新当前相册
+const refreshAlbum = async () => {
+  if (refreshAlbumCallback) {
+    await refreshAlbumCallback()
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -370,6 +395,36 @@ const cancelDownload = () => {
     line-height: 1.3;
     letter-spacing: -0.02em;
     display: inline-block;
+  }
+
+  .album-refresh-btn {
+    color: rgba(255, 255, 255, 0.7) !important;
+    padding: 4px !important;
+    border-radius: 4px !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    height: 24px !important;
+    min-width: 24px !important;
+
+    .refresh-icon {
+      font-size: 14px;
+      color: #67c23a;
+      transition: all 0.3s ease;
+    }
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1) !important;
+      color: rgba(255, 255, 255, 0.9) !important;
+      transform: translateY(-1px);
+
+      .refresh-icon {
+        color: #85ce61;
+        transform: rotate(180deg);
+      }
+    }
+
+    &:active {
+      transform: translateY(0);
+    }
   }
 
   .album-description {
@@ -530,24 +585,147 @@ const cancelDownload = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 16px;
-  padding-top: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  gap: 16px;
+  gap: 24px;
 
-  .quick-stats {
+  .left-controls {
+    display: flex;
+    align-items: center;
+    gap: 20px;
     flex: 0 0 auto;
   }
 
-  .action-buttons {
+  .selection-control {
+    :deep(.el-checkbox) {
+      .el-checkbox__label {
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 13px;
+        font-weight: 500;
+
+        .selection-text {
+          margin-left: 6px;
+        }
+      }
+
+      .el-checkbox__input.is-checked .el-checkbox__inner {
+        background-color: #409eff;
+        border-color: #409eff;
+      }
+
+      .el-checkbox__input.is-indeterminate .el-checkbox__inner {
+        background-color: #409eff;
+        border-color: #409eff;
+      }
+
+      .el-checkbox__inner {
+        border-color: rgba(255, 255, 255, 0.3);
+        background-color: transparent;
+      }
+
+      &:hover {
+        .el-checkbox__inner {
+          border-color: #409eff;
+        }
+      }
+    }
+  }
+
+  .center-spacer {
     flex: 1;
+  }
+
+  .left-action-buttons {
     display: flex;
-    justify-content: center;
+    align-items: center;
     gap: 12px;
   }
 
-  .photo-size-controls {
+  .right-action-buttons {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .right-controls {
     flex: 0 0 auto;
+    min-width: 120px;
+  }
+
+  // 统一按钮样式
+  :deep(.album-action-btn) {
+    height: 32px;
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 13px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    min-width: 80px;
+    max-width: 120px;
+
+    .el-icon {
+      margin-right: 6px;
+      font-size: 14px;
+    }
+
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    }
+
+    &:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+
+    &.upload-btn {
+      background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
+      border: 1px solid #67c23a;
+      color: #ffffff;
+
+      &:hover {
+        background: linear-gradient(135deg, #7aca52 0%, #95d373 100%);
+        border-color: #7aca52;
+      }
+    }
+
+    &.download-btn {
+      background: linear-gradient(135deg, #409eff 0%, #4dabf7 100%);
+      border: 1px solid #409eff;
+      color: #ffffff;
+
+      &:hover {
+        background: linear-gradient(135deg, #5bacff 0%, #66b8f7 100%);
+        border-color: #5bacff;
+      }
+    }
+
+    &.cancel-btn {
+      background: linear-gradient(135deg, #e6a23c 0%, #eebe77 100%);
+      border: 1px solid #e6a23c;
+      color: #ffffff;
+
+      &:hover {
+        background: linear-gradient(135deg, #eaae4e 0%, #f1c589 100%);
+        border-color: #eaae4e;
+      }
+    }
+
+    &:disabled {
+      background: #c0c4cc;
+      border-color: #c0c4cc;
+      color: #ffffff;
+      transform: none;
+      box-shadow: none;
+      cursor: not-allowed;
+
+      &:hover {
+        transform: none;
+        box-shadow: none;
+      }
+    }
   }
 }
 
@@ -846,6 +1024,41 @@ const cancelDownload = () => {
     .download-btn {
       width: 100%;
     }
+  }
+}
+.upload-btn {
+  min-width: 100px;
+  height: 36px;
+  font-weight: 500;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+  transition: all 0.2s ease;
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  &:disabled {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.3);
+    cursor: not-allowed;
+  }
+
+  .btn-icon {
+    font-style: normal;
+    display: inline-block;
+    font-size: 14px;
+    line-height: 1;
   }
 }
 </style>

@@ -44,11 +44,10 @@ export const ipcClient = {
         },
         payload
       }
-      logger.debug(`[IPC] 调用 ${channel} 通道, payload:`, payload, context)
 
       const res = await ipcRenderer.invoke(channel, context)
 
-      logger.debug(`[IPC] ${channel} 调用成功, 返回数据:`, res)
+      logger.debug(`[IPC] ${channel} 调用成功`, '\n请求参数:', context, '\n返回数据:', res)
 
       const { data, error } = res
 

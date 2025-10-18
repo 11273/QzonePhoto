@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC_AUTH, IPC_DOWNLOAD, IPC_PHOTO, IPC_USER, IPC_UPDATE } from '@shared/ipc-channels'
+import {
+  IPC_AUTH,
+  IPC_DOWNLOAD,
+  IPC_UPLOAD,
+  IPC_PHOTO,
+  IPC_USER,
+  IPC_UPDATE,
+  IPC_FILE
+} from '@shared/ipc-channels'
 import { ipcClient } from '@preload/lib/ipc-client'
 
 try {
@@ -28,6 +36,11 @@ try {
     getVideoInfo: (data) => ipcClient.call(IPC_PHOTO.VIDEO_INFO, data),
     // 批量获取视频信息
     batchGetVideoInfo: (data) => ipcClient.call(IPC_PHOTO.BATCH_VIDEO_INFO, data),
+
+    // 文件系统相关API
+    openFileDialog: (data) => ipcClient.call(IPC_FILE.DIALOG_OPEN_FILE, data),
+    getFileInfo: (data) => ipcClient.call(IPC_FILE.GET_FILE_INFO, data),
+    getImagePreview: (data) => ipcClient.call(IPC_FILE.GET_IMAGE_PREVIEW, data),
 
     // 下载相关API
     download: {
@@ -89,6 +102,75 @@ try {
 
       // 请求分页任务列表
       requestTasksPage: (params = {}) => ipcClient.call(IPC_DOWNLOAD.REQUEST_TASKS_PAGE, params)
+    },
+
+    // 上传相关API
+    upload: {
+      // 任务管理
+      addTask: (options) => ipcClient.call(IPC_UPLOAD.ADD_TASK, options),
+      addBatchTasks: (files, albumId, albumName, sessionId) =>
+        ipcClient.call(IPC_UPLOAD.ADD_BATCH_TASKS, { files, albumId, albumName, sessionId }),
+      getTasks: (params = {}) => ipcClient.call(IPC_UPLOAD.GET_TASKS, params),
+      getActiveTasks: () => ipcClient.call(IPC_UPLOAD.GET_ACTIVE_TASKS),
+      getPendingTasksByAlbum: (albumId) =>
+        ipcClient.call(IPC_UPLOAD.GET_PENDING_TASKS_BY_ALBUM, albumId),
+      getTasksBySession: (sessionId) => ipcClient.call(IPC_UPLOAD.GET_TASKS_BY_SESSION, sessionId),
+      getStats: () => ipcClient.call(IPC_UPLOAD.GET_STATS),
+
+      // 任务控制
+      pauseTask: (taskId) => ipcClient.call(IPC_UPLOAD.PAUSE_TASK, taskId),
+      resumeTask: (taskId) => ipcClient.call(IPC_UPLOAD.RESUME_TASK, taskId),
+      retryTask: (taskId) => ipcClient.call(IPC_UPLOAD.RETRY_TASK, taskId),
+      deleteTask: (taskId) => ipcClient.call(IPC_UPLOAD.DELETE_TASK, taskId),
+
+      // 批量操作
+      cancelAll: () => ipcClient.call(IPC_UPLOAD.CANCEL_ALL),
+      cancelTasksByAlbum: (albumId, sessionId = null) =>
+        ipcClient.call(IPC_UPLOAD.CANCEL_TASKS_BY_ALBUM, { albumId, sessionId }),
+      deleteTasksBySession: (sessionId) => ipcClient.call(IPC_UPLOAD.DELETE_TASKS_BY_SESSION, sessionId),
+      pauseAll: () => ipcClient.call(IPC_UPLOAD.PAUSE_ALL),
+      resumeAll: () => ipcClient.call(IPC_UPLOAD.RESUME_ALL),
+      clearTasks: () => ipcClient.call(IPC_UPLOAD.CLEAR_TASKS),
+      retryAllFailed: (albumId = null) => ipcClient.call(IPC_UPLOAD.RETRY_ALL_FAILED, albumId),
+      clearCompleted: (albumId = null) => ipcClient.call(IPC_UPLOAD.CLEAR_COMPLETED, albumId),
+      clearCancelled: (albumId = null) => ipcClient.call(IPC_UPLOAD.CLEAR_CANCELLED, albumId),
+
+      // 设置管理
+      getConcurrency: () => ipcClient.call(IPC_UPLOAD.GET_CONCURRENCY),
+      setConcurrency: (concurrency) => ipcClient.call(IPC_UPLOAD.SET_CONCURRENCY, concurrency),
+
+      // 用户管理
+      setCurrentUser: (uin, p_skey, hostUin) =>
+        ipcClient.call(IPC_UPLOAD.SET_CURRENT_USER, { uin, p_skey, hostUin }),
+
+      // 相册管理
+      getAlbumsWithStats: () => ipcClient.call(IPC_UPLOAD.GET_ALBUMS_WITH_STATS),
+      getAlbumStats: (albumId) => ipcClient.call(IPC_UPLOAD.GET_ALBUM_STATS, albumId),
+
+      // 事件监听 - 推送事件
+      onStatsUpdate: (callback) => ipcClient.on(IPC_UPLOAD.STATS_UPDATE, callback),
+      onActiveTasksUpdate: (callback) => ipcClient.on(IPC_UPLOAD.ACTIVE_TASKS_UPDATE, callback),
+      onTaskChanges: (callback) => ipcClient.on(IPC_UPLOAD.TASK_CHANGES, callback),
+      onTasksPage: (callback) => ipcClient.on(IPC_UPLOAD.TASKS_PAGE, callback),
+      onActiveCountUpdate: (callback) => ipcClient.on(IPC_UPLOAD.ACTIVE_COUNT_UPDATE, callback),
+      onDetailedStatusUpdate: (callback) =>
+        ipcClient.on(IPC_UPLOAD.DETAILED_STATUS_UPDATE, callback),
+
+      // 移除监听器
+      removeAllListeners: () => {
+        ipcClient.removeAllListeners(IPC_UPLOAD.STATS_UPDATE)
+        ipcClient.removeAllListeners(IPC_UPLOAD.ACTIVE_TASKS_UPDATE)
+        ipcClient.removeAllListeners(IPC_UPLOAD.TASK_CHANGES)
+        ipcClient.removeAllListeners(IPC_UPLOAD.TASKS_PAGE)
+        ipcClient.removeAllListeners(IPC_UPLOAD.ACTIVE_COUNT_UPDATE)
+        ipcClient.removeAllListeners(IPC_UPLOAD.DETAILED_STATUS_UPDATE)
+      },
+
+      // 设置上传管理器打开状态
+      setManagerOpen: (isOpen) => ipcClient.call(IPC_UPLOAD.SET_MANAGER_OPEN, isOpen),
+
+      // 请求分页任务列表
+      requestTasksPage: (params = {}) => ipcClient.call(IPC_UPLOAD.REQUEST_TASKS_PAGE, params)
     },
 
     // 更新相关API

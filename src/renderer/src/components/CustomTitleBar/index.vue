@@ -100,6 +100,41 @@
         </div>
       </transition>
 
+      <!-- 全局控制按钮组 -->
+      <div class="global-controls">
+        <!-- 全局隐私模式切换 -->
+        <el-tooltip
+          :content="
+            privacyStore.privacyMode ? '关闭隐私模式，显示照片内容' : '开启隐私模式，模糊照片内容'
+          "
+          placement="bottom"
+        >
+          <el-button
+            class="global-privacy-btn no-drag"
+            size="small"
+            text
+            :type="privacyStore.privacyMode ? 'warning' : 'info'"
+            @click="privacyStore.togglePrivacyMode()"
+          >
+            <el-icon class="privacy-icon">
+              <Hide v-if="privacyStore.privacyMode" />
+              <View v-else />
+            </el-icon>
+            <span class="privacy-text">{{ privacyStore.privacyMode ? '隐私' : '公开' }}</span>
+          </el-button>
+        </el-tooltip>
+
+        <!-- 系统刷新按钮 -->
+        <el-tooltip content="刷新" placement="bottom">
+          <el-button class="global-refresh-btn no-drag" size="small" text @click="refreshSystem">
+            <el-icon class="refresh-icon">
+              <Refresh />
+            </el-icon>
+            <span class="privacy-text">刷新</span>
+          </el-button>
+        </el-tooltip>
+      </div>
+
       <!-- GitHub 图标 (Mac系统) -->
       <div v-if="isMac && appHomepage" class="github-icon">
         <el-button
@@ -159,11 +194,15 @@ import {
   CloseBold,
   SemiSelect,
   ArrowDownBold,
-  ArrowUpBold
+  ArrowUpBold,
+  View,
+  Hide,
+  Refresh
 } from '@element-plus/icons-vue'
 import { isMac as isMacPlatform } from '@renderer/utils/platform'
 import { IPC_APP, IPC_SHELL, IPC_WINDOW } from '@shared/ipc-channels'
 import UpdateDialog from '@renderer/components/UpdateManager/UpdateDialog.vue'
+import { usePrivacyStore } from '@renderer/store/privacy.store'
 import Icon from '@renderer/components/Icon/index.vue'
 import ProgressBar from '@renderer/components/ProgressBar/index.vue'
 import { formatBytes } from '@renderer/utils/formatters'
@@ -181,6 +220,9 @@ const appHomepage = ref('')
 const appDescription = ref('')
 // 窗口状态
 const isMaximized = ref(false)
+
+// 全局隐私模式store
+const privacyStore = usePrivacyStore()
 
 // 更新状态
 const updateState = reactive({
@@ -258,6 +300,11 @@ const openGitHub = () => {
   if (appHomepage.value) {
     window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, appHomepage.value)
   }
+}
+
+// 系统刷新
+const refreshSystem = () => {
+  window.location.reload()
 }
 
 // 版本号点击事件
@@ -653,6 +700,112 @@ onUnmounted(() => {
   width: 200px;
   flex-shrink: 0;
   justify-content: flex-end;
+}
+
+.global-controls {
+  display: flex;
+  align-items: center;
+  margin-right: 8px;
+}
+
+.global-refresh-btn {
+  color: rgba(255, 255, 255, 0.8) !important;
+  padding: 6px !important;
+  border-radius: 6px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  .refresh-icon {
+    font-size: 14px;
+    color: #67c23a;
+    transition: all 0.3s ease;
+  }
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: rgba(255, 255, 255, 0.95) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+
+    .refresh-icon {
+      color: #85ce61;
+      transform: rotate(180deg);
+    }
+  }
+
+  &:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  }
+}
+
+.global-privacy-btn {
+  color: rgba(255, 255, 255, 0.8) !important;
+  padding: 6px 12px !important;
+  border-radius: 6px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  height: 28px !important;
+  min-width: 68px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+
+  .privacy-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .privacy-text {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+  }
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: rgba(255, 255, 255, 0.95) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  }
+
+  &:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  }
+
+  &.el-button--info {
+    .privacy-icon {
+      color: #67c23a;
+    }
+
+    &:hover {
+      background: rgba(103, 194, 58, 0.15) !important;
+      color: rgba(255, 255, 255, 0.95) !important;
+
+      .privacy-icon {
+        color: #85ce61;
+      }
+    }
+  }
+
+  &.el-button--warning {
+    .privacy-icon {
+      color: #e6a23c;
+    }
+
+    &:hover {
+      background: rgba(230, 162, 60, 0.15) !important;
+      color: rgba(255, 255, 255, 0.95) !important;
+
+      .privacy-icon {
+        color: #ebb563;
+      }
+    }
+  }
 }
 
 .github-icon {

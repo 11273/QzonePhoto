@@ -50,7 +50,7 @@
                   selected: selectedPhotos.has(
                     photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
                   ),
-                  'privacy-mode': privacyMode
+                  'privacy-mode': privacyStore.privacyMode
                 }"
                 @click="handlePhotoClick(photo, $event, index)"
               >
@@ -78,8 +78,8 @@
                   </el-image>
 
                   <!-- 隐私模式遮罩 -->
-                  <div v-if="privacyMode" class="privacy-overlay">
-                    <div class="privacy-icon">🔒</div>
+                  <div v-if="privacyStore.privacyMode" class="privacy-overlay">
+                    <el-icon class="privacy-icon"><Hide /></el-icon>
                     <div class="privacy-text">隐私保护</div>
                   </div>
 
@@ -215,7 +215,8 @@
 import { ref, computed, provide, onUnmounted, watch, nextTick } from 'vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
-import { Loading, Picture, VideoPlay, Check } from '@element-plus/icons-vue'
+import { usePrivacyStore } from '@renderer/store/privacy.store'
+import { Loading, Picture, VideoPlay, Check, Hide } from '@element-plus/icons-vue'
 import { ElLoading } from 'element-plus'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
@@ -225,17 +226,13 @@ import { formatBytes } from '@renderer/utils/formatters'
 
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
+const privacyStore = usePrivacyStore()
 const loading = ref(false)
 const loadingMore = ref(false)
 const isScrollLoading = ref(false) // 简单布尔锁
 
-// 引用Top组件，获取隐私模式状态
+// 引用Top组件
 const topRef = ref(null)
-
-// 隐私模式状态
-const privacyMode = computed(() => {
-  return topRef.value?.privacyMode || false
-})
 
 // 滚动容器引用
 const loadMoreTrigger = ref(null)
@@ -682,6 +679,67 @@ const cleanupAlbumFlags = (albumId) => {
   downloadStore.clearGlobalCancelFlag(albumId)
 }
 
+// 刷新当前相册
+const refreshCurrentAlbum = async () => {
+  if (!currentAlbum.value) {
+    // eslint-disable-next-line no-undef
+    ElMessage.warning('请先选择一个相册')
+    return
+  }
+
+  // 先断开观察器
+  if (observer) {
+    observer.disconnect()
+    observer = null
+  }
+
+  // 重置状态
+  loading.value = true
+  photoList.value = []
+  selectedPhotos.value.clear()
+  hasMore.value = true
+  currentPageStart.value = 0
+
+  try {
+    console.log(`刷新相册: ${currentAlbum.value.name} (ID: ${currentAlbum.value.id})`)
+
+    const result = await fetchPhotosByTopicId(currentAlbum.value.id, 0, pageSize.value)
+
+    if (result.success) {
+      photoList.value = result.photos
+      total.value = result.total
+
+      // 检查是否还有更多数据
+      if (
+        result.photos.length >= result.total ||
+        result.photos.length < pageSize.value ||
+        !result.hasMore
+      ) {
+        hasMore.value = false
+      } else {
+        hasMore.value = true
+      }
+
+      // ElMessage.success(`已刷新相册：${currentAlbum.value.name}`)
+    } else {
+      console.error('刷新相册失败:', result.error)
+      // eslint-disable-next-line no-undef
+      ElMessage.error(result.error || '刷新相册失败')
+    }
+  } catch (error) {
+    console.error('刷新相册失败:', error)
+    // eslint-disable-next-line no-undef
+    ElMessage.error('刷新相册失败')
+  } finally {
+    loading.value = false
+
+    // 确保在加载完成后设置观察器
+    nextTick(() => {
+      setupIntersectionObserver()
+    })
+  }
+}
+
 // 全选/取消全选照片
 const toggleSelectAll = () => {
   if (selectedPhotos.value.size === photoList.value.length) {
@@ -785,7 +843,8 @@ const selectAlbum = async (album) => {
 
 // 提供选择相册的方法给父组件
 defineExpose({
-  selectAlbum
+  selectAlbum,
+  refreshCurrentAlbum
 })
 
 // 按日期分组照片
@@ -1358,6 +1417,18 @@ onUnmounted(() => {
     &.privacy-mode .photo-image :deep(.el-image__inner) {
       filter: blur(8px);
     }
+
+    /* 隐私模式下确保选择控件可见 */
+    &.privacy-mode {
+      .selection-checkbox {
+        opacity: 1;
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      &.selected .photo-wrapper::after {
+        z-index: 4; // 确保选中边框在隐私遮罩之上
+      }
+    }
   }
 
   &.selected {
@@ -1368,6 +1439,7 @@ onUnmounted(() => {
       border: 3px solid #409eff;
       border-radius: 8px;
       pointer-events: none;
+      z-index: 4; // 确保选中边框在隐私遮罩之上
     }
 
     .selection-checkbox {
@@ -1439,6 +1511,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  z-index: 4; // 确保photo-overlay在隐私遮罩之上
 }
 
 .photo-info {
@@ -1460,14 +1533,12 @@ onUnmounted(() => {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.3);
-  border: 2px solid rgba(255, 255, 255, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
   cursor: pointer;
-  z-index: 2;
+  z-index: 5; // 确保选择复选框在隐私遮罩之上
   opacity: 0.8;
 
   &:hover {
@@ -1621,12 +1692,14 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  z-index: 5;
+  z-index: 3;
   border-radius: 8px;
   backdrop-filter: blur(2px);
+  pointer-events: none;
 
   .privacy-icon {
     font-size: 24px;
+    color: #e6a23c;
     margin-bottom: 4px;
     opacity: 0.9;
   }

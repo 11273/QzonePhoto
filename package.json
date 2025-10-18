@@ -28,6 +28,7 @@
     "electron-updater": "^6.3.9",
     "element-plus": "^2.9.6",
     "fast-glob": "^3.3.3",
+    "image-size": "^2.0.2",
     "lowdb": "^7.0.1",
     "nprogress": "^0.2.0",
     "p-limit": "^6.2.0",
@@ -77,6 +78,7 @@
       "electron-winstaller",
       "esbuild",
       "javascript-obfuscator",
+      "sharp",
       "vue-demi"
     ]
   }

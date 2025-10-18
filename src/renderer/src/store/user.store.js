@@ -13,19 +13,45 @@ export const useUserStore = defineStore('user', () => {
     qzPSkey.value = p_skey
     qzUin.value = uin
 
-    // 如果用户已登录，通知下载服务当前用户
-    if (uin) {
+    // 如果用户已登录，获取用户信息并通知服务
+    if (uin && p_skey) {
       try {
-        await window.QzoneAPI.download.setCurrentUser(uin)
+        // 先获取用户详细信息
+        const res = await window.QzoneAPI.fetchUserInfo(p_skey, uin)
+        if (res.code === 0) {
+          userInfo.value = res.data
+
+          // 通知下载和上传服务当前用户
+          try {
+            await window.QzoneAPI.download.setCurrentUser(uin)
+          } catch (error) {
+            console.warn('[UserStore] 设置下载服务用户失败:', error)
+          }
+
+          try {
+            await window.QzoneAPI.upload.setCurrentUser(uin, p_skey, userInfo.value.uin)
+          } catch (error) {
+            console.warn('[UserStore] 设置上传服务用户失败:', error)
+          }
+        } else {
+          // 如果获取用户信息失败，清除本地登录信息
+          removeLocalUserInfo()
+          qzPSkey.value = ''
+          qzUin.value = ''
+        }
       } catch (error) {
-        console.warn('[UserStore] 设置下载服务用户失败:', error)
+        console.warn('[UserStore] 恢复登录信息时获取用户信息失败:', error)
+        // 如果获取用户信息失败，清除本地登录信息
+        removeLocalUserInfo()
+        qzPSkey.value = ''
+        qzUin.value = ''
       }
     }
   }
 
   // 启动时异步初始化
   initFromLocal().catch((error) => {
-    console.warn('[UserStore] 初始化时设置下载服务用户失败:', error)
+    console.warn('[UserStore] 初始化失败:', error)
   })
 
   // 计算登录状态
@@ -36,10 +62,28 @@ export const useUserStore = defineStore('user', () => {
       const res = await window.QzoneAPI.fetchUserInfo(qzPSkey.value, qzUin.value)
       if (res.code === 0) {
         userInfo.value = res.data
+
+        // 通知下载和上传服务当前用户
+        try {
+          await window.QzoneAPI.download.setCurrentUser(qzUin.value)
+        } catch (error) {
+          console.warn('[UserStore] 设置下载服务用户失败:', error)
+        }
+
+        try {
+          await window.QzoneAPI.upload.setCurrentUser(
+            qzUin.value,
+            qzPSkey.value,
+            userInfo.value.uin
+          )
+        } catch (error) {
+          console.warn('[UserStore] 设置上传服务用户失败:', error)
+        }
       } else {
         throw new Error('获取用户信息失败')
       }
     } catch (error) {
+      console.log('getUserInfo error:>> ', error)
       logout()
       throw error
     }
@@ -53,13 +97,6 @@ export const useUserStore = defineStore('user', () => {
     qzPSkey.value = p_skey
     qzUin.value = uin
     await getUserInfo()
-
-    // 通知下载服务当前用户
-    try {
-      await window.QzoneAPI.download.setCurrentUser(uin)
-    } catch (error) {
-      console.warn('[UserStore] 设置下载服务用户失败:', error)
-    }
   }
 
   const logout = async () => {
@@ -68,11 +105,17 @@ export const useUserStore = defineStore('user', () => {
     qzUin.value = ''
     removeLocalUserInfo()
 
-    // 清除下载服务的当前用户
+    // 清除下载和上传服务的当前用户
     try {
       await window.QzoneAPI.download.setCurrentUser(null)
     } catch (error) {
       console.warn('[UserStore] 清除下载服务用户失败:', error)
+    }
+
+    try {
+      await window.QzoneAPI.upload.setCurrentUser(null, null, null)
+    } catch (error) {
+      console.warn('[UserStore] 清除上传服务用户失败:', error)
     }
 
     location.reload()

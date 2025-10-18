@@ -7,6 +7,7 @@ import '@renderer/styles/index.css'
 
 import './permission' // permission control
 
+import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 
 import router from './router'

@@ -130,7 +130,7 @@ class Logger {
 
   // 日志处理核心 - 改为使用console
   #logWithConsole(data) {
-    const redactedContext = this.#redactSensitiveData(data.context || {})
+    // const redactedContext = this.#redactSensitiveData(data.context || {})
     const message = data.message
     const timestamp = new Date().toISOString()
 
@@ -141,9 +141,9 @@ class Logger {
     const logParts = [logMessage]
 
     // 添加上下文信息（如果有且不为空）
-    if (redactedContext && Object.keys(redactedContext).length > 0) {
-      logParts.push('\n上下文:', JSON.stringify(redactedContext, null, 2))
-    }
+    // if (redactedContext && Object.keys(redactedContext).length > 0) {
+    //   logParts.push('\n上下文:', JSON.stringify(redactedContext, null, 2))
+    // }
 
     // 添加错误堆栈（如果有）
     if (data.error) {
