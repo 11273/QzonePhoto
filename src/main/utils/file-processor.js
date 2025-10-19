@@ -54,7 +54,7 @@ export async function getFileInfo(filePath) {
     }
 
     const stats = await fs.promises.stat(filePath)
-    const fileName = filePath.split('/').pop()
+    const fileName = path.basename(filePath)
 
     const result = {
       fileName,
@@ -123,7 +123,7 @@ export async function getVideoDuration(filePath) {
     const durationMs = Math.round(durationSeconds * 1000)
 
     console.log('[file-processor] 视频时长获取成功:', {
-      file: filePath.split('/').pop() || filePath.split('\\').pop(),
+      file: path.basename(filePath),
       durationMs: durationMs.toFixed(0),
       durationSec: durationSeconds.toFixed(2),
       formatted: formatDuration(durationSeconds)
@@ -141,7 +141,7 @@ export async function getVideoDuration(filePath) {
       const durationMs = Math.max(1000, estimatedDurationSeconds * 1000)
 
       console.warn('[file-processor] 使用预估时长（降级方案）:', {
-        file: filePath.split('/').pop() || filePath.split('\\').pop(),
+        file: path.basename(filePath),
         sizeMB: fileSizeMB.toFixed(2),
         durationMs: durationMs.toFixed(0)
       })
@@ -247,7 +247,7 @@ export async function getImageDimensions(filePath) {
     }
 
     console.log('[file-processor] 图片尺寸获取成功:', {
-      file: filePath.split('/').pop() || filePath,
+      file: path.basename(filePath),
       width: dimensions.width,
       height: dimensions.height,
       type: dimensions.type
