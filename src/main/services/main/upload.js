@@ -73,8 +73,8 @@ export class UploadService {
     this.pageSize = DEFAULT_PAGE_SIZE
     this.maxActiveTasksInMemory = MAX_ACTIVE_TASKS_IN_MEMORY
 
-    // 异步初始化
-    this.initializeAsync()
+    // 不再自动初始化，等待 setCurrentUser 调用
+    // 保留 initializeAsync 方法供首次调用时使用
   }
 
   // 获取用户专用的数据库路径
@@ -87,6 +87,32 @@ export class UploadService {
   // 设置当前用户并切换数据库
   async setCurrentUser(uin, p_skey, hostUin) {
     try {
+      // 处理登出（清除用户）
+      if (!uin || !p_skey) {
+        if (is.dev) console.debug(`[UploadService] 用户登出，清空数据`)
+
+        // 保存当前数据库
+        if (this.db && this.dbInitialized) {
+          await this.saveDatabase()
+        }
+
+        // 取消所有正在进行的上传
+        await this.cancelAll()
+
+        // 清空内存数据和用户信息
+        this.clearMemoryData()
+        this.currentUin = null
+        this.currentPSkey = null
+        this.currentHostUin = null
+        this.db = null
+        this.dbPath = null
+        this.dbInitialized = false
+
+        if (is.dev) console.debug(`[UploadService] 用户数据已清空`)
+        return
+      }
+
+      // 检查用户是否变化
       if (this.currentUin === uin && this.currentPSkey === p_skey) {
         if (is.dev) console.debug(`[UploadService] 用户信息未变化: ${uin}`)
         return
@@ -133,6 +159,11 @@ export class UploadService {
     this.activeTasks.clear()
     this.uploadingTasks.clear()
     this.cancelTokens.clear()
+  }
+
+  // 检查用户是否已登录
+  isUserLoggedIn() {
+    return !!(this.currentUin && this.currentPSkey && this.dbInitialized)
   }
 
   // 异步初始化方法
@@ -505,6 +536,14 @@ export class UploadService {
   // 获取任务列表（分页），支持按相册筛选
   getTasks(page = 1, pageSize = this.pageSize, status = null, albumId = null) {
     try {
+      // 用户未登录时返回空列表
+      if (!this.isUserLoggedIn() || !this.db || !this.db.data) {
+        return {
+          tasks: [],
+          pagination: { page: 1, pageSize, total: 0, totalPages: 0 }
+        }
+      }
+
       const offset = (page - 1) * pageSize
       let tasks = [...this.db.data.tasks]
 
@@ -567,6 +606,10 @@ export class UploadService {
 
   // 获取活跃任务
   getActiveTasks() {
+    // 用户未登录时返回空数组
+    if (!this.isUserLoggedIn()) {
+      return []
+    }
     return Array.from(this.activeTasks.values())
   }
 
@@ -578,6 +621,11 @@ export class UploadService {
   getPendingTasksByAlbum(albumId) {
     try {
       if (!albumId) return []
+
+      // 数据库未初始化时返回空数组
+      if (!this.isUserLoggedIn() || !this.db || !this.db.data) {
+        return []
+      }
 
       const pendingTasks = this.db.data.tasks.filter(
         (task) =>
@@ -605,6 +653,11 @@ export class UploadService {
     try {
       if (!sessionId) return []
 
+      // 数据库未初始化时返回空数组
+      if (!this.isUserLoggedIn() || !this.db || !this.db.data) {
+        return []
+      }
+
       const tasks = this.db.data.tasks.filter(
         (task) => task.sessionId === sessionId && task.status !== UPLOAD_TASK_STATUS.CANCELLED
       )
@@ -621,6 +674,11 @@ export class UploadService {
   // 获取所有相册列表（包含任务统计）
   getAlbumsWithStats() {
     try {
+      // 用户未登录时返回空数组
+      if (!this.isUserLoggedIn() || !this.db || !this.db.data) {
+        return []
+      }
+
       const tasks = this.db.data.tasks
       const albumsMap = new Map()
 
@@ -687,6 +745,22 @@ export class UploadService {
   // 获取指定相册的任务统计
   getAlbumStats(albumId) {
     try {
+      // 用户未登录时返回空统计
+      if (!this.isUserLoggedIn() || !this.db || !this.db.data) {
+        return {
+          total: 0,
+          waiting: 0,
+          uploading: 0,
+          completed: 0,
+          error: 0,
+          paused: 0,
+          cancelled: 0,
+          active: 0,
+          albumId,
+          albumName: '未知相册'
+        }
+      }
+
       // if (is.dev) {
       //   console.log(`[UploadService] 获取相册统计 - albumId: ${albumId}`)
       //   console.log(`[UploadService] 数据库中任务总数: ${this.db.data.tasks.length}`)
@@ -772,8 +846,8 @@ export class UploadService {
   // 获取任务统计信息
   getTaskStats() {
     try {
-      // 数据库未初始化时返回默认值
-      if (!this.db || !this.db.data) {
+      // 用户未登录或数据库未初始化时返回默认值
+      if (!this.isUserLoggedIn() || !this.db || !this.db.data) {
         return {
           total: 0,
           waiting: 0,
@@ -842,6 +916,11 @@ export class UploadService {
   // 更新数据库中的任务
   async updateTaskInDB(task) {
     try {
+      // 数据库未初始化时不执行更新操作
+      if (!this.db || !this.dbInitialized || !this.db.data) {
+        return
+      }
+
       task.update_time = Date.now()
       if (task.status === UPLOAD_TASK_STATUS.COMPLETED && !task.complete_time) {
         task.complete_time = task.update_time
@@ -867,6 +946,10 @@ export class UploadService {
   // 立即保存数据库
   async saveDatabase() {
     try {
+      // 数据库未初始化时不执行保存操作
+      if (!this.db || !this.dbInitialized) {
+        return
+      }
       await this.db.write()
     } catch (error) {
       logger.error('保存数据库失败:', error)
@@ -1382,6 +1465,11 @@ export class UploadService {
 
   // 批量重试失败任务
   async retryAllFailed(albumId = null) {
+    // 数据库未初始化时返回 0
+    if (!this.isUserLoggedIn() || !this.db || !this.db.data) {
+      return 0
+    }
+
     const changedTaskIds = []
     let tasks = this.db.data.tasks.filter((task) => task.status === UPLOAD_TASK_STATUS.ERROR)
 
@@ -1418,6 +1506,11 @@ export class UploadService {
 
   // 清理完成的任务
   async clearCompletedTasks(albumId = null) {
+    // 数据库未初始化时返回 0
+    if (!this.isUserLoggedIn() || !this.db || !this.db.data) {
+      return 0
+    }
+
     let tasksToRemove = this.db.data.tasks.filter(
       (task) => task.status === UPLOAD_TASK_STATUS.COMPLETED
     )
@@ -1456,6 +1549,11 @@ export class UploadService {
 
   // 清理取消的任务
   async clearCancelledTasks(albumId = null) {
+    // 数据库未初始化时返回 0
+    if (!this.isUserLoggedIn() || !this.db || !this.db.data) {
+      return 0
+    }
+
     let tasksToRemove = this.db.data.tasks.filter(
       (task) => task.status === UPLOAD_TASK_STATUS.CANCELLED
     )
@@ -1757,6 +1855,10 @@ export class UploadService {
   // 获取单个任务（从数据库）
   getTaskFromDB(taskId) {
     try {
+      // 数据库未初始化时返回 null
+      if (!this.db || !this.dbInitialized || !this.db.data) {
+        return null
+      }
       return this.db.data.tasks.find((task) => task.id === taskId) || null
     } catch (error) {
       logger.error(`获取任务 ${taskId} 失败:`, error)

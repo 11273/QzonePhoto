@@ -8,9 +8,9 @@ export function createUploadHandlers(service) {
   /** @type {UploadService} */
   const uploadService = service.get(ServiceNames.UPLOAD)
 
-  // 初始化推送管理器
+  // 初始化推送管理器，但不立即启动
+  // 等待用户登录后通过 setCurrentUser 启动
   uploadEventPusher.setUploadService(uploadService)
-  uploadEventPusher.startPush()
 
   return {
     // 添加单个上传任务
@@ -183,10 +183,32 @@ export function createUploadHandlers(service) {
     // 设置当前用户
     [IPC_UPLOAD.SET_CURRENT_USER]: async (event, context) => {
       const { uin, p_skey, hostUin } = context.payload || {}
-      if (uin && p_skey && hostUin) {
+
+      // 处理登出（清除用户）
+      if (!uin || !p_skey) {
+        console.log('[IPC Upload] 用户登出，停止推送器')
+        await uploadService.setCurrentUser(null, null, null)
+        uploadEventPusher.stopPush()
+        return { success: true, uin: null }
+      }
+
+      // 处理登录/切换用户
+      if (hostUin) {
+        console.log('[IPC Upload] 设置当前用户:', uin)
         await uploadService.setCurrentUser(uin, p_skey, hostUin)
+
+        // 启动推送器（如果还没启动）
+        if (!uploadEventPusher.isActive) {
+          console.log('[IPC Upload] 启动推送器')
+          uploadEventPusher.startPush()
+        } else {
+          // 已启动则触发立即推送，更新数据
+          uploadEventPusher.pushImmediate()
+        }
+
         return { success: true, uin }
       }
+
       return { success: false, error: '用户信息不完整' }
     }
   }

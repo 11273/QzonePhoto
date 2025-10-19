@@ -176,6 +176,12 @@ export class UploadEventPusher {
    */
   executePush() {
     try {
+      // 检查用户是否已登录
+      if (!this.uploadService || !this.uploadService.isUserLoggedIn()) {
+        // 用户未登录，不推送数据
+        return
+      }
+
       // 增加推送计数器
       this.pushCount++
 
@@ -266,6 +272,11 @@ export class UploadEventPusher {
    */
   pushStats() {
     try {
+      // 检查用户是否已登录
+      if (!this.uploadService || !this.uploadService.isUserLoggedIn()) {
+        return
+      }
+
       const stats = this.uploadService.getTaskStats()
 
       // 检查是否有变化
@@ -287,6 +298,11 @@ export class UploadEventPusher {
    */
   pushActiveTasks() {
     try {
+      // 检查用户是否已登录
+      if (!this.uploadService || !this.uploadService.isUserLoggedIn()) {
+        return
+      }
+
       const activeTasks = this.uploadService.getActiveTasks()
 
       // 检查是否有变化
@@ -316,6 +332,11 @@ export class UploadEventPusher {
    */
   pushActiveCount() {
     try {
+      // 检查用户是否已登录
+      if (!this.uploadService || !this.uploadService.isUserLoggedIn()) {
+        return
+      }
+
       const stats = this.uploadService.getTaskStats()
       const activeCount = stats.active
 
@@ -338,7 +359,10 @@ export class UploadEventPusher {
    */
   pushDetailedStatus() {
     try {
-      if (!this.uploadService) return
+      // 检查用户是否已登录
+      if (!this.uploadService || !this.uploadService.isUserLoggedIn()) {
+        return
+      }
 
       const stats = this.uploadService.getTaskStats()
       const activeTasks = this.uploadService.getActiveTasks()

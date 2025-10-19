@@ -3,7 +3,6 @@ import windowManager from '@main/core/window'
 import { registerIPC } from '@main/ipc'
 import { registerService } from '@main/services'
 // import { ServiceNames } from '@main/services/service-manager'
-import { app } from 'electron'
 
 export class ApplicationBootstrapper {
   /**
