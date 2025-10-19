@@ -73,14 +73,14 @@ export class WindowManager {
 
     this._registerWindow(win, 'main')
 
-    // 开发环境自动打开开发者工具
-    if (is.dev) {
-      win.webContents.openDevTools()
-    }
-
     win.on('ready-to-show', () => {
       win.show()
       this._bindServicesToWindow(win)
+
+      // 开发环境自动打开开发者工具
+      if (is.dev) {
+        win.webContents.openDevTools()
+      }
     })
 
     // 处理外部链接
