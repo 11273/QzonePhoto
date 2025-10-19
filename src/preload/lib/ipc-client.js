@@ -1,5 +1,12 @@
 import { getLocalUserInfo } from '@shared/utils/auth'
 import { ipcRenderer } from 'electron'
+import {
+  AuthExpiredError,
+  performAuthCheck,
+  getLoggingOutStatus,
+  setLoggingOut,
+  triggerAuthExpiredCallback
+} from './auth-checker'
 
 class IpcError extends Error {
   constructor(message, code, detail) {
@@ -53,6 +60,20 @@ export const ipcClient = {
 
       if (error) {
         throw new IpcError(error.message || '请求处理失败', error.code || 'IPC_ERROR', error.detail)
+      }
+
+      // 检查认证状态（支持通过 meta.skipAuthCheck 跳过）
+      const authCheckResult = performAuthCheck(data, meta)
+      if (authCheckResult.expired) {
+        // 使用防抖机制，避免同时多个请求触发多次登出
+        if (!getLoggingOutStatus()) {
+          setLoggingOut(true)
+          logger.warn(`[IPC] ${channel} 检测到认证过期:`, authCheckResult.message)
+          // 触发认证过期回调（通知 renderer）
+          triggerAuthExpiredCallback(authCheckResult.message)
+        }
+        // 抛出认证过期错误
+        throw new AuthExpiredError(authCheckResult.message, data)
       }
 
       return data

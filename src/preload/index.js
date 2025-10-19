@@ -9,6 +9,7 @@ import {
   IPC_FILE
 } from '@shared/ipc-channels'
 import { ipcClient } from '@preload/lib/ipc-client'
+import { registerAuthExpiredCallback } from '@preload/lib/auth-checker'
 
 try {
   const QzoneAPI = {
@@ -127,7 +128,8 @@ try {
       cancelAll: () => ipcClient.call(IPC_UPLOAD.CANCEL_ALL),
       cancelTasksByAlbum: (albumId, sessionId = null) =>
         ipcClient.call(IPC_UPLOAD.CANCEL_TASKS_BY_ALBUM, { albumId, sessionId }),
-      deleteTasksBySession: (sessionId) => ipcClient.call(IPC_UPLOAD.DELETE_TASKS_BY_SESSION, sessionId),
+      deleteTasksBySession: (sessionId) =>
+        ipcClient.call(IPC_UPLOAD.DELETE_TASKS_BY_SESSION, sessionId),
       pauseAll: () => ipcClient.call(IPC_UPLOAD.PAUSE_ALL),
       resumeAll: () => ipcClient.call(IPC_UPLOAD.RESUME_ALL),
       clearTasks: () => ipcClient.call(IPC_UPLOAD.CLEAR_TASKS),
@@ -219,7 +221,11 @@ try {
     // 移除监听器
     off: (channel, callback) => ipcRenderer.removeListener(channel, callback),
     // 发送事件到主进程
-    send: (channel, ...args) => ipcRenderer.send(channel, ...args)
+    send: (channel, ...args) => ipcRenderer.send(channel, ...args),
+    // 注册认证过期回调
+    onAuthExpired: (callback) => {
+      registerAuthExpiredCallback(callback)
+    }
   }
 
   contextBridge.exposeInMainWorld('api', api)
