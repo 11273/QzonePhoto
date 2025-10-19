@@ -79,6 +79,53 @@ export function createFileHandlers() {
         console.error('获取图片预览失败:', error)
         return null
       }
+    },
+
+    [IPC_FILE.GET_VIDEO_PREVIEW]: async (_, context) => {
+      try {
+        const { filePath } = context.payload
+        // console.log('[file.ipc] 获取视频预览，路径:', filePath)
+
+        // 检查文件是否存在
+        if (!fs.existsSync(filePath)) {
+          throw new Error('文件不存在')
+        }
+
+        // 读取文件并转换为base64（与图片预览相同的方式）
+        const fileBuffer = fs.readFileSync(filePath)
+        const ext = path.extname(filePath).toLowerCase()
+
+        let mimeType = 'video/mp4'
+        switch (ext) {
+          case '.mp4':
+            mimeType = 'video/mp4'
+            break
+          case '.mov':
+            mimeType = 'video/quicktime'
+            break
+          case '.avi':
+            mimeType = 'video/x-msvideo'
+            break
+          case '.wmv':
+            mimeType = 'video/x-ms-wmv'
+            break
+          case '.flv':
+            mimeType = 'video/x-flv'
+            break
+          case '.mkv':
+            mimeType = 'video/x-matroska'
+            break
+        }
+
+        const dataUrl = `data:${mimeType};base64,${fileBuffer.toString('base64')}`
+
+        return {
+          dataUrl
+        }
+      } catch (error) {
+        console.error('获取视频预览失败:', error)
+        return null
+      }
     }
   }
 }

@@ -1,9 +1,20 @@
 import crypto from 'crypto'
 import fs from 'fs'
+import path from 'path'
+import os from 'os'
 import { promisify } from 'util'
 import sizeOf from 'image-size'
+import { getVideoDurationInSeconds } from 'get-video-duration'
+import ffprobeInstaller from '@ffprobe-installer/ffprobe'
+import ffmpegInstaller from '@ffmpeg-installer/ffmpeg'
+import ffmpeg from 'fluent-ffmpeg'
 
 const readFile = promisify(fs.readFile)
+
+// 配置 ffprobe 和 ffmpeg 路径
+process.env.FFPROBE_PATH = ffprobeInstaller.path
+ffmpeg.setFfmpegPath(ffmpegInstaller.path)
+ffmpeg.setFfprobePath(ffprobeInstaller.path)
 
 /**
  * 计算文件的 MD5 哈希值
@@ -74,6 +85,92 @@ export async function readFileAsBuffer(filePath) {
  * @param {string} filePath 图片文件路径
  * @returns {Promise<Object>} 包含 width 和 height 的对象
  */
+/**
+ * 检查文件是否为视频
+ * @param {string} filePath 文件路径
+ * @returns {boolean} 是否为视频文件
+ */
+export function isVideoFile(filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    return false
+  }
+  const ext = filePath.toLowerCase().split('.').pop()
+  const videoExtensions = ['mp4', 'mov', 'avi', 'flv', 'wmv', 'mkv', 'webm', 'mpg', 'mpeg']
+  return videoExtensions.includes(ext)
+}
+
+/**
+ * 获取视频时长（毫秒）
+ * 使用 ffprobe 精确获取视频时长
+ * @param {string} filePath 视频文件路径
+ * @returns {Promise<number>} 视频时长（毫秒）
+ */
+export async function getVideoDuration(filePath) {
+  try {
+    if (!isVideoFile(filePath)) {
+      console.warn('[file-processor] 非视频文件:', filePath)
+      return 0
+    }
+
+    // 检查文件是否存在
+    if (!fs.existsSync(filePath)) {
+      console.warn('[file-processor] 视频文件不存在:', filePath)
+      return 0
+    }
+
+    // 使用 ffprobe 精确获取视频时长（秒）
+    const durationSeconds = await getVideoDurationInSeconds(filePath)
+    const durationMs = Math.round(durationSeconds * 1000)
+
+    console.log('[file-processor] 视频时长获取成功:', {
+      file: filePath.split('/').pop() || filePath.split('\\').pop(),
+      durationMs: durationMs.toFixed(0),
+      durationSec: durationSeconds.toFixed(2),
+      formatted: formatDuration(durationSeconds)
+    })
+
+    return durationMs
+  } catch (error) {
+    console.error('[file-processor] getVideoDuration 失败:', error.message)
+
+    // 降级方案：基于文件大小预估
+    try {
+      const stats = await fs.promises.stat(filePath)
+      const fileSizeMB = stats.size / (1024 * 1024)
+      const estimatedDurationSeconds = (fileSizeMB * 8) / 2
+      const durationMs = Math.max(1000, estimatedDurationSeconds * 1000)
+
+      console.warn('[file-processor] 使用预估时长（降级方案）:', {
+        file: filePath.split('/').pop() || filePath.split('\\').pop(),
+        sizeMB: fileSizeMB.toFixed(2),
+        durationMs: durationMs.toFixed(0)
+      })
+
+      return durationMs
+    } catch (fallbackError) {
+      console.error('[file-processor] 降级方案也失败:', fallbackError.message)
+      // 最终默认值 10 秒
+      return 10000
+    }
+  }
+}
+
+/**
+ * 格式化时长为可读格式
+ * @param {number} seconds 秒数
+ * @returns {string} 格式化后的时长 (HH:MM:SS 或 MM:SS)
+ */
+function formatDuration(seconds) {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+  return `${minutes}:${secs.toString().padStart(2, '0')}`
+}
+
 export async function getImageDimensions(filePath) {
   try {
     // 检查文件是否存在
@@ -87,11 +184,20 @@ export async function getImageDimensions(filePath) {
       return { width: 0, height: 0 }
     }
 
-    // 检查是否为图片文件
+    // 检查文件类型
     const ext = filePath.toLowerCase().split('.').pop()
     const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']
+    const videoExtensions = ['mp4', 'mov', 'avi', 'flv', 'wmv', 'mkv']
+
+    // 如果是视频文件，返回默认尺寸（QQ空间需要非零尺寸）
+    if (videoExtensions.includes(ext)) {
+      console.log('[file-processor] 视频文件，返回默认尺寸:', filePath)
+      return { width: 1920, height: 1080 }
+    }
+
+    // 如果既不是图片也不是视频，跳过
     if (!imageExtensions.includes(ext)) {
-      console.log('[file-processor] 非图片文件，跳过尺寸获取:', filePath)
+      console.log('[file-processor] 非图片/视频文件，跳过尺寸获取:', filePath)
       return { width: 0, height: 0 }
     }
 
@@ -158,5 +264,69 @@ export async function getImageDimensions(filePath) {
       code: error.code
     })
     return { width: 0, height: 0 }
+  }
+}
+
+/**
+ * 从视频中提取封面图
+ * @param {string} videoPath 视频文件路径
+ * @param {number} timeInSeconds 提取帧的时间点（秒），默认1秒
+ * @param {number} maxWidth 最大宽度，默认1280px
+ * @returns {Promise<string>} 生成的封面图路径
+ */
+export async function extractVideoCover(videoPath, timeInSeconds = 1, maxWidth = 1280) {
+  return new Promise((resolve, reject) => {
+    try {
+      // 验证视频文件
+      if (!fs.existsSync(videoPath)) {
+        return reject(new Error('视频文件不存在'))
+      }
+
+      // 生成临时封面文件路径
+      const tempDir = os.tmpdir()
+      const videoBasename = path.basename(videoPath, path.extname(videoPath))
+      const coverPath = path.join(tempDir, `${videoBasename}_cover_${Date.now()}.jpg`)
+
+      console.log('[file-processor] 开始提取视频封面:', {
+        video: videoPath,
+        coverPath,
+        timeInSeconds
+      })
+
+      // 使用 ffmpeg 提取视频帧
+      ffmpeg(videoPath)
+        .screenshots({
+          timestamps: [timeInSeconds],
+          filename: path.basename(coverPath),
+          folder: tempDir,
+          size: `${maxWidth}x?` // 保持宽高比，宽度最大为 maxWidth
+        })
+        .on('end', () => {
+          console.log('[file-processor] 视频封面提取成功:', coverPath)
+          resolve(coverPath)
+        })
+        .on('error', (err) => {
+          console.error('[file-processor] 视频封面提取失败:', err.message)
+          reject(new Error(`视频封面提取失败: ${err.message}`))
+        })
+    } catch (error) {
+      console.error('[file-processor] extractVideoCover 异常:', error)
+      reject(error)
+    }
+  })
+}
+
+/**
+ * 删除临时文件
+ * @param {string} filePath 文件路径
+ */
+export async function deleteTempFile(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      await fs.promises.unlink(filePath)
+      console.log('[file-processor] 临时文件已删除:', filePath)
+    }
+  } catch (error) {
+    console.error('[file-processor] 删除临时文件失败:', error.message)
   }
 }

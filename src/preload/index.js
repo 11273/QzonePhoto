@@ -42,6 +42,7 @@ try {
     openFileDialog: (data) => ipcClient.call(IPC_FILE.DIALOG_OPEN_FILE, data),
     getFileInfo: (data) => ipcClient.call(IPC_FILE.GET_FILE_INFO, data),
     getImagePreview: (data) => ipcClient.call(IPC_FILE.GET_IMAGE_PREVIEW, data),
+    getVideoPreview: (data) => ipcClient.call(IPC_FILE.GET_VIDEO_PREVIEW, data),
 
     // 下载相关API
     download: {

@@ -148,7 +148,7 @@
                 :key="file.uid"
                 class="file-card"
                 :class="{
-                  'upload-failed': file.uploadStatus === 'failed',
+                  'upload-failed': file.uploadStatus === 'failed' || file.uploadStatus === 'error',
                   'upload-uploading': file.uploadStatus === 'uploading',
                   'upload-waiting': file.uploadStatus === 'waiting',
                   'upload-completed': file.uploadStatus === 'completed'
@@ -179,6 +179,14 @@
                       </div>
                     </template>
                   </el-image>
+                  <video
+                    v-else-if="isVideoFile(file.name) && file.preview"
+                    :src="file.preview"
+                    class="thumbnail-video"
+                    preload="metadata"
+                    controls
+                    @error="(event) => handleVideoError(event, file)"
+                  ></video>
                   <div v-else-if="isVideoFile(file.name)" class="video-icon">
                     <el-icon :size="32"><VideoPlay /></el-icon>
                   </div>
@@ -187,13 +195,19 @@
                   </div>
 
                   <!-- Loading 状态：预览加载中 -->
-                  <div v-if="isImageFile(file.name) && file.previewLoading" class="preview-loading">
+                  <div
+                    v-if="(isImageFile(file.name) || isVideoFile(file.name)) && file.previewLoading"
+                    class="preview-loading"
+                  >
                     <el-icon class="is-loading" :size="24"><Loading /></el-icon>
                     <div class="loading-text">加载中...</div>
                   </div>
 
                   <!-- 状态图标 -->
-                  <div v-if="file.uploadStatus === 'failed'" class="status-container-top-left">
+                  <div
+                    v-if="file.uploadStatus === 'failed' || file.uploadStatus === 'error'"
+                    class="status-container-top-left"
+                  >
                     <div class="status-icon failed">
                       <el-tooltip
                         :content="getFileErrorTooltip(file)"
@@ -514,7 +528,7 @@ const uploadStats = computed(() => {
         stats.uploading++
       } else if (status === 'completed') {
         stats.completed++
-      } else if (status === 'failed') {
+      } else if (status === 'failed' || status === 'error') {
         stats.error++
       } else if (status === 'paused') {
         stats.paused++
@@ -740,6 +754,14 @@ const handleImageError = (event, file) => {
   }
 }
 
+// 视频加载错误处理
+const handleVideoError = (event, file) => {
+  console.warn('视频预览加载失败:', file.name, event.target.src)
+  if (file) {
+    file.previewError = true
+  }
+}
+
 // 文件选择
 const triggerFileSelect = async () => {
   try {
@@ -866,27 +888,45 @@ const generatePreviewsForCurrentPage = async () => {
       continue
     }
 
-    // 只为图片生成预览
-    if (!isImageFile(file.name)) {
-      continue
-    }
+    // 为图片生成预览
+    if (isImageFile(file.name)) {
+      // 标记为加载中
+      file.previewLoading = true
 
-    // 标记为加载中
-    file.previewLoading = true
-
-    try {
-      const previewResponse = await window.QzoneAPI.getImagePreview({ filePath: file.path })
-      if (previewResponse?.dataUrl) {
-        file.preview = previewResponse.dataUrl
-        file.previewLoading = false
-      } else {
+      try {
+        const previewResponse = await window.QzoneAPI.getImagePreview({ filePath: file.path })
+        if (previewResponse?.dataUrl) {
+          file.preview = previewResponse.dataUrl
+          file.previewLoading = false
+        } else {
+          file.previewLoading = false
+          file.previewError = true
+        }
+      } catch (error) {
+        console.error('生成图片预览失败:', file.name, error)
         file.previewLoading = false
         file.previewError = true
       }
-    } catch (error) {
-      console.error('生成预览失败:', file.name, error)
-      file.previewLoading = false
-      file.previewError = true
+    }
+    // 为视频生成预览
+    else if (isVideoFile(file.name)) {
+      // 标记为加载中
+      file.previewLoading = true
+
+      try {
+        const previewResponse = await window.QzoneAPI.getVideoPreview({ filePath: file.path })
+        if (previewResponse?.dataUrl) {
+          file.preview = previewResponse.dataUrl
+          file.previewLoading = false
+        } else {
+          file.previewLoading = false
+          file.previewError = true
+        }
+      } catch (error) {
+        console.error('生成视频预览失败:', file.name, error)
+        file.previewLoading = false
+        file.previewError = true
+      }
     }
   }
 }
@@ -1322,24 +1362,36 @@ const checkAndHandlePendingTasks = async () => {
  * 重新加载本地文件的预览图
  */
 const reloadLocalFilePreviews = async () => {
-  // console.log(`[UploadDialog] 重新加载 ${localFiles.value.length} 个文件的预览图`)
+  // console.log(`[UploadDialog] 重新加载 ${localFiles.value.length} 个文件的预览`)
 
   for (let i = 0; i < localFiles.value.length; i++) {
     const file = localFiles.value[i]
     try {
-      if (file.path && !file.preview && isImageFile(file.name)) {
-        localFiles.value[i].previewLoading = true // 开始加载
-        const previewResponse = await window.QzoneAPI.getImagePreview({ filePath: file.path })
-        if (previewResponse?.dataUrl && localFiles.value[i]) {
-          localFiles.value[i].preview = previewResponse.dataUrl
-          localFiles.value[i].previewLoading = false
-        } else {
-          localFiles.value[i].previewLoading = false
-          localFiles.value[i].previewError = true
+      if (file.path && !file.preview) {
+        if (isImageFile(file.name)) {
+          localFiles.value[i].previewLoading = true // 开始加载
+          const previewResponse = await window.QzoneAPI.getImagePreview({ filePath: file.path })
+          if (previewResponse?.dataUrl && localFiles.value[i]) {
+            localFiles.value[i].preview = previewResponse.dataUrl
+            localFiles.value[i].previewLoading = false
+          } else {
+            localFiles.value[i].previewLoading = false
+            localFiles.value[i].previewError = true
+          }
+        } else if (isVideoFile(file.name)) {
+          localFiles.value[i].previewLoading = true // 开始加载
+          const previewResponse = await window.QzoneAPI.getVideoPreview({ filePath: file.path })
+          if (previewResponse?.dataUrl && localFiles.value[i]) {
+            localFiles.value[i].preview = previewResponse.dataUrl
+            localFiles.value[i].previewLoading = false
+          } else {
+            localFiles.value[i].previewLoading = false
+            localFiles.value[i].previewError = true
+          }
         }
       }
     } catch (error) {
-      console.error(`[UploadDialog] 重新加载预览图失败: ${file.name}`, error)
+      console.error(`[UploadDialog] 重新加载预览失败: ${file.name}`, error)
       if (localFiles.value[i]) {
         localFiles.value[i].previewLoading = false
         localFiles.value[i].previewError = true
@@ -1375,27 +1427,43 @@ const loadPendingTasksToLocal = async (pendingTasks) => {
 
     // console.log(`[UploadDialog] 已加载 ${localFiles.value.length} 个未完成任务`)
 
-    // 异步加载预览图
+    // 异步加载预览
     for (let i = 0; i < localFiles.value.length; i++) {
       const file = localFiles.value[i]
       try {
-        if (file.path && isImageFile(file.name)) {
-          if (localFiles.value[i]) {
-            localFiles.value[i].previewLoading = true // 开始加载
-          }
-          const previewResponse = await window.QzoneAPI.getImagePreview({ filePath: file.path })
-          if (previewResponse?.dataUrl && localFiles.value[i]) {
-            localFiles.value[i].preview = previewResponse.dataUrl
-            localFiles.value[i].previewLoading = false
-          } else {
+        if (file.path) {
+          if (isImageFile(file.name)) {
             if (localFiles.value[i]) {
+              localFiles.value[i].previewLoading = true // 开始加载
+            }
+            const previewResponse = await window.QzoneAPI.getImagePreview({ filePath: file.path })
+            if (previewResponse?.dataUrl && localFiles.value[i]) {
+              localFiles.value[i].preview = previewResponse.dataUrl
               localFiles.value[i].previewLoading = false
-              localFiles.value[i].previewError = true
+            } else {
+              if (localFiles.value[i]) {
+                localFiles.value[i].previewLoading = false
+                localFiles.value[i].previewError = true
+              }
+            }
+          } else if (isVideoFile(file.name)) {
+            if (localFiles.value[i]) {
+              localFiles.value[i].previewLoading = true // 开始加载
+            }
+            const previewResponse = await window.QzoneAPI.getVideoPreview({ filePath: file.path })
+            if (previewResponse?.dataUrl && localFiles.value[i]) {
+              localFiles.value[i].preview = previewResponse.dataUrl
+              localFiles.value[i].previewLoading = false
+            } else {
+              if (localFiles.value[i]) {
+                localFiles.value[i].previewLoading = false
+                localFiles.value[i].previewError = true
+              }
             }
           }
         }
       } catch (error) {
-        console.error(`[UploadDialog] 加载预览图失败: ${file.name}`, error)
+        console.error(`[UploadDialog] 加载预览失败: ${file.name}`, error)
         if (localFiles.value[i]) {
           localFiles.value[i].previewLoading = false
           localFiles.value[i].previewError = true
@@ -1491,28 +1559,51 @@ const loadAlbumFailedTasks = async () => {
           taskId: task.id // 保存任务ID，用于重试等操作
         }
 
-        // 为失败的图片生成预览（如果文件仍然存在）
-        if (task.filePath && isImageFile(task.filename || task.picTitle)) {
-          failedFile.previewLoading = true // 开始加载
-          try {
-            const previewResponse = await window.QzoneAPI.getImagePreview({
-              filePath: task.filePath
-            })
-            if (previewResponse?.dataUrl) {
-              failedFile.preview = previewResponse.dataUrl
-              failedFile.previewLoading = false
-              // console.log('失败任务预览生成成功:', task.filename)
-            } else {
-              console.warn('失败任务预览生成失败，无dataUrl:', task.filename)
+        // 为失败的文件生成预览（如果文件仍然存在）
+        if (task.filePath) {
+          const fileName = task.filename || task.picTitle
+          if (isImageFile(fileName)) {
+            failedFile.previewLoading = true // 开始加载
+            try {
+              const previewResponse = await window.QzoneAPI.getImagePreview({
+                filePath: task.filePath
+              })
+              if (previewResponse?.dataUrl) {
+                failedFile.preview = previewResponse.dataUrl
+                failedFile.previewLoading = false
+                // console.log('失败任务预览生成成功:', task.filename)
+              } else {
+                console.warn('失败任务预览生成失败，无dataUrl:', task.filename)
+                failedFile.previewLoading = false
+                failedFile.previewError = true
+              }
+            } catch (error) {
+              console.warn('生成失败任务预览失败:', task.filename, error)
+              // 如果预览生成失败，标记预览错误避免显示调试信息
               failedFile.previewLoading = false
               failedFile.previewError = true
+              failedFile.preview = null
             }
-          } catch (error) {
-            console.warn('生成失败任务预览失败:', task.filename, error)
-            // 如果预览生成失败，标记预览错误避免显示调试信息
-            failedFile.previewLoading = false
-            failedFile.previewError = true
-            failedFile.preview = null
+          } else if (isVideoFile(fileName)) {
+            failedFile.previewLoading = true // 开始加载
+            try {
+              const previewResponse = await window.QzoneAPI.getVideoPreview({
+                filePath: task.filePath
+              })
+              if (previewResponse?.dataUrl) {
+                failedFile.preview = previewResponse.dataUrl
+                failedFile.previewLoading = false
+              } else {
+                console.warn('失败任务视频预览生成失败，无dataUrl:', task.filename)
+                failedFile.previewLoading = false
+                failedFile.previewError = true
+              }
+            } catch (error) {
+              console.warn('生成失败任务视频预览失败:', task.filename, error)
+              failedFile.previewLoading = false
+              failedFile.previewError = true
+              failedFile.preview = null
+            }
           }
         }
 
@@ -1578,28 +1669,51 @@ const handleDetailedStatusUpdate = (status) => {
             retryCount: failedTask.retryCount || 0
           }
 
-          // 为失败的图片生成预览（如果文件仍然存在）
-          if (failedTask.filePath && isImageFile(failedTask.filename || failedTask.picTitle)) {
-            failedFile.previewLoading = true // 开始加载
-            window.QzoneAPI.getImagePreview({ filePath: failedTask.filePath })
-              .then((previewResponse) => {
-                if (previewResponse?.dataUrl) {
-                  failedFile.preview = previewResponse.dataUrl
-                  failedFile.previewLoading = false
-                  // console.log('动态失败任务预览生成成功:', failedTask.filename)
-                } else {
-                  console.warn('动态失败任务预览生成失败，无dataUrl:', failedTask.filename)
+          // 为失败的文件生成预览（如果文件仍然存在）
+          if (failedTask.filePath) {
+            const fileName = failedTask.filename || failedTask.picTitle
+            if (isImageFile(fileName)) {
+              failedFile.previewLoading = true // 开始加载
+              window.QzoneAPI.getImagePreview({ filePath: failedTask.filePath })
+                .then((previewResponse) => {
+                  if (previewResponse?.dataUrl) {
+                    failedFile.preview = previewResponse.dataUrl
+                    failedFile.previewLoading = false
+                    // console.log('动态失败任务预览生成成功:', failedTask.filename)
+                  } else {
+                    console.warn('动态失败任务预览生成失败，无dataUrl:', failedTask.filename)
+                    failedFile.previewLoading = false
+                    failedFile.previewError = true
+                    failedFile.preview = null
+                  }
+                })
+                .catch((error) => {
+                  console.warn('动态失败任务预览生成失败:', failedTask.filename, error)
                   failedFile.previewLoading = false
                   failedFile.previewError = true
                   failedFile.preview = null
-                }
-              })
-              .catch((error) => {
-                console.warn('动态失败任务预览生成失败:', failedTask.filename, error)
-                failedFile.previewLoading = false
-                failedFile.previewError = true
-                failedFile.preview = null
-              })
+                })
+            } else if (isVideoFile(fileName)) {
+              failedFile.previewLoading = true // 开始加载
+              window.QzoneAPI.getVideoPreview({ filePath: failedTask.filePath })
+                .then((previewResponse) => {
+                  if (previewResponse?.dataUrl) {
+                    failedFile.preview = previewResponse.dataUrl
+                    failedFile.previewLoading = false
+                  } else {
+                    console.warn('动态失败任务视频预览生成失败，无dataUrl:', failedTask.filename)
+                    failedFile.previewLoading = false
+                    failedFile.previewError = true
+                    failedFile.preview = null
+                  }
+                })
+                .catch((error) => {
+                  console.warn('动态失败任务视频预览生成失败:', failedTask.filename, error)
+                  failedFile.previewLoading = false
+                  failedFile.previewError = true
+                  failedFile.preview = null
+                })
+            }
           }
 
           // 检查是否已经存在相同的失败文件（避免重复添加）
@@ -2155,6 +2269,22 @@ onUnmounted(async () => {
 
       :deep(.el-image__preview) {
         cursor: zoom-in;
+      }
+    }
+
+    .thumbnail-video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      cursor: pointer;
+      transition: all 0.3s ease;
+
+      &:hover {
+        transform: scale(1.05);
+        filter: brightness(1.1);
       }
     }
 

@@ -5,12 +5,16 @@ import logger from '@main/core/logger'
 import { is } from '@electron-toolkit/utils'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
-import { fileBatchControl, fileUpload, getFileChunk } from '@main/api'
+import { fileBatchControl, fileUpload, getFileChunk, uploadVideoCover } from '@main/api'
 import {
   calculateFileMD5,
   getFileInfo,
   readFileAsBuffer,
-  getImageDimensions
+  getImageDimensions,
+  isVideoFile,
+  getVideoDuration,
+  extractVideoCover,
+  deleteTempFile
 } from '@main/utils/file-processor'
 import windowManager from '@main/core/window'
 import { IPC_UPLOAD } from '@shared/ipc-channels'
@@ -1043,6 +1047,16 @@ export class UploadService {
 
       console.log(`[UploadService] 批次信息: ${JSON.stringify(mutliPicInfo)} - ${task.filename}`)
 
+      // 检测是否为视频文件
+      const isVideo = isVideoFile(task.filePath)
+      let playTime = 0
+
+      if (isVideo) {
+        // 获取视频时长
+        playTime = await getVideoDuration(task.filePath)
+        console.log(`[UploadService] 检测到视频文件: ${task.filename}, 时长: ${playTime}ms`)
+      }
+
       // 调用初始化API
       const result = await fileBatchControl(
         this.currentUin,
@@ -1058,8 +1072,16 @@ export class UploadService {
         task.picWidth,
         task.picHeight,
         task.batchId, // 传递任务的批次ID
-        mutliPicInfo // 传递批次信息
+        mutliPicInfo, // 传递批次信息
+        isVideo, // 是否为视频
+        playTime // 视频时长
       )
+
+      // 保存视频标识到任务
+      if (isVideo) {
+        task.isVideo = true
+        task.playTime = playTime
+      }
 
       if (!result) {
         throw new Error('API调用返回空结果')
@@ -1144,7 +1166,9 @@ export class UploadService {
           end,
           seq,
           '',
-          sliceSize
+          sliceSize,
+          task.isVideo || false,
+          task.total
         )
 
         if (!result) {
@@ -1200,6 +1224,63 @@ export class UploadService {
         if (result.data.flag === 1) {
           task.progress = 100
           task.uploaded = task.total
+
+          // 如果是视频上传，需要上传封面
+          if (task.isVideo && result.data.biz && result.data.biz.sVid) {
+            const vid = result.data.biz.sVid
+            console.log('[UploadService] 视频上传完成，开始上传封面，vid:', vid)
+
+            let coverPath = null
+            try {
+              // 提取视频封面（第1秒）
+              coverPath = await extractVideoCover(task.filePath, 0, 1280)
+              console.log('[UploadService] 视频封面提取成功:', coverPath)
+
+              // 计算批次信息
+              const batchTasks = this.db.data.tasks.filter((t) => t.batchId === task.batchId)
+              const completedInBatch = batchTasks.filter(
+                (t) => t.status === UPLOAD_TASK_STATUS.COMPLETED
+              ).length
+              const failedInBatch = batchTasks.filter(
+                (t) => t.status === UPLOAD_TASK_STATUS.ERROR
+              ).length
+              const currentIndex =
+                batchTasks.findIndex((t) => t.id === task.id) + 1 + completedInBatch + failedInBatch
+
+              const mutliPicInfo = {
+                iBatUploadNum: batchTasks.length,
+                iCurUpload: currentIndex,
+                iSuccNum: completedInBatch,
+                iFailNum: failedInBatch
+              }
+
+              // 上传封面
+              await uploadVideoCover(
+                this.currentUin,
+                this.currentPSkey,
+                this.currentHostUin,
+                vid,
+                coverPath,
+                task.albumId,
+                task.albumName,
+                task.filename,
+                task.batchId,
+                mutliPicInfo
+              )
+
+              console.log('[UploadService] 视频封面上传成功')
+            } catch (coverError) {
+              console.error('[UploadService] 视频封面处理失败:', coverError)
+              // 封面上传失败，整个任务失败
+              throw new Error(`视频封面上传失败: ${coverError.message}`)
+            } finally {
+              // 清理临时封面文件
+              if (coverPath) {
+                await deleteTempFile(coverPath)
+              }
+            }
+          }
+
           break
         }
       } catch (error) {
