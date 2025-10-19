@@ -163,7 +163,14 @@
                     :src="task.previewUrl"
                     :alt="task.filename"
                     class="thumbnail-image"
-                    @click="previewImage(task)"
+                    @error="handleImageError"
+                  />
+                  <video
+                    v-else-if="isVideoFile(task.filename) && task.videoPreviewUrl"
+                    :src="task.videoPreviewUrl"
+                    class="thumbnail-video"
+                    preload="metadata"
+                    muted
                     @error="handleImageError"
                   />
                   <div v-else-if="isVideoFile(task.filename)" class="file-icon video-icon">
@@ -171,6 +178,10 @@
                   </div>
                   <div v-else class="file-icon document-icon">
                     <el-icon><Document /></el-icon>
+                  </div>
+                  <!-- 视频类型标识 -->
+                  <div v-if="isVideoFile(task.filename) && task.videoPreviewUrl" class="type-badge">
+                    <el-icon><VideoPlay /></el-icon>
                   </div>
                 </div>
 
@@ -265,7 +276,7 @@
             v-model:current-page="currentPage"
             :page-size="pageSize"
             :total="pagination.total"
-            :small="true"
+            size="small"
             :background="true"
             layout="total, prev, pager, next"
             @current-change="loadTasks"
@@ -273,134 +284,6 @@
         </div>
       </div>
     </div>
-
-    <!-- 图片预览对话框 -->
-    <el-dialog
-      v-model="imagePreviewVisible"
-      :title="previewTaskInfo.filename"
-      width="90%"
-      :append-to-body="true"
-      class="image-preview-dialog dark-theme"
-      @close="closeImagePreview"
-    >
-      <div class="image-preview-container">
-        <!-- 左侧：图片预览 -->
-        <div class="preview-left">
-          <img
-            :src="previewTaskInfo.previewUrl"
-            :alt="previewTaskInfo.filename"
-            class="preview-image"
-          />
-        </div>
-
-        <!-- 右侧：任务信息 -->
-        <div class="preview-right">
-          <div class="task-info-detail">
-            <div class="info-section">
-              <h4 class="section-title">基本信息</h4>
-              <div class="info-row">
-                <span class="label">文件名:</span>
-                <el-tooltip
-                  v-if="previewTaskInfo.filename && previewTaskInfo.filename.length > 25"
-                  :content="previewTaskInfo.filename"
-                  placement="top"
-                  :show-after="500"
-                >
-                  <span class="value truncated">{{
-                    truncateText(previewTaskInfo.filename, 25)
-                  }}</span>
-                </el-tooltip>
-                <span v-else class="value">{{ previewTaskInfo.filename }}</span>
-              </div>
-              <div class="info-row">
-                <span class="label">文件大小:</span>
-                <span class="value">{{ formatFileSize(previewTaskInfo.total) }}</span>
-              </div>
-              <div class="info-row">
-                <span class="label">所属相册:</span>
-                <span class="value album-tag">{{ previewTaskInfo.albumName }}</span>
-              </div>
-              <div class="info-row">
-                <span class="label">创建时间:</span>
-                <span class="value">{{ formatTime(previewTaskInfo.create_time) }}</span>
-              </div>
-              <div class="info-row">
-                <span class="label">任务状态:</span>
-                <span class="value" :class="getStatusClass(previewTaskInfo.status)">
-                  {{ getStatusText(previewTaskInfo) }}
-                </span>
-              </div>
-            </div>
-
-            <div v-if="previewTaskInfo.filePath" class="info-section">
-              <h4 class="section-title">文件位置</h4>
-              <div class="info-row path-row">
-                <span class="label">完整路径:</span>
-                <el-tooltip :content="previewTaskInfo.filePath" placement="top" :show-after="500">
-                  <span class="value path-value">{{ previewTaskInfo.filePath }}</span>
-                </el-tooltip>
-              </div>
-            </div>
-
-            <div
-              v-if="previewTaskInfo.status === 'uploading'"
-              class="info-section progress-section"
-            >
-              <h4 class="section-title">上传进度</h4>
-              <div class="info-row">
-                <span class="label">进度:</span>
-                <span class="value progress-text">{{ previewTaskInfo.progress }}%</span>
-              </div>
-              <div class="progress-bar-container">
-                <el-progress
-                  :percentage="previewTaskInfo.progress"
-                  :show-text="false"
-                  :stroke-width="6"
-                  :color="getProgressColor(previewTaskInfo.status)"
-                />
-              </div>
-              <div v-if="previewTaskInfo.speed" class="info-row">
-                <span class="label">上传速度:</span>
-                <span class="value speed-text">{{ formatSpeed(previewTaskInfo.speed) }}</span>
-              </div>
-            </div>
-
-            <div v-if="previewTaskInfo.status === 'error'" class="info-section error-section">
-              <h4 class="section-title error-title">错误信息</h4>
-              <div class="info-row">
-                <span class="label">错误详情:</span>
-                <el-tooltip
-                  v-if="previewTaskInfo.error && previewTaskInfo.error.length > 30"
-                  :content="getFullErrorMessage(previewTaskInfo)"
-                  placement="top"
-                  :show-after="300"
-                >
-                  <span class="value error-text">{{
-                    getErrorDisplayText(previewTaskInfo.error)
-                  }}</span>
-                </el-tooltip>
-                <span v-else class="value error-text">{{
-                  previewTaskInfo.error || '未知错误'
-                }}</span>
-              </div>
-              <div
-                v-if="previewTaskInfo.retryCount && previewTaskInfo.retryCount > 0"
-                class="info-row"
-              >
-                <span class="label">重试次数:</span>
-                <span class="value">{{ previewTaskInfo.retryCount }} 次</span>
-              </div>
-              <div class="preview-actions">
-                <el-button size="small" type="primary" @click="retryTaskFromPreview">
-                  <el-icon><Refresh /></el-icon>
-                  重试任务
-                </el-button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </el-dialog>
   </el-dialog>
 </template>
 
@@ -465,23 +348,6 @@ const albumOptions = ref([])
 
 // 预览图缓存（避免重复加载）
 const previewCache = new Map()
-
-// 图片预览相关
-const imagePreviewVisible = ref(false)
-const previewTaskInfo = ref({
-  id: '',
-  filename: '',
-  previewUrl: '',
-  total: 0,
-  albumName: '',
-  create_time: null,
-  status: '',
-  progress: 0,
-  speed: 0,
-  error: '',
-  retryCount: 0,
-  filePath: ''
-})
 
 // 计算属性
 const overallProgress = computed(() => {
@@ -558,73 +424,6 @@ const handleImageError = (event) => {
   // 图片加载失败时的处理
   console.warn('缩略图加载失败:', event.target.src)
   // 可以设置一个默认图标或隐藏图片
-}
-
-// 图片预览相关方法
-const previewImage = (task) => {
-  if (!isImageFile(task.filename) || !task.previewUrl) {
-    ElMessage.warning('该文件不支持预览')
-    return
-  }
-
-  previewTaskInfo.value = {
-    id: task.id,
-    filename: task.filename,
-    previewUrl: task.previewUrl,
-    total: task.total,
-    albumName: task.albumName,
-    create_time: task.create_time,
-    status: task.status,
-    progress: task.progress || 0,
-    speed: task.speed || 0,
-    error: task.error || '',
-    retryCount: task.retryCount || 0,
-    filePath: task.filePath || ''
-  }
-
-  imagePreviewVisible.value = true
-}
-
-const closeImagePreview = () => {
-  imagePreviewVisible.value = false
-  previewTaskInfo.value = {
-    id: '',
-    filename: '',
-    previewUrl: '',
-    total: 0,
-    albumName: '',
-    create_time: null,
-    status: '',
-    progress: 0,
-    speed: 0,
-    error: '',
-    retryCount: 0,
-    filePath: ''
-  }
-}
-
-const retryTaskFromPreview = async () => {
-  if (previewTaskInfo.value.id) {
-    await retryTask(previewTaskInfo.value.id)
-    closeImagePreview()
-  }
-}
-
-const getStatusClass = (status) => {
-  switch (status) {
-    case 'uploading':
-      return 'status-uploading'
-    case 'completed':
-      return 'status-completed'
-    case 'error':
-      return 'status-error'
-    case 'paused':
-      return 'status-paused'
-    case 'waiting':
-      return 'status-waiting'
-    default:
-      return 'status-default'
-  }
 }
 
 const getProgressColor = (status) => {
@@ -788,36 +587,86 @@ const loadTasks = async () => {
     const result = await window.QzoneAPI.upload.getTasks(params)
     const tasks = result.tasks || []
 
-    // 为任务生成预览URL（使用缓存避免重复加载）
+    // 先从缓存中快速填充预览URL
     for (const task of tasks) {
-      if (task.filePath && isImageFile(task.filename)) {
-        // 检查缓存
-        if (previewCache.has(task.filePath)) {
-          task.previewUrl = previewCache.get(task.filePath)
-        } else {
-          // 缓存未命中，加载预览图
-          try {
-            const previewResponse = await window.QzoneAPI.getImagePreview({
-              filePath: task.filePath
-            })
-            if (previewResponse?.dataUrl) {
-              task.previewUrl = previewResponse.dataUrl
-              previewCache.set(task.filePath, previewResponse.dataUrl)
-            }
-          } catch (error) {
-            console.warn('生成任务预览失败:', error)
+      if (task.filePath) {
+        if (isImageFile(task.filename)) {
+          if (previewCache.has(task.filePath)) {
+            task.previewUrl = previewCache.get(task.filePath)
+          }
+        } else if (isVideoFile(task.filename)) {
+          const videoCacheKey = `video_${task.filePath}`
+          if (previewCache.has(videoCacheKey)) {
+            task.videoPreviewUrl = previewCache.get(videoCacheKey)
           }
         }
       }
     }
 
+    // 立即显示任务列表（使用缓存的预览）
     currentTasks.value = tasks
     pagination.value = result.pagination
+    loading.value = false
+
+    // 异步并行加载未缓存的预览（不阻塞UI）
+    loadTaskPreviews(tasks)
   } catch (error) {
     console.error('加载任务列表失败:', error)
     ElMessage.error('加载任务列表失败')
-  } finally {
     loading.value = false
+  }
+}
+
+// 异步加载任务预览（并行加载，不阻塞UI）
+const loadTaskPreviews = async (tasks) => {
+  const previewPromises = []
+
+  for (const task of tasks) {
+    if (!task.filePath) continue
+
+    // 为图片生成预览
+    if (isImageFile(task.filename) && !previewCache.has(task.filePath)) {
+      const promise = window.QzoneAPI.getImagePreview({ filePath: task.filePath })
+        .then((previewResponse) => {
+          if (previewResponse?.dataUrl) {
+            previewCache.set(task.filePath, previewResponse.dataUrl)
+            // 更新当前显示的任务
+            const currentTask = currentTasks.value.find((t) => t.id === task.id)
+            if (currentTask) {
+              currentTask.previewUrl = previewResponse.dataUrl
+            }
+          }
+        })
+        .catch((error) => {
+          console.warn('生成图片预览失败:', task.filename, error)
+        })
+      previewPromises.push(promise)
+    }
+    // 为视频生成预览（并行加载，不阻塞UI）
+    else if (isVideoFile(task.filename)) {
+      const videoCacheKey = `video_${task.filePath}`
+      if (!previewCache.has(videoCacheKey)) {
+        const promise = window.QzoneAPI.getVideoPreview({ filePath: task.filePath })
+          .then((previewResponse) => {
+            if (previewResponse?.dataUrl) {
+              previewCache.set(videoCacheKey, previewResponse.dataUrl)
+              const currentTask = currentTasks.value.find((t) => t.id === task.id)
+              if (currentTask) {
+                currentTask.videoPreviewUrl = previewResponse.dataUrl
+              }
+            }
+          })
+          .catch((error) => {
+            console.warn('生成视频预览失败:', task.filename, error)
+          })
+        previewPromises.push(promise)
+      }
+    }
+  }
+
+  // 并行加载所有预览，但不等待完成
+  if (previewPromises.length > 0) {
+    await Promise.allSettled(previewPromises)
   }
 }
 
@@ -977,11 +826,13 @@ const setupEventListeners = () => {
           }
         } else if (index !== -1) {
           // 如果任务存在，更新它
-          // 保留原有的previewUrl（避免闪烁）
+          // 保留原有的previewUrl和videoPreviewUrl（避免闪烁）
           const existingPreviewUrl = currentTasks.value[index].previewUrl
+          const existingVideoPreviewUrl = currentTasks.value[index].videoPreviewUrl
           currentTasks.value[index] = {
             ...changedTask,
-            previewUrl: existingPreviewUrl || changedTask.previewUrl || ''
+            previewUrl: existingPreviewUrl || changedTask.previewUrl || '',
+            videoPreviewUrl: existingVideoPreviewUrl || changedTask.videoPreviewUrl || ''
           }
 
           // 更新当前速度（从正在上传的任务中获取）
@@ -1403,19 +1254,14 @@ onUnmounted(async () => {
               display: flex;
               align-items: center;
               justify-content: center;
+              position: relative;
 
-              .thumbnail-image {
+              .thumbnail-image,
+              .thumbnail-video {
                 width: 100%;
                 height: 100%;
                 object-fit: cover;
-                cursor: pointer;
-                transition: all 0.3s ease;
                 border-radius: 2px;
-
-                &:hover {
-                  transform: scale(1.05);
-                  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-                }
               }
 
               .file-icon {
@@ -1427,6 +1273,24 @@ onUnmounted(async () => {
 
                 &.document-icon {
                   color: rgba(255, 255, 255, 0.6);
+                }
+              }
+
+              .type-badge {
+                position: absolute;
+                top: 2px;
+                right: 2px;
+                background: rgba(0, 0, 0, 0.7);
+                border-radius: 2px;
+                padding: 1px 2px;
+                font-size: 10px;
+                color: #fff;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+
+                .el-icon {
+                  font-size: 8px;
                 }
               }
             }
@@ -1568,213 +1432,6 @@ onUnmounted(async () => {
       border-top: 1px solid rgba(255, 255, 255, 0.06);
       display: flex;
       justify-content: center;
-    }
-  }
-}
-
-/* 图片预览对话框样式 */
-.image-preview-container {
-  display: flex;
-  gap: 20px;
-  min-height: 500px;
-
-  .preview-left {
-    flex: 1.2;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 8px;
-    padding: 16px;
-
-    .preview-image {
-      max-width: 100%;
-      max-height: 500px;
-      object-fit: contain;
-      border-radius: 6px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-      cursor: zoom-in;
-      transition: transform 0.3s ease;
-
-      &:hover {
-        transform: scale(1.02);
-      }
-    }
-  }
-
-  .preview-right {
-    flex: 0.8;
-    overflow-y: auto;
-    max-height: 500px;
-
-    .task-info-detail {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-
-      .info-section {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 8px;
-        padding: 16px;
-
-        .section-title {
-          margin: 0 0 12px 0;
-          font-size: 14px;
-          font-weight: 600;
-          color: rgba(255, 255, 255, 0.9);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-          padding-bottom: 8px;
-
-          &.error-title {
-            color: #f56c6c;
-          }
-        }
-
-        .info-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          padding: 6px 0;
-          gap: 12px;
-
-          &:not(:last-child) {
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-          }
-
-          .label {
-            font-size: 12px;
-            color: rgba(255, 255, 255, 0.6);
-            font-weight: 500;
-            flex-shrink: 0;
-            min-width: 70px;
-          }
-
-          .value {
-            font-size: 12px;
-            color: rgba(255, 255, 255, 0.9);
-            font-weight: 400;
-            flex: 1;
-            text-align: right;
-            word-break: break-word;
-            line-height: 1.4;
-
-            &.truncated {
-              cursor: help;
-              text-decoration: underline;
-              text-decoration-style: dotted;
-            }
-
-            &.album-tag {
-              background: rgba(64, 158, 255, 0.12);
-              color: #409eff;
-              padding: 2px 6px;
-              border-radius: 4px;
-              font-size: 10px;
-              font-weight: 500;
-              border: 1px solid rgba(64, 158, 255, 0.2);
-            }
-
-            &.progress-text {
-              color: #409eff;
-              font-weight: 600;
-            }
-
-            &.speed-text {
-              color: #67c23a;
-              font-weight: 500;
-            }
-
-            &.error-text {
-              color: #f56c6c;
-            }
-
-            &.status-uploading {
-              color: #409eff;
-            }
-
-            &.status-completed {
-              color: #67c23a;
-            }
-
-            &.status-error {
-              color: #f56c6c;
-            }
-
-            &.status-paused {
-              color: #e6a23c;
-            }
-
-            &.status-waiting {
-              color: #909399;
-            }
-
-            &.status-default {
-              color: rgba(255, 255, 255, 0.7);
-            }
-          }
-
-          &.path-row {
-            .path-value {
-              font-family: 'Courier New', 'Monaco', monospace;
-              background: rgba(255, 255, 255, 0.08);
-              padding: 4px 6px;
-              border-radius: 4px;
-              font-size: 10px;
-              cursor: help;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              max-width: 250px;
-              border: 1px solid rgba(255, 255, 255, 0.1);
-
-              &:hover {
-                background: rgba(255, 255, 255, 0.12);
-              }
-            }
-          }
-        }
-
-        &.progress-section {
-          border-color: rgba(64, 158, 255, 0.3);
-          background: rgba(64, 158, 255, 0.05);
-
-          .progress-bar-container {
-            margin: 12px 0;
-          }
-        }
-
-        &.error-section {
-          border-color: rgba(245, 108, 108, 0.3);
-          background: rgba(245, 108, 108, 0.05);
-
-          .preview-actions {
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid rgba(245, 108, 108, 0.2);
-            display: flex;
-            justify-content: center;
-          }
-        }
-      }
-    }
-  }
-}
-
-/* 响应式支持 */
-@media (max-width: 1024px) {
-  .image-preview-container {
-    flex-direction: column;
-    min-height: auto;
-
-    .preview-left {
-      flex: none;
-      max-height: 400px;
-    }
-
-    .preview-right {
-      flex: none;
-      max-height: 300px;
     }
   }
 }
