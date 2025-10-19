@@ -104,12 +104,14 @@
       <div class="global-controls">
         <!-- 全局隐私模式切换 -->
         <el-tooltip
+          v-if="isLoggedIn"
           :content="
             privacyStore.privacyMode ? '关闭隐私模式，显示照片内容' : '开启隐私模式，模糊照片内容'
           "
           placement="bottom"
         >
           <el-button
+            v-if="isLoggedIn"
             class="global-privacy-btn no-drag"
             size="small"
             text
@@ -203,6 +205,7 @@ import { isMac as isMacPlatform } from '@renderer/utils/platform'
 import { IPC_APP, IPC_SHELL, IPC_WINDOW } from '@shared/ipc-channels'
 import UpdateDialog from '@renderer/components/UpdateManager/UpdateDialog.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
+import { useUserStore } from '@renderer/store/user.store'
 import Icon from '@renderer/components/Icon/index.vue'
 import ProgressBar from '@renderer/components/ProgressBar/index.vue'
 import { formatBytes } from '@renderer/utils/formatters'
@@ -221,8 +224,14 @@ const appDescription = ref('')
 // 窗口状态
 const isMaximized = ref(false)
 
-// 全局隐私模式store
+// Store
 const privacyStore = usePrivacyStore()
+const userStore = useUserStore()
+
+// 判断用户是否已登录
+const isLoggedIn = computed(() => {
+  return !!userStore.userInfo?.uin
+})
 
 // 更新状态
 const updateState = reactive({
