@@ -6,3 +6,53 @@ body {
   background-size: cover;
   user-select: none;
 }
+
+/* ========== 全局滚动条样式 ========== */
+
+/* 原生滚动条样式 (Webkit) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent; /* 透明背景 */
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2); /* 半透明滑块 */
+  border-radius: 4px;
+  transition: background 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35); /* hover 时更明显 */
+}
+
+/* Firefox 滚动条样式 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent; /* 滑块颜色 轨道颜色 */
+}
+
+/* Element Plus 滚动条样式统一 */
+.el-scrollbar__bar {
+  opacity: 1 !important; /* 提高可见度，不再使用低透明度 */
+  background: transparent !important;
+}
+
+.el-scrollbar__thumb {
+  background: rgba(255, 255, 255, 0.25) !important; /* 提高滑块不透明度 */
+  border-radius: 4px !important;
+  transition: background 0.3s ease !important;
+}
+
+.el-scrollbar__thumb:hover {
+  background: rgba(255, 255, 255, 0.4) !important; /* hover 时更明显 */
+}
+
+/* 隐藏水平滚动条 (保留功能但不显示) */
+.el-scrollbar__bar.is-horizontal {
+  display: none !important;
+}

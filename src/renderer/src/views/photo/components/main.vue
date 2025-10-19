@@ -1227,6 +1227,11 @@ onUnmounted(() => {
 .photo-container {
   flex: 1;
   overflow: hidden;
+
+  // 为滚动条预留空间
+  :deep(.el-scrollbar__wrap) {
+    padding-right: 6px;
+  }
 }
 
 .photo-timeline {

@@ -1557,6 +1557,11 @@ const handleReplaceSettingChange = async (newValue) => {
       flex: 1;
       height: 0; // 强制flex子项占用剩余高度
 
+      // 为滚动条预留空间
+      :deep(.el-scrollbar__wrap) {
+        padding-right: 10px; // 为滚动条预留空间
+      }
+
       // 进度条式布局
       &.progress-bar-layout {
         .progress-task {

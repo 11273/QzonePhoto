@@ -14,6 +14,8 @@ export class ApplicationBootstrapper {
     this.#setupErrorHandlers()
     this.services = null
     this.ipc = null
+    this.isShuttingDown = false
+    this.shutdownPromise = null
   }
 
   /**
@@ -59,24 +61,44 @@ export class ApplicationBootstrapper {
    * 关闭流程
    */
   async shutdown() {
-    const shutdownActions = [() => this.services?.destroyAll(), () => this.ipc?.destroyAll()]
-
-    for (const action of shutdownActions) {
-      try {
-        await action()
-      } catch (shutdownError) {
-        logger.error('关闭操作失败:', shutdownError)
-      }
+    // 防止重复执行
+    if (this.isShuttingDown) {
+      logger.info('[Bootstrapper] 已在关闭中，返回现有Promise')
+      return this.shutdownPromise
     }
 
-    await windowManager.destroyAllWindows()
+    this.isShuttingDown = true
 
-    if (!app.isReady()) return
+    this.shutdownPromise = (async () => {
+      try {
+        logger.info('[Bootstrapper] 开始关闭服务...')
 
-    setTimeout(() => {
-      if (!app.isReady()) return
-      app.exit(1)
-    }, 1000)
+        // 按顺序清理资源
+        const shutdownActions = [
+          { name: 'Services', action: () => this.services?.destroyAll() },
+          { name: 'IPC', action: () => this.ipc?.destroyAll() },
+          { name: 'Windows', action: () => windowManager.destroyAllWindows() }
+        ]
+
+        for (const { name, action } of shutdownActions) {
+          try {
+            logger.info(`[Bootstrapper] 关闭 ${name}...`)
+            await action()
+          } catch (shutdownError) {
+            logger.error(`[Bootstrapper] 关闭 ${name} 失败:`, shutdownError)
+            // 继续执行其他清理操作
+          }
+        }
+
+        logger.info('[Bootstrapper] 关闭流程完成')
+      } catch (error) {
+        logger.error('[Bootstrapper] 关闭流程异常:', error)
+      } finally {
+        this.isShuttingDown = false
+      }
+    })()
+
+    return this.shutdownPromise
   }
 
   // 错误监控设置

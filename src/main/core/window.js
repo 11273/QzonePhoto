@@ -79,7 +79,24 @@ export class WindowManager {
 
       // 开发环境自动打开开发者工具
       if (is.dev) {
-        win.webContents.openDevTools()
+        try {
+          win.webContents.openDevTools()
+          console.log('[WindowManager] 开发者工具已打开')
+        } catch (error) {
+          console.error('[WindowManager] 打开开发者工具失败:', error)
+        }
+      }
+    })
+
+    // 页面加载完成后再次尝试打开开发者工具（备选方案）
+    win.webContents.on('did-finish-load', () => {
+      if (is.dev && !win.webContents.isDevToolsOpened()) {
+        try {
+          win.webContents.openDevTools()
+          console.log('[WindowManager] 开发者工具已打开（备选方案）')
+        } catch (error) {
+          console.error('[WindowManager] 打开开发者工具失败（备选方案）:', error)
+        }
       }
     })
 
@@ -220,8 +237,16 @@ export class WindowManager {
     }
 
     win.on('closed', () => {
-      this.windows.delete(id)
-      if (this.mainWindowId === id) this.mainWindowId = null
+      try {
+        this.windows.delete(id)
+        if (this.mainWindowId === id) {
+          this.mainWindowId = null
+        }
+      } catch (error) {
+        if (is.dev) {
+          console.error(`[WindowManager] 清理窗口 ${id} 失败:`, error)
+        }
+      }
     })
 
     win.webContents.on('did-finish-load', () => {})
@@ -253,11 +278,25 @@ export class WindowManager {
 
   // 销毁所有窗口
   async destroyAllWindows() {
-    // eslint-disable-next-line no-unused-vars
-    for (const [id, win] of this.windows) {
-      if (!win.isDestroyed()) win.destroy()
+    try {
+      for (const [id, win] of this.windows) {
+        try {
+          if (win && !win.isDestroyed()) {
+            win.destroy()
+          }
+        } catch (error) {
+          // 只在开发环境输出错误信息
+          if (is.dev) {
+            console.error(`[WindowManager] 销毁窗口 ${id} 失败:`, error)
+          }
+          // 继续处理其他窗口
+        }
+      }
+    } finally {
+      // 确保清理操作始终执行
+      this.windows.clear()
+      this.mainWindowId = null
     }
-    this.windows.clear()
   }
 
   // 获取单例实例

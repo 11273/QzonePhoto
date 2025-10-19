@@ -1634,17 +1634,11 @@ onBeforeUnmount(() => {
   }
 }
 
-/* 通用样式 */
-:deep(.el-scrollbar__bar) {
-  opacity: 0.3;
-}
-
-:deep(.el-scrollbar__bar:hover) {
-  opacity: 0.6;
-}
-
-:deep(.el-scrollbar__bar.is-horizontal) {
-  display: none !important;
+/* 为滚动条预留空间 */
+.menu-container {
+  :deep(.el-scrollbar__wrap) {
+    padding-right: 6px;
+  }
 }
 
 /* 响应式设计 */
