@@ -622,7 +622,7 @@ const isDragging = ref(false)
 
 // 分页相关
 const currentPage = ref(1)
-const pageSize = 60
+const pageSize = 20 // 减小分页大小，提升性能
 
 // 计算属性
 const dialogTitle = computed(() => {
@@ -743,7 +743,6 @@ const handleImageError = (event, file) => {
 // 文件选择
 const triggerFileSelect = async () => {
   try {
-    // console.log('开始文件选择...')
     const response = await window.QzoneAPI.openFileDialog({
       properties: ['openFile', 'multiSelections'],
       filters: [
@@ -754,12 +753,24 @@ const triggerFileSelect = async () => {
       ]
     })
 
-    // console.log('文件选择响应:', response)
-
     if (!response?.canceled && response.filePaths?.length > 0) {
-      for (const filePath of response.filePaths) {
-        await addFileByPath(filePath)
+      const fileCount = response.filePaths.length
+
+      // 显示加载提示
+      if (fileCount > 10) {
+        ElMessage.info(`正在添加 ${fileCount} 个文件，请稍候...`)
       }
+
+      // 批量并行处理文件（不阻塞 UI）
+      const addPromises = response.filePaths.map((filePath) => addFileByPath(filePath))
+      await Promise.all(addPromises)
+
+      ElMessage.success(`成功添加 ${fileCount} 个文件`)
+
+      // 添加完成后，为当前页生成预览
+      setTimeout(() => {
+        generatePreviewsForCurrentPage()
+      }, 200)
     }
   } catch (error) {
     console.error('文件选择失败:', error)
@@ -827,36 +838,56 @@ const addFileByPath = async (filePath) => {
       taskId: null // 任务ID
     }
 
-    // 生成预览（图片）
-    if (mimeType.startsWith('image/')) {
-      fileItem.previewLoading = true // 开始加载
-      try {
-        const previewResponse = await window.QzoneAPI.getImagePreview({ filePath })
-        if (previewResponse?.dataUrl) {
-          fileItem.preview = previewResponse.dataUrl
-          fileItem.previewLoading = false
-          // console.log('预览生成成功:', fileInfo.fileName)
-        } else {
-          console.warn('预览生成失败，无dataUrl:', fileInfo.fileName)
-          fileItem.previewLoading = false
-          fileItem.previewError = true
-        }
-      } catch (error) {
-        console.error('生成预览失败:', fileInfo.fileName, error)
-        fileItem.previewLoading = false
-        fileItem.previewError = true
-      }
-    }
-
+    // 先添加文件到列表，不立即生成预览（避免阻塞 UI）
     localFiles.value.push(fileItem)
 
     // 如果是第一个文件，自动选中
     if (localFiles.value.length === 1) {
       selectedFile.value = fileItem
     }
+
+    // 预览将在需要时按需生成（见 generatePreviewsForCurrentPage）
+    // 不在这里立即生成，避免大量文件时卡顿
   } catch (error) {
     console.error('添加文件失败:', error)
     ElMessage.error(`添加文件失败：${error.message}`)
+  }
+}
+
+// 为当前页的文件生成预览（按需加载，提升性能）
+const generatePreviewsForCurrentPage = async () => {
+  const currentFiles = currentPageFiles.value
+
+  for (let i = 0; i < currentFiles.length; i++) {
+    const file = currentFiles[i]
+
+    // 跳过已经生成预览或正在加载的文件
+    if (file.preview || file.previewLoading || file.previewError) {
+      continue
+    }
+
+    // 只为图片生成预览
+    if (!isImageFile(file.name)) {
+      continue
+    }
+
+    // 标记为加载中
+    file.previewLoading = true
+
+    try {
+      const previewResponse = await window.QzoneAPI.getImagePreview({ filePath: file.path })
+      if (previewResponse?.dataUrl) {
+        file.preview = previewResponse.dataUrl
+        file.previewLoading = false
+      } else {
+        file.previewLoading = false
+        file.previewError = true
+      }
+    } catch (error) {
+      console.error('生成预览失败:', file.name, error)
+      file.previewLoading = false
+      file.previewError = true
+    }
   }
 }
 
@@ -873,10 +904,23 @@ const handleDrop = async (event) => {
   isDragging.value = false
   const files = Array.from(event.dataTransfer.files)
 
-  for (const file of files) {
-    if (file.path) {
-      await addFileByPath(file.path)
+  if (files.length > 0) {
+    // 显示加载提示
+    if (files.length > 10) {
+      ElMessage.info(`正在添加 ${files.length} 个文件，请稍候...`)
     }
+
+    // 批量并行处理
+    const addPromises = files.filter((file) => file.path).map((file) => addFileByPath(file.path))
+
+    await Promise.all(addPromises)
+
+    ElMessage.success(`成功添加 ${files.length} 个文件`)
+
+    // 添加完成后，为当前页生成预览
+    setTimeout(() => {
+      generatePreviewsForCurrentPage()
+    }, 200)
   }
 }
 
@@ -1679,6 +1723,13 @@ const handleTaskChanges = (tasks) => {
   }
 }
 
+// 监听当前页变化，按需生成预览
+watch(currentPage, async () => {
+  // 延迟生成预览，避免切换页面时卡顿
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  generatePreviewsForCurrentPage()
+})
+
 // 监听弹窗打开
 watch(
   () => props.visible,
@@ -1707,6 +1758,11 @@ watch(
         if (props.contextMode === 'album' && props.albumId && sessionMode.value !== 'continue') {
           await loadAlbumFailedTasks()
         }
+
+        // 为当前页生成预览
+        setTimeout(() => {
+          generatePreviewsForCurrentPage()
+        }, 200)
       } catch (error) {
         console.error('加载上传数据失败:', error)
       }
