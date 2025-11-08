@@ -24,6 +24,9 @@ export function createPhotoHandlers(service) {
     },
     [IPC_PHOTO.BATCH_VIDEO_INFO]: async (_, { payload, headers }) => {
       return photoService.batchGetVideoInfo(payload, headers)
+    },
+    [IPC_PHOTO.DELETE_PHOTOS]: async (_, { payload, headers }) => {
+      return photoService.deletePhotos(payload, headers)
     }
   }
 }

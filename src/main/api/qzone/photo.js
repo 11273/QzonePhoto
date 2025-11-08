@@ -141,3 +141,92 @@ export async function cgi_video_get_data(
   })
   return response.data
 }
+
+/**
+ * 删除照片
+ * @param uin qq
+ * @param p_skey 登录后有
+ * @param hostUin 主人QQ
+ * @param albumId 相册ID
+ * @param photoData 照片数据数组，每个元素包含 {id, modifytime}
+ * @param albumName 相册名称
+ * @param priv 权限
+ * @returns
+ */
+export async function cgi_delpic_multi_v2(
+  uin,
+  p_skey,
+  hostUin,
+  albumId,
+  photoData,
+  albumName = 'undefined',
+  priv = 3
+) {
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/photo.qzone.qq.com/cgi-bin/common/cgi_delpic_multi_v2'
+
+  // 构造codelist格式，根据官方源码：
+  // imageId|picrefer|时间戳|||imageId|imageType|0
+  // 多张照片用 _ 分隔
+  const codelistParts = photoData.map((photo) => {
+    const photoId = photo.id
+    const picrefer = photo.picrefer || ''
+    const imageType = photo.imageType || 1
+    const timestamp = Date.now()
+    // 格式：[imageId, picrefer, 时间戳, "", "", imageId, imageType, 0].join("|")
+    return [photoId, picrefer, timestamp, '', '', photoId, imageType, 0].join('|')
+  })
+  const codelist = codelistParts.join('_')
+
+  // ismultiup 是照片数量对应的0字符串
+  const ismultiup = '0'.repeat(photoData.length)
+
+  const data = {
+    qzreferrer: `https://user.qzone.qq.com/${hostUin}`,
+    albumid: albumId,
+    nvip: '1',
+    bgid: 'undefined',
+    tpid: 'undefined',
+    priv: priv.toString(),
+    albumname: albumName,
+    codelist: codelist,
+    ismultiup: ismultiup,
+    resetcover: '1',
+    newcover: '',
+    uin: hostUin,
+    hostUin: hostUin,
+    plat: 'qzone',
+    source: 'qzone',
+    inCharset: 'utf-8',
+    outCharset: 'utf-8'
+  }
+
+  const response = await request.post(url, data, {
+    params: {
+      g_tk: getGTK(p_skey)
+    },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Cookie: `uin=${uin};p_skey=${p_skey}`
+    }
+  })
+
+  // 返回的是HTML页面，需要解析JavaScript中的JSON数据
+  const htmlContent = response.data
+  // 使用正则提取JSON数据
+  const jsonMatch = htmlContent.match(/frameElement\.callback\(([\s\S]*?)\)/)
+
+  if (jsonMatch && jsonMatch[1]) {
+    try {
+      // 去除可能的尾部分号和空格
+      const jsonStr = jsonMatch[1].trim().replace(/;?\s*$/, '')
+      const result = eval('(' + jsonStr + ')')
+      return result
+    } catch (error) {
+      console.error('解析删除照片响应失败:', error)
+      throw new Error('解析删除响应失败')
+    }
+  }
+
+  throw new Error('删除照片响应格式异常')
+}

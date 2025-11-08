@@ -23,7 +23,9 @@ export const IPC_PHOTO = {
   /** 获取视频信息 */
   VIDEO_INFO: 'photo:getVideoInfo',
   /** 批量获取视频信息 */
-  BATCH_VIDEO_INFO: 'photo:batchGetVideoInfo'
+  BATCH_VIDEO_INFO: 'photo:batchGetVideoInfo',
+  /** 删除照片 */
+  DELETE_PHOTOS: 'photo:deletePhotos'
 }
 
 export const IPC_USER = {

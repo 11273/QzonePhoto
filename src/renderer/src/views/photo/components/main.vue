@@ -142,6 +142,7 @@
           <span class="selected-count">已选择 {{ selectedPhotos.size }} 张照片</span>
           <div class="toolbar-actions">
             <el-button size="small" @click="clearSelection">取消选择</el-button>
+            <el-button size="small" type="danger" @click="deleteSelected">删除选中</el-button>
             <el-button size="small" type="primary" @click="downloadSelected">下载选中</el-button>
           </div>
         </div>
@@ -217,7 +218,7 @@ import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { Loading, Picture, VideoPlay, Check, Hide } from '@element-plus/icons-vue'
-import { ElLoading } from 'element-plus'
+import { ElLoading, ElMessage, ElMessageBox } from 'element-plus'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import Top from './top.vue'
@@ -423,13 +424,13 @@ const loadMorePhotos = async () => {
       hasMore.value = false
       if (!result.success) {
         console.error('加载失败:', result.error)
-        // eslint-disable-next-line no-undef
+
         ElMessage.error(result.error || '加载照片失败')
       }
     }
   } catch (error) {
     console.error('加载更多照片失败:', error)
-    // eslint-disable-next-line no-undef
+
     ElMessage.error('加载照片失败')
     hasMore.value = false
   } finally {
@@ -510,12 +511,12 @@ watch(currentAlbum, async (newAlbum) => {
       }
     } else {
       console.error('加载相册失败:', result.error)
-      // eslint-disable-next-line no-undef
+
       ElMessage.error(result.error || '加载相册照片失败')
     }
   } catch (error) {
     console.error('加载相册照片失败:', error)
-    // eslint-disable-next-line no-undef
+
     ElMessage.error('加载相册照片失败')
   } finally {
     loading.value = false
@@ -530,7 +531,6 @@ watch(currentAlbum, async (newAlbum) => {
 // 下载当前相册所有照片
 const downloadCurrentAlbum = async () => {
   if (!currentAlbum.value) {
-    // eslint-disable-next-line no-undef
     ElMessage.warning('请先选择相册')
     return
   }
@@ -539,7 +539,6 @@ const downloadCurrentAlbum = async () => {
 
   // 检查是否已经在下载或获取中
   if (downloadStore.isAlbumDownloading(albumId) || downloadStore.isAlbumFetching(albumId)) {
-    // eslint-disable-next-line no-undef
     ElMessage.warning('该相册正在下载中')
     return
   }
@@ -573,7 +572,7 @@ const downloadCurrentAlbum = async () => {
     if (cancelFlags.value.get(albumId)) {
       downloadStore.setAlbumFetching(albumId, false)
       downloadStore.cancelAlbumDownload(albumId)
-      // eslint-disable-next-line no-undef
+
       ElMessage.info('已取消获取相册照片')
       return
     }
@@ -582,7 +581,6 @@ const downloadCurrentAlbum = async () => {
     downloadStore.setAlbumFetching(albumId, false)
 
     if (totalAddedTasks === 0) {
-      // eslint-disable-next-line no-undef
       ElMessage.warning('当前相册没有照片')
       downloadStore.clearAlbumDownloadState(albumId)
       return
@@ -605,7 +603,7 @@ const downloadCurrentAlbum = async () => {
     if (!cancelFlags.value.get(albumId)) {
       downloadStore.errorAlbumDownload(albumId, error.message)
       console.error('下载相册失败:', error)
-      // eslint-disable-next-line no-undef
+
       ElMessage.error('下载相册失败')
     }
   } finally {
@@ -704,7 +702,6 @@ const cancelCurrentAlbumDownload = () => {
   // 立即更新store状态
   downloadStore.cancelAlbumDownload(albumId)
 
-  // eslint-disable-next-line no-undef
   ElMessage.info('正在取消下载...')
 }
 
@@ -717,7 +714,6 @@ const cleanupAlbumFlags = (albumId) => {
 // 刷新当前相册
 const refreshCurrentAlbum = async () => {
   if (!currentAlbum.value) {
-    // eslint-disable-next-line no-undef
     ElMessage.warning('请先选择一个相册')
     return
   }
@@ -758,12 +754,12 @@ const refreshCurrentAlbum = async () => {
       // ElMessage.success(`已刷新相册：${currentAlbum.value.name}`)
     } else {
       console.error('刷新相册失败:', result.error)
-      // eslint-disable-next-line no-undef
+
       ElMessage.error(result.error || '刷新相册失败')
     }
   } catch (error) {
     console.error('刷新相册失败:', error)
-    // eslint-disable-next-line no-undef
+
     ElMessage.error('刷新相册失败')
   } finally {
     loading.value = false
@@ -790,9 +786,89 @@ const toggleSelectAll = () => {
 }
 
 // 下载选中照片
+// 删除选中的照片
+const deleteSelected = async () => {
+  if (selectedPhotos.value.size === 0) {
+    ElMessage.warning('请先选择要删除的照片')
+    return
+  }
+
+  // 二次确认
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedPhotos.value.size} 张照片吗？`,
+      '删除确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    // 用户取消
+    return
+  }
+
+  // 获取选中的照片信息
+  const selectedPhotoList = photoList.value.filter((photo) => {
+    const photoKey = photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+    return selectedPhotos.value.has(photoKey)
+  })
+
+  if (selectedPhotoList.length === 0) {
+    ElMessage.error('未找到选中的照片')
+    return
+  }
+
+  // 提取照片数据（包含ID、picrefer和imageType）
+  const photoData = selectedPhotoList.map((photo) => ({
+    id: photo.lloc || photo.picKey || photo.id,
+    picrefer: photo.picrefer || '',
+    imageType: photo.uploadtype || photo.type || 1,
+    modifytime: photo.modifytime || Math.floor(Date.now() / 1000)
+  }))
+
+  console.log('[deleteSelected] 准备删除的照片数据:', photoData)
+
+  try {
+    const loadingInstance = ElLoading.service({
+      lock: true,
+      text: '正在删除照片...',
+      background: 'rgba(0, 0, 0, 0.7)'
+    })
+
+    // 调用删除API
+    const result = await window.QzoneAPI.deletePhotos({
+      hostUin: userStore.userInfo.uin,
+      albumId: currentAlbum.value.id,
+      photoData: photoData,
+      albumName: currentAlbum.value.name,
+      priv: currentAlbum.value.priv || 3
+    })
+
+    loadingInstance.close()
+
+    // 检查删除结果
+    if (result.code === 0) {
+      const successCount = result.data?.succ?.length || 0
+      ElMessage.success(`成功删除 ${successCount} 张照片`)
+
+      // 清空选择
+      selectedPhotos.value.clear()
+
+      // 刷新相册照片列表
+      await refreshCurrentAlbum()
+    } else {
+      ElMessage.error(result.message || '删除照片失败')
+    }
+  } catch (error) {
+    console.error('删除照片失败:', error)
+    ElMessage.error(error.message || '删除照片失败，请重试')
+  }
+}
+
 const downloadSelected = async () => {
   if (selectedPhotos.value.size === 0) {
-    // eslint-disable-next-line no-undef
     ElMessage.warning('请先选择要下载的照片')
     return
   }
@@ -804,7 +880,6 @@ const downloadSelected = async () => {
     )
 
     if (selectedPhotoObjects.length === 0) {
-      // eslint-disable-next-line no-undef
       ElMessage.warning('未找到选中的照片')
       return
     }
@@ -837,12 +912,11 @@ const downloadSelected = async () => {
       // 清除选择
       selectedPhotos.value = new Set()
     } else {
-      // eslint-disable-next-line no-undef
       ElMessage.error(result.error || '下载选中照片失败')
     }
   } catch (error) {
     console.error('下载选中照片失败:', error)
-    // eslint-disable-next-line no-undef
+
     ElMessage.error('下载选中照片失败')
   }
 }
@@ -1003,7 +1077,7 @@ const handlePhotoClick = async (photo, event, index) => {
       // 参数验证
       if (!topicId || !picKey) {
         console.error('视频预览参数不完整:', { topicId, picKey, hostUin })
-        // eslint-disable-next-line no-undef
+
         ElMessage.error('视频信息不完整，无法预览')
         closeVideoPreview()
         return
@@ -1020,13 +1094,13 @@ const handlePhotoClick = async (photo, event, index) => {
         currentVideoInfo.value = videoInfo
       } else {
         console.log('未获取到视频信息')
-        // eslint-disable-next-line no-undef
+
         ElMessage.warning('无法获取视频播放地址，可能是权限限制')
         closeVideoPreview()
       }
     } catch (error) {
       console.error('获取视频信息失败:', error)
-      // eslint-disable-next-line no-undef
+
       ElMessage.error('获取视频信息失败')
       closeVideoPreview()
     }
@@ -1111,7 +1185,6 @@ const handleVideoError = (event) => {
       errorMessage = `视频播放失败 (错误代码: ${error?.code || '未知'})`
   }
 
-  // eslint-disable-next-line no-undef
   ElMessage.error(errorMessage)
   console.error('视频播放详细错误:', {
     code: error?.code,

@@ -1,4 +1,9 @@
-import { cgi_list_photo, fcg_list_album_v3, cgi_floatview_photo_list_v2 } from '@main/api'
+import {
+  cgi_list_photo,
+  fcg_list_album_v3,
+  cgi_floatview_photo_list_v2,
+  cgi_delpic_multi_v2
+} from '@main/api'
 
 export class QzonePhotoService {
   constructor() {}
@@ -107,5 +112,10 @@ export class QzonePhotoService {
     }
 
     return videoInfos
+  }
+
+  // 新增：删除照片
+  async deletePhotos({ hostUin, albumId, photoData, albumName, priv }, { uin, p_skey }) {
+    return await cgi_delpic_multi_v2(uin, p_skey, hostUin, albumId, photoData, albumName, priv)
   }
 }

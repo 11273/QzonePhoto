@@ -37,6 +37,8 @@ try {
     getVideoInfo: (data) => ipcClient.call(IPC_PHOTO.VIDEO_INFO, data),
     // 批量获取视频信息
     batchGetVideoInfo: (data) => ipcClient.call(IPC_PHOTO.BATCH_VIDEO_INFO, data),
+    // 删除照片
+    deletePhotos: (data) => ipcClient.call(IPC_PHOTO.DELETE_PHOTOS, data),
 
     // 文件系统相关API
     openFileDialog: (data) => ipcClient.call(IPC_FILE.DIALOG_OPEN_FILE, data),
