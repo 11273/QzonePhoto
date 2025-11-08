@@ -204,7 +204,9 @@ export const IPC_WINDOW = {
   /** 获取窗口状态 */
   IS_MAXIMIZED: 'window:isMaximized',
   /** 窗口最大化事件 */
-  MAXIMIZED: 'window:maximized'
+  MAXIMIZED: 'window:maximized',
+  /** 打开QQ空间官网 */
+  OPEN_QZONE_WEB: 'window:openQzoneWeb'
 }
 
 export const IPC_APP = {

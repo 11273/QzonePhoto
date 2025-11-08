@@ -18,6 +18,14 @@
           </div>
           <!-- 登出按钮移到头像右边 -->
           <div class="header-actions">
+            <el-button
+              text
+              :icon="Monitor"
+              class="action-btn open-web-btn"
+              title="打开官网"
+              @click="openQzoneWeb"
+            >
+            </el-button>
             <el-popconfirm
               title="确定要登出当前账号吗？"
               confirm-button-text="确定登出"
@@ -219,7 +227,15 @@ import { onBeforeMount, ref, computed, nextTick, onBeforeUnmount, inject, watch 
 
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
-import { Download, Upload, SwitchButton, FolderAdd, Close, Loading } from '@element-plus/icons-vue'
+import {
+  Download,
+  Upload,
+  SwitchButton,
+  FolderAdd,
+  Close,
+  Loading,
+  Monitor
+} from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
 import UploadManager from '@renderer/components/UploadManager/index.vue'
@@ -1052,6 +1068,19 @@ const cleanupUploadListeners = () => {
   }
 }
 
+// 打开 QQ 空间官网
+const openQzoneWeb = async () => {
+  try {
+    await window.api.invoke('window:openQzoneWeb', {
+      uin: userStore.Uin,
+      p_skey: userStore.PSkey
+    })
+  } catch (error) {
+    console.error('打开官网失败:', error)
+    ElMessage.error('打开官网失败')
+  }
+}
+
 // 确认登出
 const confirmLogout = async () => {
   // 登出并清除用户信息
@@ -1136,6 +1165,21 @@ onBeforeUnmount(() => {
         display: flex;
         align-items: center;
         justify-content: flex-end;
+        gap: 4px;
+
+        .open-web-btn {
+          color: rgba(64, 158, 255, 0.8);
+          font-size: 16px;
+          padding: 4px;
+          min-width: unset;
+          width: 28px;
+          height: 28px;
+
+          &:hover {
+            color: #409eff;
+            background: rgba(64, 158, 255, 0.1);
+          }
+        }
 
         .header-logout {
           color: rgba(245, 108, 108, 0.8);
@@ -1144,6 +1188,7 @@ onBeforeUnmount(() => {
           min-width: unset;
           width: 28px;
           height: 28px;
+          margin-left: 0px !important;
 
           &:hover {
             color: #f56c6c;

@@ -1,8 +1,9 @@
-import { ipcMain, shell } from 'electron'
+import { ipcMain, shell, BrowserWindow } from 'electron'
 import windowManager from '@main/core/window'
 import { IPC_WINDOW, IPC_APP, IPC_SHELL } from '@shared/ipc-channels'
 import { app } from 'electron'
 import { APP_NAME, APP_HOMEPAGE, APP_DESCRIPTION } from '@shared/const'
+import { is } from '@electron-toolkit/utils'
 
 // 注册窗口控制相关的IPC处理器
 export function registerWindowControl() {
@@ -70,6 +71,67 @@ export function registerWindowControl() {
   // 打开外部链接
   ipcMain.handle(IPC_SHELL.OPEN_EXTERNAL, (event, url) => {
     shell.openExternal(url)
+  })
+
+  // 打开 QQ 空间官网
+  ipcMain.handle(IPC_WINDOW.OPEN_QZONE_WEB, async (event, { uin, p_skey }) => {
+    try {
+      // 创建新窗口 - 显示窗口框架但隐藏菜单栏
+      const qzoneWindow = new BrowserWindow({
+        width: 1400,
+        height: 900,
+        title: 'QQ空间',
+        frame: true, // 显示窗口框架（包括关闭按钮）
+        autoHideMenuBar: true, // 隐藏菜单栏
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          webSecurity: true,
+          allowRunningInsecureContent: false
+        }
+      })
+
+      // 在加载页面之前设置 cookie
+      const ses = qzoneWindow.webContents.session
+
+      // 优化后的 cookies 配置
+      const cookieConfig = {
+        url: 'https://user.qzone.qq.com',
+        domain: '.qq.com',
+        path: '/',
+        secure: true,
+        httpOnly: false
+      }
+
+      const cookiesToSet = [
+        { name: 'uin', value: `${uin}` },
+        { name: 'p_uin', value: `${uin}` },
+        { name: 'p_skey', value: p_skey }
+      ]
+
+      // 设置所有 cookies
+      await Promise.all(
+        cookiesToSet.map((cookie) =>
+          ses.cookies.set({
+            ...cookieConfig,
+            ...cookie
+          })
+        )
+      )
+
+      // 加载 QQ 空间页面
+      await qzoneWindow.loadURL(`https://user.qzone.qq.com`)
+
+      // 打开开发者工具（可选，用于调试）
+      if (is.dev) {
+        qzoneWindow.webContents.openDevTools()
+      }
+
+      return { success: true }
+    } catch (error) {
+      console.error('打开 QQ 空间官网失败:', error)
+      return { success: false, error: error.message }
+    }
   })
 }
 
