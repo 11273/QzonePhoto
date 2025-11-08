@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.3.0](https://github.com/11273/QzonePhoto/compare/v1.2.1...v1.3.0) (2025-11-08)
+
+### ✨ Features | 新功能
+
+* 添加打开QQ空间官网功能，支持在新窗口中加载用户页面并设置相关cookies ([2f28099](https://github.com/11273/QzonePhoto/commit/2f28099eca7f6dba85a6a1a0c532fec9006f9f2e))
+* 添加批量删除照片功能，支持用户选择并删除相册中的照片 ([e61b3c5](https://github.com/11273/QzonePhoto/commit/e61b3c5b1ac2614273d8103a81a1f9407106d6ca))
+
+### 💅 Polish | 优化
+
+* 优化相册信息展示与滚动交互体验 ([7355b63](https://github.com/11273/QzonePhoto/commit/7355b636dccfd8c27b0d09ded0d808abfaea26ce))
+
 ## [1.2.1](https://github.com/11273/QzonePhoto/compare/v1.2.0...v1.2.1) (2025-10-19)
 
 ### ✨ Features | 新功能
