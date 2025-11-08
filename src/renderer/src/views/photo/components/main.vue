@@ -19,7 +19,7 @@
         title="相册为空"
         description="这个相册还没有照片"
       />
-      <el-scrollbar v-else class="h-full">
+      <el-scrollbar v-else ref="scrollbarRef" class="h-full" @scroll="handleScroll">
         <!-- 按日期分组的照片 -->
         <div class="photo-timeline">
           <div v-for="group in photoGroups" :key="group.date" class="date-group">
@@ -235,8 +235,13 @@ const isScrollLoading = ref(false) // 简单布尔锁
 const topRef = ref(null)
 
 // 滚动容器引用
+const scrollbarRef = ref(null)
 const loadMoreTrigger = ref(null)
 let observer = null
+
+// 滚动状态
+const lastScrollTop = ref(0)
+const scrollThreshold = 50 // 滚动阈值，超过这个值才触发收缩
 
 // 相册和照片数据
 const currentAlbum = ref(null)
@@ -436,6 +441,30 @@ const loadMorePhotos = async () => {
   }
 }
 
+// 处理滚动事件
+const handleScroll = (event) => {
+  if (!topRef.value || !topRef.value.setCollapsed) return
+
+  const scrollTop = event.scrollTop || 0
+
+  // 判断滚动方向
+  if (scrollTop > lastScrollTop.value) {
+    // 向下滚动（内容向上移动）
+    if (scrollTop > scrollThreshold) {
+      // 超过阈值，收缩顶部
+      topRef.value.setCollapsed(true)
+    }
+  } else {
+    // 向上滚动（内容向下移动）或到达顶部
+    if (scrollTop <= scrollThreshold) {
+      // 接近顶部，展开
+      topRef.value.setCollapsed(false)
+    }
+  }
+
+  lastScrollTop.value = scrollTop
+}
+
 // 监听当前相册变化
 watch(currentAlbum, async (newAlbum) => {
   if (!newAlbum) {
@@ -455,6 +484,12 @@ watch(currentAlbum, async (newAlbum) => {
   selectedPhotos.value.clear()
   hasMore.value = true
   currentPageStart.value = 0
+  lastScrollTop.value = 0 // 重置滚动位置
+
+  // 重置顶部展开状态
+  if (topRef.value && topRef.value.setCollapsed) {
+    topRef.value.setCollapsed(false)
+  }
 
   try {
     const result = await fetchPhotosByTopicId(newAlbum.id, 0, pageSize.value)

@@ -111,7 +111,6 @@
           placement="bottom"
         >
           <el-button
-            v-if="isLoggedIn"
             class="global-privacy-btn no-drag"
             size="small"
             text
@@ -762,16 +761,19 @@ onUnmounted(() => {
   display: flex !important;
   align-items: center !important;
   gap: 6px !important;
+  cursor: pointer !important;
 
   .privacy-icon {
     font-size: 14px;
     flex-shrink: 0;
+    cursor: pointer;
   }
 
   .privacy-text {
     font-size: 12px;
     font-weight: 500;
     line-height: 1;
+    cursor: pointer;
   }
 
   &:hover {

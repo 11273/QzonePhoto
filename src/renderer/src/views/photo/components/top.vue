@@ -1,5 +1,5 @@
 <template>
-  <div class="top-bar">
+  <div class="top-bar" :class="{ collapsed: isCollapsed }">
     <!-- 上传弹窗 - 相册上下文模式 -->
     <UploadDialog
       :visible="showUpload"
@@ -33,38 +33,45 @@
             </el-tooltip>
           </div>
 
-          <div v-if="currentAlbum.desc && currentAlbum.desc.trim()" class="album-description">
-            {{ currentAlbum.desc }}
-          </div>
+          <transition name="fade-slide">
+            <div
+              v-show="!isCollapsed && currentAlbum.desc && currentAlbum.desc.trim()"
+              class="album-description"
+            >
+              {{ currentAlbum.desc }}
+            </div>
+          </transition>
         </div>
 
-        <div class="stats-container">
-          <div class="stats-row">
-            <StatCard icon="📷" :value="currentAlbum.total" label="张照片" :is-primary="true" />
+        <transition name="fade-slide">
+          <div v-show="!isCollapsed" class="stats-container">
+            <div class="stats-row">
+              <StatCard icon="📷" :value="currentAlbum.total" label="张照片" :is-primary="true" />
 
-            <StatCard icon="💬" :value="currentAlbum.comment || 0" label="评论" />
+              <StatCard icon="💬" :value="currentAlbum.comment || 0" label="评论" />
 
-            <StatCard
-              icon="📅"
-              :value="formatDateWithYear(currentAlbum.createtime)"
-              label="创建时间"
-            />
+              <StatCard
+                icon="📅"
+                :value="formatDateWithYear(currentAlbum.createtime)"
+                label="创建时间"
+              />
 
-            <StatCard
-              icon="🕒"
-              :value="formatDateWithYear(currentAlbum.modifytime)"
-              label="最后更新"
-            />
+              <StatCard
+                icon="🕒"
+                :value="formatDateWithYear(currentAlbum.modifytime)"
+                label="最后更新"
+              />
 
-            <!-- 问题信息显示在最后更新旁边 -->
-            <StatCard
-              v-if="currentAlbum.question"
-              icon="🔒"
-              :value="currentAlbum.question"
-              label="相册问题"
-            />
+              <!-- 问题信息显示在最后更新旁边 -->
+              <StatCard
+                v-if="currentAlbum.question"
+                icon="🔒"
+                :value="currentAlbum.question"
+                label="相册问题"
+              />
+            </div>
           </div>
-        </div>
+        </transition>
       </div>
 
       <!-- 预留空间给底部控制区 -->
@@ -76,7 +83,7 @@
     </div>
 
     <!-- 底部控制行 - 集中所有控制功能 -->
-    <div v-if="currentAlbum && hasPhotos" class="bottom-controls">
+    <div v-if="currentAlbum" class="bottom-controls">
       <!-- 左侧：选择信息和图片大小控制 -->
       <div class="left-controls">
         <div class="selection-control">
@@ -237,6 +244,14 @@ watch(
 // 上传弹窗的显示状态
 const showUpload = ref(false)
 
+// 收缩状态
+const isCollapsed = ref(false)
+
+// 设置收缩状态
+const setCollapsed = (collapsed) => {
+  isCollapsed.value = collapsed
+}
+
 // 显示上传弹窗
 const showUploadDialog = () => {
   showUpload.value = true
@@ -253,9 +268,10 @@ const handleUploadDialogClose = async (shouldRefresh) => {
   }
 }
 
-// 提供隐私模式状态给其他组件（现在通过全局store）
+// 提供隐私模式状态和收缩控制给其他组件
 defineExpose({
-  privacyMode: privacyStore.privacyMode
+  privacyMode: privacyStore.privacyMode,
+  setCollapsed
 })
 
 const hasPhotos = computed(() => allPhotos.value && allPhotos.value.length > 0)
@@ -362,6 +378,28 @@ const refreshAlbum = async () => {
   padding: 16px 24px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  &.collapsed {
+    padding: 8px 24px;
+
+    .album-header {
+      gap: 8px;
+    }
+
+    .title-section {
+      margin-bottom: 0;
+
+      .album-title {
+        font-size: 16px;
+      }
+    }
+
+    .bottom-controls {
+      margin-top: 8px;
+      padding-top: 8px;
+    }
+  }
 }
 
 /* 相册信息布局 */
@@ -387,6 +425,7 @@ const refreshAlbum = async () => {
 
 .title-section {
   margin-bottom: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   .album-title {
     font-size: 22px;
@@ -395,6 +434,7 @@ const refreshAlbum = async () => {
     line-height: 1.3;
     letter-spacing: -0.02em;
     display: inline-block;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .album-refresh-btn {
@@ -589,6 +629,7 @@ const refreshAlbum = async () => {
   padding-top: 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   gap: 24px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   .left-controls {
     display: flex;
@@ -976,14 +1017,24 @@ const refreshAlbum = async () => {
     font-size: 40px;
     margin-bottom: 12px;
   }
+}
 
-  .scrolled .album-header {
-    gap: 12px;
-  }
+/* 淡入淡出滑动动画 */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
 
-  .collapsed .title-section .album-title {
-    font-size: 15px;
-  }
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(-10px);
+  max-height: 0;
+}
+
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+  max-height: 0;
 }
 
 @media (max-width: 480px) {
