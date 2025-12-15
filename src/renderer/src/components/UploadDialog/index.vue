@@ -445,6 +445,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { getVideoMetadata } from '@renderer/utils/video-helper'
 import {
   Plus,
   Upload,
@@ -857,11 +858,31 @@ const addFileByPath = async (filePath) => {
       speed: 0, // 初始速度
       errorMessage: '', // 错误信息
       retryCount: 0, // 重试次数
-      taskId: null // 任务ID
+      taskId: null, // 任务ID
+      // 视频元数据（如果是视频文件）
+      videoDuration: null, // 视频时长（毫秒）
+      videoCover: null // 视频封面（Base64）
     }
 
     // 先添加文件到列表，不立即生成预览（避免阻塞 UI）
     localFiles.value.push(fileItem)
+
+    // 如果是视频文件，异步提取元数据
+    if (isVideoFile(fileInfo.fileName)) {
+      getVideoMetadata(filePath)
+        .then((metadata) => {
+          fileItem.videoDuration = metadata.duration
+          fileItem.videoCover = metadata.cover
+          console.log(`[UploadDialog] 视频元数据提取成功:`, {
+            file: fileInfo.fileName,
+            duration: metadata.duration,
+            hasCover: !!metadata.cover
+          })
+        })
+        .catch((error) => {
+          console.error(`[UploadDialog] 提取视频元数据失败:`, error)
+        })
+    }
 
     // 如果是第一个文件，自动选中
     if (localFiles.value.length === 1) {

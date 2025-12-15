@@ -45,6 +45,7 @@ try {
     getFileInfo: (data) => ipcClient.call(IPC_FILE.GET_FILE_INFO, data),
     getImagePreview: (data) => ipcClient.call(IPC_FILE.GET_IMAGE_PREVIEW, data),
     getVideoPreview: (data) => ipcClient.call(IPC_FILE.GET_VIDEO_PREVIEW, data),
+    getVideoMetadata: (data) => ipcClient.call(IPC_FILE.GET_VIDEO_METADATA, data),
 
     // 下载相关API
     download: {

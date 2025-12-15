@@ -8,7 +8,6 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import tailwindcss from '@tailwindcss/vite'
 import { createSvgIconsPlugin } from 'vite-plugin-svg-icons'
 import path from 'path'
-import { bytecodePlugin } from 'electron-vite'
 import obfuscatorPlugin from 'vite-plugin-javascript-obfuscator'
 
 export default defineConfig({
@@ -20,7 +19,7 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [externalizeDepsPlugin(), bytecodePlugin()],
+    plugins: [externalizeDepsPlugin()],
     build: {
       minify: 'esbuild',
       esbuild: {

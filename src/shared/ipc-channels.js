@@ -227,7 +227,9 @@ export const IPC_FILE = {
   /** 获取图片预览 */
   GET_IMAGE_PREVIEW: 'file:getImagePreview',
   /** 获取视频预览 */
-  GET_VIDEO_PREVIEW: 'file:getVideoPreview'
+  GET_VIDEO_PREVIEW: 'file:getVideoPreview',
+  /** 获取视频元数据 */
+  GET_VIDEO_METADATA: 'file:getVideoMetadata'
 }
 
 // 避免键名冲突，创建所有通道值的集合

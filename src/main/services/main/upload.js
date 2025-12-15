@@ -16,6 +16,7 @@ import {
   extractVideoCover,
   deleteTempFile
 } from '@main/utils/file-processor'
+import { getVideoMetadata } from '@main/services/video-metadata'
 import windowManager from '@main/core/window'
 import { IPC_UPLOAD } from '@shared/ipc-channels'
 
@@ -504,7 +505,10 @@ export class UploadService {
         picHeight,
         batchId, // 使用统一的批次ID（后端API用）
         sessionId: finalSessionId, // 使用会话ID（前端分组用）
-        total: file.size || 0
+        total: file.size || 0,
+        // 视频元数据（由渲染进程提取）
+        videoDuration: file.videoDuration || null, // 视频时长（毫秒）
+        videoCover: file.videoCover || null // 视频封面（Base64）
       })
 
       tasks.push(task)
@@ -1135,9 +1139,11 @@ export class UploadService {
       let playTime = 0
 
       if (isVideo) {
-        // 获取视频时长
-        playTime = await getVideoDuration(task.filePath)
-        console.log(`[UploadService] 检测到视频文件: ${task.filename}, 时长: ${playTime}ms`)
+        // 优先使用任务中保存的时长，如果没有则使用降级方案
+        playTime = task.videoDuration || (await getVideoDuration(task.filePath))
+        console.log(
+          `[UploadService] 检测到视频文件: ${task.filename}, 时长: ${playTime}ms, 来源: ${task.videoDuration ? '元数据' : '降级预估'}`
+        )
       }
 
       // 调用初始化API
@@ -1315,9 +1321,22 @@ export class UploadService {
 
             let coverPath = null
             try {
-              // 提取视频封面（第1秒）
-              coverPath = await extractVideoCover(task.filePath, 0, 1280)
-              console.log('[UploadService] 视频封面提取成功:', coverPath)
+              // 优先使用任务中保存的封面
+              if (task.videoCover) {
+                coverPath = await extractVideoCover(task.videoCover, task.filePath)
+                console.log('[UploadService] 使用任务中保存的视频封面:', coverPath)
+              } else {
+                // 如果任务中没有封面，动态提取
+                console.log('[UploadService] 任务中无封面，开始动态提取视频元数据...')
+                const metadata = await getVideoMetadata(task.filePath)
+
+                if (metadata && metadata.cover) {
+                  coverPath = await extractVideoCover(metadata.cover, task.filePath)
+                  console.log('[UploadService] 动态提取视频封面成功:', coverPath)
+                } else {
+                  throw new Error('无法提取视频封面')
+                }
+              }
 
               // 计算批次信息
               const batchTasks = this.db.data.tasks.filter((t) => t.batchId === task.batchId)

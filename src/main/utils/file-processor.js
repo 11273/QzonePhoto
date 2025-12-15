@@ -4,17 +4,8 @@ import path from 'path'
 import os from 'os'
 import { promisify } from 'util'
 import sizeOf from 'image-size'
-import { getVideoDurationInSeconds } from 'get-video-duration'
-import ffprobeInstaller from '@ffprobe-installer/ffprobe'
-import ffmpegInstaller from '@ffmpeg-installer/ffmpeg'
-import ffmpeg from 'fluent-ffmpeg'
 
 const readFile = promisify(fs.readFile)
-
-// 配置 ffprobe 和 ffmpeg 路径
-process.env.FFPROBE_PATH = ffprobeInstaller.path
-ffmpeg.setFfmpegPath(ffmpegInstaller.path)
-ffmpeg.setFfprobePath(ffprobeInstaller.path)
 
 /**
  * 计算文件的 MD5 哈希值
@@ -100,8 +91,8 @@ export function isVideoFile(filePath) {
 }
 
 /**
- * 获取视频时长（毫秒）
- * 使用 ffprobe 精确获取视频时长
+ * 获取视频时长（降级方案 - 基于文件大小预估）
+ * 注意：应优先使用视频元数据服务 (video-metadata.js) 提取精确时长
  * @param {string} filePath 视频文件路径
  * @returns {Promise<number>} 视频时长（毫秒）
  */
@@ -112,63 +103,30 @@ export async function getVideoDuration(filePath) {
       return 0
     }
 
-    // 检查文件是否存在
     if (!fs.existsSync(filePath)) {
       console.warn('[file-processor] 视频文件不存在:', filePath)
       return 0
     }
 
-    // 使用 ffprobe 精确获取视频时长（秒）
-    const durationSeconds = await getVideoDurationInSeconds(filePath)
-    const durationMs = Math.round(durationSeconds * 1000)
+    // 基于文件大小预估时长
+    const stats = await fs.promises.stat(filePath)
+    const fileSizeMB = stats.size / (1024 * 1024)
+    // 假设平均码率 2 Mbps
+    const estimatedDurationSeconds = (fileSizeMB * 8) / 2
+    const durationMs = Math.max(1000, Math.round(estimatedDurationSeconds * 1000))
 
-    console.log('[file-processor] 视频时长获取成功:', {
+    console.warn('[file-processor] 使用预估时长（降级方案）:', {
       file: path.basename(filePath),
-      durationMs: durationMs.toFixed(0),
-      durationSec: durationSeconds.toFixed(2),
-      formatted: formatDuration(durationSeconds)
+      sizeMB: fileSizeMB.toFixed(2),
+      durationMs
     })
 
     return durationMs
   } catch (error) {
     console.error('[file-processor] getVideoDuration 失败:', error.message)
-
-    // 降级方案：基于文件大小预估
-    try {
-      const stats = await fs.promises.stat(filePath)
-      const fileSizeMB = stats.size / (1024 * 1024)
-      const estimatedDurationSeconds = (fileSizeMB * 8) / 2
-      const durationMs = Math.max(1000, estimatedDurationSeconds * 1000)
-
-      console.warn('[file-processor] 使用预估时长（降级方案）:', {
-        file: path.basename(filePath),
-        sizeMB: fileSizeMB.toFixed(2),
-        durationMs: durationMs.toFixed(0)
-      })
-
-      return durationMs
-    } catch (fallbackError) {
-      console.error('[file-processor] 降级方案也失败:', fallbackError.message)
-      // 最终默认值 10 秒
-      return 10000
-    }
+    // 最终默认值 10 秒
+    return 10000
   }
-}
-
-/**
- * 格式化时长为可读格式
- * @param {number} seconds 秒数
- * @returns {string} 格式化后的时长 (HH:MM:SS 或 MM:SS)
- */
-function formatDuration(seconds) {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = Math.floor(seconds % 60)
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
-  return `${minutes}:${secs.toString().padStart(2, '0')}`
 }
 
 export async function getImageDimensions(filePath) {
@@ -268,52 +226,45 @@ export async function getImageDimensions(filePath) {
 }
 
 /**
- * 从视频中提取封面图
- * @param {string} videoPath 视频文件路径
- * @param {number} timeInSeconds 提取帧的时间点（秒），默认1秒
- * @param {number} maxWidth 最大宽度，默认1280px
+ * 将 Base64 图片保存为临时文件
+ * @param {string} base64Data Base64 编码的图片数据
+ * @param {string} filename 文件名
+ * @returns {Promise<string>} 保存的文件路径
+ */
+export async function saveBase64ToTempFile(base64Data, filename) {
+  try {
+    const tempDir = os.tmpdir()
+    const filePath = path.join(tempDir, filename)
+
+    // 移除 Base64 前缀
+    const base64String = base64Data.replace(/^data:image\/\w+;base64,/, '')
+    const buffer = Buffer.from(base64String, 'base64')
+
+    await fs.promises.writeFile(filePath, buffer)
+    console.log('[file-processor] Base64 图片已保存:', filePath)
+
+    return filePath
+  } catch (error) {
+    console.error('[file-processor] 保存 Base64 图片失败:', error)
+    throw error
+  }
+}
+
+/**
+ * 将 Base64 封面转换为临时文件
+ * 注意：应使用视频元数据服务 (video-metadata.js) 提取封面
+ * @param {string} base64Cover Base64 编码的封面
+ * @param {string} videoPath 视频文件路径（用于生成文件名）
  * @returns {Promise<string>} 生成的封面图路径
  */
-export async function extractVideoCover(videoPath, timeInSeconds = 1, maxWidth = 1280) {
-  return new Promise((resolve, reject) => {
-    try {
-      // 验证视频文件
-      if (!fs.existsSync(videoPath)) {
-        return reject(new Error('视频文件不存在'))
-      }
+export async function extractVideoCover(base64Cover, videoPath) {
+  if (!base64Cover) {
+    throw new Error('未提供视频封面数据')
+  }
 
-      // 生成临时封面文件路径
-      const tempDir = os.tmpdir()
-      const videoBasename = path.basename(videoPath, path.extname(videoPath))
-      const coverPath = path.join(tempDir, `${videoBasename}_cover_${Date.now()}.jpg`)
-
-      console.log('[file-processor] 开始提取视频封面:', {
-        video: videoPath,
-        coverPath,
-        timeInSeconds
-      })
-
-      // 使用 ffmpeg 提取视频帧
-      ffmpeg(videoPath)
-        .screenshots({
-          timestamps: [timeInSeconds],
-          filename: path.basename(coverPath),
-          folder: tempDir,
-          size: `${maxWidth}x?` // 保持宽高比，宽度最大为 maxWidth
-        })
-        .on('end', () => {
-          console.log('[file-processor] 视频封面提取成功:', coverPath)
-          resolve(coverPath)
-        })
-        .on('error', (err) => {
-          console.error('[file-processor] 视频封面提取失败:', err.message)
-          reject(new Error(`视频封面提取失败: ${err.message}`))
-        })
-    } catch (error) {
-      console.error('[file-processor] extractVideoCover 异常:', error)
-      reject(error)
-    }
-  })
+  const videoBasename = path.basename(videoPath, path.extname(videoPath))
+  const filename = `${videoBasename}_cover_${Date.now()}.jpg`
+  return saveBase64ToTempFile(base64Cover, filename)
 }
 
 /**
