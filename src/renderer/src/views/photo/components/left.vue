@@ -200,7 +200,12 @@
                 >
                   <el-icon class="is-loading"><Loading /></el-icon>
                 </div>
-                <span class="album-text">{{ album.name }}</span>
+                <div class="album-info">
+                  <span v-if="getViewtypeText(album.viewtype)" class="viewtype-badge">
+                    {{ getViewtypeText(album.viewtype) }}
+                  </span>
+                  <span class="album-text">{{ album.name }}</span>
+                </div>
                 <span class="album-num">
                   <span v-if="getAlbumStatusText(album.id)" class="download-progress">
                     {{ getAlbumStatusText(album.id) }}
@@ -240,6 +245,7 @@ import { ElMessage } from 'element-plus'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
 import UploadManager from '@renderer/components/UploadManager/index.vue'
 import { generateUniqueAlbumName } from '@renderer/utils'
+import { QZONE_CONFIG } from '@shared/const'
 
 const handleMenuSelect = (index) => {
   // 菜单选择处理由 selectAlbumItem 函数处理
@@ -399,6 +405,12 @@ const showDownloadProgress = () => {
 // 显示上传管理器
 const showUploadProgress = () => {
   uploadProgressVisible.value = true
+}
+
+// 获取相册类型文本
+const getViewtypeText = (viewtype) => {
+  if (!viewtype || viewtype === 0) return ''
+  return QZONE_CONFIG.viewtypeMap[viewtype] || ''
 }
 
 // 切换下载全部相册状态
@@ -702,6 +714,7 @@ const fetchPhotoData = async () => {
         pageStart: pageStart,
         pageNum: pageSize.value
       })
+      console.log('[Left] 获取相册数据:', res)
 
       if (res && res.data) {
         // 判断数据格式
@@ -1655,13 +1668,37 @@ onBeforeUnmount(() => {
         }
       }
 
-      .album-text {
-        font-size: 12px;
+      .album-info {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         flex: 1;
         margin-right: 8px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        min-width: 0;
+
+        .viewtype-badge {
+          display: inline-flex;
+          align-items: center;
+          padding: 2px 6px;
+          font-size: 10px;
+          line-height: 1;
+          border-radius: 3px;
+          background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(147, 51, 234, 0.15));
+          color: rgba(147, 197, 253, 0.9);
+          border: 1px solid rgba(59, 130, 246, 0.2);
+          font-weight: 500;
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+
+        .album-text {
+          font-size: 12px;
+          flex: 1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          min-width: 0;
+        }
       }
 
       .album-num {

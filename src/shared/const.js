@@ -35,6 +35,16 @@ export const QZONE_CONFIG = {
     107: '其他'
   },
 
+  // 相册类型映射
+  viewtypeMap: {
+    0: '',
+    1: '个性',
+    3: '',
+    5: '亲子',
+    6: '旅游',
+    7: '校友'
+  },
+
   // 容器配置
   container: {
     width: 1400,
