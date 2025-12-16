@@ -67,7 +67,7 @@
               <span class="value speed">{{ formatSpeed(userStore.userInfo?.speed || 0) }}</span>
             </div>
             <div class="stat-item">
-              <span class="label">存储空间</span>
+              <span class="label">已用容量</span>
               <span class="value storage">{{ formatStorage() }}</span>
             </div>
           </div>
@@ -252,6 +252,7 @@ import DownloadManager from '@renderer/components/DownloadManager/index.vue'
 import UploadManager from '@renderer/components/UploadManager/index.vue'
 import { generateUniqueAlbumName } from '@renderer/utils'
 import { QZONE_CONFIG } from '@shared/const'
+import { formatBytes } from '@renderer/utils/formatters'
 
 const handleMenuSelect = (index) => {
   // 菜单选择处理由 selectAlbumItem 函数处理
@@ -700,29 +701,17 @@ const formatSpeed = (speed) => {
 }
 
 /**
- * 格式化存储容量 (MB -> GB)
- * @param {number} mb - 以MB为单位的容量
- * @param {number} decimals - 保留小数位数
- * @returns {string} 格式化后的GB值
- */
-const formatCapacityToGB = (mb, decimals = 1) => {
-  if (!mb || mb === 0) return '0'
-  return (mb / 1024).toFixed(decimals)
-}
-
-/**
  * 格式化存储空间显示
  * @returns {string} 格式化的存储空间字符串
  */
 const formatStorage = () => {
-  if (!apiData.value?.ownerCapacity || !apiData.value?.ownerTotalCapacity) {
+  if (!apiData.value?.user?.diskused) {
     return '--'
   }
 
-  const used = formatCapacityToGB(apiData.value.ownerCapacity, 2)
-  const total = formatCapacityToGB(apiData.value.ownerTotalCapacity, 0)
-
-  return `${used} / ${total} GB`
+  // diskused 单位是 MB，需要转换为字节
+  const bytes = apiData.value.user.diskused * 1024 * 1024
+  return formatBytes(bytes)
 }
 
 const total = ref(0)
