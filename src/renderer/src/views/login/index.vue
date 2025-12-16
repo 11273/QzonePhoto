@@ -107,6 +107,7 @@ const msg = ref('')
 const qrcodeInfo = ref({})
 let qrTimer = null // 用于二维码刷新
 let scanTimer = null // 用于监听扫码状态
+let localAccountsTimer = null // 用于定时刷新本地账号列表
 const localAccounts = ref([]) // 本地账号列表
 const isLoggingIn = ref(false) // 专门用于头像登录的等待状态
 const scanStatus = ref('waiting') // 扫码状态: waiting(待扫码), scanned(已扫码待确认), expired(已过期)
@@ -218,12 +219,24 @@ const checkScanStatus = () => {
 const getLocalAccounts = async () => {
   try {
     const accounts = await window.QzoneAPI.getLocalUnis()
-    if (accounts && Array.isArray(accounts)) {
-      localAccounts.value = accounts || []
-    }
+    console.log('getLocalAccounts :>> ', accounts)
+    localAccounts.value = accounts || []
   } catch (err) {
     console.error('获取本地账号失败:', err)
   }
+}
+
+// 定时刷新本地账号列表（检测账号切换）
+const startLocalAccountsPolling = () => {
+  // 清除旧的定时器
+  if (localAccountsTimer) {
+    clearInterval(localAccountsTimer)
+  }
+
+  // 每5秒刷新一次本地账号列表
+  localAccountsTimer = setInterval(() => {
+    getLocalAccounts()
+  }, 1500)
 }
 
 // 点击本地头像登录
@@ -270,11 +283,16 @@ const clearTimers = () => {
     clearTimeout(scanTimer)
     scanTimer = null
   }
+  if (localAccountsTimer) {
+    clearInterval(localAccountsTimer)
+    localAccountsTimer = null
+  }
 }
 
 onBeforeMount(() => {
   getQrcode()
   getLocalAccounts()
+  startLocalAccountsPolling() // 启动定时刷新本地账号列表
 })
 
 onUnmounted(() => {
