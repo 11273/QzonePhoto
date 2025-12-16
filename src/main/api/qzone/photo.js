@@ -29,12 +29,11 @@ export async function fcg_list_album_v3(
     pageNum,
     inCharset: 'utf-8',
     outCharset: 'utf-8',
-    sortOrder: 1 //最新创建在前
-  }
-
-  // 添加mode参数
-  if (mode !== null) {
-    params.mode = mode
+    // 由于网页调整视图会同步干扰数据，这里需要强制指定模式 3，但是 3 会导致数据获取不全，所以需要指定 needUserInfo
+    mode: mode || 3,
+    needUserInfo: 1,
+    //最新创建在前
+    sortOrder: 1
   }
 
   // 添加classId参数 (单个分类模式时)

@@ -793,7 +793,7 @@ const fetchPhotoData = async () => {
       pageStart: 0,
       pageNum: pageSize.value
     })
-    console.log('[Left] 初始相册列表数据:', initialRes)
+    console.log('[Left] 初始相册列表数据:', JSON.parse(JSON.stringify(initialRes)))
 
     if (!initialRes || !initialRes.data) {
       console.error('[Left] 获取相册数据失败')
