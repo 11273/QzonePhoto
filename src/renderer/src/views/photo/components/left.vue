@@ -713,7 +713,7 @@ const menuList = computed(() => {
     // 格式1：分类格式
     return apiData.value.albumListModeClass.map((category) => ({
       classId: category.classId,
-      className: classMap[category.classId] || category.className || '未知分类',
+      className: classMap[category.classId] || category.className || '其他',
       albums: category.albumList || []
     }))
   } else if (apiData.value.albumListModeSort && Array.isArray(apiData.value.albumListModeSort)) {
@@ -725,7 +725,7 @@ const menuList = computed(() => {
       if (!categoryMap.has(classId)) {
         categoryMap.set(classId, {
           classId: classId,
-          className: classMap[classId] || '未知分类',
+          className: classMap[classId] || '其他',
           albums: []
         })
       }
@@ -873,7 +873,7 @@ const fetchPhotoData = async () => {
         if (!categoryMap.has(classId)) {
           categoryMap.set(classId, {
             classId: classId,
-            className: classNameMap[classId] || '未知分类',
+            className: classNameMap[classId] || '其他',
             albumList: [],
             totalInClass: 0,
             nextPageStart: 0
@@ -910,7 +910,7 @@ const fetchPhotoData = async () => {
             if (!category) {
               category = {
                 classId: classId,
-                className: classNameMap[classId] || '未知分类',
+                className: classNameMap[classId] || '其他',
                 albumList: [],
                 totalInClass: 0,
                 nextPageStart: 0

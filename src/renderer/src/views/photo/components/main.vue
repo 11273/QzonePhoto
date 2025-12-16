@@ -243,6 +243,8 @@ let observer = null
 // 滚动状态
 const lastScrollTop = ref(0)
 const scrollThreshold = 50 // 滚动阈值，超过这个值才触发收缩
+const isCollapsing = ref(false) // 是否正在收缩/展开动画中
+let scrollTimer = null // 滚动防抖定时器
 
 // 相册和照片数据
 const currentAlbum = ref(null)
@@ -443,27 +445,61 @@ const loadMorePhotos = async () => {
 }
 
 // 处理滚动事件
-const handleScroll = (event) => {
-  if (!topRef.value || !topRef.value.setCollapsed) return
+const handleScroll = () => {
+  if (!topRef.value || !topRef.value.setCollapsed || isCollapsing.value) return
 
-  const scrollTop = event.scrollTop || 0
+  // 获取滚动元素和滚动位置
+  const scrollElement =
+    scrollbarRef.value?.wrapRef || scrollbarRef.value?.$el?.querySelector('.el-scrollbar__wrap')
+  if (!scrollElement) return
 
-  // 判断滚动方向
-  if (scrollTop > lastScrollTop.value) {
-    // 向下滚动（内容向上移动）
-    if (scrollTop > scrollThreshold) {
-      // 超过阈值，收缩顶部
-      topRef.value.setCollapsed(true)
-    }
-  } else {
-    // 向上滚动（内容向下移动）或到达顶部
-    if (scrollTop <= scrollThreshold) {
-      // 接近顶部，展开
-      topRef.value.setCollapsed(false)
-    }
+  const scrollTop = scrollElement.scrollTop || 0
+
+  // 检查内容高度是否足够滚动（避免内容少时抖动）
+  const scrollHeight = scrollElement.scrollHeight
+  const clientHeight = scrollElement.clientHeight
+  const hasEnoughContent = scrollHeight > clientHeight + 150 // 至少需要150px的额外内容才允许收缩
+
+  // 清除之前的防抖定时器
+  if (scrollTimer) {
+    clearTimeout(scrollTimer)
   }
 
-  lastScrollTop.value = scrollTop
+  // 防抖处理，避免频繁切换
+  scrollTimer = setTimeout(() => {
+    // 如果正在动画中，跳过
+    if (isCollapsing.value) return
+
+    const shouldCollapse = scrollTop > scrollThreshold
+    const shouldExpand = scrollTop <= scrollThreshold
+    const isScrollingDown = scrollTop > lastScrollTop.value
+
+    // 判断滚动方向
+    if (isScrollingDown) {
+      // 向下滚动（内容向上移动）
+      if (shouldCollapse && hasEnoughContent) {
+        // 只有在有足够内容时才收缩
+        isCollapsing.value = true
+        topRef.value.setCollapsed(true)
+        // 动画结束后解锁（300ms是CSS transition时间）
+        setTimeout(() => {
+          isCollapsing.value = false
+        }, 350)
+      }
+    } else {
+      // 向上滚动（内容向下移动）或到达顶部
+      if (shouldExpand) {
+        isCollapsing.value = true
+        topRef.value.setCollapsed(false)
+        // 动画结束后解锁
+        setTimeout(() => {
+          isCollapsing.value = false
+        }, 350)
+      }
+    }
+
+    lastScrollTop.value = scrollTop
+  }, 100) // 100ms防抖延迟，减少频繁触发
 }
 
 // 监听当前相册变化
@@ -486,6 +522,13 @@ watch(currentAlbum, async (newAlbum) => {
   hasMore.value = true
   currentPageStart.value = 0
   lastScrollTop.value = 0 // 重置滚动位置
+  isCollapsing.value = false // 重置收缩状态
+
+  // 清除滚动防抖定时器
+  if (scrollTimer) {
+    clearTimeout(scrollTimer)
+    scrollTimer = null
+  }
 
   // 重置顶部展开状态
   if (topRef.value && topRef.value.setCollapsed) {
@@ -1320,6 +1363,10 @@ watch(hasMore, () => {
 onUnmounted(() => {
   if (observer) {
     observer.disconnect()
+  }
+  if (scrollTimer) {
+    clearTimeout(scrollTimer)
+    scrollTimer = null
   }
 })
 </script>
