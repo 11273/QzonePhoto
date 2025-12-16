@@ -15,7 +15,8 @@ export async function fcg_list_album_v3(uin, p_skey, hostUin, pageStart, pageNum
     pageStart,
     pageNum,
     inCharset: 'utf-8',
-    outCharset: 'utf-8'
+    outCharset: 'utf-8',
+    sortOrder: 1 //最新创建在前
   }
   const response = await request.get(url, {
     params,
