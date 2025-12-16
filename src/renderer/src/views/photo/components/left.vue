@@ -61,8 +61,8 @@
               <span class="value speed">{{ formatSpeed(userStore.userInfo?.speed || 0) }}</span>
             </div>
             <div class="stat-item">
-              <span class="label">会员状态</span>
-              <span class="value vip">{{ formatVipStatus(userStore.userInfo?.vip || 0) }}</span>
+              <span class="label">存储空间</span>
+              <span class="value storage">{{ formatStorage() }}</span>
             </div>
           </div>
         </div>
@@ -663,8 +663,30 @@ const formatSpeed = (speed) => {
   return '0/天'
 }
 
-const formatVipStatus = (vip) => {
-  return vip === 1 ? '黄钻会员' : '普通用户'
+/**
+ * 格式化存储容量 (MB -> GB)
+ * @param {number} mb - 以MB为单位的容量
+ * @param {number} decimals - 保留小数位数
+ * @returns {string} 格式化后的GB值
+ */
+const formatCapacityToGB = (mb, decimals = 1) => {
+  if (!mb || mb === 0) return '0'
+  return (mb / 1024).toFixed(decimals)
+}
+
+/**
+ * 格式化存储空间显示
+ * @returns {string} 格式化的存储空间字符串
+ */
+const formatStorage = () => {
+  if (!apiData.value?.ownerCapacity || !apiData.value?.ownerTotalCapacity) {
+    return '--'
+  }
+
+  const used = formatCapacityToGB(apiData.value.ownerCapacity, 2)
+  const total = formatCapacityToGB(apiData.value.ownerTotalCapacity, 0)
+
+  return `${used} / ${total} GB`
 }
 
 const total = ref(0)
@@ -1216,9 +1238,9 @@ onBeforeUnmount(() => {
               text-shadow: 0 0 3px rgba(245, 158, 11, 0.3);
             }
 
-            &.vip {
-              color: #8b5cf6;
-              text-shadow: 0 0 3px rgba(139, 92, 246, 0.3);
+            &.storage {
+              color: #06b6d4;
+              text-shadow: 0 0 3px rgba(6, 182, 212, 0.3);
             }
           }
         }
