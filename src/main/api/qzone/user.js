@@ -5,7 +5,9 @@ export async function getMeInfo(uin, p_skey) {
   const url = 'https://h5.qzone.qq.com/proxy/domain/vip.qzone.qq.com/fcg-bin/fcg_get_vipinfo_mobile'
   const params = {
     get_all: 1,
-    g_tk: getGTK(p_skey)
+    g_tk: getGTK(p_skey),
+    inCharset: 'utf-8',
+    outCharset: 'utf-8'
   }
 
   const response = await request.get(url, {
