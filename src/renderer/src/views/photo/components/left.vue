@@ -14,7 +14,13 @@
           </el-avatar>
           <div class="user-info">
             <div class="nickname">{{ userStore.userInfo?.nick || 'QZone用户' }}</div>
-            <div class="uin">{{ userStore.userInfo?.uin }}</div>
+            <div
+              class="uin"
+              :title="showUin ? '点击隐藏QQ号' : '点击显示QQ号'"
+              @click="toggleUinDisplay"
+            >
+              {{ displayUin }}
+            </div>
           </div>
           <!-- 登出按钮移到头像右边 -->
           <div class="header-actions">
@@ -265,6 +271,36 @@ const userStore = useUserStore()
 const downloadStore = useDownloadStore()
 const refreshAlbumCallback = inject('refreshAlbumCallback', null)
 const loading = ref(false)
+
+// QQ号脱敏显示
+const showUin = ref(false) // 默认脱敏
+
+// 脱敏QQ号
+const maskUin = (uin) => {
+  if (!uin) return ''
+  const uinStr = String(uin)
+  if (uinStr.length <= 6) {
+    // 如果QQ号长度小于等于6位，只显示前2位和后2位
+    return uinStr.length <= 4
+      ? '*'.repeat(uinStr.length)
+      : `${uinStr.slice(0, 2)}${'*'.repeat(uinStr.length - 4)}${uinStr.slice(-2)}`
+  } else {
+    // 显示前3位和后3位，中间用*代替
+    return `${uinStr.slice(0, 3)}${'*'.repeat(uinStr.length - 6)}${uinStr.slice(-3)}`
+  }
+}
+
+// 计算显示的QQ号
+const displayUin = computed(() => {
+  const uin = userStore.userInfo?.uin
+  if (!uin) return ''
+  return showUin.value ? uin : maskUin(uin)
+})
+
+// 切换QQ号显示状态
+const toggleUinDisplay = () => {
+  showUin.value = !showUin.value
+}
 
 // 相册刷新防抖
 let refreshDebounceTimer = null
@@ -1267,6 +1303,13 @@ onBeforeUnmount(() => {
           font-size: 12px;
           color: rgba(255, 255, 255, 0.6);
           line-height: 1.1;
+          cursor: pointer;
+          user-select: none;
+          transition: color 0.2s ease;
+
+          &:hover {
+            color: rgba(255, 255, 255, 0.8);
+          }
         }
       }
 
