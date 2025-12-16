@@ -7,8 +7,8 @@ import {
 
 export class QzonePhotoService {
   constructor() {}
-  async getPhotoList({ hostUin, pageStart, pageNum }, { uin, p_skey }) {
-    return await fcg_list_album_v3(uin, p_skey, hostUin, pageStart, pageNum)
+  async getPhotoList({ hostUin, pageStart, pageNum, mode, classId }, { uin, p_skey }) {
+    return await fcg_list_album_v3(uin, p_skey, hostUin, pageStart, pageNum, mode, classId)
   }
 
   async getPhotoByTopicId({ hostUin, pageStart, pageNum, topicId }, { uin, p_skey }) {

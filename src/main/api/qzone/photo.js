@@ -4,9 +4,22 @@ import request from '@main/api/utils/request'
  * 获取相册列表
  * @param uin qq
  * @param p_skey 登录后有
+ * @param hostUin 主人QQ
+ * @param pageStart 分页起始位置
+ * @param pageNum 每页数量
+ * @param mode 模式 (2=normal普通模式, 3=class分类模式, 4=oneClass单个分类模式)
+ * @param classId 分类ID (mode=4时需要)
  * @returns
  */
-export async function fcg_list_album_v3(uin, p_skey, hostUin, pageStart, pageNum) {
+export async function fcg_list_album_v3(
+  uin,
+  p_skey,
+  hostUin,
+  pageStart,
+  pageNum,
+  mode = null,
+  classId = null
+) {
   const url = 'https://user.qzone.qq.com/proxy/domain/photo.qzone.qq.com/fcgi-bin/fcg_list_album_v3'
   const params = {
     hostUin,
@@ -18,6 +31,17 @@ export async function fcg_list_album_v3(uin, p_skey, hostUin, pageStart, pageNum
     outCharset: 'utf-8',
     sortOrder: 1 //最新创建在前
   }
+
+  // 添加mode参数
+  if (mode !== null) {
+    params.mode = mode
+  }
+
+  // 添加classId参数 (单个分类模式时)
+  if (classId !== null) {
+    params.classId = classId
+  }
+
   const response = await request.get(url, {
     params,
     headers: {

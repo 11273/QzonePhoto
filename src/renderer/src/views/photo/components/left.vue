@@ -704,155 +704,118 @@ const selectAlbum = (album) => {
 const fetchPhotoData = async () => {
   loading.value = true
   let allAlbumsData = []
-  let pageStart = 0
-  let hasMore = true
 
   try {
-    while (hasMore) {
-      const res = await window.QzoneAPI.getPhotoList({
-        hostUin: userStore.userInfo.uin,
-        pageStart: pageStart,
-        pageNum: pageSize.value
+    // 获取初始数据
+    const initialRes = await window.QzoneAPI.getPhotoList({
+      hostUin: userStore.userInfo.uin,
+      pageStart: 0,
+      pageNum: pageSize.value
+    })
+    console.log('[Left] 初始相册列表数据:', initialRes)
+
+    if (!initialRes || !initialRes.data) {
+      console.error('[Left] 获取相册数据失败')
+      return
+    }
+
+    // 初始化数据
+    apiData.value = initialRes.data
+    total.value = initialRes.data.albumsInUser || 0
+
+    if (!initialRes.data.albumListModeClass || !Array.isArray(initialRes.data.albumListModeClass)) {
+      console.error('[Left] 未找到分类格式数据')
+      return
+    }
+
+    allAlbumsData = JSON.parse(JSON.stringify(initialRes.data.albumListModeClass))
+    console.log('[Left] 初始相册列表数据:', allAlbumsData)
+
+    // 从 classList 映射分类名称
+    if (initialRes.data.classList && Array.isArray(initialRes.data.classList)) {
+      const classNameMap = {}
+      initialRes.data.classList.forEach((cls) => {
+        classNameMap[cls.id] = cls.name
       })
-      console.log('[Left] 获取相册数据:', res)
+      allAlbumsData.forEach((category) => {
+        if (!category.className && classNameMap[category.classId]) {
+          category.className = classNameMap[category.classId]
+        }
+      })
+    }
 
-      if (res && res.data) {
-        // 判断数据格式
-        if (res.data.albumListModeSort && !res.data.albumListModeClass) {
-          // 格式1：平铺格式，需要转换
-          if (pageStart === 0) {
-            // 创建分类映射
-            const classMap = new Map()
+    console.log(`[Left] 初始加载完成: ${allAlbumsData.length} 个分类`)
 
-            // 如果有 classList，先初始化
-            if (res.data.classList && res.data.classList.length > 0) {
-              res.data.classList.forEach((cls) => {
-                classMap.set(cls.id, {
-                  classId: cls.id,
-                  className: cls.name,
-                  albumList: [],
-                  totalInClass: 0,
-                  totalInPage: 0,
-                  nextPageStart: 0
-                })
-              })
-            }
+    // 按分类逐个加载剩余数据
+    for (let i = 0; i < allAlbumsData.length; i++) {
+      const category = allAlbumsData[i]
+      const totalInClass = category.totalInClass || 0
+      const categoryName = category.className || category.name || `分类${category.classId}`
 
-            // 将相册分配到对应的分类
-            res.data.albumListModeSort.forEach((album) => {
-              const classId = album.classid
+      // 如果该分类还有更多数据，逐页加载
+      if ((category.albumList?.length || 0) < totalInClass) {
+        console.log(
+          `[Left] 加载分类 ${categoryName}: ${category.albumList?.length || 0}/${totalInClass}`
+        )
+      }
 
-              if (classMap.has(classId)) {
-                const category = classMap.get(classId)
-                category.albumList.push(album)
-                category.totalInClass++
-                category.totalInPage++
-              } else {
-                // 如果分类不存在，使用相册名称作为分类，只包含自己
-                classMap.set(album.id, {
-                  classId: album.id,
-                  className: album.name,
-                  albumList: [album],
-                  totalInClass: 1,
-                  totalInPage: 1,
-                  nextPageStart: 0
-                })
-              }
-            })
+      while ((category.albumList?.length || 0) < totalInClass) {
+        const currentLoaded = category.albumList?.length || 0
+        const nextPageStart = category.nextPageStart || currentLoaded
 
-            // 转换为数组格式
-            res.data.albumListModeClass = Array.from(classMap.values()).filter(
-              (category) => category.albumList.length > 0
-            )
-            apiData.value = res.data
-            total.value = res.data.albumsInUser
-            allAlbumsData = JSON.parse(JSON.stringify(res.data.albumListModeClass))
-          }
-
-          // 判断是否还有更多数据
-          if (res.data.nextPageStartModeSort !== undefined && res.data.nextPageStartModeSort > 0) {
-            pageStart = res.data.nextPageStartModeSort
-          } else {
-            hasMore = false
-          }
-        } else if (res.data.albumListModeClass) {
-          // 格式2：已经是分类格式
-          if (pageStart === 0) {
-            apiData.value = res.data
-            total.value = res.data.albumsInUser
-            allAlbumsData = JSON.parse(JSON.stringify(res.data.albumListModeClass))
-          } else {
-            // 合并新数据到已有数据
-            res.data.albumListModeClass.forEach((newCategory) => {
-              if (newCategory.albumList && newCategory.albumList.length > 0) {
-                let targetCategory = allAlbumsData.find(
-                  (cat) => cat.classId === newCategory.classId
-                )
-
-                if (!targetCategory) {
-                  targetCategory = {
-                    classId: newCategory.classId,
-                    className: newCategory.className || newCategory.name || '其他相册',
-                    albumList: [],
-                    totalInClass: newCategory.totalInClass,
-                    totalInPage: newCategory.totalInPage,
-                    nextPageStart: newCategory.nextPageStart
-                  }
-                  allAlbumsData.push(targetCategory)
-                }
-
-                if (targetCategory) {
-                  const existingIds = new Set(
-                    (targetCategory.albumList || []).map((album) => album.id)
-                  )
-
-                  const newAlbums = newCategory.albumList.filter(
-                    (album) => !existingIds.has(album.id)
-                  )
-
-                  if (newAlbums.length > 0) {
-                    targetCategory.albumList = [...(targetCategory.albumList || []), ...newAlbums]
-                  }
-
-                  // 更新分页信息
-                  targetCategory.nextPageStart = newCategory.nextPageStart
-                }
-              }
-            })
-          }
-
-          // 判断是否还有更多数据
-          let allCategoriesComplete = true
-
-          allAlbumsData.forEach((category) => {
-            const currentLoaded = (category.albumList || []).length
-            const totalInClass = category.totalInClass || 0
-
-            if (currentLoaded < totalInClass) {
-              allCategoriesComplete = false
-            }
+        try {
+          const categoryRes = await window.QzoneAPI.getPhotoList({
+            hostUin: userStore.userInfo.uin,
+            pageStart: nextPageStart,
+            pageNum: pageSize.value,
+            mode: 4,
+            classId: category.classId
           })
 
-          if (
-            allCategoriesComplete ||
-            res.data.albumListModeClass.every((cat) => !cat.albumList || cat.albumList.length === 0)
-          ) {
-            hasMore = false
-          } else {
-            pageStart += pageSize.value
+          if (!categoryRes || !categoryRes.data) {
+            console.warn(`[Left] 分类 ${categoryName} 加载失败`)
+            break
           }
-        } else {
-          hasMore = false
+
+          // 提取相册列表，并过滤掉不属于本分类的相册
+          let newAlbums = categoryRes.data.albumList || []
+          if (newAlbums.length === 0) break
+
+          // 去重并合并
+          const existingIds = new Set(category.albumList.map((album) => album.id))
+          const uniqueNewAlbums = newAlbums.filter((album) => !existingIds.has(album.id))
+
+          if (uniqueNewAlbums.length > 0) {
+            category.albumList.push(...uniqueNewAlbums)
+          }
+
+          // 更新分页信息
+          if (categoryRes.data.nextPageStart !== undefined) {
+            category.nextPageStart = categoryRes.data.nextPageStart
+          }
+          if (categoryRes.data.totalInClass !== undefined) {
+            category.totalInClass = categoryRes.data.totalInClass
+          }
+
+          // 如果没有新增数据或已加载完毕，退出循环
+          if (category.albumList.length >= category.totalInClass || uniqueNewAlbums.length === 0) {
+            break
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        } catch (error) {
+          console.error(`[Left] 加载分类 ${categoryName} 失败:`, error)
+          break
         }
-      } else {
-        hasMore = false
       }
     }
 
     // 更新最终数据
-    if (apiData.value && allAlbumsData) {
-      apiData.value.albumListModeClass = allAlbumsData
-    }
+    apiData.value.albumListModeClass = allAlbumsData
+
+    // 统计总相册数
+    const totalAlbums = allAlbumsData.reduce((sum, cat) => sum + (cat.albumList?.length || 0), 0)
+    console.log(`[Left] 所有相册加载完成，总计 ${totalAlbums} 个相册`)
 
     // 设置默认选中的相册
     nextTick(() => {
@@ -868,7 +831,7 @@ const fetchPhotoData = async () => {
       }
     })
   } catch (error) {
-    console.error('加载相册数据失败:', error)
+    console.error('[Left] 加载相册数据失败:', error)
   } finally {
     loading.value = false
   }
