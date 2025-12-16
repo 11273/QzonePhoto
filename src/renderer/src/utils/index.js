@@ -368,9 +368,21 @@ export const generateUniqueAlbumName = (album) => {
 
   const baseName = album.name || '未命名相册'
 
-  // 直接在名称后面加上相册ID
+  if (album.createtime && album.id) {
+    // 格式化时间为 YYYYMMDD
+    const date = new Date(album.createtime * 1000)
+    const dateStr = date.toISOString().split('T')[0].replace(/-/g, '') // YYYYMMDD
+
+    // ID后4位，冲突概率更低
+    const idSuffix = album.id.slice(-4)
+
+    return `${baseName}_${dateStr}_${idSuffix}`
+  }
+
+  // 兜底：只有ID的情况
   if (album.id) {
-    return `${baseName}(${album.id})`
+    const idSuffix = album.id.slice(-4)
+    return `${baseName}_${idSuffix}`
   }
 
   return baseName
