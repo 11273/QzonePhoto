@@ -699,7 +699,7 @@ const openedKeys = ref(new Set())
 const currentAlbumId = ref(null)
 
 const menuList = computed(() => {
-  if (!apiData.value || !apiData.value.albumListModeClass || !apiData.value.classList) {
+  if (!apiData.value || !apiData.value.classList) {
     return []
   }
 
@@ -708,11 +708,34 @@ const menuList = computed(() => {
     classMap[cls.id] = cls.name
   })
 
-  return apiData.value.albumListModeClass.map((category) => ({
-    classId: category.classId,
-    className: classMap[category.classId] || category.className || '未知分类',
-    albums: category.albumList || []
-  }))
+  // 支持两种格式：albumListModeClass（分类格式）和 albumListModeSort（平铺格式）
+  if (apiData.value.albumListModeClass && Array.isArray(apiData.value.albumListModeClass)) {
+    // 格式1：分类格式
+    return apiData.value.albumListModeClass.map((category) => ({
+      classId: category.classId,
+      className: classMap[category.classId] || category.className || '未知分类',
+      albums: category.albumList || []
+    }))
+  } else if (apiData.value.albumListModeSort && Array.isArray(apiData.value.albumListModeSort)) {
+    // 格式2：平铺格式，需要转换为分类格式
+    const categoryMap = new Map()
+
+    apiData.value.albumListModeSort.forEach((album) => {
+      const classId = album.classid
+      if (!categoryMap.has(classId)) {
+        categoryMap.set(classId, {
+          classId: classId,
+          className: classMap[classId] || '未知分类',
+          albums: []
+        })
+      }
+      categoryMap.get(classId).albums.push(album)
+    })
+
+    return Array.from(categoryMap.values())
+  }
+
+  return []
 })
 
 const selectAlbum = (album) => {
@@ -745,91 +768,179 @@ const fetchPhotoData = async () => {
     apiData.value = initialRes.data
     total.value = initialRes.data.albumsInUser || 0
 
-    if (!initialRes.data.albumListModeClass || !Array.isArray(initialRes.data.albumListModeClass)) {
-      console.error('[Left] 未找到分类格式数据')
-      return
-    }
+    // 支持两种格式：albumListModeClass（分类格式）和 albumListModeSort（平铺格式）
+    if (initialRes.data.albumListModeClass && Array.isArray(initialRes.data.albumListModeClass)) {
+      // 格式1：分类格式
+      allAlbumsData = JSON.parse(JSON.stringify(initialRes.data.albumListModeClass))
 
-    allAlbumsData = JSON.parse(JSON.stringify(initialRes.data.albumListModeClass))
-    console.log('[Left] 初始相册列表数据:', allAlbumsData)
-
-    // 从 classList 映射分类名称
-    if (initialRes.data.classList && Array.isArray(initialRes.data.classList)) {
-      const classNameMap = {}
-      initialRes.data.classList.forEach((cls) => {
-        classNameMap[cls.id] = cls.name
-      })
-      allAlbumsData.forEach((category) => {
-        if (!category.className && classNameMap[category.classId]) {
-          category.className = classNameMap[category.classId]
-        }
-      })
-    }
-
-    console.log(`[Left] 初始加载完成: ${allAlbumsData.length} 个分类`)
-
-    // 按分类逐个加载剩余数据
-    for (let i = 0; i < allAlbumsData.length; i++) {
-      const category = allAlbumsData[i]
-      const totalInClass = category.totalInClass || 0
-      const categoryName = category.className || category.name || `分类${category.classId}`
-
-      // 如果该分类还有更多数据，逐页加载
-      if ((category.albumList?.length || 0) < totalInClass) {
-        console.log(
-          `[Left] 加载分类 ${categoryName}: ${category.albumList?.length || 0}/${totalInClass}`
-        )
+      // 从 classList 映射分类名称
+      if (initialRes.data.classList && Array.isArray(initialRes.data.classList)) {
+        const classNameMap = {}
+        initialRes.data.classList.forEach((cls) => {
+          classNameMap[cls.id] = cls.name
+        })
+        allAlbumsData.forEach((category) => {
+          if (!category.className && classNameMap[category.classId]) {
+            category.className = classNameMap[category.classId]
+          }
+        })
       }
 
-      while ((category.albumList?.length || 0) < totalInClass) {
-        const currentLoaded = category.albumList?.length || 0
-        const nextPageStart = category.nextPageStart || currentLoaded
+      console.log(`[Left] 初始加载完成（分类格式）: ${allAlbumsData.length} 个分类`)
 
+      // 按分类逐个加载剩余数据
+      for (let i = 0; i < allAlbumsData.length; i++) {
+        const category = allAlbumsData[i]
+        const totalInClass = category.totalInClass || 0
+        const categoryName = category.className || category.name || `分类${category.classId}`
+
+        // 如果该分类还有更多数据，逐页加载
+        if ((category.albumList?.length || 0) < totalInClass) {
+          console.log(
+            `[Left] 加载分类 ${categoryName}: ${category.albumList?.length || 0}/${totalInClass}`
+          )
+        }
+
+        while ((category.albumList?.length || 0) < totalInClass) {
+          const currentLoaded = category.albumList?.length || 0
+          const nextPageStart = category.nextPageStart || currentLoaded
+
+          try {
+            const categoryRes = await window.QzoneAPI.getPhotoList({
+              hostUin: userStore.userInfo.uin,
+              pageStart: nextPageStart,
+              pageNum: pageSize.value,
+              mode: 4,
+              classId: category.classId
+            })
+
+            if (!categoryRes || !categoryRes.data) {
+              console.warn(`[Left] 分类 ${categoryName} 加载失败`)
+              break
+            }
+
+            // 提取相册列表
+            const newAlbums = categoryRes.data.albumList || []
+            if (newAlbums.length === 0) break
+
+            // 去重并合并
+            const existingIds = new Set(category.albumList.map((album) => album.id))
+            const uniqueNewAlbums = newAlbums.filter((album) => !existingIds.has(album.id))
+
+            if (uniqueNewAlbums.length > 0) {
+              category.albumList.push(...uniqueNewAlbums)
+            }
+
+            // 更新分页信息
+            if (categoryRes.data.nextPageStart !== undefined) {
+              category.nextPageStart = categoryRes.data.nextPageStart
+            }
+            if (categoryRes.data.totalInClass !== undefined) {
+              category.totalInClass = categoryRes.data.totalInClass
+            }
+
+            // 如果没有新增数据或已加载完毕，退出循环
+            if (
+              category.albumList.length >= category.totalInClass ||
+              uniqueNewAlbums.length === 0
+            ) {
+              break
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 100))
+          } catch (error) {
+            console.error(`[Left] 加载分类 ${categoryName} 失败:`, error)
+            break
+          }
+        }
+      }
+    } else if (
+      initialRes.data.albumListModeSort &&
+      Array.isArray(initialRes.data.albumListModeSort)
+    ) {
+      // 格式2：平铺格式，需要转换为分类格式并分页加载
+      const classNameMap = {}
+      if (initialRes.data.classList && Array.isArray(initialRes.data.classList)) {
+        initialRes.data.classList.forEach((cls) => {
+          classNameMap[cls.id] = cls.name
+        })
+      }
+
+      // 将平铺的相册按分类分组
+      const categoryMap = new Map()
+      initialRes.data.albumListModeSort.forEach((album) => {
+        const classId = album.classid
+        if (!categoryMap.has(classId)) {
+          categoryMap.set(classId, {
+            classId: classId,
+            className: classNameMap[classId] || '未知分类',
+            albumList: [],
+            totalInClass: 0,
+            nextPageStart: 0
+          })
+        }
+        categoryMap.get(classId).albumList.push(album)
+      })
+
+      allAlbumsData = Array.from(categoryMap.values())
+      console.log(`[Left] 初始加载完成（平铺格式）: ${allAlbumsData.length} 个分类`)
+
+      // 平铺格式需要继续分页加载
+      let pageStart =
+        initialRes.data.nextPageStartModeSort || initialRes.data.albumListModeSort.length
+      const totalAlbums = initialRes.data.albumsInUser || 0
+
+      while (pageStart < totalAlbums && pageStart > 0) {
         try {
-          const categoryRes = await window.QzoneAPI.getPhotoList({
+          const nextRes = await window.QzoneAPI.getPhotoList({
             hostUin: userStore.userInfo.uin,
-            pageStart: nextPageStart,
+            pageStart: pageStart,
             pageNum: pageSize.value,
-            mode: 4,
-            classId: category.classId
+            mode: 2 // normal模式
           })
 
-          if (!categoryRes || !categoryRes.data) {
-            console.warn(`[Left] 分类 ${categoryName} 加载失败`)
+          if (!nextRes || !nextRes.data || !nextRes.data.albumListModeSort) {
             break
           }
 
-          // 提取相册列表，并过滤掉不属于本分类的相册
-          let newAlbums = categoryRes.data.albumList || []
-          if (newAlbums.length === 0) break
+          // 将新相册分配到对应分类
+          nextRes.data.albumListModeSort.forEach((album) => {
+            const classId = album.classid
+            let category = categoryMap.get(classId)
+            if (!category) {
+              category = {
+                classId: classId,
+                className: classNameMap[classId] || '未知分类',
+                albumList: [],
+                totalInClass: 0,
+                nextPageStart: 0
+              }
+              categoryMap.set(classId, category)
+              allAlbumsData.push(category)
+            }
 
-          // 去重并合并
-          const existingIds = new Set(category.albumList.map((album) => album.id))
-          const uniqueNewAlbums = newAlbums.filter((album) => !existingIds.has(album.id))
+            // 去重
+            const existingIds = new Set(category.albumList.map((a) => a.id))
+            if (!existingIds.has(album.id)) {
+              category.albumList.push(album)
+            }
+          })
 
-          if (uniqueNewAlbums.length > 0) {
-            category.albumList.push(...uniqueNewAlbums)
-          }
-
-          // 更新分页信息
-          if (categoryRes.data.nextPageStart !== undefined) {
-            category.nextPageStart = categoryRes.data.nextPageStart
-          }
-          if (categoryRes.data.totalInClass !== undefined) {
-            category.totalInClass = categoryRes.data.totalInClass
-          }
-
-          // 如果没有新增数据或已加载完毕，退出循环
-          if (category.albumList.length >= category.totalInClass || uniqueNewAlbums.length === 0) {
+          // 更新分页
+          pageStart = nextRes.data.nextPageStartModeSort || 0
+          if (pageStart === 0 || pageStart <= initialRes.data.albumListModeSort.length) {
             break
           }
 
           await new Promise((resolve) => setTimeout(resolve, 100))
         } catch (error) {
-          console.error(`[Left] 加载分类 ${categoryName} 失败:`, error)
+          console.error('[Left] 加载平铺格式数据失败:', error)
           break
         }
       }
+    } else {
+      console.error('[Left] 未找到有效的相册数据格式')
+      return
     }
 
     // 更新最终数据
