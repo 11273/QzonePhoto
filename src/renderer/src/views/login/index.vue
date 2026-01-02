@@ -219,7 +219,7 @@ const checkScanStatus = () => {
 const getLocalAccounts = async () => {
   try {
     const accounts = await window.QzoneAPI.getLocalUnis()
-    console.log('getLocalAccounts :>> ', accounts)
+    console.debug('getLocalAccounts :>> ', accounts)
     localAccounts.value = accounts || []
   } catch (err) {
     console.error('获取本地账号失败:', err)

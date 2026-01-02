@@ -39,6 +39,10 @@ try {
     batchGetVideoInfo: (data) => ipcClient.call(IPC_PHOTO.BATCH_VIDEO_INFO, data),
     // 删除照片
     deletePhotos: (data) => ipcClient.call(IPC_PHOTO.DELETE_PHOTOS, data),
+    // 获取QQ空间动态（说说）
+    getFeeds: (data) => ipcClient.call(IPC_PHOTO.GET_FEEDS, data),
+    // 删除动态
+    deleteFeed: (data) => ipcClient.call(IPC_PHOTO.DELETE_FEED, data),
 
     // 文件系统相关API
     openFileDialog: (data) => ipcClient.call(IPC_FILE.DIALOG_OPEN_FILE, data),

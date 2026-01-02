@@ -132,8 +132,22 @@
       </div>
     </div>
 
+    <!-- 一级导航菜单 - TAB 样式 -->
+    <div class="main-navigation-tabs">
+      <div
+        v-for="tab in tabs"
+        :key="tab.key"
+        class="nav-tab"
+        :class="{ active: currentModule === tab.key }"
+        @click="handleModuleSelect(tab.key)"
+      >
+        <el-icon class="tab-icon"><component :is="tab.icon" /></el-icon>
+        <span class="tab-text">{{ tab.label }}</span>
+      </div>
+    </div>
+
     <!-- 下载全部相册功能区 -->
-    <div class="download-all-section">
+    <div v-if="currentModule === 'album'" class="download-all-section">
       <div class="download-all-card">
         <div class="download-all-button" @click="toggleDownloadAll">
           <div class="button-content">
@@ -167,10 +181,12 @@
       </div>
     </div>
 
-    <!-- Element Plus 菜单 -->
+    <!-- 二级内容区 - 根据模块动态切换 -->
     <div class="flex-1 overflow-hidden menu-container">
       <el-scrollbar class="h-full">
+        <!-- 相册模块 -->
         <el-menu
+          v-if="currentModule === 'album'"
           :default-openeds="Array.from(openedKeys)"
           :default-active="selectedAlbumKey"
           mode="vertical"
@@ -222,6 +238,24 @@
             </el-menu-item>
           </el-sub-menu>
         </el-menu>
+
+        <!-- 照片模块 -->
+        <el-menu
+          v-else-if="currentModule === 'photo'"
+          :default-active="selectedPhotoType"
+          mode="vertical"
+          class="photo-menu"
+          @select="handlePhotoTypeSelect"
+        >
+          <el-menu-item index="my-photos">
+            <el-icon><User /></el-icon>
+            <span>我的照片</span>
+          </el-menu-item>
+          <!-- <el-menu-item index="friend-photos">
+            <el-icon><UserFilled /></el-icon>
+            <span>好友照片</span>
+          </el-menu-item> -->
+        </el-menu>
       </el-scrollbar>
     </div>
 
@@ -245,7 +279,11 @@ import {
   FolderAdd,
   Close,
   Loading,
-  Monitor
+  Monitor,
+  Folder,
+  Picture,
+  User,
+  UserFilled
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
@@ -259,6 +297,27 @@ const handleMenuSelect = (index) => {
   console.log('Menu selected:', index)
 }
 
+// 处理模块切换
+const handleModuleSelect = (module) => {
+  if (currentModule.value === module) return
+  currentModule.value = module
+  emit('module-changed', module)
+
+  // 当切换回相册模块时，如果有选中的相册，重新触发选择事件以确保刷新
+  if (module === 'album' && clickItem.value) {
+    // 延迟一下，确保 Main 组件已经挂载
+    setTimeout(() => {
+      selectAlbum(clickItem.value)
+    }, 200)
+  }
+}
+
+// 处理照片类型选择
+const handlePhotoTypeSelect = (type) => {
+  selectedPhotoType.value = type
+  emit('module-changed', 'photo', type)
+}
+
 const selectAlbumItem = (categoryId, album) => {
   // 立即更新选中状态，避免延迟
   selectedAlbumKey.value = `${categoryId}-${album.id}`
@@ -266,12 +325,22 @@ const selectAlbumItem = (categoryId, album) => {
   selectAlbum(album)
 }
 
-const emit = defineEmits(['album-selected'])
+const emit = defineEmits(['album-selected', 'module-changed'])
 
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
 const refreshAlbumCallback = inject('refreshAlbumCallback', null)
 const loading = ref(false)
+
+// 当前模块状态
+const currentModule = ref('album') // album, photo
+const selectedPhotoType = ref('my-photos')
+
+// TAB 配置
+const tabs = [
+  { key: 'album', label: '相册', icon: Folder },
+  { key: 'photo', label: '照片', icon: Picture }
+]
 
 // QQ号脱敏显示
 const showUin = ref(false) // 默认脱敏
@@ -771,6 +840,44 @@ const selectAlbum = (album) => {
   emit('album-selected', album)
 }
 
+// 通过 albumId 选择相册（用于从动态跳转）
+const selectAlbumById = (albumId) => {
+  if (!albumId || !menuList.value) return false
+
+  // 遍历所有分类和相册，查找匹配的相册
+  for (const category of menuList.value) {
+    if (category.albums && Array.isArray(category.albums)) {
+      const album = category.albums.find((a) => a.id === albumId)
+      if (album) {
+        // 确保该分类是展开的
+        openedKeys.value.add(String(category.classId))
+        // 选择相册
+        selectAlbumItem(category.classId, album)
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
+// 通过 albumId 查找相册对象（不选择，仅返回）
+const findAlbumById = async (albumId) => {
+  if (!albumId || !menuList.value) return null
+
+  // 遍历所有分类和相册，查找匹配的相册
+  for (const category of menuList.value) {
+    if (category.albums && Array.isArray(category.albums)) {
+      const album = category.albums.find((a) => a.id === albumId)
+      if (album) {
+        return album
+      }
+    }
+  }
+
+  return null
+}
+
 const fetchPhotoData = async () => {
   loading.value = true
   let allAlbumsData = []
@@ -1247,30 +1354,44 @@ onBeforeUnmount(() => {
   cleanupDownloadListeners()
   cleanupUploadListeners()
 })
+
+// 暴露方法供父组件调用
+defineExpose({
+  selectAlbumById,
+  findAlbumById
+})
 </script>
 
 <style scoped>
 /* 用户信息卡片 */
 .user-section {
-  padding: 8px 10px;
+  padding: 6px 8px;
   padding-top: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 
   .user-card {
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
     overflow: hidden;
+    background: rgba(255, 255, 255, 0.02);
+    backdrop-filter: blur(10px);
 
     .card-header {
       display: flex;
       align-items: center;
       gap: 8px;
       padding: 8px 10px;
-      background: rgba(255, 255, 255, 0.03);
+      background: rgba(255, 255, 255, 0.02);
 
       .user-avatar {
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+        border: 2px solid rgba(96, 165, 250, 0.3);
+        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+        transition: all 0.3s ease;
+
+        &:hover {
+          border-color: rgba(96, 165, 250, 0.5);
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
       }
 
       .user-info {
@@ -1340,12 +1461,12 @@ onBeforeUnmount(() => {
     }
 
     .card-stats {
-      padding: 6px 10px 8px;
+      padding: 8px 10px;
 
       .stat-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 4px 8px;
+        gap: 6px 10px;
 
         .stat-item {
           display: flex;
@@ -1393,8 +1514,8 @@ onBeforeUnmount(() => {
     .card-actions {
       display: flex;
       align-items: center;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(255, 255, 255, 0.02);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(0, 0, 0, 0.1);
 
       .action-item {
         flex: 1;
@@ -1703,19 +1824,22 @@ onBeforeUnmount(() => {
   :deep(.el-sub-menu) {
     .el-sub-menu__title {
       background: transparent;
-      color: rgba(255, 255, 255, 0.9);
-      font-size: 13px;
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 12px;
       font-weight: 600;
-      padding: 8px 12px;
+      padding: 7px 10px;
       height: auto;
       line-height: 1.4;
       border-left: 2px solid transparent;
-      transition: all 0.3s ease;
+      transition: all 0.25s ease;
+      border-radius: 4px;
+      margin: 2px 4px;
 
       &:hover {
-        background: rgba(255, 255, 255, 0.05);
+        background: rgba(255, 255, 255, 0.06);
         border-left-color: #3b82f6;
         color: rgba(255, 255, 255, 1);
+        transform: translateX(2px);
       }
 
       .el-sub-menu__icon-arrow {
@@ -1736,24 +1860,31 @@ onBeforeUnmount(() => {
   }
 
   :deep(.el-menu-item) {
-    background: rgba(0, 0, 0, 0.1);
-    color: rgba(255, 255, 255, 0.8);
-    padding: 6px 20px;
+    background: rgba(0, 0, 0, 0.15);
+    color: rgba(255, 255, 255, 0.75);
+    padding: 6px 16px;
     height: auto;
     line-height: 1.4;
-    margin: 0;
+    margin: 1px 4px;
     border-left: 2px solid transparent;
-    transition: all 0.2s ease;
+    border-radius: 4px;
+    transition: all 0.25s ease;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.05);
-      color: rgba(255, 255, 255, 0.9);
+      background: rgba(255, 255, 255, 0.06);
+      color: rgba(255, 255, 255, 0.95);
+      transform: translateX(2px);
     }
 
     &.is-active {
-      background: rgba(59, 130, 246, 0.15) !important;
+      background: linear-gradient(
+        90deg,
+        rgba(59, 130, 246, 0.2),
+        rgba(59, 130, 246, 0.1)
+      ) !important;
       color: rgba(255, 255, 255, 1) !important;
       border-left-color: #3b82f6 !important;
+      box-shadow: 0 2px 6px rgba(59, 130, 246, 0.15);
     }
 
     &.is-downloading,
@@ -1905,27 +2036,146 @@ onBeforeUnmount(() => {
   }
 }
 
+/* 一级导航菜单 - TAB 样式 */
+.main-navigation-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.2);
+  min-height: 40px;
+}
+
+.nav-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 6px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  font-weight: 500;
+  position: relative;
+  border-radius: 6px;
+  margin: 0 2px;
+
+  .tab-icon {
+    font-size: 14px;
+    transition: all 0.25s ease;
+    flex-shrink: 0;
+  }
+
+  .tab-text {
+    white-space: nowrap;
+    line-height: 1.2;
+  }
+
+  &:hover:not(.active) {
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.05);
+    transform: translateY(-1px);
+  }
+
+  &.active {
+    color: #ffffff;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(96, 165, 250, 0.2));
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+
+    .tab-icon {
+      color: #60a5fa;
+      transform: scale(1.1);
+    }
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -7px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 24px;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+      border-radius: 3px;
+    }
+  }
+}
+
+/* 照片菜单样式 */
+.photo-menu {
+  background: transparent;
+  border: none;
+  padding: 8px 0;
+
+  :deep(.el-menu-item) {
+    background: rgba(0, 0, 0, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    padding: 10px 16px;
+    height: auto;
+    line-height: 1.4;
+    margin: 4px 8px;
+    border-radius: 6px;
+    border-left: 2px solid transparent;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    font-weight: 500;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.95);
+      transform: translateX(2px);
+    }
+
+    &.is-active {
+      background: rgba(59, 130, 246, 0.2) !important;
+      color: #ffffff !important;
+      border-left-color: #3b82f6 !important;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+      font-weight: 600;
+    }
+
+    .el-icon {
+      margin-right: 10px;
+      font-size: 16px;
+      transition: all 0.2s ease;
+    }
+
+    &.is-active .el-icon {
+      color: #60a5fa;
+    }
+
+    span {
+      font-size: 13px;
+      letter-spacing: 0.3px;
+    }
+  }
+}
+
 /* 下载全部相册功能区样式 */
 .download-all-section {
-  padding: 8px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 
   .download-all-card {
     border-radius: 8px;
     overflow: hidden;
-    border: 1px solid rgba(16, 185, 129, 0.2);
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(16, 185, 129, 0.02) 100%);
-    transition: all 0.3s ease;
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0.03) 100%);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
     &:hover {
-      border-color: rgba(16, 185, 129, 0.4);
+      border-color: rgba(16, 185, 129, 0.45);
       background: linear-gradient(
         135deg,
-        rgba(16, 185, 129, 0.08) 0%,
-        rgba(16, 185, 129, 0.04) 100%
+        rgba(16, 185, 129, 0.12) 0%,
+        rgba(16, 185, 129, 0.06) 100%
       );
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(16, 185, 129, 0.2);
     }
 
     .download-all-button {
@@ -1944,20 +2194,21 @@ onBeforeUnmount(() => {
       .button-content {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 12px 16px;
+        gap: 10px;
+        padding: 10px 14px;
         width: 100%;
         z-index: 2;
         position: relative;
 
         .button-icon {
-          width: 32px;
-          height: 32px;
+          width: 30px;
+          height: 30px;
           display: flex;
           align-items: center;
           justify-content: center;
           border-radius: 50%;
-          background: rgba(16, 185, 129, 0.15);
+          background: rgba(16, 185, 129, 0.2);
+          border: 1px solid rgba(16, 185, 129, 0.3);
           transition: all 0.3s ease;
 
           .el-icon {

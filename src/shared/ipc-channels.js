@@ -25,7 +25,11 @@ export const IPC_PHOTO = {
   /** 批量获取视频信息 */
   BATCH_VIDEO_INFO: 'photo:batchGetVideoInfo',
   /** 删除照片 */
-  DELETE_PHOTOS: 'photo:deletePhotos'
+  DELETE_PHOTOS: 'photo:deletePhotos',
+  /** 获取QQ空间动态（说说） */
+  GET_FEEDS: 'photo:getFeeds',
+  /** 删除动态 */
+  DELETE_FEED: 'photo:deleteFeed'
 }
 
 export const IPC_USER = {

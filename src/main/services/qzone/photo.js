@@ -2,7 +2,9 @@ import {
   cgi_list_photo,
   fcg_list_album_v3,
   cgi_floatview_photo_list_v2,
-  cgi_delpic_multi_v2
+  cgi_delpic_multi_v2,
+  feeds2_html_picfeed_qqtab,
+  feeds_delete_cgi
 } from '@main/api'
 
 export class QzonePhotoService {
@@ -117,5 +119,15 @@ export class QzonePhotoService {
   // 新增：删除照片
   async deletePhotos({ hostUin, albumId, photoData, albumName, priv }, { uin, p_skey }) {
     return await cgi_delpic_multi_v2(uin, p_skey, hostUin, albumId, photoData, albumName, priv)
+  }
+
+  // 获取QQ空间动态（说说）
+  async getFeeds({ hostUin, begintime, fuin }, { uin, p_skey }) {
+    return await feeds2_html_picfeed_qqtab(uin, p_skey, hostUin, begintime, fuin)
+  }
+
+  // 删除动态
+  async deleteFeed({ hostUin, skey, time, typeid, flag }, { uin, p_skey }) {
+    return await feeds_delete_cgi(uin, p_skey, hostUin, skey, time, typeid, flag)
   }
 }

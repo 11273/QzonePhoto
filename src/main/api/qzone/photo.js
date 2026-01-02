@@ -254,3 +254,82 @@ export async function cgi_delpic_multi_v2(
 
   throw new Error('删除照片响应格式异常')
 }
+
+/**
+ * 获取QQ空间动态（说说）
+ * @param uin qq
+ * @param p_skey 登录后有
+ * @param hostUin 主人QQ
+ * @param begintime 开始时间戳（秒）
+ * @param fuin 查看谁的动态（默认等于hostUin）
+ * @returns
+ */
+export async function feeds2_html_picfeed_qqtab(uin, p_skey, hostUin, begintime = 0, fuin = null) {
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/feeds2_html_picfeed_qqtab'
+  const params = {
+    g_tk: getGTK(p_skey),
+    t: Date.now(),
+    uin: hostUin,
+    hostUin,
+    fuin: fuin || hostUin,
+    appid: 4,
+    inCharset: 'utf-8',
+    outCharset: 'utf-8',
+    begintime
+  }
+
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`
+    }
+  })
+
+  return response.data
+}
+
+/**
+ * 删除动态
+ * @param uin qq
+ * @param p_skey 登录后有
+ * @param hostUin 主人QQ
+ * @param skey 动态的skey
+ * @param time 动态的时间戳
+ * @param typeid 动态类型ID
+ * @param flag 标志位，默认0
+ * @returns
+ */
+export async function feeds_delete_cgi(uin, p_skey, hostUin, skey, time, typeid = 0, flag = 0) {
+  const url = 'https://user.qzone.qq.com/proxy/domain/w.qzone.qq.com/cgi-bin/feeds/feeds_delete_cgi'
+
+  const params = {
+    g_tk: getGTK(p_skey)
+  }
+
+  // 构造表单数据
+  const formData = new URLSearchParams({
+    // qzreferrer: `https://user.qzone.qq.com/${hostUin}`,
+    appid: 4,
+    type: typeid,
+    key: skey,
+    flag: flag,
+    time: time,
+    uin: hostUin,
+    hostUin: hostUin,
+    plat: 'qzone',
+    source: 'qzone',
+    inCharset: 'UTF-8',
+    outCharset: 'UTF-8'
+  })
+  console.log(formData.toString())
+  const response = await request.post(url, formData.toString(), {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`,
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+    }
+  })
+
+  return response.data
+}

@@ -975,8 +975,11 @@ provide('downloadSelectedCallback', downloadSelected)
 provide('photoSize', photoSize)
 
 // 监听左侧相册选择（通过事件总线或props）
-const selectAlbum = async (album) => {
-  if (!album || currentAlbum.value?.id === album.id) return
+const selectAlbum = async (album, forceRefresh = false) => {
+  if (!album) return
+
+  // 如果相册ID相同且不是强制刷新，则直接返回
+  if (currentAlbum.value?.id === album.id && !forceRefresh) return
 
   // 先断开监听器，避免重复触发
   if (observer) {
@@ -996,7 +999,8 @@ const selectAlbum = async (album) => {
 // 提供选择相册的方法给父组件
 defineExpose({
   selectAlbum,
-  refreshCurrentAlbum
+  refreshCurrentAlbum,
+  currentAlbum // 暴露当前相册，方便外部访问
 })
 
 // 按日期分组照片

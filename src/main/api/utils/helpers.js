@@ -20,13 +20,32 @@ export function hash33(s) {
  * 1. JSON 对象（已解析的直接返回）
  * 2. _Callback({...})
  * 3. xxxCB(...args)、xxx_CB(...args)
- * 4. 其他字符串原样返回
+ * 4. HTML 包裹的 frameElement.callback({...})
+ * 5. 其他字符串原样返回
  */
 export function extractJSONFromCallback(input = '') {
   if (typeof input === 'object') return input
   if (typeof input !== 'string') return input
 
-  const str = input.trim()
+  let str = input.trim()
+
+  // ✅ 处理 HTML 包裹的 frameElement.callback 响应
+  if (str.includes('frameElement.callback')) {
+    const frameCallbackMatch = str.match(/frameElement\.callback\s*\(\s*({[\s\S]*?})\s*\)\s*;?/i)
+    if (frameCallbackMatch) {
+      try {
+        const obj = Function('"use strict";return (' + frameCallbackMatch[1] + ')')()
+        return {
+          functionName: 'frameElement.callback',
+          raw: [obj],
+          ...obj
+        }
+      } catch (error) {
+        console.error('解析 frameElement.callback 失败:', error)
+        return input
+      }
+    }
+  }
 
   // ✅ 支持任意合法函数名（包括 _Callback）
   const jsonMatch = str.match(/^\s*([a-zA-Z_$][\w$]*)\s*\(\s*({[\s\S]*?})\s*\)\s*;?\s*$/)

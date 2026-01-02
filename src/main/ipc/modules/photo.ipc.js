@@ -27,6 +27,12 @@ export function createPhotoHandlers(service) {
     },
     [IPC_PHOTO.DELETE_PHOTOS]: async (_, { payload, headers }) => {
       return photoService.deletePhotos(payload, headers)
+    },
+    [IPC_PHOTO.GET_FEEDS]: async (_, { payload, headers }) => {
+      return photoService.getFeeds(payload, headers)
+    },
+    [IPC_PHOTO.DELETE_FEED]: async (_, { payload, headers }) => {
+      return photoService.deleteFeed(payload, headers)
     }
   }
 }
