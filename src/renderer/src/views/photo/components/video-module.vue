@@ -42,6 +42,7 @@
               v-for="video in videos"
               :key="video.vid"
               class="video-card"
+              :class="{ 'privacy-mode': privacyStore.privacyMode }"
               @click="handleVideoClick(video)"
             >
               <!-- 视频封面 -->
@@ -65,6 +66,11 @@
                     </div>
                   </template>
                 </el-image>
+                <!-- 隐私模式遮罩 -->
+                <div v-if="privacyStore.privacyMode" class="privacy-overlay">
+                  <el-icon class="privacy-icon"><Hide /></el-icon>
+                  <div class="privacy-text">隐私保护</div>
+                </div>
                 <!-- 播放按钮覆盖层 -->
                 <div class="play-overlay">
                   <div class="play-button">
@@ -114,10 +120,16 @@
     >
       <div v-if="currentVideo" class="video-player-wrapper">
         <!-- 视频播放器容器 -->
-        <div class="video-player-container">
+        <div class="video-player-container" :class="{ 'privacy-mode': privacyStore.privacyMode }">
           <video ref="videoPlayerRef" :poster="currentVideo.pre" controls class="video-player">
             您的浏览器不支持视频播放
           </video>
+
+          <!-- 隐私模式遮罩 -->
+          <div v-if="privacyStore.privacyMode" class="video-privacy-overlay">
+            <el-icon class="privacy-icon"><Hide /></el-icon>
+            <div class="privacy-text">隐私保护</div>
+          </div>
 
           <!-- 加载状态 -->
           <div v-if="videoLoading" class="video-loading-overlay">
@@ -158,13 +170,15 @@
 <script setup>
 import { ref, onMounted, inject, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, VideoPlay, Loading, Warning } from '@element-plus/icons-vue'
+import { Refresh, VideoPlay, Loading, Warning, Hide } from '@element-plus/icons-vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import { useUserStore } from '@renderer/store/user.store'
+import { usePrivacyStore } from '@renderer/store/privacy.store'
 import Hls from 'hls.js'
 
 const userStore = useUserStore()
+const privacyStore = usePrivacyStore()
 
 const videos = ref([])
 const loading = ref(false)
@@ -582,6 +596,33 @@ onUnmounted(() => {
     .play-overlay {
       opacity: 1;
     }
+
+    /* 隐私模式下悬停时减少模糊 */
+    &.privacy-mode .cover-image :deep(.el-image__inner) {
+      filter: blur(8px);
+    }
+
+    /* 隐私模式下确保遮罩可见 */
+    &.privacy-mode .privacy-overlay {
+      opacity: 1;
+      background: rgba(0, 0, 0, 0.85);
+    }
+  }
+
+  /* 隐私模式样式 */
+  &.privacy-mode {
+    .cover-image :deep(.el-image__inner) {
+      filter: blur(15px);
+      transition: filter 0.3s ease;
+    }
+
+    .privacy-overlay {
+      opacity: 1;
+    }
+
+    .play-overlay {
+      opacity: 0; /* 隐私模式下隐藏播放按钮 */
+    }
   }
 }
 
@@ -591,6 +632,36 @@ onUnmounted(() => {
   padding-top: 56.25%; // 16:9 比例
   background: rgba(0, 0, 0, 0.3);
   overflow: hidden;
+}
+
+/* 隐私模式遮罩 - 视频卡片 */
+.privacy-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+
+  .privacy-icon {
+    font-size: 24px;
+    color: #e6a23c;
+    margin-bottom: 4px;
+    opacity: 0.9;
+  }
+
+  .privacy-text {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 500;
+    text-align: center;
+  }
 }
 
 .cover-image {
@@ -759,6 +830,49 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+
+  /* 隐私模式样式 */
+  &.privacy-mode {
+    .video-player {
+      filter: blur(20px);
+      transition: filter 0.3s ease;
+    }
+
+    .video-privacy-overlay {
+      opacity: 1;
+    }
+  }
+}
+
+/* 隐私模式遮罩 - 视频播放器 */
+.video-privacy-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+
+  .privacy-icon {
+    font-size: 32px;
+    color: #e6a23c;
+    margin-bottom: 8px;
+    opacity: 0.9;
+  }
+
+  .privacy-text {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 600;
+    text-align: center;
+    letter-spacing: 1px;
+  }
 }
 
 .video-player {
