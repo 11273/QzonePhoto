@@ -4,7 +4,8 @@ import {
   cgi_floatview_photo_list_v2,
   cgi_delpic_multi_v2,
   feeds2_html_picfeed_qqtab,
-  feeds_delete_cgi
+  feeds_delete_cgi,
+  cgi_video_get_data
 } from '@main/api'
 
 export class QzonePhotoService {
@@ -129,5 +130,19 @@ export class QzonePhotoService {
   // 删除动态
   async deleteFeed({ hostUin, skey, time, typeid, flag }, { uin, p_skey }) {
     return await feeds_delete_cgi(uin, p_skey, hostUin, skey, time, typeid, flag)
+  }
+
+  // 获取视频列表
+  async getVideoList({ hostUin, getMethod, start, count, need_old, getUserInfo }, { uin, p_skey }) {
+    return await cgi_video_get_data(
+      uin,
+      p_skey,
+      hostUin,
+      getMethod,
+      start,
+      count,
+      need_old,
+      getUserInfo
+    )
   }
 }

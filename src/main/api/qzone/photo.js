@@ -160,7 +160,7 @@ export async function cgi_video_get_data(
   const response = await request.get(url, {
     params,
     headers: {
-      Cookie: `p_uin=o${uin};p_skey=${p_skey}`
+      Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
   return response.data

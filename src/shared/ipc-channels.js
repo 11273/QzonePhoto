@@ -29,7 +29,9 @@ export const IPC_PHOTO = {
   /** 获取QQ空间动态（说说） */
   GET_FEEDS: 'photo:getFeeds',
   /** 删除动态 */
-  DELETE_FEED: 'photo:deleteFeed'
+  DELETE_FEED: 'photo:deleteFeed',
+  /** 获取视频列表 */
+  GET_VIDEO_LIST: 'photo:getVideoList'
 }
 
 export const IPC_USER = {

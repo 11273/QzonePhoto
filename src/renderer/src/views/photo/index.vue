@@ -9,12 +9,13 @@
       <!-- 根据当前模块显示不同内容 -->
       <Main v-if="currentModule === 'album'" ref="mainRef" class="flex-1" />
       <PhotoModule
-        v-show="currentModule === 'photo'"
+        v-if="currentModule === 'photo'"
         ref="photoModuleRef"
         :photo-type="photoType"
         class="flex-1"
         @album-click="handleAlbumClick"
       />
+      <VideoModule v-if="currentModule === 'video'" ref="videoModuleRef" class="flex-1" />
     </div>
 
     <!-- 相册查看弹窗（从动态跳转） -->
@@ -53,6 +54,7 @@ import { Close } from '@element-plus/icons-vue'
 import Left from '@renderer/views/photo/components/left.vue'
 import Main from '@renderer/views/photo/components/main.vue'
 import PhotoModule from '@renderer/views/photo/components/photo-module.vue'
+import VideoModule from '@renderer/views/photo/components/video-module.vue'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
 import { useDownloadStore } from '@renderer/store/download.store'
 
@@ -61,6 +63,7 @@ const loading = ref(false)
 const mainRef = ref()
 const leftRef = ref()
 const photoModuleRef = ref()
+const videoModuleRef = ref()
 const dialogMainRef = ref()
 
 // 当前模块状态
@@ -149,6 +152,8 @@ const handleDialogClosed = () => {
 
 // 提供刷新回调给子组件
 provide('refreshAlbumCallback', refreshCurrentAlbum)
+// 提供 leftRef 给子组件（用于更新统计信息）
+provide('leftRef', leftRef)
 
 // 监听下载任务更新
 let taskUpdateListener = null

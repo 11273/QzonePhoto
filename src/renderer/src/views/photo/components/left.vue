@@ -256,6 +256,22 @@
             <span>好友照片</span>
           </el-menu-item> -->
         </el-menu>
+
+        <!-- 视频模块统计信息 -->
+        <div v-else-if="currentModule === 'video'" class="video-stats-section">
+          <div class="stats-card">
+            <div class="stats-grid">
+              <div class="stat-item">
+                <div class="stat-label">总视频数</div>
+                <div class="stat-value">{{ videoStats.total || 0 }}</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">已加载</div>
+                <div class="stat-value loaded">{{ videoStats.loaded || 0 }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </el-scrollbar>
     </div>
 
@@ -283,7 +299,7 @@ import {
   Folder,
   Picture,
   User,
-  UserFilled
+  VideoPlay
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
@@ -333,13 +349,20 @@ const refreshAlbumCallback = inject('refreshAlbumCallback', null)
 const loading = ref(false)
 
 // 当前模块状态
-const currentModule = ref('album') // album, photo
+const currentModule = ref('album') // album, photo, video
 const selectedPhotoType = ref('my-photos')
+
+// 视频统计信息
+const videoStats = ref({
+  total: 0,
+  loaded: 0
+})
 
 // TAB 配置
 const tabs = [
   { key: 'album', label: '相册', icon: Folder },
-  { key: 'photo', label: '照片', icon: Picture }
+  { key: 'photo', label: '照片', icon: Picture },
+  { key: 'video', label: '视频', icon: VideoPlay }
 ]
 
 // QQ号脱敏显示
@@ -1355,10 +1378,21 @@ onBeforeUnmount(() => {
   cleanupUploadListeners()
 })
 
+// 更新视频统计信息
+const updateVideoStats = (stats) => {
+  if (stats) {
+    videoStats.value = {
+      total: stats.total || 0,
+      loaded: stats.loaded || 0
+    }
+  }
+}
+
 // 暴露方法供父组件调用
 defineExpose({
   selectAlbumById,
-  findAlbumById
+  findAlbumById,
+  updateVideoStats
 })
 </script>
 
@@ -2347,6 +2381,52 @@ defineExpose({
   50% {
     transform: translate(-50%, -50%) scale(1.2);
     opacity: 0.8;
+  }
+}
+
+/* 视频统计区域样式 */
+.video-stats-section {
+  padding: 10px 6px;
+}
+
+.stats-card {
+  padding: 10px;
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    transition: all 0.3s ease;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.06);
+      transform: translateY(-2px);
+    }
+  }
+
+  .stat-label {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 6px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #60a5fa;
+
+    &.loaded {
+      color: #34d399;
+    }
   }
 }
 </style>

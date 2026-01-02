@@ -43,6 +43,8 @@ try {
     getFeeds: (data) => ipcClient.call(IPC_PHOTO.GET_FEEDS, data),
     // 删除动态
     deleteFeed: (data) => ipcClient.call(IPC_PHOTO.DELETE_FEED, data),
+    // 获取视频列表
+    getVideoList: (data) => ipcClient.call(IPC_PHOTO.GET_VIDEO_LIST, data),
 
     // 文件系统相关API
     openFileDialog: (data) => ipcClient.call(IPC_FILE.DIALOG_OPEN_FILE, data),

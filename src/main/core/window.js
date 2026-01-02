@@ -152,6 +152,22 @@ export class WindowManager {
       cb({ requestHeaders: details.requestHeaders })
     })
 
+    qzoneSession.webRequest.onHeadersReceived(filter, (details, callback) => {
+      const responseHeaders = details.responseHeaders
+
+      delete responseHeaders['access-control-allow-origin']
+      delete responseHeaders['access-control-allow-headers']
+      delete responseHeaders['access-control-allow-methods']
+
+      responseHeaders['Access-Control-Allow-Origin'] = ['*']
+      responseHeaders['Access-Control-Allow-Headers'] = ['*']
+      responseHeaders['Access-Control-Allow-Methods'] = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+
+      responseHeaders['Access-Control-Allow-Credentials'] = ['true']
+
+      callback({ responseHeaders })
+    })
+
     // 加载页面
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
       await win.loadURL(process.env['ELECTRON_RENDERER_URL'])
