@@ -320,6 +320,60 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 视频预览对话框 -->
+    <el-dialog
+      v-model="videoPreviewVisible"
+      :title="currentVideoInfo?.title || '视频预览'"
+      width="800px"
+      top="5vh"
+      class="video-preview-dialog"
+      :close-on-click-modal="false"
+      @close="closeVideoPreview"
+    >
+      <div v-if="currentVideoInfo" class="video-player-wrapper">
+        <!-- 视频播放器容器 -->
+        <div class="video-player-container">
+          <video
+            ref="videoPlayerRef"
+            :poster="currentVideoInfo.cover"
+            controls
+            class="video-player"
+          >
+            您的浏览器不支持视频播放
+          </video>
+
+          <!-- 加载状态 -->
+          <div v-if="videoLoading" class="video-loading-overlay">
+            <el-icon class="loading-spinner"><Loading /></el-icon>
+            <span>正在加载视频...</span>
+          </div>
+
+          <!-- 错误提示 -->
+          <div v-if="videoError" class="video-error-overlay">
+            <el-icon><Warning /></el-icon>
+            <span>{{ videoError }}</span>
+            <div class="error-actions">
+              <el-button type="primary" size="small" @click="retryPlay">重试</el-button>
+              <el-button
+                v-if="currentVideoInfo?.url"
+                type="success"
+                size="small"
+                @click="openVideoInBrowser"
+              >
+                在浏览器中打开
+              </el-button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="videoPreviewVisible = false">关闭</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -333,15 +387,17 @@ import {
   Folder,
   ArrowRight,
   Refresh,
-  Hide
+  Hide,
+  Warning
 } from '@element-plus/icons-vue'
 import { Select, Close, Check } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
-import { ElImageViewer } from 'element-plus'
+import { ElImageViewer, ElDialog, ElButton } from 'element-plus'
 import { useUserStore } from '@renderer/store/user.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
+import Hls from 'hls.js'
 
 const privacyStore = usePrivacyStore()
 
@@ -433,6 +489,14 @@ let observer = null
 const previewVisible = ref(false)
 const previewIndex = ref(0)
 const previewImages = ref([])
+
+// 视频预览相关
+const videoPreviewVisible = ref(false)
+const videoPlayerRef = ref(null)
+const currentVideoInfo = ref(null)
+const videoLoading = ref(false)
+const videoError = ref('')
+let hls = null
 
 // 格式化动态时间显示
 const formatFeedTime = (timeStr) => {
@@ -781,7 +845,7 @@ const deleteFeed = async (feed) => {
 }
 
 // 预览媒体（图片/视频）
-const previewMedia = async (media, index /**, feed*/) => {
+const previewMedia = async (media, index) => {
   if (!media || !Array.isArray(media) || media.length === 0) return
 
   const targetMedia = media[index]
@@ -789,8 +853,7 @@ const previewMedia = async (media, index /**, feed*/) => {
 
   // 如果是视频
   if (targetMedia.type === 'video') {
-    // await previewVideo(targetMedia, feed)
-    ElMessage.warning('暂不支持预览视频，请前往相册查看')
+    await previewVideo(targetMedia)
   } else {
     // 如果是图片
     previewImages.value = media.filter((m) => m.type === 'image').map((m) => m.bigUrl || m.url)
@@ -800,6 +863,199 @@ const previewMedia = async (media, index /**, feed*/) => {
 
     previewIndex.value = Math.max(0, imageIndex)
     previewVisible.value = true
+  }
+}
+
+// 预览视频
+const previewVideo = async (videoMedia) => {
+  if (!videoMedia || !videoMedia.url) {
+    ElMessage.error('视频地址无效')
+    return
+  }
+
+  try {
+    // 显示加载状态
+    currentVideoInfo.value = { ...videoMedia, video_play_url: null }
+    videoPreviewVisible.value = true
+    videoError.value = ''
+    videoLoading.value = true
+
+    // 获取视频详细信息（如果需要）
+    // 这里直接使用视频媒体的URL进行播放
+    const videoUrl = videoMedia.url
+
+    // 等待对话框渲染完成后再播放
+    nextTick(() => {
+      playVideo(videoUrl)
+    })
+  } catch (error) {
+    console.error('预览视频失败:', error)
+    ElMessage.error('预览视频失败')
+    closeVideoPreview()
+  }
+}
+
+// 播放视频（自动选择播放方式）
+const playVideo = (url) => {
+  // 清理旧的 HLS 实例
+  if (hls) {
+    hls.destroy()
+    hls = null
+  }
+
+  if (url.includes('.m3u8')) {
+    if (videoPlayerRef.value.canPlayType('application/vnd.apple.mpegurl')) {
+      videoPlayerRef.value.src = url
+    } else if (Hls.isSupported()) {
+      hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        debug: false
+      })
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) handleHLSError(data)
+      })
+
+      hls.loadSource(url)
+      hls.attachMedia(videoPlayerRef.value)
+    } else {
+      videoLoading.value = false
+      videoError.value = '您的浏览器不支持 HLS 视频播放'
+      ElMessage.error('您的浏览器不支持 HLS 视频播放')
+      return
+    }
+  } else {
+    videoPlayerRef.value.src = url
+  }
+
+  setupVideoEvents()
+}
+
+// 设置视频事件监听
+const setupVideoEvents = () => {
+  if (!videoPlayerRef.value) return
+
+  // 移除之前的监听器，避免重复
+  videoPlayerRef.value.onloadeddata = null
+  videoPlayerRef.value.oncanplay = null
+  videoPlayerRef.value.onwaiting = null
+  videoPlayerRef.value.onplaying = null
+  videoPlayerRef.value.onerror = null
+
+  videoPlayerRef.value.onloadeddata = () => {
+    videoLoading.value = false
+    videoError.value = ''
+  }
+
+  videoPlayerRef.value.oncanplay = () => {
+    videoLoading.value = false
+    videoPlayerRef.value.play().catch(() => {
+      ElMessage.info('请点击播放按钮开始观看')
+    })
+  }
+
+  videoPlayerRef.value.onwaiting = () => {
+    videoLoading.value = true
+  }
+
+  videoPlayerRef.value.onplaying = () => {
+    videoLoading.value = false
+    videoError.value = ''
+  }
+
+  videoPlayerRef.value.onerror = () => {
+    if (videoPreviewVisible.value) {
+      videoLoading.value = false
+      videoError.value = '视频加载失败'
+      ElMessage.error('视频加载失败')
+    }
+  }
+}
+
+// 处理 HLS 错误
+const handleHLSError = (data) => {
+  videoLoading.value = false
+
+  const errorMap = {
+    [Hls.ErrorTypes.NETWORK_ERROR]: { msg: '网络错误，无法加载视频', type: 'warning' },
+    [Hls.ErrorTypes.MEDIA_ERROR]: {
+      msg: '媒体错误，正在尝试恢复...',
+      type: 'warning',
+      recover: true
+    },
+    [Hls.ErrorTypes.MANIFEST_ERROR]: { msg: '视频格式不支持', type: 'error', destroy: true }
+  }
+
+  const error = errorMap[data.type] || { msg: '无法播放视频', type: 'error', destroy: true }
+
+  videoError.value = error.msg
+  error.type === 'warning' ? ElMessage.warning(error.msg) : ElMessage.error(error.msg)
+
+  if (error.recover && hls) {
+    hls.recoverMediaError()
+  } else if (error.destroy && hls) {
+    hls.destroy()
+  }
+}
+
+// 重试播放
+const retryPlay = () => {
+  if (!currentVideoInfo.value || !currentVideoInfo.value.url) {
+    ElMessage.warning('没有可播放的视频')
+    return
+  }
+
+  videoError.value = ''
+  videoLoading.value = true
+  playVideo(currentVideoInfo.value.url)
+}
+
+// 关闭视频预览
+const closeVideoPreview = () => {
+  if (videoPlayerRef.value) {
+    // 移除所有事件监听器
+    videoPlayerRef.value.onloadeddata = null
+    videoPlayerRef.value.oncanplay = null
+    videoPlayerRef.value.onwaiting = null
+    videoPlayerRef.value.onplaying = null
+    videoPlayerRef.value.onerror = null
+
+    videoPlayerRef.value.pause()
+    videoPlayerRef.value.src = ''
+  }
+
+  // 清理 HLS 实例
+  if (hls) {
+    hls.destroy()
+    hls = null
+  }
+
+  currentVideoInfo.value = null
+  videoPreviewVisible.value = false
+  videoLoading.value = false
+  videoError.value = ''
+}
+
+// 在浏览器中打开视频
+const openVideoInBrowser = () => {
+  if (!currentVideoInfo.value || !currentVideoInfo.value.url) {
+    ElMessage.error('视频地址无效')
+    return
+  }
+
+  try {
+    if (window.require) {
+      const { shell } = window.require('electron')
+      shell.openExternal(currentVideoInfo.value.url)
+      ElMessage.success('正在浏览器中打开视频...')
+    } else {
+      window.open(currentVideoInfo.value.url, '_blank')
+    }
+  } catch {
+    window.open(currentVideoInfo.value.url, '_blank')
   }
 }
 
@@ -1871,6 +2127,110 @@ onUnmounted(() => {
 
   &:hover {
     color: #409eff;
+  }
+}
+
+/* 视频预览对话框样式 */
+:deep(.video-preview-dialog) {
+  .el-dialog {
+    background: rgba(30, 30, 30, 0.95);
+    border-radius: 12px;
+    backdrop-filter: blur(20px);
+  }
+
+  .el-dialog__header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 16px 20px;
+
+    .el-dialog__title {
+      color: #ffffff;
+      font-weight: 600;
+    }
+  }
+
+  .el-dialog__body {
+    padding: 16px 20px;
+  }
+
+  .el-dialog__footer {
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px 20px;
+  }
+}
+
+.video-player-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.video-player-container {
+  position: relative;
+  width: 100%;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  max-height: 450px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-player {
+  width: 100%;
+  max-height: 500px;
+  background: #000;
+  display: block;
+}
+
+.video-loading-overlay,
+.video-error-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  gap: 12px;
+  z-index: 10;
+}
+
+.video-loading-overlay {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.loading-spinner {
+  font-size: 32px;
+  animation: rotate 1s linear infinite;
+}
+
+.video-error-overlay {
+  background: rgba(200, 0, 0, 0.6);
+
+  .error-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 </style>

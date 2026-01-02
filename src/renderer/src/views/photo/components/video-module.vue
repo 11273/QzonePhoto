@@ -120,16 +120,10 @@
     >
       <div v-if="currentVideo" class="video-player-wrapper">
         <!-- 视频播放器容器 -->
-        <div class="video-player-container" :class="{ 'privacy-mode': privacyStore.privacyMode }">
+        <div class="video-player-container">
           <video ref="videoPlayerRef" :poster="currentVideo.pre" controls class="video-player">
             您的浏览器不支持视频播放
           </video>
-
-          <!-- 隐私模式遮罩 -->
-          <div v-if="privacyStore.privacyMode" class="video-privacy-overlay">
-            <el-icon class="privacy-icon"><Hide /></el-icon>
-            <div class="privacy-text">隐私保护</div>
-          </div>
 
           <!-- 加载状态 -->
           <div v-if="videoLoading" class="video-loading-overlay">
@@ -830,49 +824,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-
-  /* 隐私模式样式 */
-  &.privacy-mode {
-    .video-player {
-      filter: blur(20px);
-      transition: filter 0.3s ease;
-    }
-
-    .video-privacy-overlay {
-      opacity: 1;
-    }
-  }
-}
-
-/* 隐私模式遮罩 - 视频播放器 */
-.video-privacy-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.9);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 5;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-  backdrop-filter: blur(4px);
-
-  .privacy-icon {
-    font-size: 32px;
-    color: #e6a23c;
-    margin-bottom: 8px;
-    opacity: 0.9;
-  }
-
-  .privacy-text {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.9);
-    font-weight: 600;
-    text-align: center;
-    letter-spacing: 1px;
-  }
 }
 
 .video-player {
