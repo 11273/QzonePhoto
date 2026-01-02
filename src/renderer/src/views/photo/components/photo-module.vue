@@ -127,7 +127,10 @@
                           v-for="(item, idx) in feed.media.slice(0, 8)"
                           :key="idx"
                           class="media-item"
-                          :class="{ 'is-video': item.type === 'video' }"
+                          :class="{
+                            'is-video': item.type === 'video',
+                            'privacy-mode': privacyStore.privacyMode
+                          }"
                           @click="previewMedia(feed.media, idx, feed)"
                         >
                           <!-- 视频 -->
@@ -142,15 +145,25 @@
                             <div v-else class="media-placeholder">
                               <el-icon><VideoPlay /></el-icon>
                             </div>
+                            <!-- 隐私模式遮罩 - 视频 -->
+                            <div v-if="privacyStore.privacyMode" class="media-privacy-overlay">
+                              <el-icon class="privacy-icon"><Hide /></el-icon>
+                            </div>
                           </div>
                           <!-- 图片 -->
-                          <el-image v-else :src="item.url" fit="cover" lazy class="media-thumb">
-                            <template #error>
-                              <div class="media-error">
-                                <el-icon><Picture /></el-icon>
-                              </div>
-                            </template>
-                          </el-image>
+                          <div v-else class="media-image-wrapper">
+                            <el-image :src="item.url" fit="cover" lazy class="media-thumb">
+                              <template #error>
+                                <div class="media-error">
+                                  <el-icon><Picture /></el-icon>
+                                </div>
+                              </template>
+                            </el-image>
+                            <!-- 隐私模式遮罩 - 图片 -->
+                            <div v-if="privacyStore.privacyMode" class="media-privacy-overlay">
+                              <el-icon class="privacy-icon"><Hide /></el-icon>
+                            </div>
+                          </div>
                         </div>
                         <!-- 更多提示 -->
                         <div
@@ -319,14 +332,18 @@ import {
   Loading,
   Folder,
   ArrowRight,
-  Refresh
+  Refresh,
+  Hide
 } from '@element-plus/icons-vue'
 import { Select, Close, Check } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { ElImageViewer } from 'element-plus'
 import { useUserStore } from '@renderer/store/user.store'
+import { usePrivacyStore } from '@renderer/store/privacy.store'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
+
+const privacyStore = usePrivacyStore()
 
 const emit = defineEmits(['album-click'])
 
@@ -1313,6 +1330,17 @@ onUnmounted(() => {
   &:hover {
     opacity: 0.85;
     transform: scale(1.05);
+
+    /* 隐私模式下悬停时减少模糊 */
+    &.privacy-mode .media-thumb :deep(.el-image__inner) {
+      filter: blur(8px);
+    }
+
+    /* 隐私模式下确保遮罩可见 */
+    &.privacy-mode .media-privacy-overlay {
+      opacity: 1;
+      background: rgba(0, 0, 0, 0.85);
+    }
   }
 
   &.is-video {
@@ -1332,7 +1360,63 @@ onUnmounted(() => {
       z-index: 2;
       text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
     }
+
+    /* 隐私模式样式 - 视频 */
+    &.privacy-mode {
+      .media-thumb :deep(.el-image__inner) {
+        filter: blur(12px);
+        transition: filter 0.3s ease;
+      }
+
+      .media-privacy-overlay {
+        opacity: 1;
+      }
+
+      .video-play-icon {
+        opacity: 0; /* 隐私模式下隐藏播放图标 */
+      }
+    }
   }
+
+  /* 隐私模式样式 - 图片 */
+  &.privacy-mode {
+    .media-thumb :deep(.el-image__inner) {
+      filter: blur(12px);
+      transition: filter 0.3s ease;
+    }
+
+    .media-privacy-overlay {
+      opacity: 1;
+    }
+  }
+}
+
+/* 隐私模式遮罩 - 媒体项 */
+.media-privacy-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+
+  .privacy-icon {
+    font-size: 20px;
+    color: #e6a23c;
+    opacity: 0.9;
+  }
+}
+
+/* 图片包装器 - 用于包裹图片和遮罩 */
+.media-image-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 .media-more {
@@ -1402,6 +1486,17 @@ onUnmounted(() => {
   font-weight: 700;
   color: #ffffff;
   backdrop-filter: blur(2px);
+}
+
+/* 隐私模式样式 - 动态卡片中的媒体 */
+.feed-card {
+  /* 隐私模式下确保选择框可见 */
+  &.privacy-mode {
+    .selection-checkbox {
+      opacity: 1;
+      background: rgba(255, 255, 255, 0.9);
+    }
+  }
 }
 
 /* 文本内容 */
