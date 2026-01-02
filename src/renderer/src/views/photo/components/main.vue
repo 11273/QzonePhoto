@@ -481,10 +481,10 @@ const handleScroll = () => {
         // 只有在有足够内容时才收缩
         isCollapsing.value = true
         topRef.value.setCollapsed(true)
-        // 动画结束后解锁（300ms是CSS transition时间）
+        // 动画结束后解锁（200ms是CSS transition时间）
         setTimeout(() => {
           isCollapsing.value = false
-        }, 350)
+        }, 220)
       }
     } else {
       // 向上滚动（内容向下移动）或到达顶部
@@ -494,7 +494,7 @@ const handleScroll = () => {
         // 动画结束后解锁
         setTimeout(() => {
           isCollapsing.value = false
-        }, 350)
+        }, 220)
       }
     }
 

@@ -13,24 +13,31 @@
     <div v-if="currentAlbum" class="album-header">
       <div class="album-info">
         <div class="title-section">
-          <div class="album-title-container">
-            <h2 class="album-title">{{ currentAlbum.name }}</h2>
+          <div class="album-title-row">
+            <div class="title-left">
+              <h2 class="album-title">{{ currentAlbum.name }}</h2>
 
-            <!-- 权限信息显示 - 简化版本 -->
-            <div v-if="albumPermissionText" class="album-permissions">
-              <el-tooltip :content="albumPermissionText" placement="top" :show-after="500">
-                <span class="permission-text">{{ shortPermissionText }}</span>
-              </el-tooltip>
+              <!-- 权限信息显示 - 简化版本 -->
+              <div v-if="albumPermissionText" class="album-permissions">
+                <el-tooltip :content="albumPermissionText" placement="top" :show-after="500">
+                  <span class="permission-text">{{ shortPermissionText }}</span>
+                </el-tooltip>
+              </div>
             </div>
 
             <!-- 相册刷新按钮 -->
-            <el-tooltip content="刷新" placement="top">
-              <el-button class="album-refresh-btn" size="small" text @click="refreshAlbum">
-                <el-icon class="refresh-icon">
-                  <Refresh />
-                </el-icon>
+            <div class="title-right">
+              <el-button
+                text
+                :icon="Refresh"
+                :loading="refreshLoading"
+                :disabled="refreshLoading"
+                class="refresh-btn"
+                @click="refreshAlbum"
+              >
+                刷新
               </el-button>
-            </el-tooltip>
+            </div>
           </div>
 
           <transition name="fade-slide">
@@ -247,6 +254,9 @@ const showUpload = ref(false)
 // 收缩状态
 const isCollapsed = ref(false)
 
+// 刷新加载状态
+const refreshLoading = ref(false)
+
 // 设置收缩状态
 const setCollapsed = (collapsed) => {
   isCollapsed.value = collapsed
@@ -366,8 +376,15 @@ const cancelDownload = () => {
 
 // 刷新当前相册
 const refreshAlbum = async () => {
-  if (refreshAlbumCallback) {
-    await refreshAlbumCallback()
+  if (refreshLoading.value) return
+
+  refreshLoading.value = true
+  try {
+    if (refreshAlbumCallback) {
+      await refreshAlbumCallback()
+    }
+  } finally {
+    refreshLoading.value = false
   }
 }
 </script>
@@ -378,7 +395,7 @@ const refreshAlbum = async () => {
   padding: 16px 24px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
   &.collapsed {
     padding: 8px 24px;
@@ -407,7 +424,6 @@ const refreshAlbum = async () => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 32px;
 }
 
 .album-info {
@@ -415,17 +431,31 @@ const refreshAlbum = async () => {
   min-width: 0;
 }
 
-.album-title-container {
+.album-title-row {
   display: flex;
-  flex-direction: row;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.title-left {
+  display: flex;
+  align-items: center;
   gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.title-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 16px;
 }
 
 .title-section {
   margin-bottom: 16px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
   .album-title {
     font-size: 22px;
@@ -434,37 +464,7 @@ const refreshAlbum = async () => {
     line-height: 1.3;
     letter-spacing: -0.02em;
     display: inline-block;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .album-refresh-btn {
-    color: rgba(255, 255, 255, 0.7) !important;
-    padding: 4px !important;
-    border-radius: 4px !important;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    height: 24px !important;
-    min-width: 24px !important;
-
-    .refresh-icon {
-      font-size: 14px;
-      color: #67c23a;
-      transition: all 0.3s ease;
-    }
-
-    &:hover {
-      background: rgba(255, 255, 255, 0.1) !important;
-      color: rgba(255, 255, 255, 0.9) !important;
-      transform: translateY(-1px);
-
-      .refresh-icon {
-        color: #85ce61;
-        transform: rotate(180deg);
-      }
-    }
-
-    &:active {
-      transform: translateY(0);
-    }
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .album-description {
@@ -489,6 +489,22 @@ const refreshAlbum = async () => {
       cursor: help;
     }
   }
+
+  .refresh-btn {
+    color: rgba(255, 255, 255, 0.7) !important;
+    font-size: 13px !important;
+    padding: 6px 12px !important;
+    transition: all 0.2s ease;
+
+    &:hover {
+      color: rgba(255, 255, 255, 0.9) !important;
+      background: rgba(255, 255, 255, 0.1) !important;
+    }
+
+    .el-icon {
+      margin-right: 4px;
+    }
+  }
 }
 
 .stats-container {
@@ -496,7 +512,7 @@ const refreshAlbum = async () => {
     display: flex;
     gap: 28px;
     flex-wrap: wrap;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
   }
 }
 
@@ -615,7 +631,7 @@ const refreshAlbum = async () => {
       left: 0;
       height: 3px;
       background: rgba(255, 255, 255, 0.5);
-      transition: width 0.3s ease;
+      transition: width 0.2s ease;
       border-radius: 0 0 8px 8px;
     }
   }
@@ -629,7 +645,7 @@ const refreshAlbum = async () => {
   padding-top: 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   gap: 24px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
   .left-controls {
     display: flex;
@@ -701,7 +717,7 @@ const refreshAlbum = async () => {
     border-radius: 6px;
     font-weight: 500;
     font-size: 13px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
     min-width: 80px;
     max-width: 120px;
@@ -902,10 +918,6 @@ const refreshAlbum = async () => {
 
 /* 响应式设计 */
 @media (max-width: 1200px) {
-  .album-header {
-    gap: 24px;
-  }
-
   .stats-container .stats-row {
     gap: 20px;
   }
@@ -1022,7 +1034,7 @@ const refreshAlbum = async () => {
 /* 淡入淡出滑动动画 */
 .fade-slide-enter-active,
 .fade-slide-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .fade-slide-enter-from {

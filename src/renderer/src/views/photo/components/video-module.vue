@@ -502,10 +502,11 @@ onUnmounted(() => {
 }
 
 .module-header {
-  padding: 20px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(0, 0, 0, 0.2);
+  padding: 16px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%);
   flex-shrink: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .header-content {
@@ -520,11 +521,12 @@ onUnmounted(() => {
 }
 
 .module-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
   margin: 0;
-  letter-spacing: 0.3px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
 }
 
 .header-actions {
