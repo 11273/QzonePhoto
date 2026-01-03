@@ -632,7 +632,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   padding-left: 12px;
-  width: 200px;
+  flex: 1;
   flex-shrink: 0;
 }
 
@@ -662,8 +662,10 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  flex: 1;
-  position: relative;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .title-content {
@@ -671,6 +673,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   justify-content: center;
+  pointer-events: auto;
 }
 
 .app-title {
@@ -705,7 +708,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 200px;
+  flex: 1;
   flex-shrink: 0;
   justify-content: flex-end;
 }
