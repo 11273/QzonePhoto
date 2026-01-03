@@ -118,7 +118,9 @@
                     </div>
 
                     <!-- 文本内容 -->
-                    <div v-if="feed.text" class="feed-text">{{ feed.text }}</div>
+                    <div v-if="feed.text" class="feed-text">
+                      <RichText :text="feed.text" />
+                    </div>
 
                     <!-- 媒体内容 -->
                     <div v-if="feed.media && feed.media.length > 0" class="media-container">
@@ -200,12 +202,7 @@
                     <div v-if="feed.likes && feed.likes.length > 0" class="feed-likes">
                       <span class="like-icon">👍</span>
                       <div class="likes-content">
-                        <span
-                          v-for="(like, idx) in feed.likes"
-                          :key="idx"
-                          class="like-name"
-                          :class="{ 'is-me': like.isMe }"
-                        >
+                        <span v-for="(like, idx) in feed.likes" :key="idx" class="like-name">
                           {{ like.name }}
                         </span>
                         <span class="like-suffix">觉得很赞</span>
@@ -214,11 +211,62 @@
 
                     <!-- 评论列表 -->
                     <div v-if="feed.comments && feed.comments.length > 0" class="feed-comments">
-                      <div v-for="comment in feed.comments" :key="comment.id" class="comment-row">
-                        <span class="comment-author" :class="{ 'is-me': comment.isMe }">
-                          {{ comment.author }}
-                        </span>
-                        <span class="comment-text">{{ comment.text }}</span>
+                      <div v-for="comment in feed.comments" :key="comment.id" class="comment-item">
+                        <div class="comment-row">
+                          <!-- 评论者头像 -->
+                          <el-tooltip :content="`QQ: ${comment.uin}`" placement="top">
+                            <img
+                              :src="getAvatarUrl(comment.uin)"
+                              :alt="comment.author"
+                              class="comment-avatar"
+                              @error="handleAvatarError"
+                            />
+                          </el-tooltip>
+                          <div class="comment-content">
+                            <div class="comment-header">
+                              <el-tooltip :content="`QQ: ${comment.uin}`" placement="top">
+                                <span class="comment-author">{{ comment.author }}</span>
+                              </el-tooltip>
+                              <span v-if="comment.time" class="comment-time">
+                                {{ comment.time }}
+                              </span>
+                            </div>
+                            <RichText :text="comment.text" class="comment-text-content" />
+                          </div>
+                        </div>
+
+                        <!-- 评论回复列表 -->
+                        <div
+                          v-if="comment.responses && comment.responses.length > 0"
+                          class="comment-responses"
+                        >
+                          <div
+                            v-for="response in comment.responses"
+                            :key="response.id"
+                            class="response-row"
+                          >
+                            <!-- 回复者头像 -->
+                            <el-tooltip :content="`QQ: ${response.uin}`" placement="top">
+                              <img
+                                :src="getAvatarUrl(response.uin)"
+                                :alt="response.author"
+                                class="response-avatar"
+                                @error="handleAvatarError"
+                              />
+                            </el-tooltip>
+                            <div class="response-content">
+                              <div class="response-header">
+                                <el-tooltip :content="`QQ: ${response.uin}`" placement="top">
+                                  <span class="response-author">{{ response.author }}</span>
+                                </el-tooltip>
+                                <span v-if="response.time" class="response-time">{{
+                                  response.time
+                                }}</span>
+                              </div>
+                              <RichText :text="response.text" class="response-text-content" />
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -397,6 +445,8 @@ import { useUserStore } from '@renderer/store/user.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
+import RichText from '@renderer/components/RichText/index.vue'
+import { getQQAvatarUrl } from '@renderer/utils/formatters'
 import Hls from 'hls.js'
 
 const privacyStore = usePrivacyStore()
@@ -536,8 +586,7 @@ const parseLikeUsers = (likeUsersStr) => {
     users.push({
       uin: match[1],
       name: match[2],
-      who: match[3],
-      isMe: match[3] === '1' // who:1 表示是自己
+      who: match[3]
     })
   }
   return users
@@ -602,12 +651,32 @@ const transformFeedData = (apiFeed) => {
   if (apiFeed.comments && Array.isArray(apiFeed.comments)) {
     apiFeed.comments.forEach((comment) => {
       if (!comment || !comment.content) return
+
+      // 解析回复
+      const responses = []
+      if (comment.responses && Array.isArray(comment.responses)) {
+        comment.responses.forEach((response) => {
+          if (!response || !response.content) return
+          responses.push({
+            id: response.id,
+            uin: response.uin,
+            author: response.nick,
+            text: response.content,
+            targetUin: response.target_uin || '',
+            targetNick: response.target_nick || '',
+            time: formatCommentTime(response.time)
+          })
+        })
+      }
+
       comments.push({
         id: comment.id,
+        uin: comment.uin,
         author: comment.nick,
         text: comment.content,
         time: formatCommentTime(comment.time),
-        isMe: false // TODO: 需要当前用户信息判断
+        responses: responses,
+        respnum: parseInt(comment.respnum || 0)
       })
     })
   }
@@ -1057,6 +1126,20 @@ const openVideoInBrowser = () => {
   } catch {
     window.open(currentVideoInfo.value.url, '_blank')
   }
+}
+
+// 获取头像URL
+const getAvatarUrl = (uin) => {
+  return getQQAvatarUrl(uin, 30)
+}
+
+// 处理头像加载失败
+const handleAvatarError = (event) => {
+  // 头像加载失败时,使用默认头像
+  const img = event.target
+  // 使用一个纯色背景作为默认头像
+  img.src =
+    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="40" height="40"%3E%3Crect width="40" height="40" fill="%2360a5fa"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="16" font-family="sans-serif"%3E?%3C/text%3E%3C/svg%3E'
 }
 
 // 处理相册标题点击
@@ -1896,30 +1979,151 @@ onUnmounted(() => {
 .feed-comments {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 6px 8px;
+  gap: 12px;
+  padding: 8px;
   background: rgba(0, 0, 0, 0.12);
   border-radius: 4px;
 }
 
+.comment-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .comment-row {
-  font-size: 12px;
-  line-height: 1.4;
-  color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.comment-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  border: 2px solid rgba(96, 165, 250, 0.3);
+}
+
+.comment-avatar:hover {
+  transform: scale(1.1);
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
+.comment-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .comment-author {
   color: #60a5fa;
   font-weight: 500;
-  margin-right: 5px;
+  font-size: 12px;
+  cursor: help;
+  transition: color 0.2s ease;
+}
 
-  &.is-me {
-    color: #85ce61;
-  }
+.comment-author:hover {
+  color: #93c5fd;
+}
+
+.comment-time {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.comment-text-content {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .comment-text {
   color: rgba(255, 255, 255, 0.8);
+}
+
+/* 评论回复列表 */
+.comment-responses {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 40px;
+  margin-top: 4px;
+}
+
+.response-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.response-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  border: 1.5px solid rgba(147, 197, 253, 0.3);
+}
+
+.response-avatar:hover {
+  transform: scale(1.1);
+  border-color: rgba(147, 197, 253, 0.6);
+}
+
+.response-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.response-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.response-author {
+  color: #93c5fd;
+  font-weight: 500;
+  font-size: 11px;
+  cursor: help;
+  transition: color 0.2s ease;
+}
+
+.response-author:hover {
+  color: #bfdbfe;
+}
+
+.response-time {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 10px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.response-text-content {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .reply-btn {

@@ -169,3 +169,96 @@ export const formatTaskName = (name) => {
 
   return name
 }
+
+/**
+ * 获取QQ表情图片URL
+ * @param {string} code - 表情代码 (如 e100)
+ * @returns {string} 表情图片URL
+ */
+export const getQQEmojiUrl = (code) => {
+  // QQ表情官方CDN地址
+  // 这些图片来自QQ空间,是公开可访问的
+  return `https://qzonestyle.gtimg.cn/qzone/em/${code}.gif`
+}
+
+/**
+ * 获取QQ头像URL
+ * @param {string} uin - QQ号
+ * @param {number} size - 头像大小 (可选值: 30)
+ * @returns {string} 头像图片URL
+ */
+export const getQQAvatarUrl = (uin, size = 30) => {
+  // QQ空间头像CDN地址
+  // qlogo{1-4}.store.qq.com 有多个服务器,这里使用 qlogo4
+  return `https://qlogo4.store.qq.com/qzone/${uin}/${uin}/${size}`
+}
+
+/**
+ * 检查是否需要使用特殊处理的表情代码
+ * 某些表情代码格式不同,需要特殊处理
+ */
+const SPECIAL_EMOJI_MAP = {
+  // 如果有特殊格式的表情可以在这里映射
+  // 例如: 'e400846': 'emoji_400846'
+}
+
+/**
+ * 解析富文本内容（同时处理@提及和表情）
+ * @param {string} text - 原始文本
+ * @returns {Array} 解析后的片段数组
+ */
+export const parseRichText = (text) => {
+  if (!text) return []
+
+  const segments = []
+  // 同时匹配 @提及 和 表情
+  // 使用联合正则表达式一次性处理所有特殊内容
+  const combinedRegex = /@\{uin:(\d+),nick:([^,}]+)(?:,(?:who|auto):(\d+))?\}|\[em\](e\d+)\[\/em\]/g
+  let lastIndex = 0
+  let match
+
+  while ((match = combinedRegex.exec(text)) !== null) {
+    // 添加匹配之前的普通文本
+    if (match.index > lastIndex) {
+      segments.push({
+        type: 'text',
+        content: text.substring(lastIndex, match.index)
+      })
+    }
+
+    // 判断是@提及还是表情
+    if (match[1]) {
+      // @提及
+      segments.push({
+        type: 'mention',
+        uin: match[1],
+        nick: match[2],
+        who: match[3] || '0'
+      })
+    } else if (match[4]) {
+      // 表情
+      const emojiCode = match[4]
+      const imageUrl = SPECIAL_EMOJI_MAP[emojiCode]
+        ? getQQEmojiUrl(SPECIAL_EMOJI_MAP[emojiCode])
+        : getQQEmojiUrl(emojiCode)
+
+      segments.push({
+        type: 'emoji',
+        code: emojiCode,
+        url: imageUrl
+      })
+    }
+
+    lastIndex = match.index + match[0].length
+  }
+
+  // 添加最后剩余的文本
+  if (lastIndex < text.length) {
+    segments.push({
+      type: 'text',
+      content: text.substring(lastIndex)
+    })
+  }
+
+  return segments.length > 0 ? segments : [{ type: 'text', content: text }]
+}
