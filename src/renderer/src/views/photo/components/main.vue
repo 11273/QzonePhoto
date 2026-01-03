@@ -1104,6 +1104,35 @@ const setupIntersectionObserver = () => {
   observer.observe(loadMoreTrigger.value)
 }
 
+// 检查容器是否需要加载更多数据（解决首次加载数据不足以填满容器的问题）
+const checkAndLoadMore = async () => {
+  // 等待 DOM 更新
+  await nextTick()
+
+  const scrollElement =
+    scrollbarRef.value?.wrapRef || scrollbarRef.value?.$el?.querySelector('.el-scrollbar__wrap')
+  if (!scrollElement) return
+
+  const hasScrollbar = scrollElement.scrollHeight > scrollElement.clientHeight
+
+  // 如果没有滚动条且还有更多数据可以加载，则自动加载
+  if (
+    !hasScrollbar &&
+    hasMore.value &&
+    !loading.value &&
+    !isScrollLoading.value &&
+    !loadingMore.value &&
+    photoList.value.length > 0
+  ) {
+    console.log('检测到照片内容未填满容器，自动加载更多...')
+    await loadMorePhotos()
+    // 递归检查是否还需要继续加载
+    if (hasMore.value) {
+      await checkAndLoadMore()
+    }
+  }
+}
+
 // 处理照片点击事件
 const handlePhotoClick = async (photo, event, index) => {
   event.stopPropagation()
@@ -1352,6 +1381,8 @@ watch(loadMoreTrigger, (newTrigger) => {
   if (newTrigger) {
     nextTick(() => {
       setupIntersectionObserver()
+      // 在设置观察器后，检查是否需要自动加载更多
+      checkAndLoadMore()
     })
   }
 })
@@ -1360,6 +1391,8 @@ watch(loadMoreTrigger, (newTrigger) => {
 watch(hasMore, () => {
   nextTick(() => {
     setupIntersectionObserver()
+    // 重新检查是否需要自动加载更多
+    checkAndLoadMore()
   })
 })
 

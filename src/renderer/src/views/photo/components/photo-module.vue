@@ -1321,6 +1321,33 @@ defineExpose({
   transformFeedData
 })
 
+// 检查容器是否需要加载更多数据（解决首次加载数据不足以填满容器的问题）
+const checkAndLoadMore = async () => {
+  // 等待 DOM 更新
+  await nextTick()
+
+  const scrollbarEl = document.querySelector('.timeline-scrollbar .el-scrollbar__wrap')
+  if (!scrollbarEl) return
+
+  const hasScrollbar = scrollbarEl.scrollHeight > scrollbarEl.clientHeight
+
+  // 如果没有滚动条且还有更多数据可以加载，则自动加载
+  if (
+    !hasScrollbar &&
+    hasMore.value &&
+    !loading.value &&
+    !isScrollLoading.value &&
+    feeds.value.length > 0
+  ) {
+    console.log('检测到内容未填满容器，自动加载更多...')
+    await loadMoreFeeds()
+    // 递归检查是否还需要继续加载
+    if (hasMore.value) {
+      await checkAndLoadMore()
+    }
+  }
+}
+
 // 使用防抖优化观察器设置
 let setupObserverTimer = null
 const debouncedSetupObserver = () => {
@@ -1330,6 +1357,8 @@ const debouncedSetupObserver = () => {
   setupObserverTimer = setTimeout(() => {
     nextTick(() => {
       setupIntersectionObserver()
+      // 在设置观察器后，检查是否需要自动加载更多
+      checkAndLoadMore()
     })
   }, 100)
 }
