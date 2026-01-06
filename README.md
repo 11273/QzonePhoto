@@ -1,14 +1,31 @@
-# Qzone Photo - QQ空间相册
-
-> 功能强大的QQ空间管理工具，支持相册下载、照片/视频上传，让你的空间回忆管理更轻松 ✨
-
 <div align="center">
 
-[![GitHub stars](https://img.shields.io/github/stars/11273/QzonePhoto?style=flat-square&logo=github)](https://github.com/11273/QzonePhoto)
-[![GitHub downloads](https://img.shields.io/github/downloads/11273/QzonePhoto/total?style=flat-square&logo=github)](https://github.com/11273/QzonePhoto/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://github.com/11273/QzonePhoto/releases)
+<img src="resources/icon.png" alt="Qzone Photo" width="96" />
 
-**[📥 立即下载](https://github.com/11273/QzonePhoto/releases) | [🚀 快速开始](#-快速开始) | [📺 功能介绍](#-功能特性) | [❓ 常见问题](#-常见问题解答)**
+<h1>Qzone Photo</h1>
+
+<p>
+功能强大的QQ空间管理工具<br/>
+支持相册下载、照片/视频上传，让你的空间回忆管理更轻松 ✨
+</p>
+
+<p>
+<a href="https://github.com/11273/QzonePhoto/releases">
+<strong>📥 立即下载</strong>
+</a>
+ · 
+<a href="#-快速开始">🚀 快速开始</a>
+ · 
+<a href="#-功能特性">📺 功能特性</a>
+ · 
+<a href="#-常见问题解答">❓ 常见问题</a>
+</p>
+
+<p>
+<img src="https://img.shields.io/github/stars/11273/QzonePhoto?style=flat-square&logo=github" alt="GitHub stars" />
+<img src="https://img.shields.io/github/downloads/11273/QzonePhoto/total?style=flat-square&logo=github" alt="GitHub downloads" />
+<img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform" />
+</p>
 
 </div>
 
@@ -327,13 +344,17 @@ pnpm build:linux  # Linux
 
 <div align="center">
 
-**让美好回忆永远陪伴你** 💝
+<img src="resources/icon.png" alt="Qzone Photo" width="72" />
 
-_Qzone Photo - 你的QQ空间管理助手_
+<p><strong>让美好回忆永远陪伴你 💝</strong></p>
 
-[![GitHub stars](https://img.shields.io/github/stars/11273/QzonePhoto?style=flat-square&logo=github)](https://github.com/11273/QzonePhoto)
-[![GitHub forks](https://img.shields.io/github/forks/11273/QzonePhoto?style=flat-square&logo=github)](https://github.com/11273/QzonePhoto)
-[![GitHub issues](https://img.shields.io/github/issues/11273/QzonePhoto?style=flat-square&logo=github)](https://github.com/11273/QzonePhoto/issues)
-[![GitHub downloads](https://img.shields.io/github/downloads/11273/QzonePhoto/total?style=flat-square&logo=github)](https://github.com/11273/QzonePhoto/releases)
+<p>
+<img src="https://img.shields.io/github/stars/11273/QzonePhoto?style=flat-square&logo=github" alt="GitHub stars" />
+<img src="https://img.shields.io/github/forks/11273/QzonePhoto?style=flat-square&logo=github" alt="GitHub forks" />
+<img src="https://img.shields.io/github/issues/11273/QzonePhoto?style=flat-square&logo=github" alt="GitHub issues" />
+<img src="https://img.shields.io/github/downloads/11273/QzonePhoto/total?style=flat-square&logo=github" alt="GitHub downloads" />
+</p>
+
+<p>Made with ❤️ by QzonePhoto Team</p>
 
 </div>
