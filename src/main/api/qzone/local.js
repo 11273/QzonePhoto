@@ -40,7 +40,7 @@ export async function pt_get_uins(pt_local_token, olu) {
       })
 
       if (response.status === 200 && response.data) {
-        console.log(`✅ pt_get_uins 成功使用端口 ${port}`)
+        // console.log(`✅ pt_get_uins 成功使用端口 ${port}`)
         return { data: response.data, cookie: parseSetCookie(response.headers['set-cookie']) }
       }
       // eslint-disable-next-line no-unused-vars

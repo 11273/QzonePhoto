@@ -81,7 +81,7 @@ export class WindowManager {
       if (is.dev) {
         try {
           win.webContents.openDevTools()
-          console.log('[WindowManager] 开发者工具已打开')
+          // console.log('[WindowManager] 开发者工具已打开')
         } catch (error) {
           console.error('[WindowManager] 打开开发者工具失败:', error)
         }
@@ -93,7 +93,7 @@ export class WindowManager {
       if (is.dev && !win.webContents.isDevToolsOpened()) {
         try {
           win.webContents.openDevTools()
-          console.log('[WindowManager] 开发者工具已打开（备选方案）')
+          // console.log('[WindowManager] 开发者工具已打开（备选方案）')
         } catch (error) {
           console.error('[WindowManager] 打开开发者工具失败（备选方案）:', error)
         }
@@ -210,12 +210,12 @@ export class WindowManager {
       // 获取需要窗口引用的服务并设置窗口
       const servicesToBind = this._getServicesNeedingWindow()
 
-      servicesToBind.forEach(({ serviceName, service }) => {
+      servicesToBind.forEach(({ service }) => {
         if (service && typeof service.setAssociatedWindow === 'function') {
           service.setAssociatedWindow(window)
           // 只在开发环境输出调试信息
           if (is.dev) {
-            console.debug(`[WindowManager] 已绑定 ${serviceName.description} 服务到主窗口`)
+            // console.debug(`[WindowManager] 已绑定 ${serviceName.description} 服务到主窗口`)
           }
         }
       })

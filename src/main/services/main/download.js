@@ -77,11 +77,11 @@ export class DownloadService {
     try {
       // 如果用户ID没有变化，直接返回
       if (this.currentUin === uin) {
-        if (is.dev) console.debug(`[DownloadService] 用户ID未变化: ${uin}`)
+        // if (is.dev) console.debug(`[DownloadService] 用户ID未变化: ${uin}`)
         return
       }
 
-      if (is.dev) console.debug(`[DownloadService] 切换用户: ${this.currentUin} -> ${uin}`)
+      // if (is.dev) console.debug(`[DownloadService] 切换用户: ${this.currentUin} -> ${uin}`)
 
       // 保存当前数据库
       if (this.db && this.dbInitialized) {
@@ -109,7 +109,7 @@ export class DownloadService {
       // 触发全量更新
       this.triggerUpdate([])
 
-      if (is.dev) console.debug(`[DownloadService] 用户切换完成: ${uin}`)
+      // if (is.dev) console.debug(`[DownloadService] 用户切换完成: ${uin}`)
     } catch (error) {
       logger.error('切换用户失败:', error)
       throw error
@@ -172,8 +172,8 @@ export class DownloadService {
       await this.db.write()
 
       if (is.dev) {
-        const dbFilename = path.basename(this.dbPath)
-        console.debug(`[DownloadService] LowDB数据库初始化完成: ${dbFilename}`)
+        // const dbFilename = path.basename(this.dbPath)
+        // console.debug(`[DownloadService] LowDB数据库初始化完成: ${dbFilename}`)
       }
     } catch (error) {
       logger.error('初始化数据库失败:', error)
@@ -183,7 +183,7 @@ export class DownloadService {
   // 设置主窗口引用
   // eslint-disable-next-line no-unused-vars
   setMainWindow(window) {
-    if (is.dev) console.debug('[DownloadService] 主窗口引用已设置')
+    // if (is.dev) console.debug('[DownloadService] 主窗口引用已设置')
   }
 
   // 设置更新触发器
@@ -239,7 +239,7 @@ export class DownloadService {
         this.activeTasks.set(task.id, task)
       })
 
-      if (is.dev) console.debug(`[DownloadService] 加载了 ${activeTasks.length} 个活跃任务`)
+      // if (is.dev) console.debug(`[DownloadService] 加载了 ${activeTasks.length} 个活跃任务`)
     } catch (error) {
       logger.error('加载活跃任务失败:', error)
     }
@@ -291,7 +291,7 @@ export class DownloadService {
     const validConcurrency = Math.max(1, Math.min(10, parseInt(newConcurrency)))
     this.concurrency = validConcurrency
     await this.setSetting('concurrency', validConcurrency)
-    if (is.dev) console.debug(`[DownloadService] 并发数已设置为 ${validConcurrency}`)
+    // if (is.dev) console.debug(`[DownloadService] 并发数已设置为 ${validConcurrency}`)
     this.processQueue()
     return validConcurrency
   }
@@ -305,8 +305,8 @@ export class DownloadService {
   async setReplaceExistingSetting(replaceExisting) {
     const boolValue = Boolean(replaceExisting)
     await this.setSetting('replaceExisting', boolValue)
-    if (is.dev)
-      console.debug(`[DownloadService] 文件替换设置已更新为 ${boolValue ? '替换' : '跳过'}`)
+    // if (is.dev)
+    //   console.debug(`[DownloadService] 文件替换设置已更新为 ${boolValue ? '替换' : '跳过'}`)
     return boolValue
   }
 

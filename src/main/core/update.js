@@ -96,10 +96,10 @@ export class AutoUpdateManager extends EventEmitter {
       await this.setupCacheDirectory()
 
       this.state.isInitialized = true
-      logger.info('[更新] AutoUpdateManager 初始化成功', {
-        architecture: this.architecture,
-        version: app.getVersion()
-      })
+      // logger.info('[更新] AutoUpdateManager 初始化成功', {
+      //   architecture: this.architecture,
+      //   version: app.getVersion()
+      // })
     } catch (error) {
       logger.error('[更新] 初始化失败:', error)
       throw new Error(`更新服务初始化失败: ${error.message}`)
@@ -167,7 +167,7 @@ export class AutoUpdateManager extends EventEmitter {
 
     // 检查更新中
     autoUpdater.on('checking-for-update', () => {
-      logger.info('[更新] 正在检查更新...')
+      // logger.info('[更新] 正在检查更新...')
       this.state.isCheckingForUpdate = true
       this.sendToRenderer(IPC_UPDATE.CHECKING)
     })
@@ -206,7 +206,7 @@ export class AutoUpdateManager extends EventEmitter {
 
     // 没有更新
     autoUpdater.on('update-not-available', (info) => {
-      logger.info('[更新] 当前已是最新版本')
+      // logger.info('[更新] 当前已是最新版本')
       this.state.isCheckingForUpdate = false
       this.sendToRenderer(IPC_UPDATE.NOT_AVAILABLE, this.formatUpdateInfo(info))
     })

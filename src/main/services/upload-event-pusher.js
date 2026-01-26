@@ -118,7 +118,7 @@ export class UploadEventPusher {
    */
   setUploadService(uploadService) {
     this.uploadService = uploadService
-    if (is.dev) console.debug('[UploadEventPusher] 上传服务实例已设置')
+    // if (is.dev) console.debug('[UploadEventPusher] 上传服务实例已设置')
   }
 
   /**
@@ -134,7 +134,7 @@ export class UploadEventPusher {
     // 立即推送一次，确保首页能及时获取初始状态
     this.pushImmediate()
     this.schedulePush()
-    if (is.dev) console.debug('[UploadEventPusher] 上传事件推送已启动')
+    // if (is.dev) console.debug('[UploadEventPusher] 上传事件推送已启动')
   }
 
   /**
@@ -262,9 +262,9 @@ export class UploadEventPusher {
       this.pushChangedTasks()
     }
 
-    if (is.dev) {
-      console.debug('[UploadEventPusher] 立即推送完成（强制）')
-    }
+    // if (is.dev) {
+    //   console.debug('[UploadEventPusher] 立即推送完成（强制）')
+    // }
   }
 
   /**
@@ -285,9 +285,9 @@ export class UploadEventPusher {
       this.lastStatsSnapshot = stats
       this.sendToRenderer(IPC_UPLOAD.STATS_UPDATE, stats)
 
-      if (is.dev && this.pushCount % this.logInterval === 0) {
-        console.debug('[UploadEventPusher] 推送统计信息:', stats)
-      }
+      // if (is.dev && this.pushCount % this.logInterval === 0) {
+      //   console.debug('[UploadEventPusher] 推送统计信息:', stats)
+      // }
     } catch (error) {
       console.error('[UploadEventPusher] 推送统计信息失败:', error)
     }
@@ -319,9 +319,9 @@ export class UploadEventPusher {
 
       this.sendToRenderer(IPC_UPLOAD.ACTIVE_TASKS_UPDATE, activeTasks)
 
-      if (is.dev && this.pushCount % this.logInterval === 0) {
-        console.debug(`[UploadEventPusher] 推送活跃任务: ${activeTasks.length} 个任务`)
-      }
+      // if (is.dev && this.pushCount % this.logInterval === 0) {
+      //   console.debug(`[UploadEventPusher] 推送活跃任务: ${activeTasks.length} 个任务`)
+      // }
     } catch (error) {
       console.error('[UploadEventPusher] 推送活跃任务失败:', error)
     }
@@ -346,9 +346,9 @@ export class UploadEventPusher {
       this.lastActiveCountSnapshot = activeCount
       this.sendToRenderer(IPC_UPLOAD.ACTIVE_COUNT_UPDATE, activeCount)
 
-      if (is.dev && this.pushCount % this.logInterval === 0) {
-        console.debug(`[UploadEventPusher] 推送活跃任务数量: ${activeCount}`)
-      }
+      // if (is.dev && this.pushCount % this.logInterval === 0) {
+      //   console.debug(`[UploadEventPusher] 推送活跃任务数量: ${activeCount}`)
+      // }
     } catch (error) {
       console.error('[UploadEventPusher] 推送活跃任务数量失败:', error)
     }
@@ -411,9 +411,9 @@ export class UploadEventPusher {
       this.lastDetailedStatusSnapshot = statusKey
       this.sendToRenderer(IPC_UPLOAD.DETAILED_STATUS_UPDATE, detailedStatus)
 
-      if (is.dev && this.pushCount % this.logInterval === 0) {
-        console.debug('[UploadEventPusher] 推送详细状态:', detailedStatus)
-      }
+      // if (is.dev && this.pushCount % this.logInterval === 0) {
+      //   console.debug('[UploadEventPusher] 推送详细状态:', detailedStatus)
+      // }
     } catch (error) {
       console.error('[UploadEventPusher] 推送详细状态失败:', error)
     }

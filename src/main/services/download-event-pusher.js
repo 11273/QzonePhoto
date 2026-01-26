@@ -211,7 +211,7 @@ export class DownloadEventPusher {
     this.isActive = true
     this.scheduleNextPush()
 
-    if (is.dev) console.debug('[DownloadEventPusher] 推送已启动')
+    // if (is.dev) console.debug('[DownloadEventPusher] 推送已启动')
   }
 
   // 调度下次推送
@@ -235,7 +235,7 @@ export class DownloadEventPusher {
       this.pushTimer = null
     }
 
-    if (is.dev) console.debug('[DownloadEventPusher] 推送已停止')
+    // if (is.dev) console.debug('[DownloadEventPusher] 推送已停止')
   }
 
   // 检查并推送更新
@@ -512,17 +512,17 @@ export class DownloadEventPusher {
   // 设置下载管理器打开状态
   setDownloadManagerOpen(isOpen) {
     this.downloadManagerOpen = isOpen
-    if (is.dev) console.debug(`[DownloadEventPusher] 下载管理器状态: ${isOpen ? '打开' : '关闭'}`)
+    // if (is.dev) console.debug(`[DownloadEventPusher] 下载管理器状态: ${isOpen ? '打开' : '关闭'}`)
 
     // 无论打开还是关闭，都立即推送一次活跃任务数量
     this.throttledTriggerImmediatePush()
 
-    if (isOpen) {
-      if (is.dev) console.debug('[DownloadEventPusher] 管理器打开，开始详细推送')
-    } else {
-      if (is.dev)
-        console.debug('[DownloadEventPusher] 管理器关闭，停止详细推送，但保持活跃任务数量推送')
-    }
+    // if (isOpen) {
+    //   if (is.dev) console.debug('[DownloadEventPusher] 管理器打开，开始详细推送')
+    // } else {
+    //   if (is.dev)
+    //     console.debug('[DownloadEventPusher] 管理器关闭，停止详细推送，但保持活跃任务数量推送')
+    // }
   }
 
   // 获取推送器状态

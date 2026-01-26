@@ -90,7 +90,7 @@ export class UploadService {
     try {
       // 处理登出（清除用户）
       if (!uin || !p_skey) {
-        if (is.dev) console.debug(`[UploadService] 用户登出，清空数据`)
+        // if (is.dev) console.debug(`[UploadService] 用户登出，清空数据`)
 
         // 保存当前数据库
         if (this.db && this.dbInitialized) {
@@ -109,17 +109,17 @@ export class UploadService {
         this.dbPath = null
         this.dbInitialized = false
 
-        if (is.dev) console.debug(`[UploadService] 用户数据已清空`)
+        // if (is.dev) console.debug(`[UploadService] 用户数据已清空`)
         return
       }
 
       // 检查用户是否变化
       if (this.currentUin === uin && this.currentPSkey === p_skey) {
-        if (is.dev) console.debug(`[UploadService] 用户信息未变化: ${uin}`)
+        // if (is.dev) console.debug(`[UploadService] 用户信息未变化: ${uin}`)
         return
       }
 
-      if (is.dev) console.debug(`[UploadService] 切换用户: ${this.currentUin} -> ${uin}`)
+      // if (is.dev) console.debug(`[UploadService] 切换用户: ${this.currentUin} -> ${uin}`)
 
       // 保存当前数据库
       if (this.db && this.dbInitialized) {
@@ -148,7 +148,7 @@ export class UploadService {
       // 触发全量更新
       this.triggerUpdate([])
 
-      if (is.dev) console.debug(`[UploadService] 用户切换完成: ${uin}`)
+      // if (is.dev) console.debug(`[UploadService] 用户切换完成: ${uin}`)
     } catch (error) {
       logger.error('切换用户失败:', error)
       throw error
@@ -201,8 +201,8 @@ export class UploadService {
       await this.db.write()
 
       if (is.dev) {
-        const dbFilename = path.basename(this.dbPath)
-        console.debug(`[UploadService] 数据库初始化完成: ${dbFilename}`)
+        // const dbFilename = path.basename(this.dbPath)
+        // console.debug(`[UploadService] 数据库初始化完成: ${dbFilename}`)
       }
     } catch (error) {
       logger.error('初始化数据库失败:', error)
@@ -284,7 +284,7 @@ export class UploadService {
         ['waiting', 'uploading', 'paused', 'error'].includes(task.status)
       )
 
-      let pausedCount = 0
+      // let pausedCount = 0
       activeTasks.forEach((task) => {
         // 启动时将所有上传中和等待中的任务改为暂停状态，让用户手动选择是否继续
         if (
@@ -298,19 +298,19 @@ export class UploadService {
           task.currentOffset = 0
           task.uploaded = 0
           this.updateTaskInDB(task)
-          pausedCount++
+          // pausedCount++
         }
         this.activeTasks.set(task.id, task)
       })
 
-      if (is.dev) {
+      /* if (is.dev) {
         console.debug(`[UploadService] 加载了 ${activeTasks.length} 个活跃任务`)
-        if (pausedCount > 0) {
-          console.debug(
-            `[UploadService] 已将 ${pausedCount} 个任务暂停，等待用户手动继续（进度已重置）`
-          )
-        }
-      }
+        // if (pausedCount > 0) {
+        //   console.debug(
+        //     `[UploadService] 已将 ${pausedCount} 个任务暂停，等待用户手动继续（进度已重置）`
+        //   )
+        // }
+      } */
     } catch (error) {
       logger.error('加载活跃任务失败:', error)
     }
@@ -346,7 +346,7 @@ export class UploadService {
     const validConcurrency = Math.max(1, Math.min(5, parseInt(newConcurrency)))
     this.concurrency = validConcurrency
     await this.setSetting('concurrency', validConcurrency)
-    if (is.dev) console.debug(`[UploadService] 并发数已设置为 ${validConcurrency}`)
+    // if (is.dev) console.debug(`[UploadService] 并发数已设置为 ${validConcurrency}`)
     this.processQueue()
     return validConcurrency
   }
