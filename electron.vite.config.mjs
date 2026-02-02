@@ -46,9 +46,13 @@ export default defineConfig({
       minify: false, // 完全禁用preload脚本的压缩
       rollupOptions: {
         external: [], // 确保没有外部化关键依赖
+        input: {
+          index: resolve(__dirname, 'src/preload/index.js'),
+          ai: resolve(__dirname, 'src/preload/ai.js')
+        },
         output: {
           format: 'cjs', // 明确指定输出格式
-          inlineDynamicImports: true // 内联动态导入
+          inlineDynamicImports: false // 关闭内联，因为有多入口
         }
       }
     }
@@ -104,6 +108,10 @@ export default defineConfig({
     build: {
       sourcemap: false,
       rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          ai: resolve(__dirname, 'src/renderer/ai.html')
+        },
         output: {
           manualChunks(id) {
             if (id.includes('node_modules')) {

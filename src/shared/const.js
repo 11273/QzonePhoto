@@ -108,6 +108,18 @@ export const QZONE_CONFIG = {
   photoSelectedMax: 500
 }
 
+/**
+ * AI 支持的文件后缀
+ */
+export const AI_EXTENSIONS = {
+  /** 图像格式 */
+  IMAGES: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+  /** 视频格式 (暂未支持 AI 分析，但预览已通) */
+  VIDEOS: ['mp4', 'mov', 'avi', 'flv', 'wmv', 'mkv', 'webm'],
+  /** 当前 AI 引擎实际会扫描并入库的后缀 (仅限图像) */
+  SCAN_TARGETS: ['jpg', 'jpeg', 'png', 'webp', 'heic']
+}
+
 // 辅助函数 - 检查权限功能
 export const QZONE_UTILS = {
   /**

@@ -83,6 +83,11 @@ export const ipcClient = {
     }
   },
 
+  send: (channel, payload = {}) => {
+    logger.debug(`[IPC] 发送消息 ${channel}`, payload)
+    ipcRenderer.send(channel, payload)
+  },
+
   on: (channel, callback) => {
     logger.debug(`[IPC] 注册监听 ${channel} 通道`)
 

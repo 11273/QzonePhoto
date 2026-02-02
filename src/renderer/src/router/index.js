@@ -17,6 +17,12 @@ export const constantRoutes = [
         component: () => import('@renderer/views/photo/index.vue'),
         name: 'Photo',
         meta: { title: '相册' }
+      },
+      {
+        path: 'ai-album',
+        component: () => import('@renderer/views/ai-album/index.vue'),
+        name: 'AIAlbum',
+        meta: { title: '智能相册' }
       }
     ]
   }

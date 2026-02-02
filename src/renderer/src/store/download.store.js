@@ -15,6 +15,36 @@ export const useDownloadStore = defineStore('download', () => {
   // 全局取消标志，用于协调批量下载和单个下载的取消操作
   const globalCancelFlags = ref(new Map())
 
+  // 下载路径管理
+  const downloadPath = ref('')
+
+  // 初始化下载路径
+  const initDownloadPath = async () => {
+    try {
+      const savedPath = localStorage.getItem('download-path')
+      if (savedPath) {
+        downloadPath.value = savedPath
+      } else {
+        const defaultPath = await window.QzoneAPI.download.getDefaultPath()
+        if (defaultPath) {
+          downloadPath.value = defaultPath
+          localStorage.setItem('download-path', defaultPath)
+        }
+      }
+    } catch (error) {
+      console.error('获取下载路径失败:', error)
+      // 这里的 APP_NAME 需要从常量导入，或者暂时硬编码防止循环依赖，
+      // 但考虑到 APP_NAME 通常在 shared/const，这里为了安全起见先保留原逻辑的 fallback
+      downloadPath.value = ''
+    }
+  }
+
+  // 更新下载路径
+  const setDownloadPath = (path) => {
+    downloadPath.value = path
+    localStorage.setItem('download-path', path)
+  }
+
   // 计算属性：获取指定相册的下载状态
   const getAlbumDownloadState = computed(() => {
     return (albumId) => {
@@ -305,6 +335,7 @@ export const useDownloadStore = defineStore('download', () => {
     tasks,
     albumDownloadStates,
     fetchingAlbums,
+    downloadPath,
 
     // 计算属性
     getAlbumDownloadState,
@@ -316,6 +347,8 @@ export const useDownloadStore = defineStore('download', () => {
     updateTasks,
     showManager,
     hideManager,
+    initDownloadPath,
+    setDownloadPath,
 
     // 相册下载状态管理方法
     startAlbumFetch,

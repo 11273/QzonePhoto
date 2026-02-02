@@ -9,7 +9,8 @@ export const ServiceNames = {
   DOWNLOAD: Symbol('DownloadService'),
   UPDATE: Symbol('UpdateService'),
   UPLOAD: Symbol('UploadService'),
-  FRIEND: Symbol('FriendService')
+  FRIEND: Symbol('FriendService'),
+  AI: Symbol('AIService')
 }
 
 export class ServiceManager {
