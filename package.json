@@ -22,11 +22,19 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^4.0.0",
+    "@huggingface/transformers": "^3.8.1",
+    "@lancedb/lancedb": "^0.23.0",
+    "@lancedb/lancedb-darwin-arm64": "^0.23.0",
+    "@lancedb/lancedb-darwin-x64": "^0.22.3",
+    "@lancedb/lancedb-linux-x64-gnu": "^0.23.0",
+    "@lancedb/lancedb-win32-x64-msvc": "^0.23.0",
+    "@vladmandic/human": "^3.3.6",
     "axios": "^1.8.3",
     "date-fns": "^4.1.0",
     "electron-log": "^5.3.3",
     "electron-updater": "^6.3.9",
     "element-plus": "^2.9.6",
+    "exifreader": "^4.36.0",
     "fast-glob": "^3.3.3",
     "hls.js": "^1.6.15",
     "image-size": "^2.0.2",
@@ -34,6 +42,7 @@
     "nprogress": "^0.2.0",
     "p-limit": "^6.2.0",
     "pinia": "^3.0.1",
+    "sharp": "^0.34.5",
     "vue-router": "4"
   },
   "devDependencies": {
@@ -79,6 +88,8 @@
       "electron-winstaller",
       "esbuild",
       "javascript-obfuscator",
+      "onnxruntime-node",
+      "protobufjs",
       "sharp",
       "vue-demi"
     ]

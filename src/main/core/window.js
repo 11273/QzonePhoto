@@ -45,11 +45,6 @@ export class WindowManager {
     const x = targetDisplay.bounds.x + (targetDisplay.bounds.width - width) / 2
     const y = targetDisplay.bounds.y + (is.dev ? 50 : (targetDisplay.bounds.height - height) / 2)
 
-    // 解析preload路径
-    const preloadPath = is.dev
-      ? path.join(__dirname, '../preload/index.js')
-      : path.join(process.resourcesPath, 'app.asar.unpacked/out/preload/index.js')
-
     const win = new BrowserWindow({
       width,
       height,
@@ -63,7 +58,7 @@ export class WindowManager {
       autoHideMenuBar: true,
       webPreferences: {
         devTools: is.dev,
-        preload: preloadPath,
+        preload: path.join(__dirname, '../preload/index.js'),
         nodeIntegration: false,
         contextIsolation: true,
         webSecurity: true,

@@ -1,5 +1,5 @@
 import { dialog } from 'electron'
-import { getFileInfo } from '@main/utils/file-processor'
+import { getFileInfo, getFolderPhotoCount } from '@main/utils/file-processor'
 import { getVideoMetadata } from '@main/services/video-metadata'
 import { IPC_FILE } from '@shared/ipc-channels'
 import fs from 'fs'
@@ -155,6 +155,16 @@ export function createFileHandlers() {
           duration: 0,
           cover: null
         }
+      }
+    },
+    [IPC_FILE.GET_FOLDER_PHOTO_COUNT]: async (_, context) => {
+      try {
+        const { dirPath } = context.payload
+        const count = await getFolderPhotoCount(dirPath)
+        return count
+      } catch (error) {
+        console.error('[file.ipc] 获取文件夹照片数量失败:', error)
+        return 0
       }
     }
   }

@@ -61,6 +61,9 @@ export class DownloadService {
     // 服务管理器引用
     this.serviceManager = null
 
+    /** @type {Function | null} 下载完成回调 (用于 AI 实时索引等) */
+    this.onDownloadCompleteCallback = null
+
     // 异步初始化（使用默认数据库）
     this.initializeAsync()
   }
@@ -189,6 +192,14 @@ export class DownloadService {
   // 设置更新触发器
   setUpdateTrigger(triggerFunction) {
     this.updateTrigger = triggerFunction
+  }
+
+  /**
+   * 设置外部下载完成钩子
+   * @param {Function} callback (task, filePath) => void
+   */
+  setOnDownloadComplete(callback) {
+    this.onDownloadCompleteCallback = callback
   }
 
   // 触发差量更新
@@ -810,6 +821,15 @@ export class DownloadService {
         task.status = TASK_STATUS.COMPLETED
         task.progress = 100
         task.speed = 0
+
+        // 触发下载完成钩子
+        if (this.onDownloadCompleteCallback) {
+          try {
+            this.onDownloadCompleteCallback(task, filePath)
+          } catch (err) {
+            logger.error('[DownloadService] 执行下载完成钩子失败:', err)
+          }
+        }
 
         // 完成的任务从内存中移除（节省内存）
         this.activeTasks.delete(task.id)

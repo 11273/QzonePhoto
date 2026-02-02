@@ -4,6 +4,7 @@ import path from 'path'
 import os from 'os'
 import { promisify } from 'util'
 import sizeOf from 'image-size'
+import { AI_EXTENSIONS } from '@shared/const'
 
 const readFile = promisify(fs.readFile)
 
@@ -86,8 +87,7 @@ export function isVideoFile(filePath) {
     return false
   }
   const ext = filePath.toLowerCase().split('.').pop()
-  const videoExtensions = ['mp4', 'mov', 'avi', 'flv', 'wmv', 'mkv', 'webm', 'mpg', 'mpeg']
-  return videoExtensions.includes(ext)
+  return AI_EXTENSIONS.VIDEOS.includes(ext)
 }
 
 /**
@@ -268,6 +268,45 @@ export async function extractVideoCover(base64Cover, videoPath) {
 }
 
 /**
+ * 递归获取文件夹内照片和视频的总数
+ * @param {string} dirPath 文件夹路径
+ * @returns {Promise<number>} 文件总数
+ */
+export async function getFolderPhotoCount(dirPath) {
+  try {
+    if (!fs.existsSync(dirPath)) return 0
+    const stats = await fs.promises.stat(dirPath)
+    if (!stats.isDirectory()) return 0
+
+    let count = 0
+    const files = await fs.promises.readdir(dirPath)
+    // 强制使用与 AI 扫描器一致的后缀过滤
+    const supportedExtensions = AI_EXTENSIONS.SCAN_TARGETS
+
+    for (const file of files) {
+      const fullPath = path.join(dirPath, file)
+      try {
+        const fileStats = await fs.promises.stat(fullPath)
+        if (fileStats.isDirectory()) {
+          count += await getFolderPhotoCount(fullPath)
+        } else {
+          const ext = path.extname(file).toLowerCase().replace('.', '')
+          if (supportedExtensions.includes(ext)) {
+            count++
+          }
+        }
+      } catch {
+        // 忽略无法访问的文件
+      }
+    }
+    return count
+  } catch (error) {
+    console.error('[file-processor] getFolderPhotoCount 失败:', error)
+    return 0
+  }
+}
+
+/**
  * 删除临时文件
  * @param {string} filePath 文件路径
  */
@@ -279,5 +318,35 @@ export async function deleteTempFile(filePath) {
     }
   } catch (error) {
     console.error('[file-processor] 删除临时文件失败:', error.message)
+  }
+}
+/**
+ * 递归获取目录总大小
+ * @param {string} dirPath 目录路径
+ * @returns {Promise<number>} 大小（字节）
+ */
+export async function getDirectorySize(dirPath) {
+  try {
+    if (!fs.existsSync(dirPath)) return 0
+    const stats = await fs.promises.stat(dirPath)
+    if (!stats.isDirectory()) return stats.size
+
+    const files = await fs.promises.readdir(dirPath)
+    let totalSize = 0
+
+    for (const file of files) {
+      const fullPath = path.join(dirPath, file)
+      const fileStats = await fs.promises.stat(fullPath)
+
+      if (fileStats.isDirectory()) {
+        totalSize += await getDirectorySize(fullPath)
+      } else {
+        totalSize += fileStats.size
+      }
+    }
+    return totalSize
+  } catch (error) {
+    console.error('[file-processor] getDirectorySize 失败:', error)
+    return 0
   }
 }

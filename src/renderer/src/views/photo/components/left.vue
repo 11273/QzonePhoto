@@ -1,5 +1,5 @@
 <template>
-  <div class="w-72 flex flex-col border-r border-blue-500/20 h-full">
+  <div class="w-72 flex flex-col border-r border-blue-500/20 h-full relative">
     <!-- 用户信息卡片 -->
     <div class="user-section">
       <div class="user-card">
@@ -132,17 +132,18 @@
       </div>
     </div>
 
-    <!-- 一级导航菜单 - TAB 样式 -->
-    <div class="main-navigation-tabs">
-      <div
-        v-for="tab in tabs"
-        :key="tab.key"
-        class="nav-tab"
-        :class="{ active: currentModule === tab.key }"
-        @click="handleModuleSelect(tab.key)"
-      >
-        <el-icon class="tab-icon"><component :is="tab.icon" /></el-icon>
-        <span class="tab-text">{{ tab.label }}</span>
+    <!-- 一级导航菜单 - 分段控制器风格 -->
+    <div class="segmented-control-section">
+      <div class="segmented-control">
+        <div
+          v-for="tab in tabs"
+          :key="tab.key"
+          class="segment-item"
+          :class="{ active: currentModule === tab.key }"
+          @click="handleModuleSelect(tab.key)"
+        >
+          {{ tab.label }}
+        </div>
       </div>
     </div>
 
@@ -275,6 +276,23 @@
       </el-scrollbar>
     </div>
 
+    <!-- 切换到智能相册按钮 - 底部 AI/科技感风格 -->
+    <div v-if="viewMode === 'album'" class="switch-to-ai-section">
+      <button class="switch-to-ai-btn" @click="handleSwitchMode">
+        <div class="ai-btn-bg"></div>
+        <div class="ai-btn-content">
+          <div class="ai-icon-wrapper">
+            <el-icon class="magic-icon"><MagicStick /></el-icon>
+            <div class="icon-glow"></div>
+          </div>
+          <span class="ai-btn-text">切换到智能相册</span>
+        </div>
+        <div class="ai-btn-particles">
+          <span v-for="i in 6" :key="i" class="particle"></span>
+        </div>
+      </button>
+    </div>
+
     <!-- 下载管理器弹窗 -->
     <DownloadManager v-model="downloadProgressVisible" />
 
@@ -292,14 +310,15 @@ import {
   Download,
   Upload,
   SwitchButton,
+  Monitor,
   FolderAdd,
   Close,
   Loading,
-  Monitor,
   Folder,
   Picture,
   User,
-  VideoPlay
+  VideoPlay,
+  MagicStick
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
@@ -316,6 +335,7 @@ const handleMenuSelect = (index) => {
 // 处理模块切换
 const handleModuleSelect = (module) => {
   if (currentModule.value === module) return
+
   currentModule.value = module
   emit('module-changed', module)
 
@@ -341,7 +361,7 @@ const selectAlbumItem = (categoryId, album) => {
   selectAlbum(album)
 }
 
-const emit = defineEmits(['album-selected', 'module-changed'])
+const emit = defineEmits(['album-selected', 'module-changed', 'mode-switch'])
 
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
@@ -350,6 +370,16 @@ const loading = ref(false)
 
 // 当前模块状态
 const currentModule = ref('album') // album, photo, video
+
+// 当前视图模式
+const viewMode = ref('album') // 'album' | 'ai'
+
+// 处理模式切换
+const handleSwitchMode = () => {
+  const newMode = viewMode.value === 'album' ? 'ai' : 'album'
+  viewMode.value = newMode
+  emit('mode-switch', newMode)
+}
 const selectedPhotoType = ref('my-photos')
 
 // 视频统计信息
@@ -1850,6 +1880,203 @@ defineExpose({
   }
 }
 
+/* 切换到智能相册按钮 - AI/科技感风格 */
+.switch-to-ai-section {
+  padding: 6px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+
+  .switch-to-ai-btn {
+    position: relative;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    overflow: hidden;
+    background: transparent;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* 背景渐变层 */
+    .ai-btn-bg {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        135deg,
+        rgba(139, 92, 246, 0.15) 0%,
+        rgba(124, 58, 237, 0.2) 50%,
+        rgba(99, 102, 241, 0.15) 100%
+      );
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      border-radius: 8px;
+      transition: all 0.3s ease;
+    }
+
+    /* 内容层 */
+    .ai-btn-content {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    /* 图标容器 */
+    .ai-icon-wrapper {
+      position: relative;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(124, 58, 237, 0.4));
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
+
+      .magic-icon {
+        font-size: 14px;
+        color: #a78bfa;
+        filter: drop-shadow(0 0 4px rgba(167, 139, 250, 0.5));
+        transition: all 0.3s ease;
+      }
+
+      .icon-glow {
+        position: absolute;
+        inset: -3px;
+        background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%);
+        border-radius: 10px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+    }
+
+    /* 文字 */
+    .ai-btn-text {
+      font-size: 12px;
+      font-weight: 600;
+      background: linear-gradient(135deg, #c4b5fd 0%, #a78bfa 50%, #818cf8 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: 0.3px;
+      transition: all 0.3s ease;
+    }
+
+    /* 粒子容器 - 使用固定位置 */
+    .ai-btn-particles {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      border-radius: 8px;
+
+      .particle {
+        position: absolute;
+        width: 2px;
+        height: 2px;
+        background: #a78bfa;
+        border-radius: 50%;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      /* 固定粒子位置 */
+      .particle:nth-child(1) {
+        left: 15%;
+        top: 20%;
+        animation-delay: 0s;
+      }
+      .particle:nth-child(2) {
+        left: 75%;
+        top: 30%;
+        animation-delay: 0.15s;
+      }
+      .particle:nth-child(3) {
+        left: 25%;
+        top: 70%;
+        animation-delay: 0.3s;
+      }
+      .particle:nth-child(4) {
+        left: 85%;
+        top: 60%;
+        animation-delay: 0.45s;
+      }
+      .particle:nth-child(5) {
+        left: 50%;
+        top: 15%;
+        animation-delay: 0.6s;
+      }
+      .particle:nth-child(6) {
+        left: 40%;
+        top: 80%;
+        animation-delay: 0.75s;
+      }
+    }
+
+    /* 悬停效果 */
+    &:hover {
+      transform: translateY(-1px);
+
+      .ai-btn-bg {
+        background: linear-gradient(
+          135deg,
+          rgba(139, 92, 246, 0.25) 0%,
+          rgba(124, 58, 237, 0.35) 50%,
+          rgba(99, 102, 241, 0.25) 100%
+        );
+        border-color: rgba(139, 92, 246, 0.5);
+        box-shadow:
+          0 4px 16px rgba(139, 92, 246, 0.25),
+          0 0 20px rgba(139, 92, 246, 0.1);
+      }
+
+      .ai-icon-wrapper {
+        .magic-icon {
+          color: #c4b5fd;
+          filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.8));
+        }
+
+        .icon-glow {
+          opacity: 1;
+        }
+      }
+
+      .ai-btn-text {
+        background: linear-gradient(135deg, #e9d5ff 0%, #c4b5fd 50%, #a5b4fc 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+      }
+
+      .ai-btn-particles .particle {
+        opacity: 0.6;
+        animation: particle-float 2s ease-in-out infinite;
+      }
+    }
+
+    /* 点击效果 */
+    &:active {
+      transform: translateY(0);
+
+      .ai-btn-bg {
+        box-shadow: 0 2px 8px rgba(139, 92, 246, 0.2);
+      }
+    }
+  }
+}
+
+/* 粒子浮动动画 */
+@keyframes particle-float {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translateY(-4px) scale(1.1);
+    opacity: 0.3;
+  }
+}
+
 /* Element Plus 菜单样式 */
 .album-menu {
   background: transparent;
@@ -1896,9 +2123,9 @@ defineExpose({
   :deep(.el-menu-item) {
     background: rgba(0, 0, 0, 0.15);
     color: rgba(255, 255, 255, 0.75);
-    padding: 6px 16px;
-    height: auto;
-    line-height: 1.4;
+    padding: 0 10px;
+    height: 32px;
+    line-height: 32px;
     margin: 1px 4px;
     border-left: 2px solid transparent;
     border-radius: 4px;
@@ -2070,71 +2297,39 @@ defineExpose({
   }
 }
 
-/* 一级导航菜单 - TAB 样式 */
-.main-navigation-tabs {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
+/* 分段控制器 Tabs - 与智能相册风格一致 */
+.segmented-control-section {
   padding: 6px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(0, 0, 0, 0.2);
-  min-height: 40px;
-}
 
-.nav-tab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 8px 6px;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 12px;
-  font-weight: 500;
-  position: relative;
-  border-radius: 6px;
-  margin: 0 2px;
+  .segmented-control {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    padding: 3px;
+    display: flex;
+    border: 1px solid rgba(255, 255, 255, 0.05);
 
-  .tab-icon {
-    font-size: 14px;
-    transition: all 0.25s ease;
-    flex-shrink: 0;
-  }
+    .segment-item {
+      flex: 1;
+      text-align: center;
+      padding: 6px 0;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.6);
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+      font-weight: 500;
 
-  .tab-text {
-    white-space: nowrap;
-    line-height: 1.2;
-  }
+      &:hover {
+        color: rgba(255, 255, 255, 0.9);
+      }
 
-  &:hover:not(.active) {
-    color: rgba(255, 255, 255, 0.9);
-    background: rgba(255, 255, 255, 0.05);
-    transform: translateY(-1px);
-  }
-
-  &.active {
-    color: #ffffff;
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(96, 165, 250, 0.2));
-    font-weight: 600;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
-
-    .tab-icon {
-      color: #60a5fa;
-      transform: scale(1.1);
-    }
-
-    &::after {
-      content: '';
-      position: absolute;
-      bottom: -7px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 24px;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, #3b82f6, transparent);
-      border-radius: 3px;
+      &.active {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+        font-weight: 600;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      }
     }
   }
 }
@@ -2216,7 +2411,7 @@ defineExpose({
       position: relative;
       cursor: pointer;
       overflow: hidden;
-      min-height: 56px;
+      min-height: 42px;
       display: flex;
       align-items: center;
       transition: all 0.3s ease;
@@ -2427,6 +2622,75 @@ defineExpose({
     &.loaded {
       color: #34d399;
     }
+  }
+}
+/* 侧边栏底部 AI 入口样式 */
+.sidebar-footer {
+  padding: 16px;
+  border-top: 1px solid rgba(64, 158, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  margin-top: auto; /* 确保底部对齐 */
+}
+
+.magic-portal-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.1) 0%, rgba(79, 70, 229, 0.1) 100%);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+
+  &:hover {
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.2) 0%, rgba(79, 70, 229, 0.2) 100%);
+    box-shadow: 0 0 15px rgba(124, 58, 237, 0.3);
+    border-color: rgba(124, 58, 237, 0.5);
+
+    .magic-icon {
+      animation: pulse 2s infinite;
+      color: #a78bfa;
+    }
+  }
+
+  .magic-icon-wrapper {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+  }
+
+  .magic-icon {
+    font-size: 18px;
+    color: #8b5cf6;
+  }
+
+  .magic-text {
+    font-size: 14px;
+    font-weight: 600;
+    background: linear-gradient(to right, #a78bfa, #818cf8);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
   }
 }
 </style>

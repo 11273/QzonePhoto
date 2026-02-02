@@ -235,7 +235,66 @@ export const IPC_FILE = {
   /** 获取视频预览 */
   GET_VIDEO_PREVIEW: 'file:getVideoPreview',
   /** 获取视频元数据 */
-  GET_VIDEO_METADATA: 'file:getVideoMetadata'
+  GET_VIDEO_METADATA: 'file:getVideoMetadata',
+  /** 获取文件夹内照片数量 */
+  GET_FOLDER_PHOTO_COUNT: 'file:getFolderPhotoCount'
+}
+
+export const IPC_CLIPBOARD = {
+  /** 写入剪贴板 */
+  WRITE_TEXT: 'clipboard:writeText'
+}
+
+export const IPC_AI_CONTROL = {
+  /** 开启防止休眠 */
+  START_BLOCK_SLEEP: 'ai:startBlockSleep',
+  /** 关闭防止休眠 */
+  STOP_BLOCK_SLEEP: 'ai:stopBlockSleep'
+}
+
+export const IPC_AI = {
+  /** 开始扫描 */
+  SCAN_START: 'ai:scanStart',
+  /** 停止扫描 */
+  SCAN_STOP: 'ai:scan-stop',
+  /** 触发人物聚类整理 */
+  CLUSTER_FACES: 'ai:cluster-faces',
+  /** 删除照片记录 (懒删除) */
+  DELETE_PHOTO: 'ai:delete-photo',
+  /** 获取进度 */
+  SCAN_PROGRESS: 'ai:scanProgress',
+  /** 按文本搜索照片 */
+  SEARCH_BY_TEXT: 'ai:searchByText',
+  /** 获取人脸分组 */
+  GET_FACE_GROUPS: 'ai:getFaceGroups',
+  /** 获取指定人脸的照片 */
+  GET_PHOTOS_BY_FACE: 'ai:getPhotosByFace',
+  /** 获取回忆照片 */
+  GET_MEMORIES: 'ai:getMemories',
+  /** 检查模型是否存在 */
+  CHECK_MODELS: 'ai:checkModels',
+  /** 初始化引擎 */
+  INIT_ENGINE: 'ai:initEngine',
+  /** 服务状态变化推送 */
+  STATUS_CHANGE: 'ai:serviceStatusChange',
+  /** 重启服务 */
+  RESTART: 'ai:restartService',
+  /** 模型下载进度 */
+  DOWNLOAD_PROGRESS: 'ai:downloadProgress',
+  /** 检查服务状态 */
+  CHECK_STATUS: 'ai:check-status',
+  /** 启动全局分析（处理所有 pending 任务） */
+  START_GLOBAL_ANALYSIS: 'ai:start-global-analysis',
+  /** 启动静默扫描（只入库，不分析） */
+  START_BACKGROUND_SCAN: 'ai:start-background-scan',
+  /** 获取待处理任务数量 */
+  GET_PENDING_COUNT: 'ai:get-pending-count',
+  /** 设置实时监听路径 */
+  SET_WATCH_PATHS: 'ai:set-watch-paths',
+  /** 获取存储占用大小 */
+  GET_STORAGE_SIZE: 'ai:get-storage-size',
+  /** 获取服务当前状态 */
+  GET_SERVICE_STATUS: 'ai:getServiceStatus'
 }
 
 // 避免键名冲突，创建所有通道值的集合
@@ -249,20 +308,25 @@ const ALL_CHANNEL_VALUES = [
   ...Object.values(IPC_WINDOW),
   ...Object.values(IPC_APP),
   ...Object.values(IPC_SHELL),
-  ...Object.values(IPC_FILE)
+  ...Object.values(IPC_FILE),
+  ...Object.values(IPC_AI_CONTROL),
+  ...Object.values(IPC_CLIPBOARD),
+  ...Object.values(IPC_AI)
 ]
 
-// 为了向后兼容，保留 ALL_CHANNELS 对象（用于某些场景）
+// 为了向后兼容，保留 ALL_CHANNELS 对象
 export const ALL_CHANNELS = {
   ...IPC_AUTH,
   ...IPC_PHOTO,
   ...IPC_USER,
-  ...IPC_DOWNLOAD, // 下载优先
+  ...IPC_DOWNLOAD,
   ...IPC_UPDATE,
   ...IPC_WINDOW,
   ...IPC_APP,
   ...IPC_SHELL,
-  ...IPC_FILE
+  ...IPC_FILE,
+  ...IPC_AI_CONTROL,
+  ...IPC_AI
 }
 
 // 辅助方法：验证通道白名单

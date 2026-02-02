@@ -107,12 +107,22 @@
         </div>
         <div class="photo-size-controls">
           <span class="control-label">图片大小：</span>
-          <el-radio-group v-model="photoSize" size="small">
-            <el-radio-button value="mini">最小</el-radio-button>
-            <el-radio-button value="small">小</el-radio-button>
-            <el-radio-button value="medium">中</el-radio-button>
-            <el-radio-button value="large">大</el-radio-button>
-          </el-radio-group>
+          <div class="segmented-control">
+            <div
+              v-for="size in [
+                { key: 'mini', label: '最小' },
+                { key: 'small', label: '小' },
+                { key: 'medium', label: '中' },
+                { key: 'large', label: '大' }
+              ]"
+              :key="size.key"
+              class="segment-item"
+              :class="{ active: photoSize === size.key }"
+              @click="photoSize = size.key"
+            >
+              {{ size.label }}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -792,33 +802,38 @@ const refreshAlbum = async () => {
   gap: 8px;
 
   .control-label {
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 11px;
     font-weight: 500;
     white-space: nowrap;
   }
 
-  :deep(.el-radio-group) {
-    .el-radio-button {
-      .el-radio-button__inner {
-        background: rgba(255, 255, 255, 0.1);
-        border-color: rgba(255, 255, 255, 0.2);
-        color: rgba(255, 255, 255, 0.8);
-        padding: 4px 10px;
-        font-size: 11px;
-        min-width: 36px;
+  .segmented-control {
+    display: flex;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 1.5px;
+    overflow: hidden;
 
-        &:hover {
-          background: rgba(255, 255, 255, 0.15);
-          border-color: rgba(255, 255, 255, 0.3);
-          color: rgba(255, 255, 255, 0.9);
-        }
+    .segment-item {
+      padding: 2px 8px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.35);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+      &:hover {
+        color: rgba(255, 255, 255, 0.6);
+        background: rgba(255, 255, 255, 0.03);
       }
 
-      &.is-active .el-radio-button__inner {
-        background: #409eff;
-        border-color: #409eff;
-        color: #fff;
+      &.active {
+        background: rgba(59, 130, 246, 0.2);
+        color: #3b82f6;
+        font-weight: 600;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
       }
     }
   }

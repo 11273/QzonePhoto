@@ -6,6 +6,8 @@ import { createPhotoHandlers } from '@main/ipc/modules/photo.ipc'
 import { createUserHandlers } from '@main/ipc/modules/user.ipc'
 import { createUpdateHandlers } from '@main/ipc/modules/update.ipc'
 import { createFileHandlers } from '@main/ipc/modules/file.ipc'
+import { createClipboardHandlers } from '@main/ipc/modules/clipboard.ipc'
+import { createAiHandlers } from '@main/ipc/modules/ai.ipc'
 import { registerWindowControl, setupWindowEventListeners } from '@main/ipc/modules/window.ipc'
 
 export async function registerIPC(services) {
@@ -24,7 +26,9 @@ export async function registerIPC(services) {
     ...createDownloadHandlers(services),
     ...createUploadHandlers(services),
     ...createUpdateHandlers(services),
-    ...createFileHandlers()
+    ...createFileHandlers(),
+    ...createClipboardHandlers(),
+    ...createAiHandlers(services)
   }
 
   // 调试：检查handlers对象

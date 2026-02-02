@@ -1,22 +1,29 @@
 <template>
   <div v-loading="loading" class="flex flex-col h-dvh">
-    <div class="flex h-full">
-      <Left
-        ref="leftRef"
-        @album-selected="handleAlbumSelected"
-        @module-changed="handleModuleChanged"
-      />
-      <!-- 根据当前模块显示不同内容 -->
-      <Main v-if="currentModule === 'album'" ref="mainRef" class="flex-1" />
-      <PhotoModule
-        v-if="currentModule === 'photo'"
-        ref="photoModuleRef"
-        :photo-type="photoType"
-        class="flex-1"
-        @album-click="handleAlbumClick"
-      />
-      <VideoModule v-if="currentModule === 'video'" ref="videoModuleRef" class="flex-1" />
-    </div>
+    <!-- 页面级模式切换：相册模式 / AI模式 -->
+    <Transition name="view-switch" mode="out-in">
+      <div v-if="viewMode === 'album'" key="album-view" class="flex h-full">
+        <Left
+          ref="leftRef"
+          @album-selected="handleAlbumSelected"
+          @module-changed="handleModuleChanged"
+          @mode-switch="handleModeSwitch"
+        />
+        <!-- 根据当前模块显示不同内容 -->
+        <Main v-if="currentModule === 'album'" ref="mainRef" class="flex-1" />
+        <PhotoModule
+          v-if="currentModule === 'photo'"
+          ref="photoModuleRef"
+          :photo-type="photoType"
+          class="flex-1"
+          @album-click="handleAlbumClick"
+        />
+        <VideoModule v-if="currentModule === 'video'" ref="videoModuleRef" class="flex-1" />
+      </div>
+
+      <!-- AI 智能相册模式 -->
+      <AIAlbum v-else key="ai-view" @back-to-album="handleBackToAlbum" />
+    </Transition>
 
     <!-- 相册查看弹窗（从动态跳转） -->
     <el-dialog
@@ -48,13 +55,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, provide, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, provide, inject, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import Left from '@renderer/views/photo/components/left.vue'
 import Main from '@renderer/views/photo/components/main.vue'
 import PhotoModule from '@renderer/views/photo/components/photo-module.vue'
 import VideoModule from '@renderer/views/photo/components/video-module.vue'
+import AIAlbum from '@renderer/views/ai-album/index.vue'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
 import { useDownloadStore } from '@renderer/store/download.store'
 
@@ -65,6 +73,41 @@ const leftRef = ref()
 const photoModuleRef = ref()
 const videoModuleRef = ref()
 const dialogMainRef = ref()
+
+// 注入全局过渡动画方法
+const triggerTransition = inject('triggerTransition')
+
+// 页面级模式切换：相册模式 / AI模式
+const viewMode = ref('album') // 'album' | 'ai'
+
+// 处理来自left.vue的模式切换事件
+const handleModeSwitch = (mode) => {
+  if (mode === 'ai') {
+    // 使用全局过渡动画切换到 AI 模式
+    if (triggerTransition) {
+      triggerTransition(() => {
+        viewMode.value = 'ai'
+      }, 'ai')
+    } else {
+      viewMode.value = 'ai'
+    }
+  } else {
+    // 切换回相册模式
+    viewMode.value = mode
+  }
+}
+
+// 处理从 AI 相册返回
+const handleBackToAlbum = () => {
+  // 使用全局过渡动画切回相册模式
+  if (triggerTransition) {
+    triggerTransition(() => {
+      viewMode.value = 'album'
+    }, 'album')
+  } else {
+    viewMode.value = 'album'
+  }
+}
 
 // 当前模块状态
 const currentModule = ref('album')
@@ -240,5 +283,44 @@ onUnmounted(() => {
 .dialog-main-content {
   height: 100%;
   background: transparent;
+}
+
+/* AI 风格视图切换过渡动画 - 高级版 */
+.view-switch-enter-active {
+  animation: view-switch-in 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.view-switch-leave-active {
+  animation: view-switch-out 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes view-switch-in {
+  0% {
+    opacity: 0;
+    transform: perspective(1200px) translateZ(-80px) translateY(4px);
+    filter: blur(12px) brightness(1.2);
+  }
+  40% {
+    opacity: 0.6;
+    filter: blur(6px) brightness(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(1200px) translateZ(0) translateY(0);
+    filter: blur(0) brightness(1);
+  }
+}
+
+@keyframes view-switch-out {
+  0% {
+    opacity: 1;
+    transform: perspective(1200px) translateZ(0) translateY(0);
+    filter: blur(0) brightness(1);
+  }
+  100% {
+    opacity: 0;
+    transform: perspective(1200px) translateZ(-60px) translateY(-4px);
+    filter: blur(10px) brightness(0.8);
+  }
 }
 </style>

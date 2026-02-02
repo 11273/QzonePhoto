@@ -897,6 +897,7 @@ const cleanupEventListeners = () => {
   console.log('[UploadManager] 清理事件监听器')
   listenerCleanups.forEach((cleanup) => cleanup())
   listenerCleanups.length = 0
+  previewCache.clear()
 }
 
 // 生命周期

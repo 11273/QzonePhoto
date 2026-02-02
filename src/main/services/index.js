@@ -6,6 +6,7 @@ import { QzoneUserService } from '@main/services/qzone/user'
 import { ServiceManager, ServiceNames } from '@main/services/service-manager'
 import { AutoUpdateManager } from '@main/core/update'
 import { uploadEventPusher } from '@main/services/upload-event-pusher'
+import { AIService } from '@main/services/ai-service'
 
 export async function registerService() {
   // 初始化注册器
@@ -25,6 +26,11 @@ export async function registerService() {
 
   // 更新服务
   services.register(ServiceNames.UPDATE, () => new AutoUpdateManager())
+
+  // AI 服务
+  services.register(ServiceNames.AI, (downloadService) => new AIService(downloadService), [
+    ServiceNames.DOWNLOAD
+  ])
 
   // 初始化所有
   await services.initAll()

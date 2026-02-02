@@ -385,11 +385,11 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useDownloadStore } from '@renderer/store/download.store'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder, VideoPlay, VideoPause, Refresh, Delete, Loading } from '@element-plus/icons-vue'
 import Pagination from '@renderer/components/Pagination/index.vue'
 import { formatTaskCount, formatTaskName } from '@renderer/utils/formatters'
-import { APP_NAME } from '@shared/const'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false }
@@ -410,9 +410,10 @@ const totalPages = ref(0)
 
 // 筛选相关
 const statusFilter = ref('all')
+const downloadStore = useDownloadStore()
 
 // 下载路径和设置
-const downloadPath = ref('')
+const downloadPath = computed(() => downloadStore.downloadPath)
 const concurrency = ref(3)
 const tempConcurrency = ref(3)
 const replaceExisting = ref(false)
@@ -434,23 +435,9 @@ const taskStats = ref({
 const loading = ref(false)
 const clearingTasks = ref(false)
 
-// 初始化下载路径
+// 初始化下载路径 - 已移至 store
 const initDownloadPath = async () => {
-  try {
-    const savedPath = localStorage.getItem('download-path')
-    if (savedPath) {
-      downloadPath.value = savedPath
-      return
-    }
-    const defaultPath = await window.QzoneAPI.download.getDefaultPath()
-    if (defaultPath) {
-      downloadPath.value = defaultPath
-      localStorage.setItem('download-path', defaultPath)
-    }
-  } catch (error) {
-    console.error('获取下载路径失败:', error)
-    downloadPath.value = '/Users/用户名/Downloads/' + APP_NAME
-  }
+  await downloadStore.initDownloadPath()
 }
 
 // 初始化并发数
@@ -992,8 +979,7 @@ const changeGlobalLocation = async () => {
   try {
     const newPath = await window.QzoneAPI.download.selectDirectory()
     if (newPath) {
-      downloadPath.value = newPath
-      localStorage.setItem('download-path', newPath)
+      downloadStore.setDownloadPath(newPath)
       await window.QzoneAPI.download.setDefaultPath(newPath)
       ElMessage.success('下载路径已更改')
     }

@@ -6,7 +6,10 @@ import {
   IPC_PHOTO,
   IPC_USER,
   IPC_UPDATE,
-  IPC_FILE
+  IPC_FILE,
+  IPC_AI_CONTROL,
+  IPC_AI,
+  IPC_CLIPBOARD
 } from '@shared/ipc-channels'
 import { ipcClient } from '@preload/lib/ipc-client'
 import { registerAuthExpiredCallback } from '@preload/lib/auth-checker'
@@ -52,6 +55,7 @@ try {
     getImagePreview: (data) => ipcClient.call(IPC_FILE.GET_IMAGE_PREVIEW, data),
     getVideoPreview: (data) => ipcClient.call(IPC_FILE.GET_VIDEO_PREVIEW, data),
     getVideoMetadata: (data) => ipcClient.call(IPC_FILE.GET_VIDEO_METADATA, data),
+    getFolderPhotoCount: (data) => ipcClient.call(IPC_FILE.GET_FOLDER_PHOTO_COUNT, data),
 
     // 下载相关API
     download: {
@@ -185,6 +189,11 @@ try {
       requestTasksPage: (params = {}) => ipcClient.call(IPC_UPLOAD.REQUEST_TASKS_PAGE, params)
     },
 
+    // 剪贴板相关API
+    clipboard: {
+      writeText: (text) => ipcClient.call(IPC_CLIPBOARD.WRITE_TEXT, { text })
+    },
+
     // 更新相关API
     update: {
       // 检查更新
@@ -205,7 +214,6 @@ try {
       onDownloadProgress: (callback) => ipcClient.on(IPC_UPDATE.DOWNLOAD_PROGRESS, callback),
       onUpdateDownloaded: (callback) => ipcClient.on(IPC_UPDATE.DOWNLOADED, callback),
       onUpdateError: (callback) => ipcClient.on(IPC_UPDATE.ERROR, callback),
-
       // 移除监听器
       removeAllListeners: () => {
         ipcClient.removeAllListeners(IPC_UPDATE.CHECKING)
@@ -215,6 +223,63 @@ try {
         ipcClient.removeAllListeners(IPC_UPDATE.DOWNLOADED)
         ipcClient.removeAllListeners(IPC_UPDATE.ERROR)
       }
+    },
+
+    // AI 相关 API
+    ai: {
+      // 开启防止休眠
+      startBlockSleep: () => ipcClient.call(IPC_AI_CONTROL.START_BLOCK_SLEEP),
+      // 关闭防止休眠
+      stopBlockSleep: () => ipcClient.call(IPC_AI_CONTROL.STOP_BLOCK_SLEEP),
+      // 初始化 AI 引擎环境
+      initWorkerEnvironment: () => ipcClient.call(IPC_AI.INIT_ENGINE),
+      /** 开始扫描 */
+      startScan: (paths) => ipcClient.call(IPC_AI.SCAN_START, { paths }),
+      /** 停止扫描 */
+      stopScan: () => ipcClient.call(IPC_AI.SCAN_STOP),
+      /** 懒删除照片记录 */
+      deletePhoto: (path) => ipcClient.call(IPC_AI.DELETE_PHOTO, { path }),
+      /** 获取模型状态 */
+      // 以文搜图
+      searchByText: (text, limit) => ipcClient.call(IPC_AI.SEARCH_BY_TEXT, { text, limit }),
+      // 获取人脸聚类
+      getFaceGroups: () => ipcClient.call(IPC_AI.GET_FACE_GROUPS),
+      // 获取人脸照片
+      getPhotosByFace: (faceId) => ipcClient.call(IPC_AI.GET_PHOTOS_BY_FACE, { faceId }),
+      // 获取回忆
+      getMemories: () => ipcClient.call(IPC_AI.GET_MEMORIES),
+      // 检查模型是否存在
+      checkModels: () => ipcClient.call(IPC_AI.CHECK_MODELS),
+      // 检查引擎运行状态 (Ping)
+      checkStatus: () => ipcClient.call(IPC_AI.CHECK_STATUS),
+      // 监听进度
+      onScanProgress: (callback) => ipcClient.on(IPC_AI.SCAN_PROGRESS, callback),
+      // 移除监听
+      removeScanProgress: () => ipcClient.removeAllListeners(IPC_AI.SCAN_PROGRESS),
+      // 监听下载进度
+      onDownloadProgress: (callback) => ipcClient.on(IPC_AI.DOWNLOAD_PROGRESS, callback),
+      // 移除下载监听
+      removeDownloadProgress: () => ipcClient.removeAllListeners(IPC_AI.DOWNLOAD_PROGRESS),
+      // 监听服务状态
+      onStatusChange: (callback) => ipcClient.on(IPC_AI.STATUS_CHANGE, callback),
+      // 移除服务状态监听
+      removeStatusChange: () => ipcClient.removeAllListeners(IPC_AI.STATUS_CHANGE),
+      /** 启动全局分析 */
+      startGlobalAnalysis: () => ipcClient.call(IPC_AI.START_GLOBAL_ANALYSIS),
+      /** 获取待处理记录数量 */
+      getPendingCount: () => ipcClient.call(IPC_AI.GET_PENDING_COUNT),
+      /** 获取存储占用大小 */
+      getStorageSize: () => ipcClient.call(IPC_AI.GET_STORAGE_SIZE),
+      /** 启动静默扫描 */
+      startBackgroundScan: (paths) => ipcClient.call(IPC_AI.START_BACKGROUND_SCAN, { paths }),
+      /** 获取服务当前状态 */
+      getServiceStatus: () => ipcClient.call(IPC_AI.GET_SERVICE_STATUS),
+      /** 设置实时监控路径 */
+      setWatchPaths: (paths) => ipcClient.call(IPC_AI.SET_WATCH_PATHS, { paths }),
+      /** 触发人物聚类整理 */
+      clusterFaces: () => ipcClient.call(IPC_AI.CLUSTER_FACES),
+      /** 重启服务 */
+      restart: () => ipcClient.call(IPC_AI.RESTART)
     }
   }
 
