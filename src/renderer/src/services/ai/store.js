@@ -19,7 +19,7 @@ export const useAIStore = defineStore('ai', {
       total: 0,
       message: '',
       thumbnail: '',
-      tags: []
+      faces: []
     },
     isLoading: false, // 是否正在加载数据 (用于 UI Loading 效果)
     selectedFilter: { type: 'overview', value: null }, // 默认选中的过滤器: { type: 'overview' | 'all' | 'folder', value: string | null }
@@ -27,7 +27,6 @@ export const useAIStore = defineStore('ai', {
     // 兼容旧代码进度信息 (可选保留或重构)
     processedCount: 0,
     scanProgress: 0, // 0-100
-    currentAnalysisTag: '', // 正在分析的标签，如“识别到：猫”
     speed: 0,
     storageUsed: 0,
 
@@ -36,7 +35,6 @@ export const useAIStore = defineStore('ai', {
       active: false,
       backend: 'cpu',
       human: 'cpu',
-      clip: 'cpu',
       tooltip: '当前使用 CPU 运行 (速度较慢)'
     },
 
@@ -177,7 +175,6 @@ export const useAIStore = defineStore('ai', {
           this.progress.total = progress.total || 0
           this.progress.message = progress.message || ''
           this.progress.thumbnail = progress.thumbnail || ''
-          this.progress.tags = progress.tags || []
 
           // 计算百分比以驱动 UI 进度条
           if (this.progress.total > 0) {
@@ -188,8 +185,7 @@ export const useAIStore = defineStore('ai', {
 
           if (progress.filePath) {
             const fileName = progress.filePath.split(/[/\\]/).pop()
-            const tags = (progress.tags || []).join(', ')
-            this.currentAnalysisTag = tags ? `识别到: ${tags} (${fileName})` : `处理中: ${fileName}`
+            this.currentAnalysisTag = `正在处理: ${fileName}`
           }
 
           if (progress.speed) this.speed = progress.speed
@@ -360,8 +356,8 @@ export const useAIStore = defineStore('ai', {
         // 2. 如果在线，检查模型状态
         const realStatus = status.data || status
         if (realStatus.models) {
-          const { human, clip } = realStatus.models
-          const allReady = human && clip
+          const { human } = realStatus.models
+          const allReady = !!human
 
           // 保存统计数据
           if (realStatus.storageUsed !== undefined) {
@@ -370,16 +366,15 @@ export const useAIStore = defineStore('ai', {
 
           // 更新 GPU 状态
           if (realStatus.backends) {
-            const { human: hBackend, clip: cBackend, gpuAvailable } = realStatus.backends
+            const { human: hBackend, gpuAvailable } = realStatus.backends
             this.gpuStatus.human = hBackend
-            this.gpuStatus.clip = cBackend
-            this.gpuStatus.active = hBackend === 'webgpu' || cBackend === 'webgpu'
+            this.gpuStatus.active = hBackend === 'webgpu'
             this.gpuStatus.backend = hBackend
 
-            let tooltip = `CLIP: ${cBackend.toUpperCase()} | Human: ${hBackend.toUpperCase()}`
+            let tooltip = `Engine: ${hBackend.toUpperCase()}`
             if (!gpuAvailable) {
               tooltip += ' | ⚠️ 硬件不支持 WebGPU'
-            } else if (hBackend !== 'webgpu' || cBackend !== 'webgpu') {
+            } else if (hBackend !== 'webgpu') {
               tooltip += ' | 💡 建议开启 GPU 加速'
             }
             this.gpuStatus.tooltip = tooltip
@@ -396,10 +391,7 @@ export const useAIStore = defineStore('ai', {
 
           // 生成详细的错误信息
           if (!allReady) {
-            const failedModels = []
-            if (!human) failedModels.push('Human (人脸识别)')
-            if (!clip) failedModels.push('CLIP (视觉理解)')
-            this.initError = `${failedModels.join(' 和 ')} 模型加载失败`
+            this.initError = `AI 引擎模型加载失败`
           }
 
           if (this.isModelReady && !allReady) {
@@ -449,12 +441,11 @@ export const useAIStore = defineStore('ai', {
 
             // 实时同步后端状态
             if (result.data.backends) {
-              const { human, clip } = result.data.backends
+              const { human } = result.data.backends
               this.gpuStatus.human = human
-              this.gpuStatus.clip = clip
-              this.gpuStatus.active = human === 'webgpu' || clip === 'webgpu'
+              this.gpuStatus.active = human === 'webgpu'
               this.gpuStatus.backend = human
-              this.gpuStatus.tooltip = `CLIP: ${clip.toUpperCase()} | Human: ${human.toUpperCase()}`
+              this.gpuStatus.tooltip = `Engine: ${human.toUpperCase()}`
             } else {
               this.gpuStatus.active = backend === 'webgpu'
               this.gpuStatus.backend = backend || 'cpu'
@@ -490,7 +481,7 @@ export const useAIStore = defineStore('ai', {
 
         // 解析常见错误
         if (errorMsg.includes('not valid JSON') || errorMsg.includes('Unexpected token')) {
-          errorMsg = 'CLIP 模型文件加载失败，可能已损坏'
+          errorMsg = 'AI 模型文件加载失败，可能已损坏'
         }
 
         this.initError = errorMsg
@@ -660,6 +651,21 @@ export const useAIStore = defineStore('ai', {
         return res?.data || []
       } catch (err) {
         console.error('[AI Store] 获取人物关联照片失败:', err)
+        return []
+      }
+    },
+
+    /**
+     * 根据文件夹路径获取照片
+     */
+    async fetchPhotosByFolder(folderPath) {
+      if (!folderPath) return []
+      try {
+        // 这里我们假设后端有一个 getPhotosByFolder 接口
+        const res = await window.QzoneAPI.ai.getPhotosByFolder(folderPath)
+        return res?.data || []
+      } catch (err) {
+        console.error('[AI Store] 获取文件夹照片失败:', err)
         return []
       }
     },

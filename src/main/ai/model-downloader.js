@@ -13,20 +13,27 @@ export class ModelDownloader {
     this.lastNotifyTime = 0
   }
 
-  async start() {
+  async start(modelId = 'human') {
     this.startTime = Date.now()
-    logger.info('[Downloader] 开始检查 CLIP 模型...')
+    logger.info(`[Downloader] 开始检查模型: ${modelId}...`)
 
-    const { baseDir, mirrors, clip } = AI_CONFIG
-    const fileList = clip.fileList || [clip.fileName]
+    const { baseDir, mirrors } = AI_CONFIG
+    const modelConfig = AI_CONFIG[modelId]
+
+    if (!modelConfig) {
+      logger.info(`[Downloader] 未找到模型配置 [${modelId}]，跳过下载`)
+      return true
+    }
+
+    const fileList = modelConfig.fileList || [modelConfig.fileName]
 
     // 1. 预检所有文件大小
-    logger.info('[Downloader] 正在获取模型元数据...')
+    logger.info(`[Downloader] 正在获取 [${modelId}] 模型元数据...`)
     const downloadTasks = []
     let totalSize = 0
 
     for (const fileName of fileList) {
-      const remotePath = `${clip.id}/resolve/main/${fileName}`
+      const remotePath = `${modelConfig.id}/resolve/main/${fileName}`
       let activeUrl = null
       let fileSize = 0
 
@@ -49,7 +56,7 @@ export class ModelDownloader {
         fileName,
         activeUrl,
         fileSize,
-        targetFile: path.join(baseDir, clip.saveDir, fileName)
+        targetFile: path.join(baseDir, modelConfig.saveDir, fileName)
       })
     }
 

@@ -65,17 +65,14 @@ export function createAiHandlers(services) {
     },
 
     // 数据库查询与业务
-    [IPC_AI.SEARCH_BY_TEXT]: async (_, { payload }) => {
-      return aiService.searchByText(payload?.text, payload?.limit)
-    },
     [IPC_AI.GET_FACE_GROUPS]: async () => {
       return aiService.getFaceGroups()
     },
     [IPC_AI.GET_PHOTOS_BY_FACE]: async (_, { payload }) => {
       return aiService.getPhotosByFace(payload?.faceId)
     },
-    [IPC_AI.GET_MEMORIES]: async () => {
-      return aiService.getMemories()
+    [IPC_AI.GET_PHOTOS_BY_FOLDER]: async (_, { payload }) => {
+      return aiService.getPhotosByFolder(payload?.path)
     }
   }
 

@@ -31,10 +31,8 @@ export const AiActionTypes = {
   GET_STATUS: 'GET_STATUS',
 
   // ================== 任务执行 ==================
-  /** 分析图片 (人脸 + 场景向量) */
+  /** 分析图片 (仅人脸) */
   ANALYZE: 'ANALYZE',
-  /** 分析文本 (生成搜索向量) */
-  ANALYZE_TEXT: 'ANALYZE_TEXT',
 
   // ================== 响应类型 ==================
   /** 成功响应 */

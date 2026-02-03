@@ -24,7 +24,6 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@element-plus/icons-vue": "2.3.2",
     "@lucide/vue": "^1.16.0",
-    "@huggingface/transformers": "^3.8.1",
     "@lancedb/lancedb": "^0.23.0",
     "@lancedb/lancedb-darwin-arm64": "^0.23.0",
     "@lancedb/lancedb-darwin-x64": "^0.22.3",
@@ -92,7 +91,6 @@
       "electron-winstaller",
       "esbuild",
       "javascript-obfuscator",
-      "onnxruntime-node",
       "protobufjs",
       "sharp",
       "vue-demi"

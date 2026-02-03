@@ -190,10 +190,6 @@ export class AiBridge {
     if (clone.thumbnail && typeof clone.thumbnail === 'string') {
       clone.thumbnail = `[Base64 ${clone.thumbnail.length} bytes]`
     }
-    // 截断向量数组
-    if (Array.isArray(clone.sceneVector)) {
-      clone.sceneVector = `[Vector ${clone.sceneVector.length}]`
-    }
     if (Array.isArray(clone.faces)) {
       clone.faces = `[Faces ${clone.faces.length}]`
     }
