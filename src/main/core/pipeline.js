@@ -76,7 +76,6 @@ export const Pipeline = {
             await table.update({
               where: `path = '${escapedPath}'`,
               values: {
-                vector: result.sceneVector || [],
                 faces: result.faces ? JSON.stringify(result.faces) : '[]',
                 thumbnail: result.thumbnail || '',
                 width: result.width || 0,

@@ -263,14 +263,12 @@ export const IPC_AI = {
   DELETE_PHOTO: 'ai:delete-photo',
   /** 获取进度 */
   SCAN_PROGRESS: 'ai:scanProgress',
-  /** 按文本搜索照片 */
-  SEARCH_BY_TEXT: 'ai:searchByText',
   /** 获取人脸分组 */
   GET_FACE_GROUPS: 'ai:getFaceGroups',
   /** 获取指定人脸的照片 */
   GET_PHOTOS_BY_FACE: 'ai:getPhotosByFace',
-  /** 获取回忆照片 */
-  GET_MEMORIES: 'ai:getMemories',
+  /** 获取指定文件夹的照片 */
+  GET_PHOTOS_BY_FOLDER: 'ai:getPhotosByFolder',
   /** 检查模型是否存在 */
   CHECK_MODELS: 'ai:checkModels',
   /** 初始化引擎 */

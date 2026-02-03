@@ -18,7 +18,6 @@ import { ApplicationBootstrapper } from '@main/app-bootstrapper'
 import { optimizer, electronApp, platform, is } from '@electron-toolkit/utils'
 import logger from '@main/core/logger'
 import { APP_ID } from '@shared/const'
-import { registerAiModelsProtocol } from '@main/protocols/ai-models'
 import { registerLocalResourceProtocol } from '@main/protocols/local-resource'
 
 /* --------------------------------------------------
@@ -64,8 +63,6 @@ app.whenReady().then(async () => {
       })
     }
 
-    // 注册 AI 模型协议处理器 (解决 transformers.js 加载限制)
-    registerAiModelsProtocol()
     // 注册本地资源协议 (解决图片展示限制)
     registerLocalResourceProtocol()
 

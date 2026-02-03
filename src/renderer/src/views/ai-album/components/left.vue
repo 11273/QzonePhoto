@@ -137,28 +137,35 @@
     <!-- 全局分析按钮 - 仅在智能探索视图显示 -->
     <div v-if="aiStore.isModelReady && currentView === 'smart'" class="global-action-section">
       <button
-        class="run-analysis-btn"
+        class="run-analysis-btn-fusion"
         :class="{ 'is-running': aiStore.isScanning, 'needs-download': !modelsReady }"
         @click="handleStartAnalysis"
       >
-        <div class="btn-content">
-          <el-icon class="btn-icon" :class="{ spinning: aiStore.isScanning }">
-            <component
-              :is="aiStore.isScanning ? Loading : modelsReady ? MagicStick : DownloadIcon"
-            />
-          </el-icon>
+        <span class="btn-content">
+          <div class="icon-box">
+            <el-icon class="btn-icon" :class="{ spinning: aiStore.isScanning }">
+              <component
+                :is="aiStore.isScanning ? Loading : modelsReady ? MagicStick : DownloadIcon"
+              />
+            </el-icon>
+            <div class="icon-glow"></div>
+          </div>
+
           <div class="btn-text-group">
             <span class="btn-text">{{ analysisBtnText }}</span>
             <span v-if="aiStore.isScanning || aiStore.pendingCount > 0" class="btn-subtext">
               {{
-                aiStore.isScanning
-                  ? aiStore.currentAnalysisTag || '正在提取特征...'
-                  : `发现 ${aiStore.pendingCount} 张新照片`
+                aiStore.isScanning ? '正在进行人脸分析...' : `发现 ${aiStore.pendingCount} 张新照片`
               }}
             </span>
           </div>
-        </div>
-        <div class="btn-bg-glow"></div>
+        </span>
+
+        <!-- 装饰层: 流光/网格/边框 -->
+        <div class="fusion-grid"></div>
+        <div class="fusion-shine"></div>
+        <div class="fusion-border"></div>
+
         <div
           v-if="aiStore.isScanning"
           class="scan-progress-bar"
@@ -172,17 +179,26 @@
       <el-scrollbar class="h-full">
         <div v-if="currentView === 'smart'" class="library-view">
           <!-- 所有照片 - 主入口 -->
+          <!-- AI 仪表盘入口 - 大按钮风格 -->
           <div class="all-photos-section">
             <div
-              class="all-photos-item"
+              class="dashboard-nav-card"
               :class="{
                 'is-active': activeCollection === 'overview',
                 'is-disabled': !aiStore.isModelReady
               }"
               @click="aiStore.isModelReady && handleCollectionSelect('overview')"
             >
-              <el-icon class="item-icon"><DataBoard /></el-icon>
-              <span class="item-label">AI 智能概览</span>
+              <div class="card-bg"></div>
+              <div class="card-content">
+                <div class="icon-circle">
+                  <el-icon><Odometer /></el-icon>
+                </div>
+                <div class="text-info">
+                  <span class="main-title">AI 智能概览</span>
+                </div>
+                <el-icon class="arrow-icon"><ArrowRight /></el-icon>
+              </div>
             </div>
           </div>
 
@@ -217,105 +233,71 @@
           </div>
         </div>
 
-        <!-- 文件夹列表视图 -->
-        <div v-else-if="currentView === 'folders'" class="folder-management-section px-4 pb-4">
-          <!-- 快捷入口：所有照片 -->
-          <div class="all-photos-section mb-6">
-            <div
-              class="all-photos-item"
-              :class="{
-                'is-active': activeCollection === 'all-photos',
-                'is-disabled': !aiStore.isModelReady
-              }"
-              @click="aiStore.isModelReady && handleCollectionSelect('all-photos')"
-            >
-              <el-icon class="item-icon"><Files /></el-icon>
-              <div class="item-content flex flex-col">
-                <span class="item-label">所有照片</span>
-                <span class="text-[9px] text-white/20 -mt-1 scale-90 origin-left"
-                  >功能开发中...</span
-                >
-              </div>
-              <span class="item-count ml-auto">{{ aiStore.totalCount || 0 }}</span>
-            </div>
-          </div>
-
+        <!-- 文件夹列表视图 - 卡片化重构 (Compact & Functional) -->
+        <div v-else-if="currentView === 'folders'" class="folder-management-section">
           <div class="section-title-row">
-            <span class="text-xs font-bold text-white/40 uppercase tracking-wider"
-              >扫描范围 ({{ aiStore.allScanPaths.length }})</span
-            >
-            <el-tooltip content="添加扫描文件夹" placement="top">
-              <el-button circle size="small" class="add-folder-btn-mini" @click="handleAddFolder">
-                <el-icon><Plus /></el-icon>
-              </el-button>
-            </el-tooltip>
+            <div class="title-group">
+              <span class="section-title">扫描目录管理</span>
+              <span class="section-count">{{ aiStore.allScanPaths.length }}</span>
+            </div>
+            <el-button circle class="add-folder-btn-mini" @click.stop="handleAddFolder">
+              <el-icon><Plus /></el-icon>
+            </el-button>
           </div>
 
-          <div class="folder-cards-list space-y-2">
+          <div class="folder-cards-list">
             <div
-              v-for="path in aiStore.allScanPaths"
-              :key="path.path"
+              v-for="folder in aiStore.allScanPaths"
+              :key="folder.id"
               class="folder-item-card"
-              :class="{ 'is-default': !path.deletable }"
+              :class="{
+                'is-active':
+                  aiStore.selectedFilter.type === 'folder' &&
+                  aiStore.selectedFilter.value === folder.path,
+                'is-default': folder.type === 'default'
+              }"
+              @click="handleFolderSelect(folder.path)"
             >
-              <!-- 左侧：主要信息区 -->
               <div class="card-body">
-                <el-icon class="folder-icon"><Folder /></el-icon>
+                <el-icon class="folder-icon">
+                  <component :is="folder.type === 'default' ? Files : Folder" />
+                </el-icon>
                 <div class="folder-info">
-                  <div class="folder-label flex items-center gap-1.5">
-                    <span
-                      class="name text-[13px] font-semibold text-white/90 truncate max-w-[140px]"
-                      >{{ path.label }}</span
-                    >
-                    <el-tag
-                      v-if="!path.deletable"
-                      size="small"
-                      class="scale-75 origin-left opacity-60"
-                      >默认</el-tag
-                    >
+                  <div class="folder-label">
+                    <span class="name">{{ folder.label }}</span>
+                    <span v-if="folder.type === 'default'" class="default-badge">默认</span>
                   </div>
-                  <div class="folder-meta mt-0.5">
-                    <el-tooltip :content="path.path" placement="top" :show-after="500">
-                      <span
-                        class="folder-path text-[10px] text-white/30 truncate max-w-[150px] cursor-pointer hover:text-white/50"
-                        @click.stop="handleCopyPath(path.path)"
-                      >
-                        {{ path.path }}
-                      </span>
-                    </el-tooltip>
+                  <!-- 点击路径复制 -->
+                  <div
+                    class="folder-path-wrapper"
+                    title="点击复制路径"
+                    @click.stop="handleCopyPath(folder.path)"
+                  >
+                    <span class="folder-path">{{ folder.path }}</span>
                   </div>
                 </div>
               </div>
 
-              <!-- 右侧：独立操作与统计区 -->
               <div class="card-right-actions">
-                <div class="action-top">
-                  <el-button
-                    v-if="path.deletable"
-                    text
-                    size="small"
-                    class="remove-btn-mini"
-                    @click.stop="handleRemoveFolder(path.path)"
-                  >
-                    <el-icon><Close /></el-icon>
-                  </el-button>
-                  <div v-else class="h-5 w-5"></div>
-                  <!-- 占位保持高度一致 -->
-                </div>
-                <div class="count-bottom">
-                  {{ aiStore.folderCounts[path.path] || 0 }}
-                </div>
+                <!-- 仅需显示删除按钮 -->
+                <el-button
+                  text
+                  circle
+                  class="action-btn-mini remove-btn"
+                  title="移除目录"
+                  @click.stop="handleRemoveFolder(folder.path)"
+                >
+                  <el-icon><Close /></el-icon>
+                </el-button>
               </div>
             </div>
           </div>
 
-          <div v-if="aiStore.isScanning" class="scanning-alert mt-4">
-            <div class="flex items-center gap-2 mb-2">
-              <el-icon class="is-loading text-blue-400"><Loading /></el-icon>
-              <span class="text-xs font-bold text-blue-400">正在分析新路径...</span>
-            </div>
-            <div class="text-[10px] text-white/30 leading-relaxed">
-              AI 正在提取新文件夹中的视觉特征，这可能需要一点时间。
+          <!-- 空状态提示 -->
+          <div v-if="aiStore.isScanning" class="scanning-alert">
+            <div class="text-xs text-blue-400 flex items-center gap-2">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              <span>正在扫描变更...</span>
             </div>
           </div>
         </div>
@@ -353,17 +335,12 @@ import {
   Files,
   Folder,
   UserFilled,
-  User,
-  Star,
-  Picture,
-  IceCream,
-  ChatDotRound,
   ArrowDown,
   Plus,
-  Search,
   Close,
   Download as DownloadIcon,
-  DataBoard
+  Odometer,
+  ArrowRight
 } from '@element-plus/icons-vue'
 import QZoneIcon from '@renderer/icons/qzone.svg'
 import { useAIAlbum } from '@renderer/composables/useAIAlbum'
@@ -406,14 +383,13 @@ const handleBackToAlbum = () => {
 // 视图切换
 const currentView = ref('smart')
 const viewTabs = [
-  { key: 'smart', label: '智能探索', icon: markRaw(Search) },
+  { key: 'smart', label: '智能探索', icon: markRaw(MagicStick) },
   { key: 'folders', label: '文件夹', icon: markRaw(Folder) }
 ]
 
 // 处理 Tab 切换
 const handleViewChange = async (key) => {
   currentView.value = key
-  // 切换到文件夹视图时，不自动选择任何内容，且刷新各文件夹的照片数量
   if (key === 'folders') {
     activeCollection.value = null
     await aiStore.updateTotalPhotoCount()
@@ -454,13 +430,7 @@ const library = computed(() => {
 
 // 集合分组
 const collections = shallowRef([
-  { key: 'people', icon: markRaw(UserFilled), label: '人物与面孔', count: 0 },
-  { key: 'pets', icon: markRaw(Star), label: '宠物', count: 0 },
-  { key: 'food', icon: markRaw(IceCream), label: '美食', count: 0 },
-  { key: 'scenery', icon: markRaw(Picture), label: '风景', count: 0 },
-  { key: 'memes', icon: markRaw(ChatDotRound), label: '表情包', count: 0 },
-  { key: 'docs', icon: markRaw(Document), label: '文档票据', count: 0 },
-  { key: 'groups', icon: markRaw(User), label: '合照', count: 0 }
+  { key: 'people', icon: markRaw(UserFilled), label: '人物与面孔', count: 0 }
 ])
 
 // 过滤掉 count 为 0 的分类（当 AI 已就绪时）
@@ -568,6 +538,17 @@ const formatStorage = (bytes) => {
   return mb.toFixed(1) + ' MB'
 }
 // 文件夹管理
+// 复制路径到剪贴板
+const handleCopyPath = async (path) => {
+  try {
+    await navigator.clipboard.writeText(path)
+    ElMessage.success('路径已复制')
+  } catch (e) {
+    console.error('复制失败', e)
+    ElMessage.error('复制失败')
+  }
+}
+
 const handleAddFolder = async () => {
   try {
     const result = await window.QzoneAPI.download.selectDirectory()
@@ -586,19 +567,13 @@ const handleAddFolder = async () => {
   }
 }
 
-const handleRemoveFolder = (path) => {
-  aiStore.removePath(path)
+// 文件夹切换
+const handleFolderSelect = (path) => {
+  aiStore.setSelectedFilter('folder', path)
 }
 
-// 复制路径到剪贴板
-const handleCopyPath = async (path) => {
-  try {
-    await navigator.clipboard.writeText(path)
-    ElMessage.success('路径已复制')
-  } catch (e) {
-    console.error('复制失败', e)
-    ElMessage.error('复制失败')
-  }
+const handleRemoveFolder = (path) => {
+  aiStore.removeCustomPath(path)
 }
 
 // 监听默认下载路径变更
@@ -1018,177 +993,147 @@ watch(
   }
 }
 
-/* 4. 全局分析大按钮 - 未来科技风格重塑 */
+/* 4. 全局分析按钮 - 最终融合版 (Fusion of 5, 8, 9) */
 .global-action-section {
-  padding: 18px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 
-  .run-analysis-btn {
-    width: 100%;
-    height: 52px;
+  .run-analysis-btn-fusion {
     position: relative;
-    border: none;
+    width: 100%;
+    height: 54px;
+    // Style 5: Dark Tech Base
     background: #0f172a;
-    padding: 0 16px;
-    border-radius: 14px;
+    border: none;
+    outline: none;
     cursor: pointer;
-    overflow: hidden;
     display: flex;
     align-items: center;
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    animation: breathing-glow 4s ease-in-out infinite;
+    justify-content: center;
+    user-select: none;
+    padding: 0;
 
-    /* 内部渐变背景 */
-    &::after {
-      content: '';
-      position: absolute;
-      inset: 1.5px;
-      background:
-        radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0, transparent 50%),
-        radial-gradient(at 100% 100%, rgba(96, 165, 250, 0.1) 0, transparent 50%),
-        linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-      border-radius: 12px;
-      z-index: 1;
-      transition: background 0.4s ease;
-    }
+    // Style 9: Mechanical Construction (Strong Box Shadow)
+    border-radius: 12px;
+    box-shadow:
+      0 6px 0 #1e1b4b,
+      // Deep mechanical 3D shadow
+      0 12px 20px rgba(0, 0, 0, 0.5); // Soft drop shadow
 
-    /* 动态旋转边框效果 */
-    &::before {
-      content: '';
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: conic-gradient(
-        transparent,
-        rgba(59, 130, 246, 0.3),
-        #3b82f6,
-        #60a5fa,
-        transparent 30%
-      );
-      animation: rotate 4s linear infinite;
-      z-index: 0;
-      opacity: 0.8;
-    }
+    margin-bottom: 6px; // Space for the 3D shadow
+    transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
 
-    /* 内部额外的 AI 氛围光晕 */
-    .btn-bg-glow {
-      position: absolute;
-      bottom: -30%;
-      right: -10%;
-      width: 80%;
-      height: 80%;
-      background: radial-gradient(circle at center, rgba(59, 130, 246, 0.1), transparent 70%);
-      pointer-events: none;
-      z-index: 2;
-    }
-
-    &:hover {
-      transform: translateY(-3px) scale(1.01);
-      box-shadow: 0 10px 30px rgba(37, 99, 235, 0.3);
-
-      &::after {
-        background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);
-      }
-
-      &::before {
-        animation-duration: 2s;
-        opacity: 1;
-      }
-
-      .btn-content .btn-icon {
-        color: #60a5fa;
-        transform: scale(1.1) rotate(5deg);
-      }
-    }
-
-    &:active {
-      transform: translateY(-1px) scale(0.99);
-    }
-
-    &.is-running {
-      pointer-events: none;
-      filter: saturate(0.8);
-
-      &::before {
-        background: conic-gradient(
-          transparent,
-          rgba(16, 185, 129, 0.3),
-          #10b981,
-          #34d399,
-          transparent 30%
-        );
-        animation-duration: 2s;
-      }
-      .btn-content .btn-text {
-        background: linear-gradient(to right, #34d399, #10b981);
-        -webkit-background-clip: text;
-        background-clip: text;
-      }
-      .btn-content .btn-icon {
-        color: #10b981;
-      }
-    }
-
-    &.needs-download {
-      &::before {
-        background: conic-gradient(
-          transparent,
-          rgba(245, 158, 11, 0.3),
-          #f59e0b,
-          #fbbf24,
-          transparent 30%
-        );
-      }
-    }
-
+    // --- Content Layer ---
     .btn-content {
       position: relative;
-      z-index: 3;
+      z-index: 10;
       display: flex;
       align-items: center;
       width: 100%;
+      height: 100%;
+      padding: 0 16px;
       gap: 12px;
-      color: white;
+
+      // Style 8: Vibrant Gradient Background (Masked to content area effectively via parent)
+      // Actually applying the gradient to the button surface
+    }
+
+    // --- Background Layers ---
+
+    // Base Gradient (Style 8 Fluidity + Style 9 Blue punch)
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+      z-index: 0;
+      opacity: 0.9; // Slightly see-through to reveal "tech" below if needed, but here we want punchy
+    }
+
+    // Style 5: Tech Grid Overlay
+    .fusion-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+      background-size: 14px 14px;
+      z-index: 1;
+    }
+
+    // Style 8: Animated Shine (The Fluid part)
+    .fusion-shine {
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 50%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+      z-index: 2;
+      transform: skewX(-20deg);
+      animation: shine-sweep 4s infinite;
+      opacity: 0.5;
+    }
+
+    @keyframes shine-sweep {
+      0% {
+        left: -100%;
+      }
+      20% {
+        left: 200%;
+      }
+      100% {
+        left: 200%;
+      }
+    }
+
+    // --- Icon & Text ---
+    .icon-box {
+      position: relative;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      z-index: 11;
 
       .btn-icon {
-        font-size: 22px;
-        color: rgba(255, 255, 255, 0.8);
-        transition: all 0.3s ease;
-        filter: drop-shadow(0 0 5px rgba(59, 130, 246, 0.5));
+        font-size: 18px;
+        color: #fff;
+        filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.5));
 
         &.spinning {
           animation: spin 1.5s linear infinite;
-          color: #60a5fa;
         }
       }
+    }
 
-      .btn-text-group {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        line-height: 1.25;
+    .btn-text-group {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      text-align: left;
+      line-height: 1.25;
+      flex: 1;
+      z-index: 11;
 
-        .btn-text {
-          font-size: 14px;
-          font-weight: 800;
-          letter-spacing: 0.8px;
-          background: linear-gradient(to right, #fff, rgba(255, 255, 255, 0.8));
-          -webkit-background-clip: text;
-          background-clip: text;
-          color: transparent;
-          text-transform: uppercase;
-        }
+      .btn-text {
+        font-size: 14px;
+        font-weight: 800; // Style 9 Boldness
+        color: #fff;
+        text-transform: uppercase; // Style 5 Tech
+        letter-spacing: 0.5px;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      }
 
-        .btn-subtext {
-          font-size: 10px;
-          opacity: 0.8;
-          font-weight: 600;
-          margin-top: 2px;
-          color: rgba(96, 165, 250, 0.9);
-        }
+      .btn-subtext {
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.8);
+        font-weight: 500;
       }
     }
 
@@ -1196,11 +1141,72 @@ watch(
       position: absolute;
       bottom: 0;
       left: 0;
-      height: 3px;
-      background: linear-gradient(to right, #3b82f6, #60a5fa);
-      z-index: 4;
-      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 0 12px rgba(59, 130, 246, 0.8);
+      height: 4px;
+      background: #10b981; // Green for active progress overlay
+      z-index: 20;
+      transition: width 0.3s;
+      box-shadow: 0 0 10px #10b981;
+    }
+
+    // --- Interactions ---
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow:
+        0 8px 0 #1e1b4b,
+        // Extended shadow
+        0 14px 24px rgba(37, 99, 235, 0.4); // Colored glow (Style 8)
+
+      &::before {
+        background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); // Brighter
+      }
+
+      .fusion-shine {
+        animation-duration: 2s; // Faster shine
+        opacity: 0.8;
+      }
+    }
+
+    &:active {
+      transform: translateY(6px); // Compress fully (Style 9)
+      box-shadow:
+        0 0 0 #1e1b4b,
+        // No 3D shadow
+        0 2px 5px rgba(0, 0, 0, 0.4);
+
+      margin-bottom: 0; // Remove margin compensation visually if needed, but handled by transform usually.
+      // Logic: translateY(6px) moves element down 6px. Shadow was 6px. So it looks like it hits the "floor".
+    }
+
+    // --- Special States ---
+    &.is-running {
+      // Pulse effect
+      animation: pulse-border 2s infinite;
+
+      &::before {
+        background: linear-gradient(135deg, #059669 0%, #10b981 100%); // Green theme for active
+      }
+      box-shadow:
+        0 6px 0 #064e3b,
+        0 12px 20px rgba(16, 185, 129, 0.3);
+
+      &:hover {
+        transform: none; // Disable hover movement
+        cursor: default;
+      }
+
+      .btn-text-group .btn-subtext {
+        color: #d1fae5;
+      }
+    }
+
+    &.needs-download {
+      &::before {
+        background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%); // Orange
+      }
+      box-shadow:
+        0 6px 0 #78350f,
+        0 12px 20px rgba(245, 158, 11, 0.3);
     }
   }
 }
@@ -1210,80 +1216,150 @@ watch(
   padding-bottom: 20px;
 
   /* ==================== 智能探索视图 ==================== */
-  /* Shared Styles for All Photos Section */
   .all-photos-section {
-    margin-bottom: 20px;
+    margin-top: 12px; // Reduced from 20px
+    margin-bottom: 16px; // Reduced from 24px
+    padding: 0 12px;
 
-    .all-photos-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 16px;
-      background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(96, 165, 250, 0.08));
-      border: 1px solid rgba(59, 130, 246, 0.2);
+    .dashboard-nav-card {
+      position: relative;
+      background: transparent;
       border-radius: 12px;
+      overflow: hidden;
       cursor: pointer;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      height: 52px; // Reduced height to look more like a button
 
+      // Background layer
+      .card-bg {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.03) 0%,
+          rgba(255, 255, 255, 0.01) 100%
+        );
+        z-index: 0;
+        transition: all 0.3s;
+      }
+
+      // Content
+      .card-content {
+        position: relative;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        height: 100%;
+        padding: 0 12px; // Slightly reduced padding
+        gap: 12px;
+      }
+
+      .icon-circle {
+        width: 32px; // Smaller icon circle
+        height: 32px;
+        border-radius: 8px;
+        background: rgba(30, 41, 59, 0.5); // Dark Slate
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #94a3b8;
+        transition: all 0.3s;
+
+        .el-icon {
+          font-size: 16px;
+        } // Smaller icon
+      }
+
+      .text-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+
+        .main-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.8);
+        }
+      }
+
+      .arrow-icon {
+        font-size: 14px;
+        color: rgba(255, 255, 255, 0.2);
+        transition: all 0.3s;
+      }
+
+      // Hover State
       &:hover {
-        background: linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(96, 165, 250, 0.12));
-        border-color: rgba(59, 130, 246, 0.35);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+        border-color: rgba(255, 255, 255, 0.15);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+
+        .card-bg {
+          background: linear-gradient(
+            135deg,
+            rgba(255, 255, 255, 0.06) 0%,
+            rgba(255, 255, 255, 0.03) 100%
+          );
+        }
+
+        .icon-circle {
+          background: #3b82f6;
+          color: #fff;
+          border-color: #3b82f6;
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .main-title {
+          color: #fff;
+        }
+        .arrow-icon {
+          color: rgba(255, 255, 255, 0.6);
+          transform: translateX(2px);
+        }
       }
 
+      // Active State
       &.is-active {
-        background: linear-gradient(135deg, #3b82f6, #2563eb);
         border-color: #3b82f6;
-        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+        background: rgba(59, 130, 246, 0.05); // Tint
 
-        .item-icon,
-        .item-label,
-        .item-count {
-          color: #fff !important;
+        .card-bg {
+          opacity: 0;
+        } // Hide default bg
+
+        .icon-circle {
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          color: #fff;
+          border: none;
+          box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
         }
-        .item-count {
-          background: rgba(255, 255, 255, 0.25);
+
+        .main-title {
+          color: #fff;
+          text-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
         }
-        .text-white\/20 {
-          color: rgba(255, 255, 255, 0.6) !important;
+        .sub-title {
+          color: rgba(96, 165, 250, 0.8);
+        }
+        .arrow-icon {
+          color: #60a5fa;
         }
       }
 
+      // Disabled
       &.is-disabled {
         opacity: 0.5;
-        cursor: not-allowed;
         filter: grayscale(1);
-      }
-
-      .item-icon {
-        font-size: 20px;
-        color: #3b82f6;
-      }
-
-      .item-label {
-        flex: 1;
-        font-size: 14px;
-        font-weight: 600;
-        color: rgba(255, 255, 255, 0.95);
-      }
-
-      .item-count {
-        font-size: 12px;
-        font-weight: 700;
-        color: rgba(59, 130, 246, 0.8);
-        background: rgba(59, 130, 246, 0.1);
-        padding: 2px 8px;
-        border-radius: 20px;
-        font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+        pointer-events: none;
       }
     }
   }
 
   .library-view {
-    padding: 8px 12px;
-
-    /* Removed .all-photos-section from here */
+    // Adjust other sections padding if needed (folders-section etc are handled inside)
   }
 
   /* 可折叠区域通用样式 */
@@ -1412,47 +1488,59 @@ watch(
       }
     }
   }
-
-  /* 所有照片禁用状态 */
-  .all-photos-section .all-photos-item.is-disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-    pointer-events: none;
-  }
 }
 
 /* ==================== 文件夹管理视图 ==================== */
 .folder-management-section {
-  padding: 12px;
+  padding: 8px 12px; // Reduced padding
 
   /* 标题行 */
   .section-title-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08); // More subtle
+
+    .title-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .section-count {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.08);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
   }
 
   /* 添加按钮 */
   .add-folder-btn-mini {
-    width: 26px !important;
-    height: 26px !important;
-    background: rgba(255, 255, 255, 0.06) !important;
-    border: 1px solid rgba(255, 255, 255, 0.12) !important;
-    color: rgba(255, 255, 255, 0.5) !important;
+    width: 22px !important; // Smaller
+    height: 22px !important;
+    background: transparent !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    color: rgba(255, 255, 255, 0.6) !important;
     transition: all 0.2s ease !important;
 
     &:hover {
       background: rgba(59, 130, 246, 0.15) !important;
-      border-color: rgba(59, 130, 246, 0.3) !important;
+      border-color: #3b82f6 !important;
       color: #3b82f6 !important;
-      transform: rotate(90deg);
     }
 
     .el-icon {
-      font-size: 13px;
+      font-size: 12px;
     }
   }
 
@@ -1460,35 +1548,44 @@ watch(
   .folder-cards-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px; // Tighter gap
 
     .folder-item-card {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 10px 12px;
-      background: rgba(255, 255, 255, 0.025);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 8px;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      gap: 12px;
+      padding: 6px 10px; // Compact padding
+      background: rgba(255, 255, 255, 0.03); // Lighter touch
+      border: 1px solid transparent;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+      gap: 10px;
+      height: 48px; // Fixed compact height
 
       &:hover {
-        background: rgba(255, 255, 255, 0.05);
-        border-color: rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.08);
 
-        .card-right-actions .action-top {
+        .card-right-actions {
           opacity: 1;
-          transform: translateY(0);
         }
       }
 
-      &.is-default {
-        background: rgba(59, 130, 246, 0.04);
-        border-color: rgba(59, 130, 246, 0.1);
+      &.is-active {
+        background: rgba(59, 130, 246, 0.12);
+        border-color: rgba(59, 130, 246, 0.3);
 
         .folder-icon {
-          color: #3b82f6 !important;
+          color: #60a5fa !important;
+        }
+        .folder-info .folder-label .name {
+          color: #fff;
+        }
+      }
+
+      // Default highlight
+      &.is-default {
+        .folder-icon {
+          color: #3b82f6;
         }
       }
 
@@ -1498,83 +1595,104 @@ watch(
         gap: 10px;
         flex: 1;
         min-width: 0;
+        overflow: hidden;
 
         .folder-icon {
-          font-size: 20px;
+          font-size: 18px;
           color: rgba(255, 255, 255, 0.4);
           flex-shrink: 0;
+          transition: color 0.2s;
         }
 
         .folder-info {
           flex: 1;
-          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          min-width: 0; // CRITICAL for truncating
+          overflow: hidden; // CRITICAL
 
           .folder-label {
             display: flex;
             align-items: center;
             gap: 6px;
+            margin-bottom: 2px;
 
             .name {
               font-size: 13px;
-              font-weight: 600;
               color: rgba(255, 255, 255, 0.9);
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              flex-shrink: 1; // Allow shrinking
+            }
+
+            .default-badge {
+              flex-shrink: 0; // Don't squash the badge
+              font-size: 9px;
+              padding: 0 4px;
+              height: 16px;
+              display: flex;
+              align-items: center;
+              background: rgba(59, 130, 246, 0.2);
+              color: #60a5fa;
+              border-radius: 3px;
+              border: 1px solid rgba(59, 130, 246, 0.3); // Explicit border
             }
           }
 
-          .folder-path {
-            font-size: 10px;
-            color: rgba(255, 255, 255, 0.35);
-            margin-top: 2px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            max-width: 140px; /* 强制限制宽度以防溢出 */
-            display: block;
+          .folder-path-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: copy;
+            width: 100%;
+
+            &:hover {
+              .folder-path {
+                color: #60a5fa;
+              }
+            }
+
+            .folder-path {
+              flex: 1;
+              font-size: 10px;
+              color: rgba(255, 255, 255, 0.35);
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              line-height: 1.2;
+              transition: color 0.15s;
+            }
           }
         }
       }
 
       .card-right-actions {
         display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        justify-content: space-between;
-        height: 38px;
-        flex-shrink: 0;
-        width: 28px;
+        align-items: center;
+        margin-left: 8px; // Spacing from content
+        opacity: 0; // Hide by default
+        transition: opacity 0.2s;
 
-        .action-top {
-          opacity: 0;
-          transform: translateY(-2px);
-          transition: all 0.2s ease;
-          height: 20px;
-          display: flex;
-          align-items: center;
+        .action-btn-mini {
+          width: 24px !important;
+          height: 24px !important;
+          padding: 0 !important;
+          color: rgba(255, 255, 255, 0.4) !important;
 
-          .remove-btn-mini {
-            padding: 4px !important;
-            height: 20px !important;
-            width: 20px !important;
-            color: rgba(255, 255, 255, 0.3) !important;
-            background: transparent !important;
-
-            &:hover {
-              color: #ef4444 !important;
-              background: rgba(239, 68, 68, 0.1) !important;
-            }
-
-            .el-icon {
-              font-size: 12px;
-            }
+          &:hover {
+            background: rgba(255, 255, 255, 0.1) !important;
+            color: #fff !important;
           }
-        }
 
-        .count-bottom {
-          font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-          font-size: 11px;
-          font-weight: 700;
-          color: rgba(59, 130, 246, 0.7);
-          line-height: 1;
+          &.remove-btn:hover {
+            color: #ef4444 !important;
+            background: rgba(239, 68, 68, 0.15) !important;
+          }
+
+          .el-icon {
+            font-size: 13px;
+          }
         }
       }
     }

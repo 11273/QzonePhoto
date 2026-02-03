@@ -9,38 +9,11 @@
           <span>100% 本地隐私计算</span>
         </div>
       </div>
-      <div class="header-center">
-        <el-input
-          v-model="searchQuery"
-          :placeholder="aiStore.isModelReady ? '搜索照片 (⌘K)' : '初始化 AI 后可搜索'"
-          class="search-input"
-          :prefix-icon="Search"
-          :disabled="!aiStore.isModelReady"
-          clearable
-          @keyup.enter="handleSearch"
-        />
-      </div>
+      <div class="header-center"></div>
       <div class="header-right">
         <!-- AI 实时仪表盘 - 精细化 2x2 分离布局 -->
         <div v-if="aiStore.isModelReady" class="ai-dashboard">
-          <el-tooltip
-            :content="`CLIP 语义引擎: ${aiStore.gpuStatus.clip.toUpperCase()}`"
-            placement="bottom"
-          >
-            <div class="stat-pill clickable">
-              <div class="dot" :class="{ 'is-active': aiStore.gpuStatus.clip === 'webgpu' }"></div>
-              <span class="label">CLIP</span>
-            </div>
-          </el-tooltip>
-          <el-tooltip
-            :content="`Human 人脸模型: ${aiStore.gpuStatus.human.toUpperCase()}`"
-            placement="bottom"
-          >
-            <div class="stat-pill clickable">
-              <div class="dot" :class="{ 'is-active': aiStore.gpuStatus.human === 'webgpu' }"></div>
-              <span class="label">Human</span>
-            </div>
-          </el-tooltip>
+          <!-- AI 实时仪表盘 - 状态统计 -->
           <div class="stat-pill">
             <el-icon class="stat-icon"><Files /></el-icon>
             <span class="value">{{
@@ -131,7 +104,7 @@
     <!-- 内容滚动区 -->
     <el-scrollbar v-if="aiStore.isReady && aiStore.isModelReady" class="content-scroll">
       <!-- 1. 概览视图 (首页) -->
-      <div v-if="aiStore.selectedFilter.type === 'overview'">
+      <div v-if="aiStore.selectedFilter.type === 'overview'" class="p-5">
         <!-- 此处后续可以放置更加丰富的概览统计，目前复用智能探索的布局 -->
         <!-- 人物检测区 -->
         <div class="content-section">
@@ -184,33 +157,9 @@
             </div>
           </div>
         </div>
-
-        <!-- 智能场景区 -->
-        <div class="content-section">
-          <div class="section-header">
-            <div class="section-title">
-              <span class="title-bar"></span>
-              智能场景
-            </div>
-            <span class="section-subtitle">AI 上下文分组</span>
-          </div>
-          <div class="scenes-grid">
-            <div v-for="scene in smartScenes" :key="scene.id" class="scene-card">
-              <span class="scene-count">{{ scene.count }} 项</span>
-              <span class="scene-icon">{{ scene.icon }}</span>
-              <div class="scene-info">
-                <span class="scene-name">{{ scene.name }}</span>
-                <span class="scene-time">{{ scene.lastUpdate }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
-      <!-- 2. 文件夹视图 -->
-      <div v-else-if="aiStore.selectedFilter.type === 'folder'" class="p-6">
-        <!-- TODO: 复用之前的照片列表展示 -->
-      </div>
+      <!-- 2. 文件夹视图 (之前误删的占位) -->
 
       <!-- 3. 人物墙视图 -->
       <div v-else-if="aiStore.selectedFilter.type === 'people'" class="people-wall-view p-6">
@@ -307,136 +256,71 @@
           />
         </div>
       </div>
-      <div
-        v-else-if="aiStore.selectedFilter.type === 'all' && !searchResults.length"
-        class="empty-placeholder py-32 text-center"
-      >
-        <el-empty description="所有照片功能正在开发中..." />
-      </div>
 
-      <!-- 3. 搜索结果 -->
-      <div v-else-if="searchResults.length > 0" class="content-section">
-        <!-- 人物检测区 -->
-        <div class="content-section">
-          <div class="section-header">
-            <div class="section-title">
-              <span class="title-bar"></span>
-              人物检测
-              <el-tag
-                v-if="newPeopleCount > 0"
-                size="small"
-                type="success"
-                effect="plain"
-                class="ml-2"
-              >
-                {{ newPeopleCount }} 新面孔
-              </el-tag>
-            </div>
-            <div class="section-actions">
-              <el-button text size="small" class="action-link" @click="handleOrganizePeople">
-                整理并合并
-              </el-button>
-              <el-button text size="small" class="action-link" @click="handleViewAllPeople">
-                查看全部
-              </el-button>
-            </div>
-          </div>
-          <div class="people-grid">
+      <!-- 3. 文件夹详情 -->
+      <div v-else-if="aiStore.selectedFilter.type === 'folder'" class="folder-detail-view">
+        <!-- 头部区域 - 仿 QQ 空间相册风格 -->
+        <div class="view-header-qzone px-6 pt-4 pb-2">
+          <div class="header-content flex items-start gap-3">
+            <!-- 返回按钮 -->
             <div
-              v-for="person in detectedPeople"
-              :key="person.id"
-              class="person-card"
-              @click="handlePersonClick(person)"
+              class="back-btn-square flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 cursor-pointer transition-colors"
+              @click="handleBackToOverview"
             >
-              <div class="avatar-wrapper">
-                <div class="mini-avatar-crop">
-                  <img
-                    :src="person.faceThumbnail || 'qzone-local://' + person.coverPath"
-                    :style="person.faceThumbnail ? { objectFit: 'cover' } : getFaceStyle(person)"
-                  />
-                </div>
-                <span class="photo-count">{{ person.count }}</span>
-              </div>
-              <span class="person-name">{{ person.name || '未知' }}</span>
+              <el-icon class="text-white/70"><ArrowLeft /></el-icon>
             </div>
-            <div class="person-card scan-more" @click="handleScanMore">
-              <div class="scan-icon">
-                <el-icon><Camera /></el-icon>
+
+            <!-- 详情信息 -->
+            <div class="info-group flex-1">
+              <div class="flex items-center gap-3">
+                <h2 class="text-xl font-bold text-white/90">文件目录</h2>
+                <el-tag
+                  effect="dark"
+                  round
+                  size="small"
+                  class="bg-blue-500/20 border-blue-500/30 text-blue-400"
+                >
+                  共 {{ folderPhotos.length }} 张照片
+                </el-tag>
               </div>
-              <span class="person-name">扫描更多</span>
+              <p
+                class="text-xs text-secondary mt-1 font-mono opacity-50 break-all leading-relaxed max-w-2xl select-text"
+              >
+                {{ aiStore.selectedFilter.value }}
+              </p>
             </div>
           </div>
         </div>
 
-        <!-- 智能场景区 -->
-        <div class="content-section">
-          <div class="section-header">
-            <div class="section-title">
-              <span class="title-bar"></span>
-              智能场景
-            </div>
-            <span class="section-subtitle">AI 上下文分组</span>
-          </div>
-          <div class="scenes-grid">
-            <div v-for="scene in smartScenes" :key="scene.id" class="scene-card">
-              <span class="scene-count">{{ scene.count }} 项</span>
-              <span class="scene-icon">{{ scene.icon }}</span>
-              <div class="scene-info">
-                <span class="scene-name">{{ scene.name }}</span>
-                <span class="scene-time">{{ scene.lastUpdate }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 精选时刻 -->
-        <div v-if="memories.length > 0" class="content-section">
-          <div class="section-header">
-            <div class="section-title">
-              <span class="title-bar orange"></span>
-              精选时刻
-            </div>
-            <span class="section-subtitle">AI 为您挑选的高质量瞬间</span>
-          </div>
-          <div class="memories-grid">
-            <div v-for="item in memories" :key="item.id" class="memory-card">
-              <el-image :src="item.url" fit="cover" class="memory-image" lazy />
-              <div class="memory-overlay">
-                <span class="memory-label">{{ item.label }}</span>
-                <span class="memory-date">{{ item.date }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 3. 搜索结果 (如果有搜索内容) -->
-      <div v-if="searchResults.length > 0" class="content-section">
-        <div class="section-header">
-          <div class="section-title">
-            <span class="title-bar"></span>
-            搜索结果
-            <span class="section-subtitle ml-2 text-white/30 text-xs"
-              >{{ searchResults.length }} 项</span
-            >
-          </div>
-        </div>
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        <div v-if="folderPhotos.length > 0" class="photos-grid px-8 pb-12">
           <PhotoCard
-            v-for="photo in searchResults"
+            v-for="photo in folderPhotos"
             :key="photo.path"
             :photo="photo"
             :size="currentSize"
           />
         </div>
-      </div>
-
-      <!-- 3. 文件夹详情 (暂时占位，用户点击库中文件夹时显示) -->
-      <div
-        v-else-if="aiStore.selectedFilter.type === 'folder'"
-        class="content-section py-20 text-center"
-      >
-        <el-empty description="文件夹照片浏览功能正在开发中..." />
+        <div v-else class="empty-placeholder py-32 flex flex-col items-center justify-center">
+          <!-- 这里的图片将来可以换成更酷炫的 -->
+          <div class="w-32 h-32 mb-4 opacity-20">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-full h-full text-white"
+            >
+              <path
+                d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
+              ></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+          </div>
+          <span class="text-sm text-white/30 tracking-wider">该目录下暂无已分析的照片</span>
+        </div>
       </div>
     </el-scrollbar>
 
@@ -454,8 +338,8 @@
         <p class="onboarding-desc">
           {{
             aiStore.isModelReady
-              ? '您的私有 AI 助手已就绪，正在通过语义搜索、人脸识别和场景分析为您智能整理照片。'
-              : '为了保护隐私，所有识别模型将下载至本地运行。初始化后，您可以体验：自然语言搜图、人物自动分组、精选时刻等功能。'
+              ? '您的私有 AI 助手已就绪，正在通过高性能人脸识别为您智能整理照片。'
+              : '为了保护隐私，所有识别模型将下载至本地运行。初始化后，您可以体验：人物自动聚类、面孔精选时刻等功能。'
           }}
         </p>
         <div class="privacy-badge">
@@ -491,16 +375,22 @@
             </div>
           </div>
 
-          <el-button
-            type="primary"
-            size="large"
-            class="init-btn"
-            :class="{ 'is-retry': aiStore.initError }"
+          <button
+            class="init-btn-base"
+            :class="[`ai-btn-style-${currentBtnStyle}`, { 'is-retry': aiStore.initError }]"
             @click="handleInitAI"
           >
-            {{ initButtonText }}
-            <el-icon class="ml-2"><component :is="aiStore.initError ? Refresh : Right" /></el-icon>
-          </el-button>
+            <span class="btn-content">
+              {{ initButtonText }}
+              <el-icon class="ml-2 icon-arrow"
+                ><component :is="aiStore.initError ? Refresh : Right"
+              /></el-icon>
+            </span>
+            <!-- 装饰性元素 (部分样式可能会用到) -->
+            <div class="btn-glow"></div>
+            <div class="btn-border"></div>
+            <div class="btn-shine"></div>
+          </button>
         </div>
 
         <!-- 下载/初始化进度展示 -->
@@ -521,6 +411,27 @@
             {{ onboardingSubText }}
           </div>
         </div>
+
+        <!-- 样式切换器 (开发预览用) -->
+        <div
+          v-if="!aiStore.modelStatus.downloading && !aiStore.isScanning"
+          class="style-switcher mt-12 py-4 border-t border-white/10 w-full"
+        >
+          <div class="text-xs text-white/30 text-center mb-3 font-mono">
+            STYLE SELECTOR (PREVIEW)
+          </div>
+          <div class="flex flex-wrap justify-center gap-2">
+            <div
+              v-for="i in 10"
+              :key="i - 1"
+              class="style-chip"
+              :class="{ active: currentBtnStyle === i - 1 }"
+              @click="currentBtnStyle = i - 1"
+            >
+              {{ i - 1 }}
+            </div>
+          </div>
+        </div>
         <div class="onboarding-footer">首次索引可能消耗较多电量，建议连接电源</div>
       </div>
     </div>
@@ -532,14 +443,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAIStore } from '@renderer/services/ai/store'
 import PhotoCard from '@renderer/components/business/PhotoCard/index.vue'
-import { useAIAlbum } from '@renderer/composables/useAIAlbum'
 import {
-  Lock,
-  Refresh,
-  Upload,
-  Camera,
-  Search,
-  MagicStick,
   Right,
   Warning,
   Files,
@@ -548,11 +452,15 @@ import {
   Cpu,
   VideoPause,
   ArrowLeft,
-  Picture
+  Picture,
+  Lock,
+  Upload,
+  Camera,
+  MagicStick,
+  Refresh
 } from '@element-plus/icons-vue'
 
 const aiStore = useAIStore()
-const { getMemories, searchByText } = useAIAlbum()
 
 const emit = defineEmits(['refresh', 'pause-scan', 'scan-more', 'init-ai'])
 
@@ -571,7 +479,7 @@ const onboardingProgress = computed(() => {
 
 const onboardingSubText = computed(() => {
   if (aiStore.modelStatus.downloading) return '模型文件约 152MB，旨在保护您的隐私'
-  if (aiStore.isScanning) return aiStore.currentAnalysisTag || '正在提取视觉特征...'
+  if (aiStore.isScanning) return aiStore.currentAnalysisTag || '正在进行人脸分析...'
   return ''
 })
 
@@ -579,7 +487,7 @@ const onboardingSubText = computed(() => {
 const errorTitle = computed(() => {
   const err = aiStore.initError || ''
   if (err.includes('not valid JSON') || err.includes('Unexpected token')) {
-    return 'CLIP 模型加载失败'
+    return 'AI 模型加载失败'
   }
   if (err.includes('WebGPU') || err.includes('GPU')) {
     return 'GPU 加速不可用'
@@ -631,9 +539,9 @@ const initButtonText = computed(() => {
 })
 
 // 仪表盘与搜索状态
-const searchQuery = ref('')
-const searchResults = ref([])
-const memories = ref([])
+// const searchQuery = ref('')
+// const searchResults = ref([])
+// const memories = ref([])
 
 // 人物聚类相关逻辑
 const detectedPeople = computed(() => {
@@ -646,6 +554,20 @@ const detectedPeople = computed(() => {
 const newPeopleCount = computed(() => detectedPeople.value.length) // 暂时简单处理
 const currentPerson = ref(null)
 const personPhotos = ref([])
+const folderPhotos = ref([])
+
+// 监听全选筛选器
+watch(
+  () => aiStore.selectedFilter,
+  async (newFilter) => {
+    if (newFilter.type === 'folder' && newFilter.value) {
+      folderPhotos.value = await aiStore.fetchPhotosByFolder(newFilter.value)
+    } else if (newFilter.type === 'person' && newFilter.value) {
+      personPhotos.value = await aiStore.fetchPhotosByFace(newFilter.value)
+    }
+  },
+  { deep: true, immediate: true }
+)
 
 onMounted(async () => {
   // 详情页加载时，如果正在人物墙视图，尝试获取一次
@@ -668,12 +590,9 @@ const handleViewAllPeople = () => {
   aiStore.fetchFaceGroups()
 }
 
-const handlePersonClick = async (person) => {
+const handlePersonClick = (person) => {
   currentPerson.value = person
   aiStore.setSelectedFilter('person', person.id)
-  personPhotos.value = [] // 先清空
-  const photos = await aiStore.fetchPhotosByFace(person.id)
-  personPhotos.value = photos
 }
 
 const handleOrganizePeople = async () => {
@@ -751,6 +670,9 @@ const handleInitAI = () => {
   emit('init-ai')
 }
 
+// 样式选择
+const currentBtnStyle = ref(0)
+
 // const photos = computed(() => {
 //   if (searchResults.value.length > 0) return searchResults.value
 //   return allPhotos.value
@@ -783,35 +705,32 @@ const handleInitAI = () => {
 // }
 
 // 处理搜索
-const handleSearch = async () => {
-  if (!searchQuery.value.trim()) {
-    searchResults.value = []
-    return
-  }
-  searchResults.value = await searchByText(searchQuery.value)
-}
-
+// const handleSearch = async () => {
+//   if (!searchQuery.value.trim()) {
+//     searchResults.value = []
+//     return
+//   }
+// }
 // 监听搜索
-watch(searchQuery, (val) => {
-  if (!val) searchResults.value = []
-})
+// watch(searchQuery, (val) => {
+//   if (!val) searchResults.value = []
+// })
 
+// 监听过滤器
 // 监听过滤器
 watch(
   () => aiStore.selectedFilter,
   () => {
-    searchQuery.value = ''
+    // searchQuery.value = ''
     // 暂时不获取照片
   },
   { deep: true, immediate: true }
 )
 
-onMounted(async () => {
-  memories.value = await getMemories()
-})
+// onMounted(async () => {
+// })
 
-// 智能场景
-const smartScenes = ref([])
+// const smartScenes = ref([])
 
 // 待处理 - 已替换为精选时刻
 </script>
@@ -1120,33 +1039,338 @@ const smartScenes = ref([])
       }
     }
 
-    .init-btn {
-      min-width: 260px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      height: 48px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    // 基础按钮重置
+    .init-btn-base {
+      position: relative;
+      min-width: 280px;
+      height: 56px;
       border: none;
-      box-shadow: 0 8px 20px rgba(37, 99, 235, 0.25);
-      transition: all 0.3s;
+      outline: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+      user-select: none;
+      overflow: hidden; // 防止内部光效溢出
 
-      &:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 25px rgba(37, 99, 235, 0.35);
+      .btn-content {
+        position: relative;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: transform 0.3s ease;
+      }
+
+      .btn-glow,
+      .btn-border,
+      .btn-shine {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        transition: all 0.5s ease;
       }
 
       &:active {
-        transform: translateY(0);
+        transform: scale(0.98);
       }
 
-      // 重试状态 - 橙色调
-      &.is-retry {
-        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-        box-shadow: 0 8px 20px rgba(245, 158, 11, 0.25);
+      // --- Style 0: Nexus Core (经典升级) ---
+      &.ai-btn-style-0 {
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+        border-radius: 12px;
+        box-shadow: 0 8px 20px rgba(37, 99, 235, 0.3);
 
         &:hover {
-          box-shadow: 0 12px 25px rgba(245, 158, 11, 0.35);
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          box-shadow:
+            0 12px 28px rgba(37, 99, 235, 0.4),
+            0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+          transform: translateY(-2px);
+        }
+      }
+
+      // --- Style 1: Deep Cosmos (深空) ---
+      &.ai-btn-style-1 {
+        background: radial-gradient(circle at center, #4f46e5 0%, #312e81 100%);
+        border-radius: 30px;
+        box-shadow: 0 10px 30px -10px rgba(79, 70, 229, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+
+        .btn-glow {
+          background: radial-gradient(
+            circle at 50% -20%,
+            rgba(255, 255, 255, 0.2),
+            transparent 70%
+          );
+          opacity: 0.6;
+        }
+
+        &:hover {
+          box-shadow: 0 0 25px rgba(99, 102, 241, 0.5);
+          border-color: rgba(99, 102, 241, 0.5);
+
+          .btn-content {
+            letter-spacing: 1px;
+          }
+        }
+      }
+
+      // --- Style 2: Neon Flux (赛博霓虹) ---
+      &.ai-btn-style-2 {
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid #06b6d4;
+        border-radius: 4px;
+        color: #06b6d4;
+        box-shadow:
+          0 0 10px rgba(6, 182, 212, 0.1),
+          inset 0 0 10px rgba(6, 182, 212, 0.1);
+        font-family: 'Space Mono', monospace;
+        letter-spacing: 1px;
+
+        .btn-shine {
+          background: linear-gradient(90deg, transparent, rgba(6, 182, 212, 0.2), transparent);
+          transform: translateX(-100%);
+          transition: transform 0.6s;
+        }
+
+        &:hover {
+          background: rgba(6, 182, 212, 0.1);
+          box-shadow:
+            0 0 20px rgba(6, 182, 212, 0.4),
+            inset 0 0 15px rgba(6, 182, 212, 0.2);
+          text-shadow: 0 0 8px rgba(6, 182, 212, 0.8);
+
+          .btn-shine {
+            transform: translateX(100%);
+          }
+        }
+      }
+
+      // --- Style 3: Glass Pure (极简磨砂) ---
+      &.ai-btn-style-3 {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 16px;
+        color: #fff;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+
+        &:hover {
+          background: rgba(255, 255, 255, 0.15);
+          border-color: rgba(255, 255, 255, 0.4);
+          transform: translateY(-2px);
+          box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+      }
+
+      // --- Style 4: Aurora (极光) ---
+      &.ai-btn-style-4 {
+        background: linear-gradient(90deg, #10b981, #3b82f6);
+        border-radius: 50px;
+
+        &::before {
+          content: '';
+          position: absolute;
+          inset: 2px;
+          background: #0f172a; // 假镂空
+          border-radius: 48px;
+          z-index: 1;
+        }
+
+        .btn-content {
+          background: linear-gradient(90deg, #34d399, #60a5fa);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          font-weight: 800;
+        }
+
+        &:hover {
+          box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+          transform: scale(1.02);
+
+          &::before {
+            background: #1e293b;
+          }
+        }
+      }
+
+      // --- Style 5: Cyber Dark (硬核科技) ---
+      &.ai-btn-style-5 {
+        background: #000;
+        border: 1px solid #333;
+        border-radius: 0;
+        color: #fff;
+        clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0 30%);
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        text-transform: uppercase;
+        font-size: 14px;
+        letter-spacing: 2px;
+
+        &::after {
+          content: '';
+          position: absolute;
+          bottom: 0;
+          right: 0;
+          width: 8px;
+          height: 8px;
+          background: #fff;
+        }
+
+        &:hover {
+          background: #fff;
+          color: #000;
+          border-color: #fff;
+        }
+      }
+
+      // --- Style 6: Future Silver (液态银) ---
+      &.ai-btn-style-6 {
+        background: linear-gradient(180deg, #f1f5f9 0%, #cbd5e1 100%);
+        border-radius: 12px;
+        color: #0f172a;
+        box-shadow:
+          0 4px 6px rgba(0, 0, 0, 0.1),
+          0 0 0 1px rgba(255, 255, 255, 0.5) inset,
+          0 -2px 5px rgba(0, 0, 0, 0.1) inset;
+
+        .icon-arrow {
+          color: #0f172a;
+        }
+
+        &:hover {
+          filter: brightness(1.1);
+          transform: translateY(-1px);
+          box-shadow: 0 8px 15px rgba(255, 255, 255, 0.2);
+        }
+      }
+
+      // --- Style 7: Quantum Dot (量子点阵) ---
+      &.ai-btn-style-7 {
+        background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        overflow: hidden;
+
+        .btn-border {
+          background-image: radial-gradient(rgba(255, 255, 255, 0.2) 1px, transparent 1px);
+          background-size: 8px 8px;
+          opacity: 0.3;
+        }
+
+        &:hover {
+          box-shadow: 0 0 30px rgba(124, 58, 237, 0.4);
+
+          .btn-border {
+            opacity: 0.5;
+            transform: scale(1.1);
+          }
+        }
+      }
+
+      // --- Style 8: Liquid Metal (流体渐变) ---
+      &.ai-btn-style-8 {
+        background: linear-gradient(270deg, #ff0080, #7928ca, #ff0080);
+        background-size: 200% 200%;
+        border-radius: 50px;
+        animation: gradient-anim 3s ease infinite;
+        box-shadow: 0 10px 25px rgba(121, 40, 202, 0.4);
+
+        @keyframes gradient-anim {
+          0% {
+            background-position: 0% 50%;
+          }
+          50% {
+            background-position: 100% 50%;
+          }
+          100% {
+            background-position: 0% 50%;
+          }
+        }
+
+        &:hover {
+          transform: scale(1.03);
+          box-shadow: 0 15px 35px rgba(255, 0, 128, 0.5);
+        }
+      }
+
+      // --- Style 9: Bold AI (强力蓝) ---
+      &.ai-btn-style-9 {
+        background: #0066ff;
+        border-radius: 12px;
+        border: 2px solid #0052cc;
+        box-shadow: 4px 4px 0px 0px #003380;
+        transition:
+          transform 0.1s,
+          box-shadow 0.1s;
+
+        &:hover {
+          transform: translate(2px, 2px);
+          box-shadow: 2px 2px 0px 0px #003380;
+        }
+        &:active {
+          transform: translate(4px, 4px);
+          box-shadow: 0px 0px 0px 0px #003380;
+        }
+      }
+
+      // 重试状态强制覆盖
+      &.is-retry {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+        box-shadow: 0 8px 20px rgba(245, 158, 11, 0.25) !important;
+        border: none !important;
+        border-radius: 12px !important;
+        color: #fff !important;
+        transform: none !important;
+        clip-path: none !important;
+
+        .btn-content {
+          -webkit-text-fill-color: #fff !important;
+        }
+
+        // 移除特殊装饰
+        .btn-glow,
+        .btn-border,
+        .btn-shine {
+          display: none;
+        }
+        &::before,
+        &::after {
+          display: none;
+        }
+      }
+    }
+
+    .style-switcher {
+      .style-chip {
+        width: 24px;
+        height: 24px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        cursor: pointer;
+        color: rgba(255, 255, 255, 0.5);
+        transition: all 0.2s;
+
+        &:hover {
+          background: rgba(255, 255, 255, 0.2);
+        }
+
+        &.active {
+          background: #3b82f6;
+          color: #fff;
+          border-color: #3b82f6;
         }
       }
     }
@@ -1380,7 +1604,7 @@ const smartScenes = ref([])
 
 .content-scroll {
   flex: 1;
-  padding: 20px;
+  // padding: 20px; // Removed to allow full-width headers
 }
 
 .content-section {

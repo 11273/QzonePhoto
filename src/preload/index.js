@@ -240,14 +240,10 @@ try {
       /** 懒删除照片记录 */
       deletePhoto: (path) => ipcClient.call(IPC_AI.DELETE_PHOTO, { path }),
       /** 获取模型状态 */
-      // 以文搜图
-      searchByText: (text, limit) => ipcClient.call(IPC_AI.SEARCH_BY_TEXT, { text, limit }),
       // 获取人脸聚类
       getFaceGroups: () => ipcClient.call(IPC_AI.GET_FACE_GROUPS),
       // 获取人脸照片
       getPhotosByFace: (faceId) => ipcClient.call(IPC_AI.GET_PHOTOS_BY_FACE, { faceId }),
-      // 获取回忆
-      getMemories: () => ipcClient.call(IPC_AI.GET_MEMORIES),
       // 检查模型是否存在
       checkModels: () => ipcClient.call(IPC_AI.CHECK_MODELS),
       // 检查引擎运行状态 (Ping)

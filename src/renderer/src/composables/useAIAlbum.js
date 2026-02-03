@@ -37,15 +37,6 @@ export function useAIAlbum() {
   }
 
   /**
-   * 以文搜图
-   * @param {string} text
-   * @param {number} limit
-   */
-  const searchByText = async (text, limit = 50) => {
-    return await window.QzoneAPI.ai.searchByText(text, limit)
-  }
-
-  /**
    * 获取人脸聚类列表
    */
   const getFaceGroups = async () => {
@@ -82,13 +73,6 @@ export function useAIAlbum() {
   }
 
   /**
-   * 获取回忆数据
-   */
-  const getMemories = async () => {
-    return await window.QzoneAPI.ai.getMemories()
-  }
-
-  /**
    * 获取 AI Worker 详细状态 (诊断用)
    */
   const getWorkerInfo = async () => {
@@ -118,10 +102,8 @@ export function useAIAlbum() {
     scanProgress,
     startScan,
     stopScan,
-    searchByText,
     getFaceGroups,
     getPhotosByFace,
-    getMemories,
     checkModels,
     getWorkerInfo
   }

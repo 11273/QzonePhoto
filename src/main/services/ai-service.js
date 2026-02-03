@@ -9,7 +9,6 @@ import { syncFolders, indexSingleFile } from '@main/core/scanner'
 import { Pipeline } from '@main/core/pipeline'
 import { ModelManager } from '@main/core/ai/model-manager'
 import { WorkerWindowManager } from '@main/core/ai/window-manager'
-import { ModelDownloader } from '@main/ai/model-downloader'
 import { Clusterer } from '@main/core/ai/clusterer'
 import chokidar from 'chokidar'
 import { AI_EXTENSIONS } from '@shared/const'
@@ -28,11 +27,6 @@ export const AI_SYSTEM_STATUS = {
   ANALYZING: 'ANALYZING', // 正在分析处理
   ERROR: 'ERROR' // 出错
 }
-
-/** 默认搜索结果数量限制 */
-const DEFAULT_SEARCH_LIMIT = 50
-/** 默认回忆结果数量限制 */
-const DEFAULT_MEMORY_LIMIT = 10
 
 /**
  * AI 服务
@@ -150,9 +144,8 @@ export class AIService {
         // 下载完成后继续，不再递归调用，避免被 isInitializing 锁住
       }
 
-      // 2. 环境配置与模型路径获取
-      await ModelManager.ensureClipConfigs()
-      const { data: status } = await ModelManager.checkModels()
+      // 2. 环境配置与模型状态验证
+      await ModelManager.checkModels()
 
       // 3. 状态管理
       logger.info('[AIService] initWorker: 设置状态为 STARTING...')
@@ -168,9 +161,7 @@ export class AIService {
       }
 
       logger.info('[AIService] initWorker: 引擎已连接，发送初始化指令...')
-      const initResult = await this.windowManager.invoke(AiActionTypes.INIT, {
-        clipPath: status.clipPath
-      })
+      const initResult = await this.windowManager.invoke(AiActionTypes.INIT, {})
 
       logger.info('[AIService] initWorker: 初始化指令执行成功')
       this._updateStatus('READY')
@@ -194,31 +185,11 @@ export class AIService {
   }
 
   /**
-   * 内部下载逻辑
+   * 内部下载逻辑 (已禁用)
    * @private
    */
   async _downloadModelsInternal() {
-    this._updateStatus(AI_SYSTEM_STATUS.DOWNLOADING)
-
-    const downloader = new ModelDownloader({
-      onProgress: (prog) => {
-        const payload = {
-          isDownloading: true,
-          ...prog
-        }
-        this._broadcastToRenderer(IPC_AI.SCAN_PROGRESS, payload)
-        this._broadcastToRenderer(IPC_AI.DOWNLOAD_PROGRESS, payload)
-      }
-    })
-
-    try {
-      await downloader.start()
-      logger.info('[AIService] 模型下载完成')
-      return true
-    } catch (err) {
-      logger.error('[AIService] 模型下载失败:', err)
-      throw err // 抛出错误由 initWorker 捕获
-    }
+    return { success: true }
   }
 
   /**
@@ -551,25 +522,6 @@ export class AIService {
     }
   }
 
-  async searchByText(text, limit) {
-    if (!this.table) return { data: [] }
-    try {
-      // 通过 WindowManager 调用 Worker 分析
-      const vector = await this.windowManager.invoke(AiActionTypes.ANALYZE_TEXT, { text })
-      const results = await this.table
-        .vectorSearch(vector)
-        .column('sceneVector')
-        .limit(limit || DEFAULT_SEARCH_LIMIT)
-        .toArray()
-      return {
-        data: results.map((r) => ({ path: r.path, score: r._distance, captureDate: r.captureDate }))
-      }
-    } catch (err) {
-      logger.error('[AIService] 搜图失败:', err)
-      return { data: [] }
-    }
-  }
-
   /**
    * 触发人物聚类整理
    * @returns {Promise<{ success: boolean, count: number }>}
@@ -764,27 +716,29 @@ export class AIService {
     }
   }
 
-  async getMemories() {
-    if (!this.table) return { data: [] }
-    const results = await this.table
-      .query()
-      .limit(DEFAULT_MEMORY_LIMIT * 5)
-      .toArray()
+  /**
+   * 按文件夹路径获取照片
+   */
+  async getPhotosByFolder(folderPath) {
+    if (!this.table || !folderPath) return { data: [] }
+    try {
+      // 对路径进行转义处理
+      const escapedPath = folderPath.replace(/'/g, "\\'")
+      const results = await this.table.query().where(`folder = '${escapedPath}'`).toArray()
 
-    const sorted = results
-      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-      .slice(0, DEFAULT_MEMORY_LIMIT)
-
-    return {
-      data: sorted.map((r) => ({
-        path: r.path,
-        captureDate: r.captureDate,
-        status: r.status,
-        tags: r.tags,
-        thumbnail: r.thumbnail,
-        faces: r.faces,
-        timestamp: r.timestamp
-      }))
+      return {
+        data: results.map((r) => ({
+          path: r.path,
+          status: r.status,
+          thumbnail: r.thumbnail,
+          width: r.width,
+          height: r.height,
+          timestamp: r.timestamp
+        }))
+      }
+    } catch (err) {
+      logger.error(`[AIService] 获取文件夹照片失败: ${folderPath}`, err)
+      return { data: [], error: err.message }
     }
   }
 
