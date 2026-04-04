@@ -5,6 +5,15 @@
       <div class="user-card">
         <div class="card-header">
           <el-avatar
+            v-if="!userStore.isLoggedIn"
+            shape="square"
+            :size="32"
+            class="user-avatar is-guest"
+          >
+            <el-icon><Cpu /></el-icon>
+          </el-avatar>
+          <el-avatar
+            v-else
             shape="square"
             :size="32"
             :src="`https://qlogo4.store.qq.com/qzone/${userStore.userInfo?.uin}/${userStore.userInfo?.uin}/100`"
@@ -13,26 +22,36 @@
             {{ userStore.userInfo?.nick?.[0] || 'Q' }}
           </el-avatar>
           <div class="user-info">
-            <div class="nickname">{{ userStore.userInfo?.nick || 'QZone用户' }}</div>
-            <div
-              class="uin"
-              :title="showUin ? '点击隐藏QQ号' : '点击显示QQ号'"
-              @click="toggleUinDisplay"
-            >
-              {{ displayUin }}
+            <div class="nickname">
+              {{
+                userStore.isLoggedIn
+                  ? userStore.userInfo?.nick || 'QZone用户'
+                  : systemInfo?.hostname || 'Local Device'
+              }}
+            </div>
+            <div v-if="userStore.isLoggedIn" class="uin-row">
+              <div
+                class="uin"
+                :title="showUin ? '点击隐藏QQ号' : '点击显示QQ号'"
+                @click="toggleUinDisplay"
+              >
+                {{ displayUin }}
+              </div>
+              <div class="status-badge">
+                <span class="status-dot-breathing"></span>
+                Online
+              </div>
+            </div>
+            <div v-else class="uin status-text">
+              <span class="status-dot-breathing"></span>
+              Online • 离线核心
             </div>
           </div>
           <!-- 登出按钮移到头像右边 -->
           <div class="header-actions">
-            <el-button
-              text
-              :icon="Monitor"
-              class="action-btn open-web-btn"
-              title="打开官网"
-              @click="openQzoneWeb"
-            >
-            </el-button>
+            <!-- 已登录：显示登出 -->
             <el-popconfirm
+              v-if="userStore.isLoggedIn"
               title="确定要登出当前账号吗？"
               confirm-button-text="确定登出"
               cancel-button-text="取消"
@@ -50,27 +69,44 @@
                 </el-button>
               </template>
             </el-popconfirm>
+
+            <!-- 未登录：显示去登录 -->
+            <el-button
+              v-else
+              text
+              :icon="SwitchButton"
+              class="action-btn logout-btn header-logout"
+              title="去登录"
+              @click="handleGoToLogin"
+            >
+            </el-button>
           </div>
         </div>
 
-        <!-- AI 统计 Grid -->
-        <div class="card-stats">
-          <div class="stat-grid">
-            <div class="stat-item">
-              <span class="label">隐私引擎</span>
-              <span class="value text-blue">本地计算已就绪</span>
+        <!-- AI 统计 Grid (2x2 Asset Grid) -->
+        <div class="card-stats asset-stats">
+          <div class="stat-grid asset-grid">
+            <div class="stat-item asset-item">
+              <span class="label">照片索引</span>
+              <span class="value text-blue"
+                >{{ formatNumber(aiStore.totalCount) }} <span class="unit">张</span></span
+              >
             </div>
-            <div class="stat-item">
-              <span class="label">已处理</span>
-              <span class="value text-green">{{ formatNumber(aiStore.processedCount) }}</span>
+            <div class="stat-item asset-item">
+              <span class="label">人物聚类</span>
+              <span class="value text-green"
+                >{{ formatNumber(aiStore.personCount) }} <span class="unit">人</span></span
+              >
             </div>
-            <div class="stat-item">
-              <span class="label">速度</span>
-              <span class="value text-orange">{{ aiStore.speed || 0 }} img/s</span>
+            <div class="stat-item asset-item">
+              <span class="label">推理引擎</span>
+              <span class="value text-orange" :class="{ 'is-active': aiStore.speed > 0 }">
+                {{ aiStore.speed > 0 ? aiStore.speed + ' fps' : 'Ready' }}
+              </span>
             </div>
             <el-tooltip content="AI 向量数据库本地占用空间" placement="right">
-              <div class="stat-item cursor-help">
-                <span class="label">存储</span>
+              <div class="stat-item asset-item cursor-help">
+                <span class="label">数据体积</span>
                 <span class="value text-cyan">{{ formatStorage(aiStore.storageUsed) }}</span>
               </div>
             </el-tooltip>
@@ -278,17 +314,23 @@
                 </div>
               </div>
 
-              <div class="card-right-actions">
-                <!-- 仅需显示删除按钮 -->
-                <el-button
-                  text
-                  circle
-                  class="action-btn-mini remove-btn"
-                  title="移除目录"
-                  @click.stop="handleRemoveFolder(folder.path)"
-                >
-                  <el-icon><Close /></el-icon>
-                </el-button>
+              <!-- 右侧操作区: 数量常驻，删除悬停显示 -->
+              <div class="card-extra-info">
+                <span v-if="aiStore.folderCounts[folder.path]" class="persistent-count">
+                  {{ formatNumber(aiStore.folderCounts[folder.path]) }}
+                </span>
+
+                <div class="hover-actions internal-actions">
+                  <el-button
+                    text
+                    circle
+                    class="action-btn-mini remove-btn"
+                    title="移除目录"
+                    @click.stop="handleRemoveFolder(folder.path)"
+                  >
+                    <el-icon><Close /></el-icon>
+                  </el-button>
+                </div>
               </div>
             </div>
           </div>
@@ -305,7 +347,7 @@
     </div>
 
     <!-- 返回 QQ 相册按钮 - 底部 QQ空间经典橙色风格 -->
-    <div class="back-to-album-section">
+    <div v-if="userStore.isLoggedIn" class="back-to-album-section">
       <button class="back-to-album-btn" @click="handleBackToAlbum">
         <div class="qzone-btn-bg"></div>
         <div class="qzone-btn-content">
@@ -330,7 +372,6 @@ import {
   Loading,
   Setting,
   Document,
-  Monitor,
   SwitchButton,
   Files,
   Folder,
@@ -339,21 +380,38 @@ import {
   Plus,
   Close,
   Download as DownloadIcon,
-  Odometer,
+  Cpu,
   ArrowRight
 } from '@element-plus/icons-vue'
-import QZoneIcon from '@renderer/icons/qzone.svg'
+
 import { useAIAlbum } from '@renderer/composables/useAIAlbum'
 
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 const userStore = useUserStore()
 const aiStore = useAIStore()
 const downloadStore = useDownloadStore()
 const { checkModels } = useAIAlbum()
 
+const handleGoToLogin = () => {
+  router.push('/login')
+}
+
 const modelsReady = ref(true)
 const collectionsExpanded = ref(true)
+const systemInfo = ref(null)
 
 onMounted(async () => {
+  // 获取系统信息用于访客展示
+  if (!userStore.isLoggedIn) {
+    try {
+      systemInfo.value = await window.QzoneAPI.app.getInfo()
+    } catch (e) {
+      console.error('获取系统信息失败', e)
+    }
+  }
+
   const status = await checkModels()
   if (status && typeof status.exists !== 'undefined') {
     modelsReady.value = status.exists
@@ -505,19 +563,6 @@ const toggleUinDisplay = () => {
   showUin.value = !showUin.value
 }
 
-// 打开 QQ 空间官网
-const openQzoneWeb = async () => {
-  try {
-    await window.api.invoke('window:openQzoneWeb', {
-      uin: userStore.Uin,
-      p_skey: userStore.PSkey
-    })
-  } catch (error) {
-    console.error('打开官网失败:', error)
-    ElMessage.error('打开官网失败')
-  }
-}
-
 // 确认登出
 const confirmLogout = async () => {
   // 登出并清除用户信息
@@ -649,6 +694,19 @@ watch(
           border-color: rgba(96, 165, 250, 0.5);
           box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
         }
+
+        &.is-guest {
+          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+
+          .el-icon {
+            font-size: 18px;
+          }
+        }
       }
 
       .user-info {
@@ -667,16 +725,52 @@ watch(
         }
 
         .uin {
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.6);
+          font-size: 11px;
+          color: rgba(255, 255, 255, 0.4);
           line-height: 1.1;
           cursor: pointer;
           user-select: none;
           transition: color 0.2s ease;
 
           &:hover {
-            color: rgba(255, 255, 255, 0.8);
+            color: rgba(255, 255, 255, 0.6);
           }
+
+          &.status-text {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.5);
+            font-weight: 500;
+          }
+        }
+
+        .uin-row {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .status-badge {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          background: rgba(16, 185, 129, 0.08);
+          padding: 1px 6px;
+          border-radius: 10px;
+          font-size: 10px;
+          color: #10b981;
+          font-weight: 600;
+        }
+
+        .status-dot-breathing {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background-color: #10b981;
+          box-shadow: 0 0 5px rgba(16, 185, 129, 0.5);
+          animation: breathing 2s infinite ease-in-out;
         }
       }
 
@@ -685,20 +779,6 @@ watch(
         align-items: center;
         justify-content: flex-end;
         gap: 4px;
-
-        .open-web-btn {
-          color: rgba(64, 158, 255, 0.8);
-          font-size: 16px;
-          padding: 4px;
-          min-width: unset;
-          width: 28px;
-          height: 28px;
-
-          &:hover {
-            color: #409eff;
-            background: rgba(64, 158, 255, 0.1);
-          }
-        }
 
         .header-logout {
           color: rgba(245, 108, 108, 0.8);
@@ -717,57 +797,91 @@ watch(
       }
     }
 
-    /* 卡片统计区域 */
-    .card-stats {
-      padding: 8px 10px;
+    /* AI 统计 Grid (2x2 Asset Grid) */
+    .asset-stats {
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.01);
 
-      .stat-grid {
+      .asset-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 6px 10px;
+        gap: 12px 14px;
 
-        .stat-item {
+        .asset-item {
           display: flex;
           flex-direction: column;
           align-items: flex-start;
+          gap: 2px;
 
           .label {
-            font-size: 12px;
+            font-size: 11px;
             color: rgba(255, 255, 255, 0.4);
-            line-height: 1;
-            margin-bottom: 3px;
             font-weight: 500;
           }
 
           .value {
-            font-size: 10px;
-            font-weight: 600;
-            color: rgba(255, 255, 255, 0.9);
-            line-height: 1.1;
+            font-size: 14px;
+            font-weight: 700;
+            font-family: 'Inter', system-ui, sans-serif;
+            display: flex;
+            align-items: baseline;
+            gap: 2px;
+
+            .unit {
+              font-size: 10px;
+              font-weight: 500;
+              opacity: 0.6;
+            }
+
+            &.is-active {
+              color: #fbbf24;
+              text-shadow: 0 0 10px rgba(251, 191, 36, 0.4);
+              animation: text-pulse 1s infinite alternate;
+            }
 
             &.text-blue {
-              color: #fbbf24;
-              text-shadow: 0 0 3px rgba(251, 191, 36, 0.3);
+              color: #60a5fa;
             }
-
             &.text-green {
               color: #10b981;
-              text-shadow: 0 0 3px rgba(16, 185, 129, 0.3);
             }
-
             &.text-orange {
-              color: #f59e0b;
-              text-shadow: 0 0 3px rgba(245, 158, 11, 0.3);
+              color: #fbbf24;
             }
-
             &.text-cyan {
-              color: #06b6d4;
-              text-shadow: 0 0 3px rgba(6, 182, 212, 0.3);
+              color: #22d3ee;
             }
           }
         }
       }
     }
+  }
+}
+
+@keyframes breathing {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+    box-shadow: 0 0 2px rgba(16, 185, 129, 0.2);
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+    box-shadow: 0 0 2px rgba(16, 185, 129, 0.2);
+  }
+}
+
+@keyframes text-pulse {
+  from {
+    opacity: 0.8;
+  }
+  to {
+    opacity: 1;
   }
 }
 
@@ -1358,10 +1472,6 @@ watch(
     }
   }
 
-  .library-view {
-    // Adjust other sections padding if needed (folders-section etc are handled inside)
-  }
-
   /* 可折叠区域通用样式 */
   .folders-section,
   .collections-section {
@@ -1667,12 +1777,27 @@ watch(
         }
       }
 
-      .card-right-actions {
+      .card-extra-info {
         display: flex;
         align-items: center;
-        margin-left: 8px; // Spacing from content
-        opacity: 0; // Hide by default
-        transition: opacity 0.2s;
+        gap: 8px;
+        margin-left: 8px;
+
+        .persistent-count {
+          font-size: 10px;
+          color: rgba(255, 255, 255, 0.4);
+          font-family: 'Monaco', monospace;
+          background: rgba(255, 255, 255, 0.06);
+          padding: 1px 5px;
+          border-radius: 4px;
+        }
+
+        .hover-actions {
+          opacity: 0;
+          transform: translateX(5px);
+          transition: all 0.2s ease;
+          display: flex;
+        }
 
         .action-btn-mini {
           width: 24px !important;
@@ -1694,6 +1819,11 @@ watch(
             font-size: 13px;
           }
         }
+      }
+
+      &:hover .card-extra-info .hover-actions {
+        opacity: 1;
+        transform: translateX(0);
       }
     }
   }

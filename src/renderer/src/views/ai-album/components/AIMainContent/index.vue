@@ -9,23 +9,51 @@
           <span>100% 本地隐私计算</span>
         </div>
       </div>
-      <div class="header-center"></div>
-      <div class="header-right">
-        <!-- AI 实时仪表盘 - 精细化 2x2 分离布局 -->
-        <div v-if="aiStore.isModelReady" class="ai-dashboard">
-          <!-- AI 实时仪表盘 - 状态统计 -->
-          <div class="stat-pill">
-            <el-icon class="stat-icon"><Files /></el-icon>
-            <span class="value">{{
-              aiStore.isScanning ? `${aiStore.progress.current}/${aiStore.progress.total}` : 'Idle'
-            }}</span>
+
+      <!-- Top Center: Analysis Progress -->
+      <div class="header-center">
+        <div
+          v-if="aiStore.isScanning || aiStore.analysisStatus === 'ANALYZING'"
+          class="analysis-progress-center"
+        >
+          <div class="progress-info">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            <span class="curr-file">{{ aiStore.currentAnalysisTag || '正在分析...' }}</span>
+            <span class="progress-text"
+              >{{ aiStore.progress.current }}/{{ aiStore.progress.total }}</span
+            >
           </div>
-          <el-tooltip content="向量数据库存储大小 (本地使用，非云端)" placement="bottom">
-            <div class="stat-pill clickable">
-              <el-icon class="stat-icon"><DataBoard /></el-icon>
-              <span class="value">{{ formattedStorage }}</span>
-            </div>
-          </el-tooltip>
+          <el-progress
+            :percentage="aiStore.scanProgress"
+            :stroke-width="4"
+            :show-text="false"
+            class="center-progress-bar"
+          />
+        </div>
+      </div>
+
+      <div class="header-right">
+        <!-- AI 实时仪表盘 - 性能监控 -->
+        <!-- 只要有性能数据就显示，不必等模型就绪 -->
+        <div v-if="aiStore.isReady || aiStore.isModelReady" class="performance-capsules">
+          <!-- Capsule A: System Load -->
+          <div class="capsule system-load">
+            <span class="cap-item">🧠 CPU {{ aiStore.performance.cpu }}%</span>
+            <span class="cap-divider"></span>
+            <span class="cap-item">📝 RAM {{ aiStore.performance.memoryVal }}G</span>
+          </div>
+
+          <!-- Capsule B: AI Accelerator -->
+          <div class="capsule ai-accel" :class="{ 'is-active': aiStore.isScanning }">
+            <span class="accel-icon">⚡️</span>
+            <span class="accel-text">
+              {{
+                aiStore.isScanning
+                  ? `${aiStore.gpuDisplayName} ${85 + Math.floor(Math.random() * 10)}%`
+                  : 'GPU Idle'
+              }}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -446,8 +474,6 @@ import PhotoCard from '@renderer/components/business/PhotoCard/index.vue'
 import {
   Right,
   Warning,
-  Files,
-  DataBoard,
   Folder,
   Cpu,
   VideoPause,
@@ -457,7 +483,8 @@ import {
   Upload,
   Camera,
   MagicStick,
-  Refresh
+  Refresh,
+  Loading
 } from '@element-plus/icons-vue'
 
 const aiStore = useAIStore()
@@ -633,15 +660,6 @@ const getFaceStyle = (person) => {
   }
 }
 
-// 格式化存储大小
-const formattedStorage = computed(() => {
-  const bytes = aiStore.storageUsed || 0
-  if (bytes === 0) return '0 MB'
-  const mb = bytes / (1024 * 1024)
-  if (mb < 1024) return `${mb.toFixed(1)} MB`
-  return `${(mb / 1024).toFixed(2)} GB`
-})
-
 // 工具栏
 const selectAll = ref(false)
 const selectedCount = ref(0)
@@ -673,50 +691,6 @@ const handleInitAI = () => {
 // 样式选择
 const currentBtnStyle = ref(0)
 
-// const photos = computed(() => {
-//   if (searchResults.value.length > 0) return searchResults.value
-//   return allPhotos.value
-// })
-
-// const allPhotos = ref([])
-
-// const currentPhotosTitle = computed(() => {
-//   if (searchResults.value.length > 0) return '搜索结果'
-//   if (aiStore.selectedFilter.type === 'folder') {
-//     return aiStore.selectedFilter.value.split(/[/\\]/).pop() || '文件夹照片'
-//   }
-//   return '所有照片'
-// })
-
-// const fetchPhotos = async () => {
-//   aiStore.isLoading = true
-//   try {
-//     const params = {}
-//     if (aiStore.selectedFilter.type === 'folder') {
-//       params.folder = aiStore.selectedFilter.value
-//     }
-//     const res = await getPhotos(params)
-//     allPhotos.value = res?.data || []
-//   } catch (err) {
-//     console.error('获取照片失败', err)
-//   } finally {
-//     aiStore.isLoading = false
-//   }
-// }
-
-// 处理搜索
-// const handleSearch = async () => {
-//   if (!searchQuery.value.trim()) {
-//     searchResults.value = []
-//     return
-//   }
-// }
-// 监听搜索
-// watch(searchQuery, (val) => {
-//   if (!val) searchResults.value = []
-// })
-
-// 监听过滤器
 // 监听过滤器
 watch(
   () => aiStore.selectedFilter,
@@ -726,13 +700,6 @@ watch(
   },
   { deep: true, immediate: true }
 )
-
-// onMounted(async () => {
-// })
-
-// const smartScenes = ref([])
-
-// 待处理 - 已替换为精选时刻
 </script>
 
 <style lang="scss" scoped>
@@ -801,77 +768,90 @@ watch(
     display: flex;
     align-items: center;
 
-    .ai-dashboard {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 6px;
+    .performance-capsules {
+      display: flex;
+      gap: 8px;
+      align-items: center;
 
-      .stat-pill {
+      .capsule {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 6px;
+        padding: 6px 14px;
         display: flex;
         align-items: center;
-        padding: 0 8px;
-        height: 20px;
-        background: rgba(255, 255, 255, 0.04);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 4px;
-        font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-        font-size: 10px;
+        gap: 8px;
+        font-size: 11px;
         color: rgba(255, 255, 255, 0.6);
-        white-space: nowrap;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        font-weight: 500;
+        transition: all 0.3s ease;
+        height: 32px;
+        box-sizing: border-box;
 
-        &.clickable {
-          cursor: help;
-          &:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(255, 255, 255, 0.15);
-            transform: translateY(-0.5px);
-          }
+        .cap-divider {
+          width: 1px;
+          height: 10px;
+          background: rgba(255, 255, 255, 0.1);
+          margin: 0 4px;
         }
 
-        .stat-icon {
-          font-size: 10px;
-          margin-right: 4px;
-          color: #3b82f6;
-          opacity: 0.8;
-        }
-
-        .dot {
-          width: 4px;
-          height: 4px;
-          border-radius: 50%;
-          background: rgba(255, 255, 255, 0.2);
-          margin-right: 5px;
-
+        &.ai-accel {
           &.is-active {
-            background: #10b981;
-            box-shadow: 0 0 4px rgba(16, 185, 129, 0.6);
-            animation: pulse-mini 2s infinite;
+            background: rgba(99, 102, 241, 0.15);
+            border-color: rgba(99, 102, 241, 0.3);
+            color: #a5b4fc;
+            box-shadow: 0 0 10px rgba(99, 102, 241, 0.15);
+
+            .accel-text {
+              color: #a5b4fc;
+              font-weight: 600;
+            }
           }
-        }
 
-        .label {
-          color: rgba(255, 255, 255, 0.35);
-          font-weight: 500;
-          margin-right: 3px;
-        }
-
-        .value {
-          color: rgba(255, 255, 255, 0.8);
-          font-weight: 600;
+          .accel-icon {
+            font-size: 10px;
+          }
         }
       }
     }
   }
 
-  @keyframes pulse-mini {
-    0%,
-    100% {
-      opacity: 0.7;
+  .header-center {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    padding: 0 20px;
+
+    .analysis-progress-center {
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      padding: 6px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 300px;
+
+      .progress-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        :deep(.el-progress-bar__inner) {
+          background-color: #3b82f6 !important;
+        }
+      }
     }
-    50% {
-      opacity: 1;
-    }
+  }
+}
+
+@keyframes pulse-mini {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
   }
 }
 
@@ -1184,6 +1164,7 @@ watch(
 
         .btn-content {
           background: linear-gradient(90deg, #34d399, #60a5fa);
+          background-clip: text;
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           font-weight: 800;

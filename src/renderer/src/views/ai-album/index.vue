@@ -15,8 +15,8 @@ import { onMounted } from 'vue'
 import { useAIStore } from '@renderer/services/ai/store'
 import { useAIAlbum } from '@renderer/composables/useAIAlbum'
 import { ElMessage } from 'element-plus'
-import AILeftSidebar from './components/left.vue'
-import AIMainContent from './components/main.vue'
+import AILeftSidebar from './components/AILeftSidebar/index.vue'
+import AIMainContent from './components/AIMainContent/index.vue'
 
 const aiStore = useAIStore()
 const { getWorkerInfo } = useAIAlbum()

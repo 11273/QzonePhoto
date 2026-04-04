@@ -89,20 +89,35 @@
           </el-scrollbar>
         </div>
       </div>
+
+      <!-- 智能相册入口 -->
+      <div class="guest-entry-link" @click="handleGuestEntry">
+        <span class="link-text">进入 AI 智能相册</span>
+        <el-icon class="link-icon"><ArrowRight /></el-icon>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import QZoneLogo from '@renderer/assets/qzone_logo.png'
-import { Loading, SuccessFilled, Refresh } from '@element-plus/icons-vue'
-import { onBeforeMount, onUnmounted, ref, toRaw } from 'vue'
+import { Loading, SuccessFilled, Refresh, ArrowRight } from '@element-plus/icons-vue'
+import { inject, onBeforeMount, onUnmounted, ref, toRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@renderer/store/user.store'
 import { ElMessage } from 'element-plus'
 
 const userStore = useUserStore()
 const router = useRouter()
+const triggerTransition = inject('triggerTransition')
+
+const handleGuestEntry = () => {
+  if (triggerTransition) {
+    triggerTransition('/ai-album', 'ai')
+  } else {
+    router.push('/ai-album')
+  }
+}
 
 const loading = ref(false)
 const msg = ref('')
@@ -408,6 +423,7 @@ onUnmounted(() => {
   .login-box {
     flex: 4;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
 
@@ -622,6 +638,42 @@ onUnmounted(() => {
         margin-top: 4px;
         font-size: 12px;
         color: var(--ds-text-secondary);
+      }
+    }
+
+    // 智能相册入口 - 融入背景的链接样式
+    .guest-entry-link {
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      cursor: pointer;
+      opacity: 0.6;
+      transition: all 0.3s ease;
+      padding: 6px 12px;
+      border-radius: 20px;
+
+      .link-text {
+        font-size: 13px;
+        color: #fff;
+        font-weight: 500;
+        letter-spacing: 0.5px;
+      }
+
+      .link-icon {
+        color: #fff;
+        font-size: 12px;
+        transition: transform 0.3s ease;
+      }
+
+      &:hover {
+        opacity: 1;
+        background: rgba(255, 255, 255, 0.1);
+
+        .link-icon {
+          transform: translateX(3px);
+        }
       }
     }
   }

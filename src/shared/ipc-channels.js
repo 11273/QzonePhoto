@@ -258,7 +258,15 @@ export const IPC_APP = {
   /** 获取应用信息 */
   GET_INFO: 'app:getInfo',
   /** 获取动态 API 配置 */
-  GET_API_CONFIG: 'app:getApiConfig'
+  GET_API_CONFIG: 'app:getApiConfig',
+  /** 启动应用监控 */
+  START_MONITOR: 'app:start-monitor',
+  /** 停止应用监控 */
+  STOP_MONITOR: 'app:stop-monitor',
+  /** 应用监控统计 */
+  MONITOR_STATS: 'app:monitor-stats',
+  /** 获取 GPU 信息 */
+  GET_GPU_INFO: 'app:get-gpu-info'
 }
 
 export const IPC_SHELL = {

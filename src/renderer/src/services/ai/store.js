@@ -38,6 +38,13 @@ export const useAIStore = defineStore('ai', {
       tooltip: '当前使用 CPU 运行 (速度较慢)'
     },
 
+    // 性能监控 (CPU/Mem)
+    performance: {
+      cpu: 0,
+      memory: 0,
+      memoryVal: '0.0'
+    },
+
     // 模型管理
     modelName: '隐私计算引擎',
     modelStatus: {
@@ -95,6 +102,20 @@ export const useAIStore = defineStore('ai', {
 
       return paths
     },
+
+    gpuDisplayName(state) {
+      if (state.performance.gpu && (state.performance.gpu.name || state.performance.gpu.model)) {
+        const name = state.performance.gpu.name || state.performance.gpu.model
+        return name.replace('Apple ', '').replace('(TM)', '').trim()
+      }
+      // Fallback
+      if (state.gpuStatus.backend === 'webgpu') return 'WebGPU Metal'
+      if (state.gpuStatus.backend === 'webgl') return 'WebGL'
+      return 'CPU'
+    },
+
+    /** 发现的人物总数 */
+    personCount: (state) => state.detectedPeople?.length || 0,
 
     // 仅获取纯路径数组 (用于传给后端扫描)
     activeScanPathStrings() {
@@ -191,7 +212,17 @@ export const useAIStore = defineStore('ai', {
           if (progress.speed) this.speed = progress.speed
         })
 
-        // 3. 初始同步
+        // 3. 监听硬件性能监控
+        if (window.QzoneAPI?.app?.onMonitorStats) {
+          window.QzoneAPI.app.onMonitorStats((stats) => {
+            this.performance.cpu = stats.cpu || 0
+            this.performance.memory = stats.memory || 0
+            this.performance.memoryVal = stats.memoryVal || '0.0'
+          })
+          window.QzoneAPI.app.startMonitor()
+        }
+
+        // 4. 初始同步
         // 主动获取 AIService 的当前状态 (解决 UI 晚于 Ready 事件的问题)
         const statusRes = await window.QzoneAPI.ai.getServiceStatus()
         if (statusRes && statusRes.data && statusRes.data.status) {
@@ -201,12 +232,14 @@ export const useAIStore = defineStore('ai', {
           if (this.systemStatus === 'READY') {
             this.isModelReady = true
             this.analysisStatus = 'FINISHED'
+            // 如果已经就绪，同步一次人物和存储信息
+            this.fetchFaceGroups()
+            this.refreshStorageSize()
           }
         }
 
         await this.checkEngineHealth()
         await this.refreshPendingCount()
-        await this.refreshStorageSize()
         this.updateTotalPhotoCount()
 
         this.isReady = true
@@ -688,6 +721,25 @@ export const useAIStore = defineStore('ai', {
       }
       this.totalPhotoCount = total
       this.folderCounts = counts
+    },
+
+    // 获取 GPU 信息
+    async fetchGPUInfo() {
+      try {
+        const info = await window.QzoneAPI.app.getGPUInfo()
+        console.log('[AI Store] GPU Info:', info)
+        if (info && info.gpuDevice && info.gpuDevice.length > 0) {
+          // 通常第一个是主 GPU
+          const primary = info.gpuDevice[0]
+          // try parsing driver info strings if standard strings are empty
+          // Electron 的 gpuDevice 对象包含 vendorId, deviceId, driverVendor, driverVersion 等
+          // 但不一定直接有 friendly name。但在 mac 上通常能获取到。
+          // 我们尝试保存整个对象，UI 层去解析
+          this.performance.gpu = primary
+        }
+      } catch (e) {
+        console.error('Failed to fetch GPU info', e)
+      }
     }
   }
 })

@@ -12,6 +12,7 @@ import {
   IPC_WINDOW,
   IPC_AI_CONTROL,
   IPC_AI,
+  IPC_APP,
   IPC_CLIPBOARD
 } from '@shared/ipc-channels'
 import { ipcClient } from '@preload/lib/ipc-client'
@@ -318,6 +319,21 @@ try {
       clusterFaces: () => ipcClient.call(IPC_AI.CLUSTER_FACES),
       /** 重启服务 */
       restart: () => ipcClient.call(IPC_AI.RESTART)
+    },
+
+    // 应用信息
+    app: {
+      getInfo: () => ipcClient.call(IPC_APP.GET_INFO),
+      startMonitor: () => ipcClient.call(IPC_APP.START_MONITOR),
+      stopMonitor: () => ipcClient.call(IPC_APP.STOP_MONITOR),
+      getGPUInfo: () => ipcClient.call(IPC_APP.GET_GPU_INFO),
+      onMonitorStats: (callback) => ipcClient.on(IPC_APP.MONITOR_STATS, callback),
+      removeMonitorStats: () => ipcClient.removeAllListeners(IPC_APP.MONITOR_STATS)
+    },
+
+    // 窗口相关API
+    window: {
+      openQzoneWeb: (data) => ipcClient.call(IPC_WINDOW.OPEN_QZONE_WEB, data)
     }
   }
 
