@@ -217,7 +217,11 @@ export const IPC_WINDOW = {
 
 export const IPC_APP = {
   /** 获取应用信息 */
-  GET_INFO: 'app:getInfo'
+  GET_INFO: 'app:getInfo',
+  START_MONITOR: 'app:start-monitor',
+  STOP_MONITOR: 'app:stop-monitor',
+  MONITOR_STATS: 'app:monitor-stats',
+  GET_GPU_INFO: 'app:get-gpu-info'
 }
 
 export const IPC_SHELL = {

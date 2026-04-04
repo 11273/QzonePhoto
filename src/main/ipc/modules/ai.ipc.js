@@ -1,5 +1,5 @@
 import { ServiceNames } from '@main/services/service-manager'
-import { IPC_AI } from '@shared/ipc-channels'
+import { IPC_AI, IPC_AI_CONTROL } from '@shared/ipc-channels'
 
 /**
  * 创建 AI 模块 IPC 处理器
@@ -28,10 +28,10 @@ export function createAiHandlers(services) {
     },
 
     // 睡眠控制
-    ['ai:startBlockSleep']: async () => {
+    [IPC_AI_CONTROL.START_BLOCK_SLEEP]: async () => {
       return aiService.startBlockSleep()
     },
-    ['ai:stopBlockSleep']: async () => {
+    [IPC_AI_CONTROL.STOP_BLOCK_SLEEP]: async () => {
       return aiService.stopBlockSleep()
     },
 

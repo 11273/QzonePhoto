@@ -42,6 +42,7 @@
     "p-limit": "^6.2.0",
     "pinia": "^3.0.1",
     "sharp": "^0.34.5",
+    "systeminformation": "^5.25.11",
     "vue-router": "4"
   },
   "devDependencies": {
@@ -86,6 +87,7 @@
       "electron",
       "electron-winstaller",
       "esbuild",
+      "exifreader",
       "javascript-obfuscator",
       "protobufjs",
       "sharp",

@@ -8,6 +8,7 @@ import { createUpdateHandlers } from '@main/ipc/modules/update.ipc'
 import { createFileHandlers } from '@main/ipc/modules/file.ipc'
 import { createClipboardHandlers } from '@main/ipc/modules/clipboard.ipc'
 import { createAiHandlers } from '@main/ipc/modules/ai.ipc'
+import { createAppHandlers } from '@main/ipc/modules/app.ipc'
 import { registerWindowControl, setupWindowEventListeners } from '@main/ipc/modules/window.ipc'
 
 export async function registerIPC(services) {
@@ -28,7 +29,8 @@ export async function registerIPC(services) {
     ...createUpdateHandlers(services),
     ...createFileHandlers(),
     ...createClipboardHandlers(),
-    ...createAiHandlers(services)
+    ...createAiHandlers(services),
+    ...createAppHandlers()
   }
 
   // 调试：检查handlers对象

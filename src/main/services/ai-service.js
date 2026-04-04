@@ -1,6 +1,7 @@
-import { BrowserWindow, app, ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import path, { join } from 'path'
 import logger from '@main/core/logger'
+import windowManager from '@main/core/window'
 import { IPC_AI } from '@shared/ipc-channels'
 import { AiActionTypes, AI_IPC_CHANNEL, AiTargets } from '@shared/ai-ipc-channels'
 import { getDirectorySize } from '../utils/file-processor'
@@ -629,7 +630,11 @@ export class AIService {
   async getFaceGroups() {
     if (!this.table) return { data: [] }
     try {
-      const photos = await this.table.query().where("status = 'done'").toArray()
+      const photos = await this.table
+        .query()
+        .where("status = 'done'")
+        .select(['path', 'faces', 'width', 'height']) // 排除 vector 和 thumbnail
+        .toArray()
       logger.info(`[AIService] 获取人物墙: 读取到 ${photos.length} 张已处理照片`)
       const groups = new Map()
 
@@ -687,7 +692,11 @@ export class AIService {
   async getPhotosByFace(groupId) {
     if (!this.table) return { data: [] }
     try {
-      const results = await this.table.query().where("status = 'done'").toArray()
+      const results = await this.table
+        .query()
+        .where("status = 'done'")
+        .select(['path', 'faces', 'status', 'thumbnail', 'timestamp']) // 排除 vector
+        .toArray()
       const filtered = results
         .filter((r) => {
           let faces = []
@@ -724,7 +733,11 @@ export class AIService {
     try {
       // 对路径进行转义处理
       const escapedPath = folderPath.replace(/'/g, "\\'")
-      const results = await this.table.query().where(`folder = '${escapedPath}'`).toArray()
+      const results = await this.table
+        .query()
+        .where(`folder = '${escapedPath}'`)
+        .select(['path', 'status', 'thumbnail', 'width', 'height', 'timestamp']) // 排除 vector 和 faces
+        .toArray()
 
       return {
         data: results.map((r) => ({
@@ -750,12 +763,7 @@ export class AIService {
   }
 
   _broadcastToRenderer(channel, payload) {
-    BrowserWindow.getAllWindows().forEach((win) => {
-      // 排除 Worker 窗口
-      if (!win.isDestroyed() && (!this.windowManager.window || win !== this.windowManager.window)) {
-        win.webContents.send(channel, payload)
-      }
-    })
+    windowManager.broadcast(channel, payload)
   }
 
   /**

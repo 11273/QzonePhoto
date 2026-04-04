@@ -287,6 +287,15 @@ export class WindowManager {
     return presets[type] || {}
   }
 
+  // 广播消息给所有窗口
+  broadcast(channel, ...args) {
+    this.windows.forEach((win) => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send(channel, ...args)
+      }
+    })
+  }
+
   // 销毁所有窗口
   async destroyAllWindows() {
     try {

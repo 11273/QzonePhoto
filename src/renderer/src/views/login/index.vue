@@ -61,6 +61,7 @@
 
         <el-text v-if="msg" type="info" size="small">{{ msg }}</el-text>
         <p :class="{ 'opacity-50': isLoggingIn }">使用QQ手机版扫码登录，或点击头像授权登录。</p>
+
         <!-- 本地账号头像列表 -->
         <div class="w-full">
           <el-scrollbar>
@@ -87,20 +88,37 @@
           </el-scrollbar>
         </div>
       </div>
+
+      <!-- 智能相册入口 -->
+      <div class="guest-entry-link" @click="handleGuestEntry">
+        <span class="link-text">进入 AI 智能相册</span>
+        <el-icon class="link-icon"><ArrowRight /></el-icon>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import QZoneLogo from '@renderer/assets/qzone_logo.png'
-import { Loading, SuccessFilled, Refresh } from '@element-plus/icons-vue'
+import { Loading, SuccessFilled, Refresh, ArrowRight } from '@element-plus/icons-vue'
 import { onBeforeMount, onUnmounted, ref, toRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@renderer/store/user.store'
 import { ElMessage } from 'element-plus'
 
+import { inject } from 'vue'
+
 const userStore = useUserStore()
 const router = useRouter()
+const triggerTransition = inject('triggerTransition')
+
+const handleGuestEntry = () => {
+  if (triggerTransition) {
+    triggerTransition('/ai-album', 'ai')
+  } else {
+    router.push('/ai-album')
+  }
+}
 
 const loading = ref(false)
 const msg = ref('')
@@ -314,6 +332,7 @@ onUnmounted(() => {
   .login-box {
     flex: 4;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
 
@@ -438,6 +457,42 @@ onUnmounted(() => {
     // 平滑过渡效果
     .transition-opacity {
       transition: opacity 0.3s ease;
+    }
+
+    // 智能相册入口 - 融入背景的链接样式
+    .guest-entry-link {
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      cursor: pointer;
+      opacity: 0.6;
+      transition: all 0.3s ease;
+      padding: 6px 12px;
+      border-radius: 20px;
+
+      .link-text {
+        font-size: 13px;
+        color: #fff;
+        font-weight: 500;
+        letter-spacing: 0.5px;
+      }
+
+      .link-icon {
+        color: #fff;
+        font-size: 12px;
+        transition: transform 0.3s ease;
+      }
+
+      &:hover {
+        opacity: 1;
+        background: rgba(255, 255, 255, 0.1);
+
+        .link-icon {
+          transform: translateX(3px);
+        }
+      }
     }
   }
 }
