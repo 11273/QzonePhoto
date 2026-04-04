@@ -4,6 +4,11 @@ import { optimizer, electronApp, platform, is } from '@electron-toolkit/utils'
 import logger from '@main/core/logger'
 import { APP_ID } from '@shared/const'
 
+// 开发环境远程调试端口
+if (is.dev) {
+  app.commandLine.appendSwitch('remote-debugging-port', '9222')
+}
+
 // 安全警告处理
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = is.dev
 
