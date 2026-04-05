@@ -6,7 +6,8 @@ import {
   feeds2_html_picfeed_qqtab,
   feeds_delete_cgi,
   cgi_video_get_data,
-  cgi_get_albuminfo_v2
+  cgi_get_albuminfo_v2,
+  feeds2_html_picfeed
 } from '@main/api'
 export class QzonePhotoService {
   constructor() {
@@ -162,5 +163,10 @@ export class QzonePhotoService {
   // 获取相册问题和答案
   async getAlbumQA({ hostUin, albumId }, { uin, p_skey }) {
     return await cgi_get_albuminfo_v2(uin, p_skey, hostUin, albumId)
+  }
+
+  // 获取好友照片动态流
+  async getFriendPhotos({ start, count, begintime }, { uin, p_skey }) {
+    return await feeds2_html_picfeed(uin, p_skey, start, count, begintime)
   }
 }

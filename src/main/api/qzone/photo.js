@@ -355,6 +355,45 @@ export async function feeds_delete_cgi(uin, p_skey, hostUin, skey, time, typeid 
 }
 
 /**
+ * 获取好友照片动态流
+ * @param uin cookie uin
+ * @param p_skey 登录后有
+ * @param start 偏移量（0开始）
+ * @param count 每次获取数量
+ * @param begintime 时间戳（秒），用于翻页
+ * @returns { hasmore, begintime, photos: [...] }
+ */
+export async function feeds2_html_picfeed(uin, p_skey, start = 0, count = 20, begintime = 0) {
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/feeds2_html_picfeed'
+  const params = {
+    g_tk: getGTK(p_skey),
+    t: Date.now(),
+    start,
+    cache: 0,
+    refer: 'qzone',
+    plat: 'qzone',
+    json_esc: 1,
+    count,
+    begintime,
+    view: 1,
+    filter: 4,
+    applist: 4,
+    sidomain: 'qzonestyle.gtimg.cn',
+    inCharset: 'utf-8',
+    outCharset: 'utf-8',
+    uin: rawUin(uin)
+  }
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`
+    }
+  })
+  return response.data
+}
+
+/**
  * 获取相册问题和答案（仅相册主人可获取答案）
  * @param uin cookie uin
  * @param p_skey 登录后有

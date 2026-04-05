@@ -4,10 +4,10 @@
     <div class="module-header">
       <div class="header-content">
         <div class="title-section">
-          <h2 class="module-title">{{ isFriendContext ? '好友照片' : '我的照片' }}</h2>
+          <h2 class="module-title">{{ isFriendPhotos || isFriendContext ? '好友照片' : '我的照片' }}</h2>
         </div>
         <div class="header-actions">
-          <template v-if="!isFriendContext">
+          <template v-if="!isFriendContext && !isFriendPhotos">
             <el-button v-if="!isSelectionMode" text class="action-btn" @click="enterSelectionMode">
               <el-icon><Select /></el-icon>
               <span>多选</span>
@@ -46,11 +46,76 @@
           <EmptyState
             v-else-if="feeds.length === 0"
             icon="📷"
-            title="我的照片"
-            description="还没有动态，快去发表一条吧~"
+            :title="isFriendPhotos ? '好友照片' : '我的照片'"
+            :description="isFriendPhotos ? '好友还没有发布照片~' : '还没有动态，快去发表一条吧~'"
           />
 
-          <!-- 动态列表 -->
+          <!-- ========== 好友照片：网格卡片布局 ========== -->
+          <div v-else-if="isFriendPhotos" class="friend-photos-grid">
+            <div
+              v-for="feed in feeds"
+              :key="feed.id"
+              class="friend-photo-card"
+              @click="previewMedia(feed.media, 0, feed)"
+            >
+              <!-- 照片主体 -->
+              <div class="card-image-wrapper">
+                <el-image
+                  v-if="feed.media && feed.media[0]"
+                  :src="feed.media[0].url || feed.media[0].cover"
+                  fit="cover"
+                  lazy
+                  class="card-image"
+                >
+                  <template #error>
+                    <div class="card-image-error">
+                      <el-icon><Picture /></el-icon>
+                    </div>
+                  </template>
+                </el-image>
+                <!-- 视频标记 -->
+                <div v-if="feed.media && feed.media[0]?.type === 'video'" class="card-video-badge">
+                  <el-icon><VideoPlay /></el-icon>
+                </div>
+                <!-- 隐私遮罩 -->
+                <div v-if="privacyStore.privacyMode" class="card-privacy-overlay">
+                  <el-icon><Hide /></el-icon>
+                </div>
+              </div>
+              <!-- 底部信息 -->
+              <div class="card-info">
+                <div class="card-owner">
+                  <img
+                    v-if="feed.owner"
+                    :src="feed.owner.face || getAvatarUrl(feed.owner.uin)"
+                    class="card-avatar"
+                    @error="handleAvatarError"
+                  />
+                  <span class="card-nick">{{ feed.owner?.nick || '未知' }}</span>
+                </div>
+                <div class="card-meta">
+                  <span v-if="feed.albumName" class="card-album">{{ feed.albumName }}</span>
+                  <span class="card-time">{{ formatFeedTime(feed.time) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 加载更多 -->
+            <div v-if="loadingMore" class="loading-more grid-loading">
+              <el-icon class="loading-icon"><Loading /></el-icon>
+              <span>正在加载更多...</span>
+            </div>
+            <div v-else-if="!hasMore && feeds.length > 0" class="no-more grid-no-more">
+              <span>已加载全部好友照片</span>
+            </div>
+            <div
+              v-if="hasMore && !loading && !loadingMore"
+              ref="loadMoreTrigger"
+              class="load-more-trigger"
+            ></div>
+          </div>
+
+          <!-- ========== 我的照片：时间线布局 ========== -->
           <div v-else class="feeds-container">
             <template v-for="group in groupedFeeds" :key="group.dateKey">
               <!-- 日期分组标题 -->
@@ -149,7 +214,6 @@
                             <div v-else class="media-placeholder">
                               <el-icon><VideoPlay /></el-icon>
                             </div>
-                            <!-- 隐私模式遮罩 - 视频 -->
                             <div v-if="privacyStore.privacyMode" class="media-privacy-overlay">
                               <el-icon class="privacy-icon"><Hide /></el-icon>
                             </div>
@@ -163,13 +227,11 @@
                                 </div>
                               </template>
                             </el-image>
-                            <!-- 隐私模式遮罩 - 图片 -->
                             <div v-if="privacyStore.privacyMode" class="media-privacy-overlay">
                               <el-icon class="privacy-icon"><Hide /></el-icon>
                             </div>
                           </div>
                         </div>
-                        <!-- 更多提示 -->
                         <div
                           v-if="feed.photoTotal && feed.photoTotal > 8"
                           class="media-more"
@@ -183,87 +245,52 @@
 
                   <!-- 底部：互动信息 -->
                   <div class="feed-footer">
-                    <!-- 操作按钮 -->
                     <div class="feed-actions">
                       <div class="action-item" :class="{ active: feed.isLiked }">
                         <span class="action-icon">👍</span>
-                        <span v-if="feed.likeCount > 0" class="action-count">
-                          {{ feed.likeCount }}
-                        </span>
+                        <span v-if="feed.likeCount > 0" class="action-count">{{ feed.likeCount }}</span>
                       </div>
-
                       <div class="action-item">
                         <span class="action-icon">💬</span>
-                        <span v-if="feed.commentCount > 0" class="action-count">
-                          {{ feed.commentCount }}
-                        </span>
+                        <span v-if="feed.commentCount > 0" class="action-count">{{ feed.commentCount }}</span>
                       </div>
                     </div>
 
-                    <!-- 点赞列表 -->
                     <div v-if="feed.likes && feed.likes.length > 0" class="feed-likes">
                       <span class="like-icon">👍</span>
                       <div class="likes-content">
-                        <span v-for="(like, idx) in feed.likes" :key="idx" class="like-name">
-                          {{ like.name }}
-                        </span>
+                        <span v-for="(like, idx) in feed.likes" :key="idx" class="like-name">{{ like.name }}</span>
                         <span class="like-suffix">觉得很赞</span>
                       </div>
                     </div>
 
-                    <!-- 评论列表 -->
                     <div v-if="feed.comments && feed.comments.length > 0" class="feed-comments">
                       <div v-for="comment in feed.comments" :key="comment.id" class="comment-item">
                         <div class="comment-row">
-                          <!-- 评论者头像 -->
                           <el-tooltip :content="`QQ: ${comment.uin}`" placement="top">
-                            <img
-                              :src="getAvatarUrl(comment.uin)"
-                              :alt="comment.author"
-                              class="comment-avatar"
-                              @error="handleAvatarError"
-                            />
+                            <img :src="getAvatarUrl(comment.uin)" :alt="comment.author" class="comment-avatar" @error="handleAvatarError" />
                           </el-tooltip>
                           <div class="comment-content">
                             <div class="comment-header">
                               <el-tooltip :content="`QQ: ${comment.uin}`" placement="top">
                                 <span class="comment-author">{{ comment.author }}</span>
                               </el-tooltip>
-                              <span v-if="comment.time" class="comment-time">
-                                {{ comment.time }}
-                              </span>
+                              <span v-if="comment.time" class="comment-time">{{ comment.time }}</span>
                             </div>
                             <RichText :text="comment.text" class="comment-text-content" />
                           </div>
                         </div>
-
-                        <!-- 评论回复列表 -->
-                        <div
-                          v-if="comment.responses && comment.responses.length > 0"
-                          class="comment-responses"
-                        >
-                          <div
-                            v-for="response in comment.responses"
-                            :key="response.id"
-                            class="response-row"
-                          >
-                            <!-- 回复者头像 -->
+                        <div v-if="comment.responses && comment.responses.length > 0" class="comment-responses">
+                          <div v-for="response in comment.responses" :key="response.id" class="response-row">
                             <el-tooltip :content="`QQ: ${response.uin}`" placement="top">
-                              <img
-                                :src="getAvatarUrl(response.uin)"
-                                :alt="response.author"
-                                class="response-avatar"
-                                @error="handleAvatarError"
-                              />
+                              <img :src="getAvatarUrl(response.uin)" :alt="response.author" class="response-avatar" @error="handleAvatarError" />
                             </el-tooltip>
                             <div class="response-content">
                               <div class="response-header">
                                 <el-tooltip :content="`QQ: ${response.uin}`" placement="top">
                                   <span class="response-author">{{ response.author }}</span>
                                 </el-tooltip>
-                                <span v-if="response.time" class="response-time">{{
-                                  response.time
-                                }}</span>
+                                <span v-if="response.time" class="response-time">{{ response.time }}</span>
                               </div>
                               <RichText :text="response.text" class="response-text-content" />
                             </div>
@@ -309,7 +336,7 @@
 
     <!-- 底部悬浮工具栏 -->
     <Transition name="toolbar" appear>
-      <div v-if="isSelectionMode && selectedFeeds.size > 0 && !isFriendContext" class="floating-toolbar">
+      <div v-if="isSelectionMode && selectedFeeds.size > 0 && !isFriendContext && !isFriendPhotos" class="floating-toolbar">
         <div class="toolbar-content">
           <span class="selected-count">已选择 {{ selectedFeeds.size }} 条动态</span>
           <div class="toolbar-actions">
@@ -453,7 +480,16 @@ import Hls from 'hls.js'
 
 const privacyStore = usePrivacyStore()
 
+const props = defineProps({
+  photoType: {
+    type: String,
+    default: 'my-photos'
+  }
+})
+
 const emit = defineEmits(['album-click'])
+
+const isFriendPhotos = computed(() => props.photoType === 'friend-photos')
 
 const loading = ref(false)
 const loadingMore = ref(false)
@@ -945,7 +981,7 @@ const previewMedia = async (media, index) => {
 
 // 预览视频
 const previewVideo = async (videoMedia) => {
-  if (!videoMedia || !videoMedia.url) {
+  if (!videoMedia) {
     ElMessage.error('视频地址无效')
     return
   }
@@ -957,9 +993,24 @@ const previewVideo = async (videoMedia) => {
     videoError.value = ''
     videoLoading.value = true
 
-    // 获取视频详细信息（如果需要）
-    // 这里直接使用视频媒体的URL进行播放
-    const videoUrl = videoMedia.url
+    let videoUrl = videoMedia.url
+
+    // 好友照片的视频没有直接 URL，需通过 floatview 接口获取
+    if (!videoUrl && videoMedia.lloc && videoMedia.albumId && videoMedia.ownerUin) {
+      const info = await window.QzoneAPI.getVideoInfo({
+        hostUin: videoMedia.ownerUin,
+        topicId: videoMedia.albumId,
+        picKey: videoMedia.lloc
+      }, { skipAuthCheck: true })
+
+      videoUrl = info?.video_play_url || info?.video_info?.video_url || info?.video_download_url || ''
+    }
+
+    if (!videoUrl) {
+      videoError.value = '无法获取视频播放地址'
+      videoLoading.value = false
+      return
+    }
 
     // 等待对话框渲染完成后再播放
     nextTick(() => {
@@ -1188,16 +1239,40 @@ const loadFeeds = async (isLoadMore = false) => {
       currentBegintime = parseInt(lastFeed.time) || 0
     }
 
-    const hostUin = effectiveHostUin.value
-    const response = await window.QzoneAPI.getFeeds({
-      hostUin,
-      begintime: currentBegintime
-    }, friendMeta.value)
+    let response
+    let transformedFeeds
 
-    if (response && response.code === 0 && response.data) {
-      const apiFeeds = response.data.feeds || []
-      const transformedFeeds = processApiFeeds(apiFeeds)
+    if (isFriendPhotos.value) {
+      // 好友照片模式：使用 feeds2_html_picfeed API
+      response = await window.QzoneAPI.getFriendPhotos({
+        start: isLoadMore ? feeds.value.length : 0,
+        count: 20,
+        begintime: currentBegintime
+      })
 
+      if (response && response.code === 0 && response.data) {
+        const photos = response.data.photos || []
+        transformedFeeds = processFriendPhotos(photos)
+        // 好友照片用 hasmore 字段判断
+        if (!response.data.hasmore) {
+          hasMore.value = false
+        }
+      }
+    } else {
+      // 我的照片模式：使用 feeds2_html_picfeed_qqtab API
+      const hostUin = effectiveHostUin.value
+      response = await window.QzoneAPI.getFeeds({
+        hostUin,
+        begintime: currentBegintime
+      }, friendMeta.value)
+
+      if (response && response.code === 0 && response.data) {
+        const apiFeeds = response.data.feeds || []
+        transformedFeeds = processApiFeeds(apiFeeds)
+      }
+    }
+
+    if (response && response.code === 0 && response.data && transformedFeeds) {
       if (transformedFeeds.length > 0) {
         if (isLoadMore) {
           // 加载更多时，追加到现有列表
@@ -1322,6 +1397,55 @@ const processApiFeeds = (apiFeeds) => {
   return apiFeeds.filter((feed) => feed).map(transformFeedData)
 }
 
+// 处理好友照片 API 返回的数据
+const processFriendPhotos = (photos) => {
+  if (!photos || !Array.isArray(photos)) return []
+  return photos.filter((p) => p).map((photo) => {
+    const media = []
+    if (photo.is_video === '1' || photo.is_video === 1) {
+      media.push({
+        type: 'video',
+        url: '', // 需要通过 floatview 接口获取
+        cover: photo.small_url || photo.medium_url,
+        lloc: photo.lloc,
+        albumId: photo.album?.id,
+        ownerUin: photo.owner?.uin
+      })
+    } else {
+      media.push({
+        type: 'image',
+        url: photo.medium_url || photo.small_url,
+        bigUrl: photo.large_image?.url || photo.medium_url
+      })
+    }
+
+    const timestamp = parseInt(photo.uploadtime) || 0
+    const feedDate = new Date(timestamp * 1000)
+
+    return {
+      id: photo.lloc || `${photo.owner?.uin}_${timestamp}_${photo.number}`,
+      date: feedDate.toISOString().split('T')[0],
+      time: timestamp.toString(),
+      text: photo.desc || '',
+      media,
+      photoTotal: 1,
+      albumTitle: photo.album?.title ? `${photo.album.title}` : null,
+      albumId: photo.album?.id || null,
+      albumName: photo.album?.title || null,
+      owner: photo.owner ? {
+        uin: photo.owner.uin,
+        nick: photo.owner.nick,
+        face: photo.owner.face
+      } : null,
+      isLiked: false,
+      likeCount: parseInt(photo.praiseNum || 0),
+      commentCount: parseInt(photo.comment_total || 0),
+      likes: [],
+      comments: []
+    }
+  })
+}
+
 // 导出供外部使用
 defineExpose({
   loadFeeds,
@@ -1374,6 +1498,15 @@ const debouncedSetupObserver = () => {
 // 监听关键状态变化，使用防抖设置观察器
 watch([loadMoreTrigger, hasMore, loading], () => {
   debouncedSetupObserver()
+})
+
+// 切换照片类型时重新加载
+watch(() => props.photoType, () => {
+  feeds.value = []
+  hasMore.value = true
+  loadFeeds(false).then(() => {
+    debouncedSetupObserver()
+  })
 })
 
 onMounted(() => {
@@ -1646,6 +1779,144 @@ onUnmounted(() => {
 .feed-content-wrapper {
   flex: 1;
   min-width: 0;
+}
+
+// ========== 好友照片网格布局 ==========
+.friend-photos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  padding: 4px;
+}
+
+.friend-photo-card {
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: all 0.25s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+
+    .card-image {
+      transform: scale(1.03);
+    }
+  }
+}
+
+.card-image-wrapper {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.card-image {
+  width: 100%;
+  height: 100%;
+  transition: transform 0.3s ease;
+}
+
+.card-image-error {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 32px;
+}
+
+.card-video-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 14px;
+}
+
+.card-privacy-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 28px;
+}
+
+.card-info {
+  padding: 10px 12px;
+}
+
+.card-owner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.card-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.card-nick {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.card-album {
+  font-size: 11px;
+  color: rgba(96, 165, 250, 0.7);
+  background: rgba(96, 165, 250, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.card-time {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  white-space: nowrap;
+}
+
+.grid-loading,
+.grid-no-more {
+  grid-column: 1 / -1;
 }
 
 .feed-header {

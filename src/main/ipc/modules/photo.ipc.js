@@ -39,6 +39,9 @@ export function createPhotoHandlers(service) {
     },
     [IPC_PHOTO.GET_ALBUM_QA]: async (_, { payload, headers }) => {
       return photoService.getAlbumQA(payload, headers)
+    },
+    [IPC_PHOTO.GET_FRIEND_PHOTOS]: async (_, { payload, headers }) => {
+      return photoService.getFriendPhotos(payload, headers)
     }
   }
 }

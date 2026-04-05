@@ -380,10 +380,10 @@
             <el-icon><User /></el-icon>
             <span>我的照片</span>
           </el-menu-item>
-          <!-- <el-menu-item index="friend-photos">
+          <el-menu-item v-if="!isFriendMode" index="friend-photos">
             <el-icon><UserFilled /></el-icon>
             <span>好友照片</span>
-          </el-menu-item> -->
+          </el-menu-item>
         </el-menu>
 
         <!-- 视频模块统计信息 -->
@@ -460,7 +460,11 @@ const handleMenuSelect = (index) => {
 const handleModuleSelect = (module) => {
   if (currentModule.value === module) return
   currentModule.value = module
-  emit('module-changed', module)
+  // 切换到照片模块时，重置为"我的照片"
+  if (module === 'photo') {
+    selectedPhotoType.value = 'my-photos'
+  }
+  emit('module-changed', module, module === 'photo' ? selectedPhotoType.value : undefined)
 
   // 当切换回相册模块时，如果有选中的相册，重新触发选择事件以确保刷新
   if (module === 'album' && clickItem.value) {
