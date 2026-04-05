@@ -46,7 +46,7 @@
     "asarmor": "^3.0.2",
     "dompurify": "^3.2.6",
     "electron": "^39.2.7",
-    "electron-builder": "26.0.12",
+    "electron-builder": "^26.8.2",
     "electron-store": "8.2.0",
     "electron-vite": "^3.0.0",
     "eslint": "^9.20.1",
