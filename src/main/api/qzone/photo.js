@@ -1,5 +1,9 @@
 import { getGTK } from '@main/api/utils/helpers'
 import request from '@main/api/utils/request'
+import { parseSetCookie } from '@main/utils'
+
+// Extract raw QQ number from cookie uin (strip "o" prefix)
+const rawUin = (uin) => String(uin).replace(/^o/, '')
 /**
  * 获取相册列表
  * @param uin qq
@@ -23,7 +27,7 @@ export async function fcg_list_album_v3(
   const url = 'https://user.qzone.qq.com/proxy/domain/photo.qzone.qq.com/fcgi-bin/fcg_list_album_v3'
   const params = {
     hostUin,
-    uin: hostUin,
+    uin: rawUin(uin),
     appid: 4,
     pageStart,
     pageNum,
@@ -52,12 +56,15 @@ export async function fcg_list_album_v3(
 
 /**
  * 获取相册中的照片
+ * @param {object} opts - 额外选项
+ * @param {string} opts.question - 相册问题（priv=5 时需要）
+ * @param {string} opts.answer - MD5 后的答案
  */
-export async function cgi_list_photo(uin, p_skey, hostUin, pageStart, pageNum, topicId) {
+export async function cgi_list_photo(uin, p_skey, hostUin, pageStart, pageNum, topicId, opts = {}) {
   const url = 'https://h5.qzone.qq.com/proxy/domain/photo.qzone.qq.com/fcgi-bin/cgi_list_photo'
   const params = {
     hostUin,
-    uin: hostUin,
+    uin: rawUin(uin),
     appid: 4,
     pageStart,
     pageNum,
@@ -66,13 +73,26 @@ export async function cgi_list_photo(uin, p_skey, hostUin, pageStart, pageNum, t
     g_tk: getGTK(p_skey),
     topicId
   }
+  // 支持回答问题访问（priv=5）和密码访问（priv=2）
+  if (opts.question !== undefined) params.question = opts.question
+  if (opts.answer !== undefined) params.answer = opts.answer
+
   const response = await request.get(url, {
     params,
     headers: {
       Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+
+  // 提取 set-cookie 中的 qq_photo_key
+  let qq_photo_key = null
+  const setCookieHeader = response.headers?.['set-cookie']
+  if (setCookieHeader) {
+    const cookies = parseSetCookie(setCookieHeader)
+    qq_photo_key = cookies['qq_photo_key'] || null
+  }
+
+  return { data: response.data, qq_photo_key }
 }
 
 /**
@@ -106,7 +126,7 @@ export async function cgi_floatview_photo_list_v2(
     cmtNum,
     inCharset: 'utf-8',
     outCharset: 'utf-8',
-    uin: hostUin,
+    uin: rawUin(uin),
     hostUin,
     appid: 4,
     isFirst,
@@ -146,7 +166,7 @@ export async function cgi_video_get_data(
   const url = 'https://user.qzone.qq.com/proxy/domain/taotao.qq.com/cgi-bin/video_get_data'
   const params = {
     g_tk: getGTK(p_skey),
-    uin: hostUin,
+    uin: rawUin(uin),
     hostUin,
     appid: 4,
     getMethod,
@@ -217,7 +237,7 @@ export async function cgi_delpic_multi_v2(
     ismultiup: ismultiup,
     resetcover: '1',
     newcover: '',
-    uin: hostUin,
+    uin: rawUin(uin),
     hostUin: hostUin,
     plat: 'qzone',
     source: 'qzone',
@@ -270,7 +290,7 @@ export async function feeds2_html_picfeed_qqtab(uin, p_skey, hostUin, begintime 
   const params = {
     g_tk: getGTK(p_skey),
     t: Date.now(),
-    uin: hostUin,
+    uin: rawUin(uin),
     hostUin,
     fuin: fuin || hostUin,
     appid: 4,
@@ -315,7 +335,7 @@ export async function feeds_delete_cgi(uin, p_skey, hostUin, skey, time, typeid 
     key: skey,
     flag: flag,
     time: time,
-    uin: hostUin,
+    uin: rawUin(uin),
     hostUin: hostUin,
     plat: 'qzone',
     source: 'qzone',
@@ -331,5 +351,36 @@ export async function feeds_delete_cgi(uin, p_skey, hostUin, skey, time, typeid 
     }
   })
 
+  return response.data
+}
+
+/**
+ * 获取相册问题和答案（仅相册主人可获取答案）
+ * @param uin cookie uin
+ * @param p_skey 登录后有
+ * @param hostUin 主人QQ
+ * @param albumId 相册ID
+ * @returns { question, answer, priv, name, ... }
+ */
+export async function cgi_get_albuminfo_v2(uin, p_skey, hostUin, albumId) {
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/photo.qzone.qq.com/cgi-bin/common/cgi_get_albuminfo_v2'
+  const params = {
+    g_tk: getGTK(p_skey),
+    albumId,
+    hostUin,
+    uin: hostUin,
+    appid: 4,
+    inCharset: 'utf-8',
+    outCharset: 'utf-8',
+    source: 'qzone',
+    plat: 'qzone'
+  }
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`
+    }
+  })
   return response.data
 }

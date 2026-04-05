@@ -363,19 +363,32 @@ export class DownloadService {
 
   // 批量添加相册任务 - 优化大批量操作
   async addAlbumTasks(albumData, headers) {
-    const { album, photos, uin } = albumData
+    const { album, photos, uin, friendUin } = albumData
 
     // 提取用户信息
     const userInfo = {
       uin: uin || this.currentUin,
-      p_skey: headers.p_skey || null
+      p_skey: headers.p_skey || null,
+      hostUin: friendUin || uin || this.currentUin
     }
 
-    const albumDir = path.join(
-      this.downloadPath,
-      this.sanitizeFilename(userInfo.uin || 'unknown'),
-      this.sanitizeFilename(album.name || '未命名相册')
-    )
+    // 好友相册放在当前账号目录下：[uin]/好友相册/[friendUin]/[albumName]
+    let albumDir
+    if (friendUin) {
+      albumDir = path.join(
+        this.downloadPath,
+        this.sanitizeFilename(userInfo.uin || 'unknown'),
+        '好友相册',
+        this.sanitizeFilename(String(friendUin)),
+        this.sanitizeFilename(album.name || '未命名相册')
+      )
+    } else {
+      albumDir = path.join(
+        this.downloadPath,
+        this.sanitizeFilename(userInfo.uin || 'unknown'),
+        this.sanitizeFilename(album.name || '未命名相册')
+      )
+    }
 
     const taskIds = []
     const batchSize = 1000 // 分批处理，避免内存占用过大
@@ -411,9 +424,14 @@ export class DownloadService {
 
     // 分离视频和图片
     const videos = photos.filter((photo) => photo.is_video)
-    const images = photos.filter((photo) => !photo.is_video)
+    let images = photos.filter((photo) => !photo.is_video)
 
-    // 首先处理图片（不需要额外的API调用）
+    // 好友相册：通过 floatview API 获取 raw 原图 URL
+    if (userInfo?.hostUin && userInfo.hostUin !== userInfo.uin && images.length > 0) {
+      images = await this.enrichPhotosWithRaw(images, album, userInfo, headers)
+    }
+
+    // 处理图片
     for (let i = 0; i < images.length; i++) {
       const photo = images[i]
       const filename = this.generatePhotoFilename(photo)
@@ -843,14 +861,24 @@ export class DownloadService {
     let lastProgressUpdate = Date.now()
 
     try {
+      const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+
+      // qq.com 图片下载需要 qq_photo_key cookie
+      try {
+        const qq_photo_key = this.serviceManager?.get(ServiceNames.PHOTO)?.qq_photo_key
+        if (qq_photo_key) {
+          headers['Cookie'] = `qq_photo_key=${qq_photo_key}`
+        }
+      } catch (_) {}
+
       const response = await axios({
         method: 'get',
         url: task.url,
         responseType: 'stream',
         cancelToken: cancelToken.token,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+        headers
       })
 
       const totalBytes = parseInt(response.headers['content-length'], 10) || 0
@@ -1276,6 +1304,44 @@ export class DownloadService {
     return userInfo
   }
 
+  // 通过 floatview API 批量获取照片的 raw 原图 URL
+  async enrichPhotosWithRaw(photos, album, userInfo, headers) {
+    const photoService = this.serviceManager?.get(ServiceNames.PHOTO)
+    if (!photoService) return photos
+
+    const topicId = album.id
+    const hostUin = userInfo.hostUin || userInfo.uin
+    const enrichedMap = new Map()
+    const batchSize = 18
+
+    for (let i = 0; i < photos.length; i += batchSize) {
+      const picKey = photos[i].picKey || photos[i].lloc
+      if (!picKey) continue
+
+      try {
+        const result = await photoService.getPhotoFloatviewList(
+          { hostUin, topicId, picKey, cmtNum: 0, isFirst: i === 0 ? 1 : 0, postNum: batchSize },
+          headers
+        )
+        if (result?.data?.photos) {
+          for (const p of result.data.photos) {
+            enrichedMap.set(p.picKey, p)
+          }
+        }
+      } catch (e) {
+        console.error('enrichPhotosWithRaw 失败:', e)
+      }
+    }
+
+    return photos.map((photo) => {
+      const enriched = enrichedMap.get(photo.picKey || photo.lloc)
+      if (enriched?.raw) {
+        return { ...photo, raw: enriched.raw }
+      }
+      return photo
+    })
+  }
+
   // 获取视频详细信息
   async getVideoDetailInfo(video, userInfo, albumInfo = null, headers = null) {
     try {
@@ -1289,7 +1355,7 @@ export class DownloadService {
       // 使用相册ID作为topicId
       const topicId = albumInfo?.id
       const picKey = video.picKey || video.lloc
-      const hostUin = userInfo.uin
+      const hostUin = userInfo.hostUin || userInfo.uin
 
       // 参数验证
       if (!topicId || !picKey) {

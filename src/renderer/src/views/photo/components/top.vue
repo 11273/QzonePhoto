@@ -1,7 +1,8 @@
 <template>
   <div class="top-bar" :class="{ collapsed: isCollapsed }">
-    <!-- 上传弹窗 - 相册上下文模式 -->
+    <!-- 上传弹窗 - 相册上下文模式（好友空间不显示） -->
     <UploadDialog
+      v-if="!isFriendContext"
       :visible="showUpload"
       :album-id="currentAlbum?.id"
       :album-name="currentAlbum?.name"
@@ -69,12 +70,14 @@
                 label="最后更新"
               />
 
-              <!-- 问题信息显示在最后更新旁边 -->
+              <!-- 问题和答案 - 点击切换显示 -->
               <StatCard
                 v-if="currentAlbum.question"
-                icon="🔒"
+                :clickable="true"
+                :icon="qaShowAnswer ? '🔓' : '🔒'"
                 :value="currentAlbum.question"
-                label="相册问题"
+                :label="qaLabel"
+                @click="toggleQA"
               />
             </div>
           </div>
@@ -121,8 +124,9 @@
 
       <!-- 右侧：主要操作按钮 -->
       <div class="right-action-buttons">
-        <!-- 上传照片按钮 -->
+        <!-- 上传照片按钮（好友空间不显示） -->
         <el-button
+          v-if="!isFriendContext"
           class="album-action-btn upload-btn"
           size="default"
           type="success"
@@ -193,10 +197,16 @@ import UploadDialog from '@renderer/components/UploadDialog/index.vue'
 import { formatDateWithYear } from '@renderer/utils/formatters'
 import { useDownloadStore } from '@renderer/store/download.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
+import { useUserStore } from '@renderer/store/user.store'
 import { QZONE_UTILS, QZONE_CONFIG } from '@shared/const'
 
 const downloadStore = useDownloadStore()
 const privacyStore = usePrivacyStore()
+const userStore = useUserStore()
+
+const hostUinOverride = inject('hostUinOverride', null)
+const isFriendContext = computed(() => !!hostUinOverride?.value)
+const effectiveHostUin = computed(() => hostUinOverride?.value || userStore.userInfo?.uin)
 
 const currentAlbum = inject('currentAlbum', ref(null))
 const selectAllCallback = inject('selectAllCallback', null)
@@ -206,6 +216,48 @@ const refreshAlbumCallback = inject('refreshAlbumCallback', null)
 const allPhotos = inject('photoList', ref([]))
 const selectedPhotos = inject('selectedPhotos', ref(new Set()))
 const photoSize = inject('photoSize', ref('medium'))
+
+// 问答状态
+const qaShowAnswer = ref(false)
+const qaAnswer = ref(null)
+const qaLoading = ref(false)
+
+const toggleQA = async () => {
+  if (qaShowAnswer.value) {
+    qaShowAnswer.value = false
+    return
+  }
+  qaShowAnswer.value = true
+  if (qaAnswer.value !== null) return
+  qaLoading.value = true
+  try {
+    const res = await window.QzoneAPI.getAlbumQA({
+      hostUin: effectiveHostUin.value,
+      albumId: currentAlbum.value?.id
+    })
+    qaAnswer.value = res?.code === 0 ? res.data?.answer || '' : ''
+  } catch {
+    qaAnswer.value = ''
+  } finally {
+    qaLoading.value = false
+  }
+}
+
+// 切换相册时重置问答状态
+watch(
+  () => currentAlbum.value?.id,
+  () => {
+    qaShowAnswer.value = false
+    qaAnswer.value = null
+  }
+)
+
+const qaLabel = computed(() => {
+  if (!qaShowAnswer.value) return '点击查看答案'
+  if (qaLoading.value) return '加载中...'
+  if (qaAnswer.value != null) return `答案：${qaAnswer.value}`
+  return isFriendContext.value ? '仅相册主人可见' : '获取失败'
+})
 
 // 计算相册权限文本
 const albumPermissionText = computed(() => {
@@ -1124,4 +1176,5 @@ const refreshAlbum = async () => {
     line-height: 1;
   }
 }
+
 </style>

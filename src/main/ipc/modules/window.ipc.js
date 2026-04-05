@@ -74,7 +74,7 @@ export function registerWindowControl() {
   })
 
   // 打开 QQ 空间官网
-  ipcMain.handle(IPC_WINDOW.OPEN_QZONE_WEB, async (event, { uin, p_skey }) => {
+  ipcMain.handle(IPC_WINDOW.OPEN_QZONE_WEB, async (event, { uin, p_skey, targetUin }) => {
     try {
       // 创建新窗口 - 显示窗口框架但隐藏菜单栏
       const qzoneWindow = new BrowserWindow({
@@ -119,8 +119,11 @@ export function registerWindowControl() {
         )
       )
 
-      // 加载 QQ 空间页面
-      await qzoneWindow.loadURL(`https://user.qzone.qq.com`)
+      // 加载 QQ 空间页面（支持打开好友空间）
+      const url = targetUin
+        ? `https://user.qzone.qq.com/${targetUin}`
+        : `https://user.qzone.qq.com`
+      await qzoneWindow.loadURL(url)
 
       // 打开开发者工具（可选，用于调试）
       if (is.dev) {

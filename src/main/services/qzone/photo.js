@@ -5,17 +5,30 @@ import {
   cgi_delpic_multi_v2,
   feeds2_html_picfeed_qqtab,
   feeds_delete_cgi,
-  cgi_video_get_data
+  cgi_video_get_data,
+  cgi_get_albuminfo_v2
 } from '@main/api'
-
 export class QzonePhotoService {
-  constructor() {}
+  constructor() {
+    this.qq_photo_key = null
+  }
+
   async getPhotoList({ hostUin, pageStart, pageNum, mode, classId }, { uin, p_skey }) {
     return await fcg_list_album_v3(uin, p_skey, hostUin, pageStart, pageNum, mode, classId)
   }
 
-  async getPhotoByTopicId({ hostUin, pageStart, pageNum, topicId }, { uin, p_skey }) {
-    return await cgi_list_photo(uin, p_skey, hostUin, pageStart, pageNum, topicId)
+  async getPhotoByTopicId(
+    { hostUin, pageStart, pageNum, topicId, question, answer },
+    { uin, p_skey }
+  ) {
+    const opts = {}
+    if (question !== undefined) opts.question = question
+    if (answer !== undefined) opts.answer = answer
+    const result = await cgi_list_photo(uin, p_skey, hostUin, pageStart, pageNum, topicId, opts)
+
+    this.qq_photo_key = result.qq_photo_key
+
+    return result.data
   }
 
   async getPhotoFloatviewList(
@@ -144,5 +157,10 @@ export class QzonePhotoService {
       need_old,
       getUserInfo
     )
+  }
+
+  // 获取相册问题和答案
+  async getAlbumQA({ hostUin, albumId }, { uin, p_skey }) {
+    return await cgi_get_albuminfo_v2(uin, p_skey, hostUin, albumId)
   }
 }

@@ -31,12 +31,19 @@ export const IPC_PHOTO = {
   /** 删除动态 */
   DELETE_FEED: 'photo:deleteFeed',
   /** 获取视频列表 */
-  GET_VIDEO_LIST: 'photo:getVideoList'
+  GET_VIDEO_LIST: 'photo:getVideoList',
+  /** 获取相册问题和答案 */
+  GET_ALBUM_QA: 'photo:getAlbumQA'
 }
 
 export const IPC_USER = {
   /** 获取我的信息 */
   ME_INFO: 'user:getMeInfo'
+}
+
+export const IPC_FRIEND = {
+  /** 获取好友亲密度列表 */
+  GET_FRIEND_LIST: 'friend:getFriendList'
 }
 
 export const IPC_DOWNLOAD = {
@@ -243,6 +250,7 @@ const ALL_CHANNEL_VALUES = [
   ...Object.values(IPC_AUTH),
   ...Object.values(IPC_PHOTO),
   ...Object.values(IPC_USER),
+  ...Object.values(IPC_FRIEND),
   ...Object.values(IPC_DOWNLOAD),
   ...Object.values(IPC_UPLOAD),
   ...Object.values(IPC_UPDATE),
@@ -257,6 +265,7 @@ export const ALL_CHANNELS = {
   ...IPC_AUTH,
   ...IPC_PHOTO,
   ...IPC_USER,
+  ...IPC_FRIEND,
   ...IPC_DOWNLOAD, // 下载优先
   ...IPC_UPDATE,
   ...IPC_WINDOW,

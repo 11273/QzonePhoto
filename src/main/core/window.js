@@ -1,6 +1,7 @@
 import { is } from '@electron-toolkit/utils'
 import { BrowserWindow, screen, session, shell } from 'electron'
 import path, { join } from 'path'
+import { ServiceNames } from '@main/services/service-manager'
 
 export class WindowManager {
   static #instance = null
@@ -144,6 +145,17 @@ export class WindowManager {
       try {
         const url = new URL(details.url)
         referer = url.origin
+
+        // 对 photo.store.qq.com 请求注入 qq_photo_key cookie
+        if (url.hostname.includes('photo.store.qq.com')) {
+          const photoService = this.services?.get(ServiceNames.PHOTO)
+          if (photoService?.qq_photo_key) {
+            const existing = details.requestHeaders['Cookie'] || ''
+            details.requestHeaders['Cookie'] = existing
+              ? `${existing}; qq_photo_key=${photoService.qq_photo_key}`
+              : `qq_photo_key=${photoService.qq_photo_key}`
+          }
+        }
       } catch (e) {
         console.error('URL 解析失败:', details.url, e)
       }

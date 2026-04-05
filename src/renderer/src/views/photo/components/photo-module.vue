@@ -4,22 +4,24 @@
     <div class="module-header">
       <div class="header-content">
         <div class="title-section">
-          <h2 class="module-title">我的照片</h2>
+          <h2 class="module-title">{{ isFriendContext ? '好友照片' : '我的照片' }}</h2>
         </div>
         <div class="header-actions">
-          <el-button v-if="!isSelectionMode" text class="action-btn" @click="enterSelectionMode">
-            <el-icon><Select /></el-icon>
-            <span>多选</span>
-          </el-button>
-          <template v-else>
-            <el-button text class="action-btn" @click="toggleSelectAll">
-              <el-icon><Check /></el-icon>
-              <span>{{ isAllSelected ? '取消全选' : '全选' }}</span>
+          <template v-if="!isFriendContext">
+            <el-button v-if="!isSelectionMode" text class="action-btn" @click="enterSelectionMode">
+              <el-icon><Select /></el-icon>
+              <span>多选</span>
             </el-button>
-            <el-button text class="action-btn" @click="exitSelectionMode">
-              <el-icon><Close /></el-icon>
-              <span>取消</span>
-            </el-button>
+            <template v-else>
+              <el-button text class="action-btn" @click="toggleSelectAll">
+                <el-icon><Check /></el-icon>
+                <span>{{ isAllSelected ? '取消全选' : '全选' }}</span>
+              </el-button>
+              <el-button text class="action-btn" @click="exitSelectionMode">
+                <el-icon><Close /></el-icon>
+                <span>取消</span>
+              </el-button>
+            </template>
           </template>
           <el-button
             text
@@ -93,7 +95,7 @@
                   <div class="feed-header">
                     <span class="feed-time">{{ formatFeedTime(feed.time || feed.date) }}</span>
                     <el-button
-                      v-if="!isSelectionMode"
+                      v-if="!isSelectionMode && !isFriendContext"
                       text
                       size="small"
                       class="delete-btn"
@@ -298,7 +300,7 @@
 
     <!-- 图片预览 -->
     <el-image-viewer
-      v-if="previewVisible && !isVideoPreview"
+      v-if="previewVisible"
       :url-list="previewImages"
       :initial-index="previewIndex"
       :hide-on-click-modal="true"
@@ -307,7 +309,7 @@
 
     <!-- 底部悬浮工具栏 -->
     <Transition name="toolbar" appear>
-      <div v-if="isSelectionMode && selectedFeeds.size > 0" class="floating-toolbar">
+      <div v-if="isSelectionMode && selectedFeeds.size > 0 && !isFriendContext" class="floating-toolbar">
         <div class="toolbar-content">
           <span class="selected-count">已选择 {{ selectedFeeds.size }} 条动态</span>
           <div class="toolbar-actions">
@@ -426,7 +428,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import {
   VideoPlay,
   Picture,
@@ -457,6 +459,12 @@ const loading = ref(false)
 const loadingMore = ref(false)
 const isScrollLoading = ref(false) // 防止重复加载
 const userStore = useUserStore()
+
+// 支持好友上下文
+const hostUinOverride = inject('hostUinOverride', null)
+const effectiveHostUin = computed(() => hostUinOverride?.value || userStore.userInfo.uin)
+const isFriendContext = computed(() => !!hostUinOverride?.value)
+const friendMeta = computed(() => (isFriendContext.value ? { skipAuthCheck: true } : {}))
 
 // 动态数据
 const feeds = ref([])
@@ -787,7 +795,7 @@ const deleteSelectedFeeds = async () => {
     }
     deleteProgressVisible.value = true
 
-    const hostUin = userStore.userInfo.uin
+    const hostUin = effectiveHostUin.value
     let successCount = 0
     let failedCount = 0
 
@@ -803,7 +811,7 @@ const deleteSelectedFeeds = async () => {
           time: feed.time,
           typeid: feed.typeid || 0,
           flag: 0
-        })
+        }, friendMeta.value)
         successCount++
       } catch (error) {
         console.error(`删除动态失败 (${feed.id}):`, error)
@@ -881,14 +889,14 @@ const deleteFeed = async (feed) => {
 
     try {
       // 调用删除接口
-      const hostUin = userStore.userInfo.uin
+      const hostUin = effectiveHostUin.value
       await window.QzoneAPI.deleteFeed({
         hostUin,
         skey: feed.id, // 使用 feed.id (即 skey)
         time: feed.time, // 使用 feed.time
         typeid: feed.typeid || 0, // 使用 feed.typeid
         flag: 0
-      })
+      }, friendMeta.value)
 
       // 删除后重新拉取最新数据以确保数据一致性
       // 因为接口可能不准确，所以通过重新加载来验证删除结果
@@ -1180,11 +1188,11 @@ const loadFeeds = async (isLoadMore = false) => {
       currentBegintime = parseInt(lastFeed.time) || 0
     }
 
-    const hostUin = userStore.userInfo.uin
+    const hostUin = effectiveHostUin.value
     const response = await window.QzoneAPI.getFeeds({
       hostUin,
       begintime: currentBegintime
-    })
+    }, friendMeta.value)
 
     if (response && response.code === 0 && response.data) {
       const apiFeeds = response.data.feeds || []

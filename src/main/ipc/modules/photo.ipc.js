@@ -36,6 +36,9 @@ export function createPhotoHandlers(service) {
     },
     [IPC_PHOTO.GET_VIDEO_LIST]: async (_, { payload, headers }) => {
       return photoService.getVideoList(payload, headers)
+    },
+    [IPC_PHOTO.GET_ALBUM_QA]: async (_, { payload, headers }) => {
+      return photoService.getAlbumQA(payload, headers)
     }
   }
 }

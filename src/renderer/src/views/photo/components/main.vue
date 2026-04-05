@@ -142,7 +142,7 @@
           <span class="selected-count">已选择 {{ selectedPhotos.size }} 张照片</span>
           <div class="toolbar-actions">
             <el-button size="small" @click="clearSelection">取消选择</el-button>
-            <el-button size="small" type="danger" @click="deleteSelected">删除选中</el-button>
+            <el-button v-if="!isFriendContext" size="small" type="danger" @click="deleteSelected">删除选中</el-button>
             <el-button size="small" type="primary" @click="downloadSelected">下载选中</el-button>
           </div>
         </div>
@@ -157,6 +157,49 @@
       :hide-on-click-modal="true"
       @close="previewVisible = false"
     />
+
+    <!-- 相册访问验证弹窗 -->
+    <el-dialog
+      v-model="accessDialogVisible"
+      :show-close="false"
+      :close-on-click-modal="false"
+      :close-on-press-escape="true"
+      width="380px"
+      class="album-access-dialog"
+      align-center
+      @close="handleAccessCancel"
+    >
+      <div class="access-dialog-content">
+        <div class="access-icon">
+          <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="8" y="20" width="32" height="24" rx="4" stroke="currentColor" stroke-width="2.5" fill="none"/>
+            <path d="M16 20V14a8 8 0 1 1 16 0v6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+            <circle cx="24" cy="32" r="3" fill="currentColor"/>
+            <path d="M24 35v3" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3 class="access-title">{{ accessDialogData.isQuestion ? '请回答问题' : '请输入密码' }}</h3>
+        <p class="access-desc" v-if="accessDialogData.isQuestion">
+          主人提问：<strong>{{ accessDialogData.question }}</strong>
+        </p>
+        <p class="access-desc" v-else>该相册需要输入密码才能访问</p>
+        <el-input
+          ref="accessInputRef"
+          v-model="accessDialogData.inputValue"
+          :placeholder="accessDialogData.isQuestion ? '请输入答案' : '请输入密码'"
+          :type="accessDialogData.isQuestion ? 'text' : 'password'"
+          :show-password="!accessDialogData.isQuestion"
+          size="large"
+          class="access-input"
+          @keyup.enter="handleAccessConfirm"
+        />
+        <p v-if="accessDialogData.error" class="access-error">{{ accessDialogData.error }}</p>
+        <div class="access-actions">
+          <el-button @click="handleAccessCancel" class="access-btn cancel-btn">取消</el-button>
+          <el-button type="primary" @click="handleAccessConfirm" :loading="accessDialogData.loading" class="access-btn confirm-btn">确定</el-button>
+        </div>
+      </div>
+    </el-dialog>
 
     <!-- 视频预览对话框 -->
     <el-dialog
@@ -213,7 +256,7 @@
 </template>
 
 <script setup>
-import { ref, computed, provide, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, provide, inject, onUnmounted, watch, nextTick } from 'vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
@@ -227,6 +270,13 @@ import { formatBytes } from '@renderer/utils/formatters'
 
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
+
+// 支持好友相册查看：通过 inject 接收外部 hostUin 覆盖
+const hostUinOverride = inject('hostUinOverride', null)
+const effectiveHostUin = computed(() => hostUinOverride?.value || userStore.userInfo.uin)
+// 好友上下文时跳过鉴权检查（避免好友相册权限码被误判为登录过期）
+const isFriendContext = computed(() => !!hostUinOverride?.value)
+const friendMeta = computed(() => (isFriendContext.value ? { skipAuthCheck: true } : {}))
 const privacyStore = usePrivacyStore()
 const loading = ref(false)
 const loadingMore = ref(false)
@@ -277,16 +327,81 @@ const isVideoPreview = ref(false)
 const cancelFlags = ref(new Map()) // 存储每个相册的取消标志
 
 // 公共的API调用函数
+// MD5 哈希（用于相册问题/密码验证）
+const md5Hash = async (str) => {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(str)
+  const hashBuffer = await crypto.subtle.digest('MD5', data).catch(() => null)
+  if (hashBuffer) {
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+  }
+  // crypto.subtle 不支持 MD5 时，使用简单实现
+  return simpleMD5(str)
+}
+
+// 简易 MD5 实现（crypto.subtle 通常不支持 MD5）
+const simpleMD5 = (string) => {
+  function md5cycle(x, k) {
+    let a = x[0], b = x[1], c = x[2], d = x[3]
+    a = ff(a, b, c, d, k[0], 7, -680876936); d = ff(d, a, b, c, k[1], 12, -389564586); c = ff(c, d, a, b, k[2], 17, 606105819); b = ff(b, c, d, a, k[3], 22, -1044525330)
+    a = ff(a, b, c, d, k[4], 7, -176418897); d = ff(d, a, b, c, k[5], 12, 1200080426); c = ff(c, d, a, b, k[6], 17, -1473231341); b = ff(b, c, d, a, k[7], 22, -45705983)
+    a = ff(a, b, c, d, k[8], 7, 1770035416); d = ff(d, a, b, c, k[9], 12, -1958414417); c = ff(c, d, a, b, k[10], 17, -42063); b = ff(b, c, d, a, k[11], 22, -1990404162)
+    a = ff(a, b, c, d, k[12], 7, 1804603682); d = ff(d, a, b, c, k[13], 12, -40341101); c = ff(c, d, a, b, k[14], 17, -1502002290); b = ff(b, c, d, a, k[15], 22, 1236535329)
+    a = gg(a, b, c, d, k[1], 5, -165796510); d = gg(d, a, b, c, k[6], 9, -1069501632); c = gg(c, d, a, b, k[11], 14, 643717713); b = gg(b, c, d, a, k[0], 20, -373897302)
+    a = gg(a, b, c, d, k[5], 5, -701558691); d = gg(d, a, b, c, k[10], 9, 38016083); c = gg(c, d, a, b, k[15], 14, -660478335); b = gg(b, c, d, a, k[4], 20, -405537848)
+    a = gg(a, b, c, d, k[9], 5, 568446438); d = gg(d, a, b, c, k[14], 9, -1019803690); c = gg(c, d, a, b, k[3], 14, -187363961); b = gg(b, c, d, a, k[8], 20, 1163531501)
+    a = gg(a, b, c, d, k[13], 5, -1444681467); d = gg(d, a, b, c, k[2], 9, -51403784); c = gg(c, d, a, b, k[7], 14, 1735328473); b = gg(b, c, d, a, k[12], 20, -1926607734)
+    a = hh(a, b, c, d, k[5], 4, -378558); d = hh(d, a, b, c, k[8], 11, -2022574463); c = hh(c, d, a, b, k[11], 16, 1839030562); b = hh(b, c, d, a, k[14], 23, -35309556)
+    a = hh(a, b, c, d, k[1], 4, -1530992060); d = hh(d, a, b, c, k[4], 11, 1272893353); c = hh(c, d, a, b, k[7], 16, -155497632); b = hh(b, c, d, a, k[10], 23, -1094730640)
+    a = hh(a, b, c, d, k[13], 4, 681279174); d = hh(d, a, b, c, k[0], 11, -358537222); c = hh(c, d, a, b, k[3], 16, -722521979); b = hh(b, c, d, a, k[6], 23, 76029189)
+    a = hh(a, b, c, d, k[9], 4, -640364487); d = hh(d, a, b, c, k[12], 11, -421815835); c = hh(c, d, a, b, k[15], 16, 530742520); b = hh(b, c, d, a, k[2], 23, -995338651)
+    a = ii(a, b, c, d, k[0], 6, -198630844); d = ii(d, a, b, c, k[7], 10, 1126891415); c = ii(c, d, a, b, k[14], 15, -1416354905); b = ii(b, c, d, a, k[5], 21, -57434055)
+    a = ii(a, b, c, d, k[12], 6, 1700485571); d = ii(d, a, b, c, k[3], 10, -1894986606); c = ii(c, d, a, b, k[10], 15, -1051523); b = ii(b, c, d, a, k[1], 21, -2054922799)
+    a = ii(a, b, c, d, k[8], 6, 1873313359); d = ii(d, a, b, c, k[15], 10, -30611744); c = ii(c, d, a, b, k[6], 15, -1560198380); b = ii(b, c, d, a, k[13], 21, 1309151649)
+    a = ii(a, b, c, d, k[4], 6, -145523070); d = ii(d, a, b, c, k[11], 10, -1120210379); c = ii(c, d, a, b, k[2], 15, 718787259); b = ii(b, c, d, a, k[9], 21, -343485551)
+    x[0] = add32(a, x[0]); x[1] = add32(b, x[1]); x[2] = add32(c, x[2]); x[3] = add32(d, x[3])
+  }
+  function cmn(q, a, b, x, s, t) { a = add32(add32(a, q), add32(x, t)); return add32((a << s) | (a >>> (32 - s)), b) }
+  function ff(a, b, c, d, x, s, t) { return cmn((b & c) | ((~b) & d), a, b, x, s, t) }
+  function gg(a, b, c, d, x, s, t) { return cmn((b & d) | (c & (~d)), a, b, x, s, t) }
+  function hh(a, b, c, d, x, s, t) { return cmn(b ^ c ^ d, a, b, x, s, t) }
+  function ii(a, b, c, d, x, s, t) { return cmn(c ^ (b | (~d)), a, b, x, s, t) }
+  function md5blk(s) {
+    const md5blks = []; for (let i = 0; i < 64; i += 4) md5blks[i >> 2] = s.charCodeAt(i) + (s.charCodeAt(i + 1) << 8) + (s.charCodeAt(i + 2) << 16) + (s.charCodeAt(i + 3) << 24)
+    return md5blks
+  }
+  function add32(a, b) { return (a + b) & 0xFFFFFFFF }
+  function rhex(n) { let s = ''; for (let j = 0; j < 4; j++) s += ('0' + ((n >> (j * 8 + 4)) & 0x0F).toString(16)).slice(-1) + ('0' + ((n >> (j * 8)) & 0x0F).toString(16)).slice(-1); return s }
+  function hex(x) { for (let i = 0; i < x.length; i++) x[i] = rhex(x[i]); return x.join('') }
+  function md5str(s) {
+    let n = s.length; const state = [1732584193, -271733879, -1732584194, 271733878]; let i
+    for (i = 64; i <= n; i += 64) md5cycle(state, md5blk(s.substring(i - 64, i)))
+    s = s.substring(i - 64); const tail = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]; for (i = 0; i < s.length; i++) tail[i >> 2] |= s.charCodeAt(i) << ((i % 4) << 3)
+    tail[i >> 2] |= 0x80 << ((i % 4) << 3); if (i > 55) { md5cycle(state, tail); for (i = 0; i < 16; i++) tail[i] = 0 }
+    tail[14] = n * 8; md5cycle(state, tail); return hex(state)
+  }
+  return md5str(string)
+}
+
+// 当前相册的访问凭证（答案/密码）
+const albumAccessToken = ref(null) // { question, answer }
+
 const fetchPhotosByTopicId = async (topicId, pageStart = 0, pageNum = 100) => {
   const data = {
-    hostUin: userStore.userInfo.uin,
+    hostUin: effectiveHostUin.value,
     topicId: topicId,
     pageStart: pageStart,
     pageNum: pageNum
   }
 
+  // 附加问题/答案参数（用于 priv=5 和 priv=2 的相册）
+  if (albumAccessToken.value) {
+    data.question = albumAccessToken.value.question
+    data.answer = albumAccessToken.value.answer
+  }
+
   try {
-    const response = await window.QzoneAPI.getPhotoByTopicId(data)
+    const response = await window.QzoneAPI.getPhotoByTopicId(data, friendMeta.value)
 
     // 标准化响应数据处理 - 修正：成功状态码是 0 而不是 200
     if (response?.code === 0 && response?.data) {
@@ -306,12 +421,18 @@ const fetchPhotosByTopicId = async (topicId, pageStart = 0, pageNum = 100) => {
       }
     }
 
+    // 权限错误特殊处理
+    if (response?.code === -10805) {
+      return { success: false, photos: [], total: 0, hasMore: false, error: '回答错误', code: -10805 }
+    }
+
     return {
       success: false,
       photos: [],
       total: 0,
       hasMore: false,
-      error: response?.message || `API 错误: code=${response?.code}, message=${response?.message}`
+      error: response?.message || `API 错误: code=${response?.code}, message=${response?.message}`,
+      code: response?.code
     }
   } catch (error) {
     console.error('API 调用失败:', error)
@@ -347,11 +468,12 @@ const cleanPhotoData = (photos) => {
 // 添加下载任务的公共函数 - 优化批量添加体验
 const addDownloadTask = async (albumData) => {
   try {
-    // 确保传递用户信息
+    // 确保传递用户信息，好友模式下附带 friendUin
     const enrichedAlbumData = {
       ...albumData,
       uin: userStore.userInfo?.uin || 'unknown',
-      p_skey: userStore.PSkey || null
+      p_skey: userStore.PSkey || null,
+      ...(isFriendContext.value ? { friendUin: hostUinOverride.value } : {})
     }
 
     // 如果照片数量很多，显示提示
@@ -555,7 +677,29 @@ watch(currentAlbum, async (newAlbum) => {
     } else {
       console.error('加载相册失败:', result.error)
 
-      ElMessage.error(result.error || '加载相册照片失败')
+      // 回答错误时，提示重新输入
+      if (result.code === -10805 && currentAlbum.value) {
+        albumAccessToken.value = null
+        accessDialogData.value.error = '回答错误，请重试'
+        const answered = await promptAlbumAccess(currentAlbum.value)
+        if (answered) {
+          const retry = await fetchPhotosByTopicId(newAlbum.id, 0, pageSize.value)
+          if (retry.success) {
+            photoList.value = retry.photos
+            total.value = retry.total
+            hasMore.value = retry.photos.length === pageSize.value && currentPageStart.value + retry.photos.length < retry.total
+          } else if (retry.code === -10805) {
+            ElMessage.error('回答错误')
+            currentAlbum.value = null
+          } else {
+            ElMessage.error(retry.error || '加载失败')
+          }
+        } else {
+          currentAlbum.value = null
+        }
+      } else {
+        ElMessage.error(result.error || '加载相册照片失败')
+      }
     }
   } catch (error) {
     console.error('加载相册照片失败:', error)
@@ -882,12 +1026,12 @@ const deleteSelected = async () => {
 
     // 调用删除API
     const result = await window.QzoneAPI.deletePhotos({
-      hostUin: userStore.userInfo.uin,
+      hostUin: effectiveHostUin.value,
       albumId: currentAlbum.value.id,
       photoData: photoData,
       albumName: currentAlbum.value.name,
       priv: currentAlbum.value.priv || 3
-    })
+    }, friendMeta.value)
 
     loadingInstance.close()
 
@@ -976,10 +1120,31 @@ provide('photoSize', photoSize)
 
 // 监听左侧相册选择（通过事件总线或props）
 const selectAlbum = async (album, forceRefresh = false) => {
-  if (!album) return
+  if (!album) {
+    // 清空当前相册（切换好友时触发）
+    currentAlbum.value = null
+    photoList.value = []
+    selectedPhotos.value = new Set()
+    albumAccessToken.value = null
+    return
+  }
 
   // 如果相册ID相同且不是强制刷新，则直接返回
   if (currentAlbum.value?.id === album.id && !forceRefresh) return
+
+  // 处理权限相册：priv=3 仅自己可见（好友模式下不可访问）
+  if (album.priv === 3 && isFriendContext.value) {
+    ElMessage.warning('该相册仅主人可见')
+    return
+  }
+
+  // 处理权限相册：priv=5 回答问题 / priv=2 密码访问
+  if ((album.priv === 5 || album.priv === 2) && !album.allowAccess && isFriendContext.value) {
+    const answered = await promptAlbumAccess(album)
+    if (!answered) return // 用户取消
+  } else {
+    albumAccessToken.value = null
+  }
 
   // 先断开监听器，避免重复触发
   if (observer) {
@@ -994,6 +1159,67 @@ const selectAlbum = async (album, forceRefresh = false) => {
   hasMore.value = true
 
   // 相册改变时会自动触发 watch(currentAlbum) 进行加载
+}
+
+// 相册访问弹窗状态
+const accessDialogVisible = ref(false)
+const accessInputRef = ref(null)
+const accessDialogData = ref({
+  isQuestion: false,
+  question: '',
+  inputValue: '',
+  error: '',
+  loading: false,
+  album: null,
+  resolve: null
+})
+
+// 弹窗询问相册问题/密码（返回 Promise）
+const promptAlbumAccess = (album) => {
+  return new Promise((resolve) => {
+    accessDialogData.value = {
+      isQuestion: album.priv === 5,
+      question: album.question || '',
+      inputValue: '',
+      error: '',
+      loading: false,
+      album,
+      resolve
+    }
+    accessDialogVisible.value = true
+    nextTick(() => accessInputRef.value?.focus())
+  })
+}
+
+const handleAccessConfirm = () => {
+  const data = accessDialogData.value
+  const value = data.inputValue?.trim()
+  if (!value) {
+    data.error = '请输入内容'
+    return
+  }
+  data.error = ''
+
+  // 计算 MD5
+  let answerMD5
+  if (data.isQuestion) {
+    answerMD5 = simpleMD5(encodeURIComponent(value)).toUpperCase()
+  } else {
+    answerMD5 = simpleMD5(value)
+  }
+
+  albumAccessToken.value = {
+    question: data.album?.question || '',
+    answer: answerMD5
+  }
+
+  accessDialogVisible.value = false
+  data.resolve?.(true)
+}
+
+const handleAccessCancel = () => {
+  accessDialogVisible.value = false
+  accessDialogData.value.resolve?.(false)
 }
 
 // 提供选择相册的方法给父组件
@@ -1148,7 +1374,7 @@ const handlePhotoClick = async (photo, event, index) => {
       // 简化参数提取逻辑 - 使用当前相册的ID作为topicId
       const topicId = currentAlbum.value?.id
       const picKey = photo.picKey || photo.lloc
-      const hostUin = userStore.userInfo.uin
+      const hostUin = effectiveHostUin.value
 
       // 参数验证
       if (!topicId || !picKey) {
@@ -1164,7 +1390,7 @@ const handlePhotoClick = async (photo, event, index) => {
         hostUin,
         topicId,
         picKey
-      })
+      }, friendMeta.value)
 
       if (videoInfo) {
         currentVideoInfo.value = videoInfo
@@ -2017,6 +2243,146 @@ onUnmounted(() => {
 
   .video-player {
     height: 40vh;
+  }
+}
+
+/* ===== 相册访问验证弹窗 ===== */
+:deep(.album-access-dialog) {
+  .el-dialog {
+    background: rgba(24, 24, 28, 0.98);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
+  }
+
+  .el-dialog__header {
+    display: none;
+  }
+
+  .el-dialog__body {
+    padding: 0;
+  }
+}
+
+.access-dialog-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 28px 24px;
+}
+
+.access-icon {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.15);
+  margin-bottom: 16px;
+  color: #f87171;
+}
+
+.access-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.access-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  margin: 0 0 8px;
+}
+
+.access-desc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0 0 20px;
+  text-align: center;
+  line-height: 1.5;
+
+  strong {
+    color: rgba(255, 255, 255, 0.75);
+    font-weight: 600;
+  }
+}
+
+.access-input {
+  width: 100%;
+  margin-bottom: 6px;
+
+  :deep(.el-input__wrapper) {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    box-shadow: none;
+    padding: 4px 12px;
+    transition: border-color 0.2s ease;
+
+    &:hover {
+      border-color: rgba(248, 113, 113, 0.3);
+    }
+
+    &.is-focus {
+      border-color: rgba(248, 113, 113, 0.5);
+      box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.08);
+    }
+  }
+
+  :deep(.el-input__inner) {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 14px;
+
+    &::placeholder {
+      color: rgba(255, 255, 255, 0.2);
+    }
+  }
+}
+
+.access-error {
+  font-size: 12px;
+  color: #f87171;
+  margin: 4px 0 0;
+  align-self: flex-start;
+}
+
+.access-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-top: 20px;
+
+  .access-btn {
+    flex: 1;
+    border-radius: 10px;
+    height: 38px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .cancel-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.6);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.8);
+    }
+  }
+
+  .confirm-btn {
+    background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+    border: none;
+    color: #fff;
+
+    &:hover {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
   }
 }
 </style>

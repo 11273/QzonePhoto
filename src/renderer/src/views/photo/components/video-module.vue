@@ -4,7 +4,7 @@
     <div class="module-header">
       <div class="header-content">
         <div class="title-section">
-          <h2 class="module-title">我的视频</h2>
+          <h2 class="module-title">{{ isFriendContext ? '好友视频' : '我的视频' }}</h2>
         </div>
         <div class="header-actions">
           <el-button
@@ -162,7 +162,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, inject, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, inject, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, VideoPlay, Loading, Warning, Hide } from '@element-plus/icons-vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
@@ -173,6 +173,12 @@ import Hls from 'hls.js'
 
 const userStore = useUserStore()
 const privacyStore = usePrivacyStore()
+
+// 支持好友上下文
+const hostUinOverride = inject('hostUinOverride', null)
+const effectiveHostUin = computed(() => hostUinOverride?.value || userStore.userInfo.uin)
+const isFriendContext = computed(() => !!hostUinOverride?.value)
+const friendMeta = computed(() => (isFriendContext.value ? { skipAuthCheck: true } : {}))
 
 const videos = ref([])
 const loading = ref(false)
@@ -203,7 +209,7 @@ const fetchVideoList = async (isLoadMore = false) => {
 
   try {
     const params = {
-      hostUin: userStore.userInfo.uin,
+      hostUin: effectiveHostUin.value,
       getMethod: 2,
       start: isLoadMore ? currentStart.value : 0,
       count: pageSize.value,
@@ -211,7 +217,7 @@ const fetchVideoList = async (isLoadMore = false) => {
       getUserInfo: 0
     }
 
-    const response = await window.QzoneAPI.getVideoList(params)
+    const response = await window.QzoneAPI.getVideoList(params, friendMeta.value)
 
     if (response.code === 0 && response.data) {
       const newVideos = response.data.Videos || []

@@ -3,6 +3,7 @@ import { UploadService } from '@main/services/main/upload'
 import { QzoneAuthService } from '@main/services/qzone/auth'
 import { QzonePhotoService } from '@main/services/qzone/photo'
 import { QzoneUserService } from '@main/services/qzone/user'
+import { QzoneFriendService } from '@main/services/qzone/friend'
 import { ServiceManager, ServiceNames } from '@main/services/service-manager'
 import { AutoUpdateManager } from '@main/core/update'
 import { uploadEventPusher } from '@main/services/upload-event-pusher'
@@ -18,6 +19,8 @@ export async function registerService() {
   services.register(ServiceNames.PHOTO, () => new QzonePhotoService())
 
   services.register(ServiceNames.USER, () => new QzoneUserService())
+
+  services.register(ServiceNames.FRIEND, () => new QzoneFriendService())
 
   services.register(ServiceNames.DOWNLOAD, () => new DownloadService())
 

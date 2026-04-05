@@ -1,10 +1,14 @@
 <template>
   <div v-loading="loading" class="flex flex-col h-dvh">
-    <div class="flex h-full">
+    <div class="flex h-full overflow-hidden">
       <Left
         ref="leftRef"
+        :view-mode="viewMode"
+        :current-friend="currentFriend"
         @album-selected="handleAlbumSelected"
         @module-changed="handleModuleChanged"
+        @enter-friend="handleEnterFriend"
+        @exit-friend="handleExitFriend"
       />
       <!-- 根据当前模块显示不同内容 -->
       <Main v-if="currentModule === 'album'" ref="mainRef" class="flex-1" />
@@ -48,7 +52,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, provide, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, provide, nextTick, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import Left from '@renderer/views/photo/components/left.vue'
@@ -70,14 +74,35 @@ const dialogMainRef = ref()
 const currentModule = ref('album')
 const photoType = ref('my-photos')
 
-// 相册弹窗状态
+// 好友上下文：viewMode 控制整个页面是"我的空间"还是"好友空间"
+const viewMode = ref('self') // 'self' | 'friend'
+const currentFriend = ref(null) // { uin, name, img, score }
+
+// 为所有子组件提供 hostUin 覆盖（好友模式时生效）
+const hostUinOverride = computed(() => (viewMode.value === 'friend' ? currentFriend.value?.uin : null))
+provide('hostUinOverride', hostUinOverride)
+
+// 相册弹窗状态（仅用于动态跳转）
 const albumDialogVisible = ref(false)
 const currentDialogAlbum = ref(null)
 
+// 进入好友空间
+const handleEnterFriend = (friend) => {
+  currentFriend.value = friend
+  viewMode.value = 'friend'
+  // 进入好友空间默认显示相册 tab
+  currentModule.value = 'album'
+}
+
+// 退出好友空间，回到自己空间
+const handleExitFriend = () => {
+  viewMode.value = 'self'
+  currentFriend.value = null
+  currentModule.value = 'album'
+}
+
 // 处理相册选择
 const handleAlbumSelected = (album) => {
-  // console.log('父组件接收到相册选择:', album)
-
   if (mainRef.value && mainRef.value.selectAlbum) {
     mainRef.value.selectAlbum(album)
   }
@@ -92,12 +117,9 @@ const handleModuleChanged = (module, type) => {
 
   // 当切换回相册模块时，确保 Main 组件已挂载并刷新当前选中的相册
   if (module === 'album') {
-    // 使用 nextTick 确保 Main 组件已经挂载
     nextTick(() => {
-      // 等待一个 tick，确保 Left 组件已经选中了默认相册
       setTimeout(() => {
         if (mainRef.value && mainRef.value.selectAlbum) {
-          // 如果 Main 组件有当前相册，强制刷新它
           if (mainRef.value.currentAlbum) {
             mainRef.value.selectAlbum(mainRef.value.currentAlbum, true)
           }
@@ -109,12 +131,10 @@ const handleModuleChanged = (module, type) => {
 
 // 刷新当前相册的回调函数
 const refreshCurrentAlbum = async () => {
-  // 如果弹窗打开，刷新弹窗中的相册
   if (albumDialogVisible.value && dialogMainRef.value && dialogMainRef.value.refreshCurrentAlbum) {
     await dialogMainRef.value.refreshCurrentAlbum()
     return
   }
-  // 否则刷新主窗口中的相册
   if (mainRef.value && mainRef.value.refreshCurrentAlbum) {
     await mainRef.value.refreshCurrentAlbum()
   }
@@ -122,16 +142,12 @@ const refreshCurrentAlbum = async () => {
 
 // 处理相册点击（从动态跳转）
 const handleAlbumClick = async ({ albumId, albumName }) => {
-  // 通过 albumId 在 Left 组件中查找相册
   if (leftRef.value && leftRef.value.findAlbumById) {
     const album = await leftRef.value.findAlbumById(albumId)
     if (album) {
-      // 设置当前弹窗相册
       currentDialogAlbum.value = album
-      // 打开弹窗
       albumDialogVisible.value = true
 
-      // 等待弹窗打开后，选择相册
       await nextTick()
       if (dialogMainRef.value && dialogMainRef.value.selectAlbum) {
         dialogMainRef.value.selectAlbum(album)
@@ -147,33 +163,25 @@ const handleAlbumClick = async ({ albumId, albumName }) => {
 // 处理弹窗关闭
 const handleDialogClosed = () => {
   currentDialogAlbum.value = null
-  // 弹窗关闭时，动态列表状态保持不变
 }
 
 // 提供刷新回调给子组件
 provide('refreshAlbumCallback', refreshCurrentAlbum)
-// 提供 leftRef 给子组件（用于更新统计信息）
 provide('leftRef', leftRef)
 
 // 监听下载任务更新
 let taskUpdateListener = null
 
 onMounted(() => {
-  // 监听任务更新事件
   taskUpdateListener = (event, tasks) => {
-    // console.log('[Photo/index] 收到任务更新:', tasks?.length || 0, '个任务')
     if (tasks && Array.isArray(tasks)) {
       downloadStore.updateTasks(tasks)
     }
   }
 
   window.ipcRenderer?.on('download:task-update', taskUpdateListener)
-  // console.log('[Photo/index] 已设置任务更新监听器')
 
-  // 初始加载任务列表
-  downloadStore.loadTasks().then(() => {
-    // console.log('[Photo/index] 初始任务加载完成')
-  })
+  downloadStore.loadTasks().then(() => {})
 })
 
 onUnmounted(() => {

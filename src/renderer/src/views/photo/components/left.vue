@@ -1,7 +1,93 @@
 <template>
   <div class="w-72 flex flex-col border-r border-blue-500/20 h-full">
-    <!-- 用户信息卡片 -->
-    <div class="user-section">
+    <!-- 好友模式：好友信息栏 -->
+    <transition name="context-switch" mode="out-in">
+      <div v-if="viewMode === 'friend' && currentFriend" key="friend" class="user-section">
+        <div class="user-card friend-card">
+          <div class="card-header">
+            <div class="friend-bar-back" @click="emit('exit-friend')">
+              <el-icon><ArrowLeft /></el-icon>
+            </div>
+            <el-avatar
+              shape="square"
+              :size="32"
+              :src="currentFriend.img?.replace('/50', '/100')"
+              class="user-avatar friend-avatar"
+            >
+              {{ stripEmoji(currentFriend.name)?.[0] || '?' }}
+            </el-avatar>
+            <div class="user-info">
+              <div class="nickname" v-html="renderFriendName(currentFriend.name)"></div>
+              <div class="uin">{{ currentFriend.uin }}</div>
+            </div>
+            <div class="header-actions">
+              <el-button
+                text
+                :icon="Monitor"
+                class="action-btn open-web-btn"
+                title="打开好友空间"
+                @click="openFriendQzoneWeb"
+              >
+              </el-button>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat-grid">
+              <div class="stat-item">
+                <span class="label">亲密度</span>
+                <span class="value intimacy">
+                  <svg class="stat-heart" viewBox="0 0 16 16" fill="currentColor"><path d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"/></svg>
+                  {{ currentFriend.score }}
+                </span>
+              </div>
+              <div class="stat-item">
+                <span class="label">相册数</span>
+                <span class="value">{{ friendAlbumCount }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="label">已用容量</span>
+                <span class="value storage">{{ friendDiskUsed }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="label">照片总数</span>
+                <span class="value">{{ friendPhotoTotal }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 好友操作区域 - 仅下载管理 -->
+          <div class="card-actions managers-layout">
+            <div class="manager-item" style="flex: 1">
+              <el-button
+                text
+                class="action-btn download-btn manager-btn"
+                :class="{ 'has-active-tasks': hasActiveTasks }"
+                title="下载管理器"
+                @click="showDownloadProgress"
+              >
+                <div class="manager-btn-content">
+                  <div class="icon-wrapper">
+                    <el-icon><Download /></el-icon>
+                    <div v-if="hasActiveTasks" class="active-indicator">
+                      <div class="pulse-ring"></div>
+                      <div class="pulse-dot"></div>
+                    </div>
+                  </div>
+                  <div class="text-wrapper">
+                    <div class="main-text">下载管理</div>
+                    <div v-if="activeTaskCount > 0" class="status-text">
+                      {{ statusText }}
+                    </div>
+                  </div>
+                </div>
+              </el-button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 自己空间：用户信息卡片 -->
+      <div v-else key="self" class="user-section">
       <div class="user-card">
         <div class="card-header">
           <el-avatar
@@ -131,6 +217,7 @@
         </div>
       </div>
     </div>
+    </transition>
 
     <!-- 一级导航菜单 - TAB 样式 -->
     <div class="main-navigation-tabs">
@@ -228,6 +315,48 @@
                   </span>
                   <span class="album-text">{{ album.name }}</span>
                 </div>
+                <el-icon v-if="album.priv === 3" class="album-lock-icon priv-self" title="仅自己可见">
+                  <Lock />
+                </el-icon>
+                <el-icon v-else-if="album.priv === 2" class="album-lock-icon priv-password" title="密码访问">
+                  <Key />
+                </el-icon>
+                <el-popover
+                  v-else-if="album.priv === 5"
+                  trigger="click"
+                  placement="right"
+                  :width="200"
+                  :show-arrow="false"
+                  popper-class="qa-popper"
+                  @before-enter="fetchAlbumQA(album)"
+                >
+                  <template #reference>
+                    <el-icon class="album-lock-icon priv-question clickable" title="查看问答" @click.stop.prevent @mousedown.stop.prevent>
+                      <QuestionFilled />
+                    </el-icon>
+                  </template>
+                  <div class="qa-popover">
+                    <div class="qa-item">
+                      <span class="qa-label">问题</span>
+                      <span class="qa-text">{{ album.question || '...' }}</span>
+                    </div>
+                    <div class="qa-item">
+                      <span class="qa-label">答案</span>
+                      <span v-if="albumQAMap[album.id]?.answer != null" class="qa-text qa-answer">{{ albumQAMap[album.id].answer }}</span>
+                      <span v-else-if="albumQAMap[album.id]?.loading" class="qa-text qa-muted">...</span>
+                      <span v-else class="qa-text qa-muted">{{ isFriendMode ? '仅主人可见' : '-' }}</span>
+                    </div>
+                  </div>
+                </el-popover>
+                <el-icon v-else-if="album.priv === 4" class="album-lock-icon priv-friend" title="QQ好友可见">
+                  <User />
+                </el-icon>
+                <el-icon v-else-if="album.priv === 6" class="album-lock-icon priv-partial" title="部分好友可见">
+                  <View />
+                </el-icon>
+                <el-icon v-else-if="album.priv === 8" class="album-lock-icon priv-partial-hide" title="部分好友不可见">
+                  <Hide />
+                </el-icon>
                 <span class="album-num">
                   <span v-if="getAlbumStatusText(album.id)" class="download-progress">
                     {{ getAlbumStatusText(album.id) }}
@@ -272,8 +401,12 @@
             </div>
           </div>
         </div>
+
       </el-scrollbar>
     </div>
+
+    <!-- 好友抽屉 -->
+    <FriendDrawer :active-friend="currentFriend" @enter-friend="(f) => emit('enter-friend', f)" />
 
     <!-- 下载管理器弹窗 -->
     <DownloadManager v-model="downloadProgressVisible" />
@@ -284,10 +417,11 @@
 </template>
 
 <script setup>
-import { onBeforeMount, ref, computed, nextTick, onBeforeUnmount, inject, watch } from 'vue'
+import { onBeforeMount, ref, reactive, computed, nextTick, onBeforeUnmount, inject, watch } from 'vue'
 
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
+import { useFriendStore } from '@renderer/store/friend.store'
 import {
   Download,
   Upload,
@@ -299,10 +433,19 @@ import {
   Folder,
   Picture,
   User,
-  VideoPlay
+  UserFilled,
+  Search,
+  VideoPlay,
+  ArrowLeft,
+  Lock,
+  Hide,
+  Key,
+  View,
+  QuestionFilled
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
+import FriendDrawer from './friend-drawer.vue'
 import UploadManager from '@renderer/components/UploadManager/index.vue'
 import { generateUniqueAlbumName } from '@renderer/utils'
 import { QZONE_CONFIG } from '@shared/const'
@@ -334,6 +477,37 @@ const handlePhotoTypeSelect = (type) => {
   emit('module-changed', 'photo', type)
 }
 
+// 好友模块
+const friendStore = useFriendStore()
+
+// 处理好友名称中的表情代码
+const stripEmoji = (name) => (name || '').replace(/\[em\]e\d+\[\/em\]/g, '')
+const renderFriendName = (name) => {
+  if (!name) return ''
+  const escaped = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return escaped.replace(/\[em\](e\d+)\[\/em\]/g, (_, code) => `<img src="https://qzonestyle.gtimg.cn/qzone/em/${code}.gif" class="friend-emoji" alt="" />`)
+}
+
+
+// 好友模式下使用好友 uin，否则使用自己 uin
+const effectiveHostUin = computed(() =>
+  props.viewMode === 'friend' && props.currentFriend ? props.currentFriend.uin : userStore.userInfo.uin
+)
+const isFriendMode = computed(() => props.viewMode === 'friend')
+const friendMeta = computed(() => (isFriendMode.value ? { skipAuthCheck: true } : {}))
+
+// 好友空间统计信息（从相册 API 响应中提取）
+const friendAlbumCount = computed(() => apiData.value?.albumsInUser ?? '--')
+const friendDiskUsed = computed(() => {
+  if (!isFriendMode.value || !apiData.value?.user?.diskused) return '--'
+  const bytes = apiData.value.user.diskused * 1024 * 1024
+  return formatBytes(bytes)
+})
+const friendPhotoTotal = computed(() => {
+  if (!isFriendMode.value || !menuList.value) return '--'
+  return menuList.value.reduce((sum, cat) => sum + cat.albums.reduce((s, a) => s + (a.total || 0), 0), 0)
+})
+
 const selectAlbumItem = (categoryId, album) => {
   // 立即更新选中状态，避免延迟
   selectedAlbumKey.value = `${categoryId}-${album.id}`
@@ -341,12 +515,44 @@ const selectAlbumItem = (categoryId, album) => {
   selectAlbum(album)
 }
 
-const emit = defineEmits(['album-selected', 'module-changed'])
+const props = defineProps({
+  viewMode: { type: String, default: 'self' },
+  currentFriend: { type: Object, default: null }
+})
+
+const emit = defineEmits(['album-selected', 'module-changed', 'enter-friend', 'exit-friend'])
 
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
 const refreshAlbumCallback = inject('refreshAlbumCallback', null)
 const loading = ref(false)
+
+// 相册问答缓存
+const albumQAMap = reactive({})
+
+const fetchAlbumQA = async (album) => {
+  const cached = albumQAMap[album.id]
+  if (cached && (cached.loading || cached.answer != null)) return
+  albumQAMap[album.id] = { loading: true }
+  try {
+    const res = await window.QzoneAPI.getAlbumQA({
+      hostUin: effectiveHostUin.value,
+      albumId: album.id
+    })
+    if (res?.code === 0 && res?.data) {
+      albumQAMap[album.id] = { answer: res.data.answer, question: res.data.question }
+    } else {
+      albumQAMap[album.id] = { answer: null }
+    }
+  } catch {
+    albumQAMap[album.id] = { answer: null }
+  }
+}
+
+// 切换好友/用户时清空问答缓存
+watch(effectiveHostUin, () => {
+  Object.keys(albumQAMap).forEach((key) => delete albumQAMap[key])
+})
 
 // 当前模块状态
 const currentModule = ref('album') // album, photo, video
@@ -639,11 +845,17 @@ const startDownloadAll = async () => {
             }
 
             const albumDetail = await window.QzoneAPI.getPhotoByTopicId({
-              hostUin: userStore.userInfo.uin,
+              hostUin: effectiveHostUin.value,
               topicId: album.id,
               pageStart: pageStart,
               pageNum: batchSize
             })
+
+            // 权限不足或接口错误，跳过该相册
+            if (albumDetail?.code !== undefined && albumDetail.code !== 0) {
+              console.warn(`⚠️ 相册 ${album.name} 无法访问 (code: ${albumDetail.code})`)
+              break
+            }
 
             if (!albumDetail?.data?.photoList || albumDetail.data.photoList.length === 0) {
               break
@@ -664,7 +876,8 @@ const startDownloadAll = async () => {
               },
               photos: albumDetail.data.photoList,
               uin: userStore.userInfo?.uin || 'unknown',
-              albumId: album.id
+              albumId: album.id,
+              ...(isFriendMode.value ? { friendUin: effectiveHostUin.value } : {})
             }
 
             await window.QzoneAPI.download.addAlbum(albumData)
@@ -705,8 +918,10 @@ const startDownloadAll = async () => {
           successCount++
           console.log(`✅ 成功添加相册: ${album.name} (${addedPhotosCount}张照片)`)
         } else {
-          console.warn(`⚠️  相册 ${album.name} 没有照片`)
+          // 没有照片（无权限/空相册），计入失败并继续
+          console.warn(`⚠️ 相册 ${album.name} 无照片或无权限，跳过`)
           downloadStore.resetAlbumState(album.id)
+          failCount++
         }
 
         // 清理该相册的全局取消标志
@@ -908,10 +1123,10 @@ const fetchPhotoData = async () => {
   try {
     // 获取初始数据
     const initialRes = await window.QzoneAPI.getPhotoList({
-      hostUin: userStore.userInfo.uin,
+      hostUin: effectiveHostUin.value,
       pageStart: 0,
       pageNum: pageSize.value
-    })
+    }, friendMeta.value)
     console.log('[Left] 初始相册列表数据:', JSON.parse(JSON.stringify(initialRes)))
 
     if (!initialRes || !initialRes.data) {
@@ -962,12 +1177,12 @@ const fetchPhotoData = async () => {
 
           try {
             const categoryRes = await window.QzoneAPI.getPhotoList({
-              hostUin: userStore.userInfo.uin,
+              hostUin: effectiveHostUin.value,
               pageStart: nextPageStart,
               pageNum: pageSize.value,
               mode: 4,
               classId: category.classId
-            })
+            }, friendMeta.value)
 
             if (!categoryRes || !categoryRes.data) {
               console.warn(`[Left] 分类 ${categoryName} 加载失败`)
@@ -1048,11 +1263,11 @@ const fetchPhotoData = async () => {
       while (pageStart < totalAlbums && pageStart > 0) {
         try {
           const nextRes = await window.QzoneAPI.getPhotoList({
-            hostUin: userStore.userInfo.uin,
+            hostUin: effectiveHostUin.value,
             pageStart: pageStart,
             pageNum: pageSize.value,
             mode: 2 // normal模式
-          })
+          }, friendMeta.value)
 
           if (!nextRes || !nextRes.data || !nextRes.data.albumListModeSort) {
             break
@@ -1105,19 +1320,21 @@ const fetchPhotoData = async () => {
     const totalAlbums = allAlbumsData.reduce((sum, cat) => sum + (cat.albumList?.length || 0), 0)
     console.log(`[Left] 所有相册加载完成，总计 ${totalAlbums} 个相册`)
 
-    // 设置默认选中的相册
-    nextTick(() => {
-      if (apiData.value && apiData.value.albumListModeClass) {
-        const firstCategory = apiData.value.albumListModeClass[0]
-        if (firstCategory && firstCategory.albumList && firstCategory.albumList.length > 0) {
-          const firstAlbum = firstCategory.albumList[0]
-          if (firstAlbum) {
-            selectedAlbumKey.value = `${firstCategory.classId}-${firstAlbum.id}`
-            selectAlbum(firstAlbum)
+    // 设置默认选中的相册（好友模式下不自动选中，避免产生浏览记录）
+    if (!isFriendMode.value) {
+      nextTick(() => {
+        if (apiData.value && apiData.value.albumListModeClass) {
+          const firstCategory = apiData.value.albumListModeClass[0]
+          if (firstCategory && firstCategory.albumList && firstCategory.albumList.length > 0) {
+            const firstAlbum = firstCategory.albumList[0]
+            if (firstAlbum) {
+              selectedAlbumKey.value = `${firstCategory.classId}-${firstAlbum.id}`
+              selectAlbum(firstAlbum)
+            }
           }
         }
-      }
-    })
+      })
+    }
   } catch (error) {
     console.error('[Left] 加载相册数据失败:', error)
   } finally {
@@ -1345,6 +1562,21 @@ const openQzoneWeb = async () => {
   }
 }
 
+// 打开好友 QQ 空间
+const openFriendQzoneWeb = async () => {
+  if (!props.currentFriend?.uin) return
+  try {
+    await window.api.invoke('window:openQzoneWeb', {
+      uin: userStore.Uin,
+      p_skey: userStore.PSkey,
+      targetUin: props.currentFriend.uin
+    })
+  } catch (error) {
+    console.error('打开好友空间失败:', error)
+    ElMessage.error('打开好友空间失败')
+  }
+}
+
 // 确认登出
 const confirmLogout = async () => {
   // 登出并清除用户信息
@@ -1372,6 +1604,23 @@ onBeforeMount(() => {
   initUploadTasks()
   setupUploadListeners()
 })
+
+// 当进入/退出好友模式时，重新加载相册列表
+watch(
+  () => [props.viewMode, props.currentFriend?.uin],
+  ([newMode, newUin], [oldMode, oldUin]) => {
+    // 切换模式或切换好友时重新加载
+    if (newMode !== oldMode || newUin !== oldUin) {
+      apiData.value = null
+      clickItem.value = null
+      selectedAlbumKey.value = ''
+      currentModule.value = 'album'
+      // 立即清空右侧相册内容，避免残留上一个好友的数据
+      emit('album-selected', null)
+      nextTick(() => fetchPhotoData())
+    }
+  }
+)
 
 onBeforeUnmount(() => {
   cleanupDownloadListeners()
@@ -1994,6 +2243,42 @@ defineExpose({
         }
       }
 
+      .album-lock-icon {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.3);
+        flex-shrink: 0;
+        margin-right: 2px;
+
+        &.priv-self {
+          color: rgba(255, 100, 100, 0.4);
+        }
+
+        &.priv-password,
+        &.priv-question {
+          color: rgba(255, 180, 50, 0.5);
+        }
+
+        &.priv-friend {
+          color: rgba(100, 200, 255, 0.4);
+        }
+
+        &.priv-partial {
+          color: rgba(100, 200, 255, 0.3);
+        }
+
+        &.priv-partial-hide {
+          color: rgba(255, 150, 100, 0.35);
+        }
+
+        &.clickable {
+          cursor: pointer;
+
+          &:hover {
+            color: rgba(255, 180, 50, 0.8);
+          }
+        }
+      }
+
       .album-num {
         font-size: 10px;
         color: rgba(255, 255, 255, 0.5);
@@ -2086,8 +2371,8 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 8px 6px;
+  gap: 4px;
+  padding: 7px 4px;
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   color: rgba(255, 255, 255, 0.6);
@@ -2095,10 +2380,10 @@ defineExpose({
   font-weight: 500;
   position: relative;
   border-radius: 6px;
-  margin: 0 2px;
+  margin: 0 1px;
 
   .tab-icon {
-    font-size: 14px;
+    font-size: 13px;
     transition: all 0.25s ease;
     flex-shrink: 0;
   }
@@ -2427,6 +2712,244 @@ defineExpose({
     &.loaded {
       color: #34d399;
     }
+  }
+}
+
+/* 好友模块样式 */
+.friend-section {
+  padding: 8px 6px;
+}
+
+.friend-sub-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+}
+
+.sub-tab {
+  flex: 1;
+  padding: 6px 0;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  &.active {
+    background: rgba(64, 158, 255, 0.15);
+    color: #60a5fa;
+    font-weight: 500;
+  }
+}
+
+.friend-search {
+  margin-bottom: 8px;
+
+  :deep(.el-input__wrapper) {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: none;
+
+    &:hover,
+    &:focus-within {
+      border-color: rgba(64, 158, 255, 0.3);
+    }
+  }
+
+  :deep(.el-input__inner) {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12px;
+
+    &::placeholder {
+      color: rgba(255, 255, 255, 0.3);
+    }
+  }
+
+  :deep(.el-input__prefix .el-icon) {
+    color: rgba(255, 255, 255, 0.3);
+  }
+}
+
+.friend-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 0;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 13px;
+}
+
+.friend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.friend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  &.active {
+    background: rgba(64, 158, 255, 0.12);
+    border: 1px solid rgba(64, 158, 255, 0.2);
+    margin: -1px;
+  }
+}
+
+.friend-detail {
+  flex: 1;
+  min-width: 0;
+}
+
+.friend-name {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  :deep(.friend-emoji) {
+    width: 16px;
+    height: 16px;
+    vertical-align: text-bottom;
+    margin: 0 1px;
+  }
+}
+
+.friend-score {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: 2px;
+}
+
+.friend-empty {
+  text-align: center;
+  padding: 24px 0;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 13px;
+}
+
+/* 上下文切换过渡动画 */
+.context-switch-enter-active,
+.context-switch-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.context-switch-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.context-switch-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* 好友卡片样式 */
+.friend-card {
+  .friend-bar-back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.45);
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+
+    &:hover {
+      color: #f87171;
+      background: rgba(248, 113, 113, 0.1);
+    }
+
+    .el-icon {
+      font-size: 14px;
+    }
+  }
+
+  .friend-avatar {
+    border-color: rgba(248, 113, 113, 0.3) !important;
+    box-shadow: 0 2px 8px rgba(248, 113, 113, 0.2) !important;
+
+    &:hover {
+      border-color: rgba(248, 113, 113, 0.5) !important;
+      box-shadow: 0 4px 12px rgba(248, 113, 113, 0.3) !important;
+    }
+  }
+
+  .nickname {
+    :deep(.friend-emoji),
+    :deep(img) {
+      width: 14px;
+      height: 14px;
+      vertical-align: text-bottom;
+    }
+  }
+
+  .value.intimacy {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    color: #f87171;
+    text-shadow: 0 0 3px rgba(248, 113, 113, 0.3);
+  }
+
+  .stat-heart {
+    width: 10px;
+    height: 10px;
+    color: #f87171;
+    flex-shrink: 0;
+  }
+}
+
+.qa-popover {
+  .qa-item {
+    display: flex;
+    gap: 8px;
+    padding: 3px 0;
+    align-items: baseline;
+    line-height: 1.4;
+  }
+
+  .qa-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.35);
+    flex-shrink: 0;
+  }
+
+  .qa-text {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.85);
+    word-break: break-all;
+  }
+
+  .qa-answer {
+    color: #e6a23c;
+    font-weight: 500;
+  }
+
+  .qa-muted {
+    color: rgba(255, 255, 255, 0.3);
   }
 }
 </style>

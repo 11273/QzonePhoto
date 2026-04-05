@@ -5,6 +5,7 @@ import {
   IPC_UPLOAD,
   IPC_PHOTO,
   IPC_USER,
+  IPC_FRIEND,
   IPC_UPDATE,
   IPC_FILE
 } from '@shared/ipc-channels'
@@ -25,26 +26,30 @@ try {
     getLocalLoginJump: (userInfo) => ipcClient.call(IPC_AUTH.LOCAL_LOGIN, { userInfo }),
     // 获取个人信息
     fetchUserInfo: () => ipcClient.call(IPC_USER.ME_INFO),
-    // 获取我的相册列表
-    getPhotoList: (data) => ipcClient.call(IPC_PHOTO.PHOTO_LIST, data),
+    // 获取相册列表
+    getPhotoList: (data, meta) => ipcClient.call(IPC_PHOTO.PHOTO_LIST, data, meta),
     // 获取我的相册中的照片
-    getPhotoByTopicId: (data) => ipcClient.call(IPC_PHOTO.PHOTO_BY_TOPIC_ID, data),
+    getPhotoByTopicId: (data, meta) => ipcClient.call(IPC_PHOTO.PHOTO_BY_TOPIC_ID, data, meta),
     // 获取照片浮层视图列表
-    getPhotoFloatviewList: (data) => ipcClient.call(IPC_PHOTO.PHOTO_FLOATVIEW_LIST, data),
+    getPhotoFloatviewList: (data, meta) => ipcClient.call(IPC_PHOTO.PHOTO_FLOATVIEW_LIST, data, meta),
     // 获取照片或视频信息
-    getPhotoOrVideoInfo: (data) => ipcClient.call(IPC_PHOTO.PHOTO_OR_VIDEO_INFO, data),
+    getPhotoOrVideoInfo: (data, meta) => ipcClient.call(IPC_PHOTO.PHOTO_OR_VIDEO_INFO, data, meta),
     // 获取视频信息
-    getVideoInfo: (data) => ipcClient.call(IPC_PHOTO.VIDEO_INFO, data),
+    getVideoInfo: (data, meta) => ipcClient.call(IPC_PHOTO.VIDEO_INFO, data, meta),
     // 批量获取视频信息
-    batchGetVideoInfo: (data) => ipcClient.call(IPC_PHOTO.BATCH_VIDEO_INFO, data),
+    batchGetVideoInfo: (data, meta) => ipcClient.call(IPC_PHOTO.BATCH_VIDEO_INFO, data, meta),
     // 删除照片
-    deletePhotos: (data) => ipcClient.call(IPC_PHOTO.DELETE_PHOTOS, data),
+    deletePhotos: (data, meta) => ipcClient.call(IPC_PHOTO.DELETE_PHOTOS, data, meta),
     // 获取QQ空间动态（说说）
-    getFeeds: (data) => ipcClient.call(IPC_PHOTO.GET_FEEDS, data),
+    getFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FEEDS, data, meta),
     // 删除动态
-    deleteFeed: (data) => ipcClient.call(IPC_PHOTO.DELETE_FEED, data),
+    deleteFeed: (data, meta) => ipcClient.call(IPC_PHOTO.DELETE_FEED, data, meta),
     // 获取视频列表
-    getVideoList: (data) => ipcClient.call(IPC_PHOTO.GET_VIDEO_LIST, data),
+    getVideoList: (data, meta) => ipcClient.call(IPC_PHOTO.GET_VIDEO_LIST, data, meta),
+    // 获取相册问题和答案
+    getAlbumQA: (data, meta) => ipcClient.call(IPC_PHOTO.GET_ALBUM_QA, data, meta),
+    // 获取好友亲密度列表
+    getFriendList: (data, meta) => ipcClient.call(IPC_FRIEND.GET_FRIEND_LIST, data, meta),
 
     // 文件系统相关API
     openFileDialog: (data) => ipcClient.call(IPC_FILE.DIALOG_OPEN_FILE, data),

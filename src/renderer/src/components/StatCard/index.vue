@@ -1,5 +1,5 @@
 <template>
-  <div class="stat-card" :class="[size, { primary: isPrimary }]">
+  <div class="stat-card" :class="[size, { primary: isPrimary, clickable: clickable }]">
     <div v-if="icon" class="stat-icon">{{ icon }}</div>
     <div class="stat-content">
       <div class="stat-value" :class="valueType">{{ value }}</div>
@@ -35,6 +35,10 @@ defineProps({
   isPrimary: {
     type: Boolean,
     default: false
+  },
+  clickable: {
+    type: Boolean,
+    default: false
   }
 })
 </script>
@@ -47,6 +51,16 @@ defineProps({
   padding: 8px 0;
   min-width: 0;
   transition: all 0.2s ease;
+
+  &.clickable {
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 8px;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+  }
 
   &.primary {
     .stat-value {

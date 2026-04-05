@@ -4,6 +4,7 @@ import { createDownloadHandlers } from '@main/ipc/modules/download.ipc'
 import { createUploadHandlers } from '@main/ipc/modules/upload.ipc'
 import { createPhotoHandlers } from '@main/ipc/modules/photo.ipc'
 import { createUserHandlers } from '@main/ipc/modules/user.ipc'
+import { createFriendHandlers } from '@main/ipc/modules/friend.ipc'
 import { createUpdateHandlers } from '@main/ipc/modules/update.ipc'
 import { createFileHandlers } from '@main/ipc/modules/file.ipc'
 import { registerWindowControl, setupWindowEventListeners } from '@main/ipc/modules/window.ipc'
@@ -20,6 +21,7 @@ export async function registerIPC(services) {
   const handlers = {
     ...createAuthHandlers(services),
     ...createUserHandlers(services),
+    ...createFriendHandlers(services),
     ...createPhotoHandlers(services),
     ...createDownloadHandlers(services),
     ...createUploadHandlers(services),
