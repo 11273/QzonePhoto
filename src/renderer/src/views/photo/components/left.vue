@@ -1324,21 +1324,19 @@ const fetchPhotoData = async () => {
     const totalAlbums = allAlbumsData.reduce((sum, cat) => sum + (cat.albumList?.length || 0), 0)
     console.log(`[Left] 所有相册加载完成，总计 ${totalAlbums} 个相册`)
 
-    // 设置默认选中的相册（好友模式下不自动选中，避免产生浏览记录）
-    if (!isFriendMode.value) {
-      nextTick(() => {
-        if (apiData.value && apiData.value.albumListModeClass) {
-          const firstCategory = apiData.value.albumListModeClass[0]
-          if (firstCategory && firstCategory.albumList && firstCategory.albumList.length > 0) {
-            const firstAlbum = firstCategory.albumList[0]
-            if (firstAlbum) {
-              selectedAlbumKey.value = `${firstCategory.classId}-${firstAlbum.id}`
-              selectAlbum(firstAlbum)
-            }
+    // 设置默认选中第一个相册
+    nextTick(() => {
+      if (apiData.value && apiData.value.albumListModeClass) {
+        const firstCategory = apiData.value.albumListModeClass[0]
+        if (firstCategory && firstCategory.albumList && firstCategory.albumList.length > 0) {
+          const firstAlbum = firstCategory.albumList[0]
+          if (firstAlbum) {
+            selectedAlbumKey.value = `${firstCategory.classId}-${firstAlbum.id}`
+            selectAlbum(firstAlbum)
           }
         }
-      })
-    }
+      }
+    })
   } catch (error) {
     console.error('[Left] 加载相册数据失败:', error)
   } finally {
