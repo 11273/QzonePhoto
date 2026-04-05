@@ -56,6 +56,7 @@
               v-for="feed in feeds"
               :key="feed.id"
               class="friend-photo-card"
+              :class="{ 'privacy-mode': privacyStore.privacyMode }"
               @click="previewMedia(feed.media, 0, feed)"
             >
               <!-- 照片主体 -->
@@ -79,7 +80,8 @@
                 </div>
                 <!-- 隐私遮罩 -->
                 <div v-if="privacyStore.privacyMode" class="card-privacy-overlay">
-                  <el-icon><Hide /></el-icon>
+                  <el-icon class="privacy-icon"><Hide /></el-icon>
+                  <div class="privacy-text">隐私保护</div>
                 </div>
               </div>
               <!-- 底部信息 -->
@@ -216,6 +218,7 @@
                             </div>
                             <div v-if="privacyStore.privacyMode" class="media-privacy-overlay">
                               <el-icon class="privacy-icon"><Hide /></el-icon>
+                              <div class="privacy-text">隐私保护</div>
                             </div>
                           </div>
                           <!-- 图片 -->
@@ -229,6 +232,7 @@
                             </el-image>
                             <div v-if="privacyStore.privacyMode" class="media-privacy-overlay">
                               <el-icon class="privacy-icon"><Hide /></el-icon>
+                              <div class="privacy-text">隐私保护</div>
                             </div>
                           </div>
                         </div>
@@ -1806,6 +1810,30 @@ onUnmounted(() => {
       transform: scale(1.03);
     }
   }
+
+  /* 隐私模式 */
+  &.privacy-mode {
+    .card-image :deep(.el-image__inner) {
+      filter: blur(15px);
+      transition: filter 0.3s ease;
+    }
+
+    &:hover {
+      transform: none;
+
+      .card-image {
+        transform: none;
+      }
+    }
+
+    &:hover .card-image :deep(.el-image__inner) {
+      filter: blur(8px);
+    }
+
+    &:hover .card-privacy-overlay {
+      background: rgba(0, 0, 0, 0.85);
+    }
+  }
 }
 
 .card-image-wrapper {
@@ -1851,13 +1879,27 @@ onUnmounted(() => {
 .card-privacy-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(20px);
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(2px);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 28px;
+  pointer-events: none;
+
+  .privacy-icon {
+    font-size: 24px;
+    color: #e6a23c;
+    margin-bottom: 4px;
+    opacity: 0.9;
+  }
+
+  .privacy-text {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 500;
+    text-align: center;
+  }
 }
 
 .card-info {
@@ -1979,14 +2021,18 @@ onUnmounted(() => {
   &:hover {
     opacity: 0.85;
     transform: scale(1.05);
+  }
 
-    /* 隐私模式下悬停时减少模糊 */
-    &.privacy-mode .media-thumb :deep(.el-image__inner) {
+  /* 隐私模式下禁用缩放，悬停时减少模糊 */
+  &.privacy-mode:hover {
+    transform: none;
+    opacity: 1;
+
+    .media-thumb :deep(.el-image__inner) {
       filter: blur(8px);
     }
 
-    /* 隐私模式下确保遮罩可见 */
-    &.privacy-mode .media-privacy-overlay {
+    .media-privacy-overlay {
       opacity: 1;
       background: rgba(0, 0, 0, 0.85);
     }
@@ -2013,7 +2059,7 @@ onUnmounted(() => {
     /* 隐私模式样式 - 视频 */
     &.privacy-mode {
       .media-thumb :deep(.el-image__inner) {
-        filter: blur(12px);
+        filter: blur(15px);
         transition: filter 0.3s ease;
       }
 
@@ -2030,7 +2076,7 @@ onUnmounted(() => {
   /* 隐私模式样式 - 图片 */
   &.privacy-mode {
     .media-thumb :deep(.el-image__inner) {
-      filter: blur(12px);
+      filter: blur(15px);
       transition: filter 0.3s ease;
     }
 
@@ -2046,6 +2092,7 @@ onUnmounted(() => {
   inset: 0;
   background: rgba(0, 0, 0, 0.8);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   z-index: 3;
@@ -2055,9 +2102,17 @@ onUnmounted(() => {
   backdrop-filter: blur(2px);
 
   .privacy-icon {
-    font-size: 20px;
+    font-size: 24px;
     color: #e6a23c;
+    margin-bottom: 4px;
     opacity: 0.9;
+  }
+
+  .privacy-text {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 500;
+    text-align: center;
   }
 }
 
