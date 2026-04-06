@@ -93,7 +93,7 @@ export async function pt_get_st(clientuin, pt_local_tk) {
     cookie: `pt_local_token=${pt_local_tk}`,
     Referer: 'https://xui.ptlogin2.qq.com/'
   }
-  console.log('params :>> ', params, headers)
+  // console.log('params :>> ', params, headers)
   try {
     const response = await request.get(url, { params, headers })
     return { data: response.data, cookie: parseSetCookie(response.headers['set-cookie']) }
