@@ -17,7 +17,21 @@
               {{ stripEmoji(currentFriend.name)?.[0] || '?' }}
             </el-avatar>
             <div class="user-info">
-              <div class="nickname" v-html="renderFriendName(currentFriend.name)"></div>
+              <div class="nickname">
+                <span v-html="renderFriendName(currentFriend.name)"></span>
+                <el-tooltip v-if="friendCardInfo || friendOnlineStatus !== null" placement="bottom" :show-after="200" popper-class="friend-info-popper">
+                  <template #content>
+                    <div class="online-tooltip">
+                      <div v-if="friendCardInfo?.realname" class="online-tooltip-row">{{ friendCardInfo.realname }}</div>
+                      <div v-if="friendOnlineStatus !== null" class="online-tooltip-row" :class="friendOnlineStatus ? 'is-online-text' : ''">{{ friendOnlineStatus ? '在线' : '离线' }}</div>
+                      <div v-if="friendLastActiveText" class="online-tooltip-sub">{{ friendLastActiveText }}</div>
+                      <div v-if="friendCardInfo?.astroText || friendCardInfo?.location" class="online-tooltip-sub">{{ [friendCardInfo?.astroText, friendCardInfo?.location].filter(Boolean).join(' · ') }}</div>
+                      <div v-if="friendDeviceName" class="online-tooltip-sub">{{ friendDeviceName }}</div>
+                    </div>
+                  </template>
+                  <span class="online-dot" :class="friendOnlineStatus === true ? 'is-online' : friendOnlineStatus === false ? 'is-offline' : 'is-unknown'"></span>
+                </el-tooltip>
+              </div>
               <div class="uin">{{ currentFriend.uin }}</div>
             </div>
             <div class="header-actions">
@@ -37,7 +51,7 @@
                 <span class="label">亲密度</span>
                 <span class="value intimacy">
                   <svg class="stat-heart" viewBox="0 0 16 16" fill="currentColor"><path d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"/></svg>
-                  {{ currentFriend.score }}
+                  {{ friendCardInfo?.intimacyScore ?? currentFriend.score }}
                 </span>
               </div>
               <div class="stat-item">
@@ -500,6 +514,81 @@ const effectiveHostUin = computed(() =>
 const isFriendMode = computed(() => props.viewMode === 'friend')
 const friendMeta = computed(() => (isFriendMode.value ? { skipAuthCheck: true } : {}))
 
+// 好友个人名片隐藏数据
+const friendCardInfo = ref(null)
+const friendOnlineStatus = ref(null)
+const friendLastActiveTime = ref(null)
+const friendDeviceName = ref(null)
+
+const ASTRO_MAP = ['', '水瓶座', '双鱼座', '白羊座', '金牛座', '双子座', '巨蟹座', '狮子座', '处女座', '天秤座', '天蝎座', '射手座', '摩羯座']
+
+const friendLastActiveText = computed(() => {
+  if (!friendLastActiveTime.value) return ''
+  const diff = Date.now() - friendLastActiveTime.value * 1000
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 1) return '刚刚活跃'
+  if (minutes < 60) return `${minutes}分钟前活跃`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}小时前活跃`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}天前活跃`
+  return ''
+})
+
+const fetchFriendCard = async (uin) => {
+  try {
+    const res = await window.QzoneAPI.getPersonalCard({ targetUin: uin })
+    if (res?.uin) {
+      friendCardInfo.value = {
+        realname: res.realname || '',
+        intimacyScore: res.intimacyScore || 0,
+        gender: res.gender || 0,
+        astro: res.astro || 0,
+        astroText: ASTRO_MAP[res.astro] || '',
+        location: res.from || '',
+        logolabel: res.logolabel || '',
+        commfrd: res.commfrd || 0
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+const fetchFriendOnlineStatus = async () => {
+  try {
+    const res = await window.QzoneAPI.getVisitorStatus()
+    if (res?.code === 0 && res?.data?.module_3?.data?.items) {
+      const items = res.data.module_3.data.items
+      if (props.currentFriend) {
+        const match = items.find(i => String(i.uin) === String(props.currentFriend.uin))
+        if (match) {
+          friendOnlineStatus.value = match.online === 1
+          friendLastActiveTime.value = match.time || null
+        }
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+const fetchFriendDevice = async (uin) => {
+  try {
+    const res = await window.QzoneAPI.getShuoshuo({ targetUin: uin, pos: 0, num: 1 })
+    if (res?.msglist?.[0]?.source_name) {
+      friendDeviceName.value = res.msglist[0].source_name
+    }
+  } catch { /* ignore */ }
+}
+
+// 好友名片摘要行（QQ号下方的细字）
+const friendSubtitle = computed(() => {
+  if (!friendCardInfo.value) return ''
+  const parts = []
+  if (friendCardInfo.value.realname) parts.push(friendCardInfo.value.realname)
+  if (friendCardInfo.value.astroText) parts.push(friendCardInfo.value.astroText)
+  if (friendCardInfo.value.location) parts.push(friendCardInfo.value.location)
+  if (friendCardInfo.value.gender) parts.push(friendCardInfo.value.gender === 1 ? '♂' : '♀')
+  return parts.join(' · ')
+})
+
 // 好友空间统计信息（从相册 API 响应中提取）
 const friendAlbumCount = computed(() => apiData.value?.albumsInUser ?? '--')
 const friendDiskUsed = computed(() => {
@@ -553,10 +642,22 @@ const fetchAlbumQA = async (album) => {
   }
 }
 
-// 切换好友/用户时清空问答缓存
+// 切换好友/用户时清空问答缓存 + 加载好友名片
 watch(effectiveHostUin, () => {
   Object.keys(albumQAMap).forEach((key) => delete albumQAMap[key])
 })
+
+watch(() => props.currentFriend, (friend) => {
+  friendCardInfo.value = null
+  friendOnlineStatus.value = null
+  friendLastActiveTime.value = null
+  friendDeviceName.value = null
+  if (friend?.uin) {
+    fetchFriendCard(friend.uin)
+    fetchFriendOnlineStatus()
+    fetchFriendDevice(friend.uin)
+  }
+}, { immediate: true })
 
 // 当前模块状态
 const currentModule = ref('album') // album, photo, video
@@ -1692,6 +1793,28 @@ defineExpose({
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+
+          .online-dot {
+            flex-shrink: 0;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            cursor: pointer;
+            &.is-online {
+              background: #22c55e;
+              box-shadow: 0 0 4px rgba(34, 197, 94, 0.6);
+            }
+            &.is-offline {
+              background: rgba(255, 255, 255, 0.25);
+            }
+            &.is-unknown {
+              background: rgba(255, 255, 255, 0.15);
+              border: 1px solid rgba(255, 255, 255, 0.2);
+            }
+          }
         }
 
         .uin {
@@ -1699,6 +1822,7 @@ defineExpose({
           color: rgba(255, 255, 255, 0.6);
           line-height: 1.1;
           cursor: pointer;
+
           user-select: none;
           transition: color 0.2s ease;
 
@@ -1706,6 +1830,7 @@ defineExpose({
             color: rgba(255, 255, 255, 0.8);
           }
         }
+
       }
 
       .header-actions {
@@ -2952,6 +3077,26 @@ defineExpose({
 
   .qa-muted {
     color: rgba(255, 255, 255, 0.3);
+  }
+}
+</style>
+
+<style lang="scss">
+.friend-info-popper.el-popper {
+  .online-tooltip {
+    font-size: 12px;
+    line-height: 1.6;
+
+    .online-tooltip-row {
+      color: rgba(0, 0, 0, 0.85);
+      font-weight: 500;
+      &.is-online-text { color: #16a34a; }
+    }
+
+    .online-tooltip-sub {
+      font-size: 11px;
+      color: rgba(0, 0, 0, 0.4);
+    }
   }
 }
 </style>

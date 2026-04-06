@@ -40,7 +40,15 @@ export const IPC_PHOTO = {
 
 export const IPC_USER = {
   /** 获取我的信息 */
-  ME_INFO: 'user:getMeInfo'
+  ME_INFO: 'user:getMeInfo',
+  /** 获取好友个人名片（真实姓名、亲密度、星座等） */
+  PERSONAL_CARD: 'user:getPersonalCard',
+  /** 获取访客在线状态 */
+  VISITOR_STATUS: 'user:getVisitorStatus',
+  /** 获取访客详细记录（30天统计） */
+  VISITOR_DETAIL: 'user:getVisitorDetail',
+  /** 获取说说列表（含评论IP、设备型号） */
+  SHUOSHUO: 'user:getShuoshuo'
 }
 
 export const IPC_FRIEND = {

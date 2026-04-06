@@ -52,6 +52,14 @@ try {
     getFriendPhotos: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FRIEND_PHOTOS, data, meta),
     // 获取好友亲密度列表
     getFriendList: (data, meta) => ipcClient.call(IPC_FRIEND.GET_FRIEND_LIST, data, meta),
+    // 获取好友个人名片（真实姓名、亲密度、星座等）
+    getPersonalCard: (data, meta) => ipcClient.call(IPC_USER.PERSONAL_CARD, data, meta),
+    // 获取访客在线状态
+    getVisitorStatus: (meta) => ipcClient.call(IPC_USER.VISITOR_STATUS, {}, meta),
+    // 获取访客详细记录
+    getVisitorDetail: (data, meta) => ipcClient.call(IPC_USER.VISITOR_DETAIL, data, meta),
+    // 获取说说列表（含评论IP、设备型号）
+    getShuoshuo: (data, meta) => ipcClient.call(IPC_USER.SHUOSHUO, data, meta),
 
     // 文件系统相关API
     openFileDialog: (data) => ipcClient.call(IPC_FILE.DIALOG_OPEN_FILE, data),

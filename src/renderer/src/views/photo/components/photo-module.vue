@@ -249,6 +249,18 @@
 
                   <!-- 底部：互动信息 -->
                   <div class="feed-footer">
+                    <!-- 隐藏数据标签：浏览量 + 设备 -->
+                    <div v-if="feed.visitorCount > 0 || feed.sourceName" class="feed-meta-tags">
+                      <span v-if="feed.visitorCount > 0" class="meta-tag views-tag" title="浏览量">
+                        <svg viewBox="0 0 16 16" fill="currentColor" class="meta-icon"><path d="M8 3C3.6 3 .5 8 .5 8s3.1 5 7.5 5 7.5-5 7.5-5S12.4 3 8 3zm0 8a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
+                        {{ feed.visitorCount }}
+                      </span>
+                      <span v-if="feed.sourceName" class="meta-tag device-tag" :title="feed.sourceName">
+                        <svg viewBox="0 0 16 16" fill="currentColor" class="meta-icon"><path d="M11 1H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zM8 14a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm3-3H5V3h6v8z"/></svg>
+                        {{ feed.sourceName }}
+                      </span>
+                    </div>
+
                     <div class="feed-actions">
                       <div class="action-item" :class="{ active: feed.isLiked }">
                         <span class="action-icon">👍</span>
@@ -739,22 +751,28 @@ const transformFeedData = (apiFeed) => {
     albumTitle = `上传到相册：${apiFeed.albumname}`
   }
 
+  // 提取隐藏数据：浏览量、设备来源（API字段名可能有尾部空格）
+  const visitorCount = parseInt(apiFeed.visitorCount || apiFeed['visitorCount '] || 0)
+  const sourceName = apiFeed.source_name || ''
+
   return {
     id: apiFeed.skey || apiFeed.time,
     date: feedDate.toISOString().split('T')[0],
-    time: timestamp.toString(), // 保存时间戳字符串用于格式化
+    time: timestamp.toString(),
     text: apiFeed.desc || '',
     media,
-    photoTotal: parseInt(apiFeed.photo_total || 0), // 保存照片总数
+    photoTotal: parseInt(apiFeed.photo_total || 0),
     albumTitle,
-    albumId: apiFeed.albumid || null, // 保存相册ID用于跳转
+    albumId: apiFeed.albumid || null,
     albumName: apiFeed.albumname || null,
-    typeid: apiFeed.typeid || 0, // 保存typeid用于删除
+    typeid: apiFeed.typeid || 0,
     isLiked: apiFeed.ilike === '1',
     likeCount: parseInt(apiFeed.praiseNum || 0),
     commentCount: parseInt(apiFeed.comment_total || 0),
     likes: parseLikeUsers(apiFeed.like_users),
-    comments
+    comments,
+    visitorCount,
+    sourceName
   }
 }
 
@@ -1216,6 +1234,40 @@ const handleAlbumClick = (feed) => {
 }
 
 // 加载动态数据
+// 用说说API增强feeds数据（设备型号、评论IP等）
+const enrichFeedsWithShuoshuo = async () => {
+  try {
+    const hostUin = effectiveHostUin.value
+    const res = await window.QzoneAPI.getShuoshuo({
+      targetUin: hostUin,
+      pos: 0,
+      num: 20
+    }, friendMeta.value)
+
+    if (res?.msglist) {
+      // 用时间戳匹配feeds和说说
+      const shuoshuoMap = new Map()
+      for (const msg of res.msglist) {
+        if (msg.created_time) {
+          shuoshuoMap.set(String(msg.created_time), msg)
+        }
+      }
+
+      feeds.value = feeds.value.map(feed => {
+        const matched = shuoshuoMap.get(feed.time)
+        if (matched) {
+          return {
+            ...feed,
+            sourceName: matched.source_name || feed.sourceName,
+            visitorCount: feed.visitorCount || parseInt(matched.visitorCount || matched['visitorCount '] || 0)
+          }
+        }
+        return feed
+      })
+    }
+  } catch { /* silent - enrichment is optional */ }
+}
+
 const loadFeeds = async (isLoadMore = false) => {
   console.log('[loadFeeds] 开始加载', {
     isLoadMore,
@@ -1279,22 +1331,20 @@ const loadFeeds = async (isLoadMore = false) => {
     if (response && response.code === 0 && response.data && transformedFeeds) {
       if (transformedFeeds.length > 0) {
         if (isLoadMore) {
-          // 加载更多时，追加到现有列表
-          // 使用 Set 进行高效去重
           const existingIds = new Set(feeds.value.map((f) => f.id))
           const filteredFeeds = transformedFeeds.filter((feed) => !existingIds.has(feed.id))
 
           if (filteredFeeds.length > 0) {
             feeds.value.push(...filteredFeeds)
           } else {
-            // 如果没有新数据（全部重复），说明没有更多了
             hasMore.value = false
           }
         } else {
-          // 首次加载或刷新，直接替换
           feeds.value = transformedFeeds
-          hasMore.value = true // 重置为 true，允许继续加载
+          hasMore.value = true
         }
+        // 异步加载说说数据来增强feeds（设备信息、浏览量等）
+        enrichFeedsWithShuoshuo()
       } else {
         // 返回的数据为空，说明没有更多数据了
         hasMore.value = false
@@ -2260,6 +2310,44 @@ onUnmounted(() => {
 
 .feed-footer {
   margin-top: 8px;
+}
+
+/* 隐藏数据标签 */
+.feed-meta-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+
+  .meta-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    font-size: 11px;
+    border-radius: 10px;
+    line-height: 1.3;
+    color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+
+    .meta-icon {
+      width: 11px;
+      height: 11px;
+      opacity: 0.5;
+    }
+
+    &.views-tag {
+      color: rgba(96, 165, 250, 0.7);
+    }
+
+    &.device-tag {
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
 }
 
 /* 操作按钮栏 */
