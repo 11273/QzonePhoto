@@ -258,10 +258,11 @@ watch(
 )
 
 const qaLabel = computed(() => {
-  if (!qaShowAnswer.value) return '点击查看答案'
+  if (!qaShowAnswer.value) return isFriendContext.value ? '仅主人可查看答案' : '点击查看答案'
   if (qaLoading.value) return '加载中...'
-  if (qaAnswer.value != null) return `答案：${qaAnswer.value}`
-  return isFriendContext.value ? '仅相册主人可见' : '获取失败'
+  if (isFriendContext.value) return '仅相册主人可见'
+  if (qaAnswer.value) return `答案：${qaAnswer.value}`
+  return '获取失败'
 })
 
 // 计算相册权限文本
