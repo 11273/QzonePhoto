@@ -537,7 +537,7 @@ const friendLastActiveText = computed(() => {
 
 const fetchFriendCard = async (uin) => {
   try {
-    const res = await window.QzoneAPI.getPersonalCard({ targetUin: uin })
+    const res = await window.QzoneAPI.getPersonalCard({ targetUin: uin }, { skipAuthCheck: true })
     if (res?.uin) {
       friendCardInfo.value = {
         realname: res.realname || '',
@@ -555,7 +555,7 @@ const fetchFriendCard = async (uin) => {
 
 const fetchFriendOnlineStatus = async () => {
   try {
-    const res = await window.QzoneAPI.getVisitorStatus()
+    const res = await window.QzoneAPI.getVisitorStatus({ skipAuthCheck: true })
     if (res?.code === 0 && res?.data?.module_3?.data?.items) {
       const items = res.data.module_3.data.items
       if (props.currentFriend) {
@@ -571,7 +571,7 @@ const fetchFriendOnlineStatus = async () => {
 
 const fetchFriendDevice = async (uin) => {
   try {
-    const res = await window.QzoneAPI.getShuoshuo({ targetUin: uin, pos: 0, num: 1 })
+    const res = await window.QzoneAPI.getShuoshuo({ targetUin: uin, pos: 0, num: 1 }, { skipAuthCheck: true })
     if (res?.msglist?.[0]?.source_name) {
       friendDeviceName.value = res.msglist[0].source_name
     }

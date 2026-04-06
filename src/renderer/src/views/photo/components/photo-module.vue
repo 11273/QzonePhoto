@@ -1242,7 +1242,7 @@ const enrichFeedsWithShuoshuo = async () => {
       targetUin: hostUin,
       pos: 0,
       num: 20
-    }, friendMeta.value)
+    }, { skipAuthCheck: true })
 
     if (res?.msglist) {
       // 用时间戳匹配feeds和说说
@@ -1304,7 +1304,7 @@ const loadFeeds = async (isLoadMore = false) => {
         start: isLoadMore ? feeds.value.length : 0,
         count: 20,
         begintime: currentBegintime
-      })
+      }, { skipAuthCheck: true })
 
       if (response && response.code === 0 && response.data) {
         const photos = response.data.photos || []
