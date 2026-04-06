@@ -1268,7 +1268,11 @@ const enrichFeedsWithShuoshuo = async () => {
   } catch { /* silent - enrichment is optional */ }
 }
 
+let currentLoadId = 0
+
 const loadFeeds = async (isLoadMore = false) => {
+  const thisLoadId = ++currentLoadId
+
   console.log('[loadFeeds] 开始加载', {
     isLoadMore,
     loading: loading.value,
@@ -1327,6 +1331,9 @@ const loadFeeds = async (isLoadMore = false) => {
         transformedFeeds = processApiFeeds(apiFeeds)
       }
     }
+
+    // 请求已过时（用户切换了类型），丢弃结果
+    if (thisLoadId !== currentLoadId) return
 
     if (response && response.code === 0 && response.data && transformedFeeds) {
       if (transformedFeeds.length > 0) {
@@ -1556,8 +1563,13 @@ watch([loadMoreTrigger, hasMore, loading], () => {
 
 // 切换照片类型时重新加载
 watch(() => props.photoType, () => {
+  // 递增 loadId 使正在进行的请求结果被丢弃
+  currentLoadId++
   feeds.value = []
   hasMore.value = true
+  loading.value = false
+  loadingMore.value = false
+  isScrollLoading.value = false
   loadFeeds(false).then(() => {
     debouncedSetupObserver()
   })

@@ -8,7 +8,26 @@
             <div class="friend-bar-back" @click="emit('exit-friend')">
               <el-icon><ArrowLeft /></el-icon>
             </div>
+            <el-tooltip v-if="friendCardInfo" placement="bottom" :show-after="200" popper-class="friend-info-popper">
+              <template #content>
+                <div class="online-tooltip">
+                  <div v-if="friendCardInfo.realname" class="online-tooltip-row">{{ friendCardInfo.realname }}</div>
+                  <div v-if="friendCardInfo.astroText || friendCardInfo.location" class="online-tooltip-sub">{{ [friendCardInfo.astroText, friendCardInfo.location].filter(Boolean).join(' · ') }}</div>
+                  <div v-if="friendLastActiveText" class="online-tooltip-sub">{{ friendLastActiveText }}</div>
+                  <div v-if="friendDeviceName" class="online-tooltip-sub">{{ friendDeviceName }}</div>
+                </div>
+              </template>
+              <el-avatar
+                shape="square"
+                :size="32"
+                :src="currentFriend.img?.replace('/50', '/100')"
+                class="user-avatar friend-avatar"
+              >
+                {{ stripEmoji(currentFriend.name)?.[0] || '?' }}
+              </el-avatar>
+            </el-tooltip>
             <el-avatar
+              v-else
               shape="square"
               :size="32"
               :src="currentFriend.img?.replace('/50', '/100')"
@@ -17,21 +36,7 @@
               {{ stripEmoji(currentFriend.name)?.[0] || '?' }}
             </el-avatar>
             <div class="user-info">
-              <div class="nickname">
-                <span v-html="renderFriendName(currentFriend.name)"></span>
-                <el-tooltip v-if="friendCardInfo || friendOnlineStatus !== null" placement="bottom" :show-after="200" popper-class="friend-info-popper">
-                  <template #content>
-                    <div class="online-tooltip">
-                      <div v-if="friendCardInfo?.realname" class="online-tooltip-row">{{ friendCardInfo.realname }}</div>
-                      <div v-if="friendOnlineStatus !== null" class="online-tooltip-row" :class="friendOnlineStatus ? 'is-online-text' : ''">{{ friendOnlineStatus ? '在线' : '离线' }}</div>
-                      <div v-if="friendLastActiveText" class="online-tooltip-sub">{{ friendLastActiveText }}</div>
-                      <div v-if="friendCardInfo?.astroText || friendCardInfo?.location" class="online-tooltip-sub">{{ [friendCardInfo?.astroText, friendCardInfo?.location].filter(Boolean).join(' · ') }}</div>
-                      <div v-if="friendDeviceName" class="online-tooltip-sub">{{ friendDeviceName }}</div>
-                    </div>
-                  </template>
-                  <span class="online-dot" :class="friendOnlineStatus === true ? 'is-online' : friendOnlineStatus === false ? 'is-offline' : 'is-unknown'"></span>
-                </el-tooltip>
-              </div>
+              <div class="nickname" v-html="renderFriendName(currentFriend.name)"></div>
               <div class="uin" @click="toggleUinDisplay" :title="showUin ? '点击隐藏QQ号' : '点击显示QQ号'">{{ showUin ? currentFriend.uin : maskUin(currentFriend.uin) }}</div>
             </div>
             <div class="header-actions">
@@ -516,7 +521,6 @@ const friendMeta = computed(() => (isFriendMode.value ? { skipAuthCheck: true } 
 
 // 好友个人名片隐藏数据
 const friendCardInfo = ref(null)
-const friendOnlineStatus = ref(null)
 const friendLastActiveTime = ref(null)
 const friendDeviceName = ref(null)
 
@@ -553,18 +557,12 @@ const fetchFriendCard = async (uin) => {
   } catch { /* ignore */ }
 }
 
-const fetchFriendOnlineStatus = async () => {
+const fetchFriendLastActive = async () => {
   try {
     const res = await window.QzoneAPI.getVisitorStatus({ skipAuthCheck: true })
-    if (res?.code === 0 && res?.data?.module_3?.data?.items) {
-      const items = res.data.module_3.data.items
-      if (props.currentFriend) {
-        const match = items.find(i => String(i.uin) === String(props.currentFriend.uin))
-        if (match) {
-          friendOnlineStatus.value = match.online === 1
-          friendLastActiveTime.value = match.time || null
-        }
-      }
+    if (res?.code === 0 && res?.data?.module_3?.data?.items && props.currentFriend) {
+      const match = res.data.module_3.data.items.find(i => String(i.uin) === String(props.currentFriend.uin))
+      if (match) friendLastActiveTime.value = match.time || null
     }
   } catch { /* ignore */ }
 }
@@ -577,17 +575,6 @@ const fetchFriendDevice = async (uin) => {
     }
   } catch { /* ignore */ }
 }
-
-// 好友名片摘要行（QQ号下方的细字）
-const friendSubtitle = computed(() => {
-  if (!friendCardInfo.value) return ''
-  const parts = []
-  if (friendCardInfo.value.realname) parts.push(friendCardInfo.value.realname)
-  if (friendCardInfo.value.astroText) parts.push(friendCardInfo.value.astroText)
-  if (friendCardInfo.value.location) parts.push(friendCardInfo.value.location)
-  if (friendCardInfo.value.gender) parts.push(friendCardInfo.value.gender === 1 ? '♂' : '♀')
-  return parts.join(' · ')
-})
 
 // 好友空间统计信息（从相册 API 响应中提取）
 const friendAlbumCount = computed(() => apiData.value?.albumsInUser ?? '--')
@@ -649,12 +636,11 @@ watch(effectiveHostUin, () => {
 
 watch(() => props.currentFriend, (friend) => {
   friendCardInfo.value = null
-  friendOnlineStatus.value = null
   friendLastActiveTime.value = null
   friendDeviceName.value = null
   if (friend?.uin) {
     fetchFriendCard(friend.uin)
-    fetchFriendOnlineStatus()
+    fetchFriendLastActive()
     fetchFriendDevice(friend.uin)
   }
 }, { immediate: true })
@@ -1793,28 +1779,6 @@ defineExpose({
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          display: flex;
-          align-items: center;
-          gap: 4px;
-
-          .online-dot {
-            flex-shrink: 0;
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            cursor: pointer;
-            &.is-online {
-              background: #22c55e;
-              box-shadow: 0 0 4px rgba(34, 197, 94, 0.6);
-            }
-            &.is-offline {
-              background: rgba(255, 255, 255, 0.25);
-            }
-            &.is-unknown {
-              background: rgba(255, 255, 255, 0.15);
-              border: 1px solid rgba(255, 255, 255, 0.2);
-            }
-          }
         }
 
         .uin {
