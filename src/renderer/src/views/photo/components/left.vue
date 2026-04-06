@@ -32,7 +32,7 @@
                   <span class="online-dot" :class="friendOnlineStatus === true ? 'is-online' : friendOnlineStatus === false ? 'is-offline' : 'is-unknown'"></span>
                 </el-tooltip>
               </div>
-              <div class="uin">{{ currentFriend.uin }}</div>
+              <div class="uin" @click="toggleUinDisplay" :title="showUin ? '点击隐藏QQ号' : '点击显示QQ号'">{{ showUin ? currentFriend.uin : maskUin(currentFriend.uin) }}</div>
             </div>
             <div class="header-actions">
               <el-button
