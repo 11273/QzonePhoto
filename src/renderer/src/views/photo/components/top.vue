@@ -228,6 +228,11 @@ const toggleQA = async () => {
     return
   }
   qaShowAnswer.value = true
+  // 好友模式下无法获取答案，直接跳过API调用
+  if (isFriendContext.value) {
+    qaAnswer.value = ''
+    return
+  }
   if (qaAnswer.value !== null) return
   qaLoading.value = true
   try {
