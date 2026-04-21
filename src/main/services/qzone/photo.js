@@ -27,7 +27,11 @@ export class QzonePhotoService {
     if (answer !== undefined) opts.answer = answer
     const result = await cgi_list_photo(uin, p_skey, hostUin, pageStart, pageNum, topicId, opts)
 
-    this.qq_photo_key = result.qq_photo_key
+    // 腾讯只在部分 cgi_list_photo 响应里下发新 qq_photo_key，没下发时保留旧值，
+    // 与浏览器 cookie jar 一致；否则后续 photo.store.qq.com 会返回 755B 占位 GIF。
+    if (result.qq_photo_key) {
+      this.qq_photo_key = result.qq_photo_key
+    }
 
     return result.data
   }
