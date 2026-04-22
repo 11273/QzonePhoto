@@ -29,8 +29,7 @@ export async function getMeInfo(uin, p_skey) {
  * @param {string} targetUin 目标QQ号
  */
 export async function getPersonalCard(uin, p_skey, targetUin) {
-  const url =
-    'https://user.qzone.qq.com/proxy/domain/r.qzone.qq.com/cgi-bin/user/cgi_personal_card'
+  const url = 'https://user.qzone.qq.com/proxy/domain/r.qzone.qq.com/cgi-bin/user/cgi_personal_card'
   const params = {
     uin: targetUin,
     g_tk: getGTK(p_skey)
@@ -48,11 +47,9 @@ export async function getPersonalCard(uin, p_skey, targetUin) {
  * 获取访客在线状态和最后访问时间
  * @param {string} uin cookie uin
  * @param {string} p_skey 登录凭证
- * @param {string} hostUin 主人QQ号
  */
-export async function getVisitorStatus(uin, p_skey, hostUin) {
-  const url =
-    'https://user.qzone.qq.com/proxy/domain/r.qzone.qq.com/cgi-bin/main_page_cgi'
+export async function getVisitorStatus(uin, p_skey) {
+  const url = 'https://user.qzone.qq.com/proxy/domain/r.qzone.qq.com/cgi-bin/main_page_cgi'
   const params = {
     uin: rawUin(uin),
     param: `3_${rawUin(uin)}_0`,
@@ -102,8 +99,7 @@ export async function getVisitorDetail(uin, p_skey, mask = 2, mod = 2) {
  * @param {number} num 数量
  */
 export async function getShuoshuo(uin, p_skey, targetUin, pos = 0, num = 20) {
-  const url =
-    'https://user.qzone.qq.com/proxy/domain/taotao.qq.com/cgi-bin/emotion_cgi_msglist_v6'
+  const url = 'https://user.qzone.qq.com/proxy/domain/taotao.qq.com/cgi-bin/emotion_cgi_msglist_v6'
   const params = {
     uin: targetUin,
     ftype: 0,

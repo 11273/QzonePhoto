@@ -871,7 +871,9 @@ export class DownloadService {
         if (qq_photo_key) {
           headers['Cookie'] = `qq_photo_key=${qq_photo_key}`
         }
-      } catch (_) {}
+      } catch {
+        // ignore: 服务未就绪或缺少 key 时不附加 cookie
+      }
 
       const response = await axios({
         method: 'get',

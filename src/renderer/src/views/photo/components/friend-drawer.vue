@@ -8,7 +8,11 @@
     <!-- 触发按钮 -->
     <div class="drawer-trigger" @click="toggleDrawer">
       <div class="trigger-bar" :class="{ active: isExpanded }">
-        <svg class="trigger-heart" viewBox="0 0 16 16" fill="currentColor"><path d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"/></svg>
+        <svg class="trigger-heart" viewBox="0 0 16 16" fill="currentColor">
+          <path
+            d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"
+          />
+        </svg>
         <span class="trigger-label">好友</span>
         <el-icon class="trigger-arrow" :class="{ flipped: isExpanded }">
           <ArrowUp />
@@ -26,7 +30,11 @@
             :class="{ active: friendStore.currentTab === 1 }"
             @click="friendStore.switchTab(1)"
           >
-            <svg class="tab-heart" viewBox="0 0 16 16" fill="currentColor"><path d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"/></svg>
+            <svg class="tab-heart" viewBox="0 0 16 16" fill="currentColor">
+              <path
+                d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"
+              />
+            </svg>
             <span>我在意谁</span>
           </div>
           <div
@@ -34,7 +42,11 @@
             :class="{ active: friendStore.currentTab === 2 }"
             @click="friendStore.switchTab(2)"
           >
-            <svg class="tab-heart" viewBox="0 0 16 16" fill="currentColor"><path d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"/></svg>
+            <svg class="tab-heart" viewBox="0 0 16 16" fill="currentColor">
+              <path
+                d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"
+              />
+            </svg>
             <span>谁在意我</span>
           </div>
         </div>
@@ -71,10 +83,15 @@
                 {{ stripEmoji(friend.name)?.[0] || '?' }}
               </el-avatar>
               <div class="friend-detail">
+                <!-- eslint-disable-next-line vue/no-v-html -- 名称已做 HTML 转义，仅注入表情 img 标签 -->
                 <div class="friend-name" v-html="renderName(friend.name)"></div>
               </div>
               <div class="friend-score-badge">
-                <svg class="score-heart" viewBox="0 0 16 16" fill="currentColor"><path d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"/></svg>
+                <svg class="score-heart" viewBox="0 0 16 16" fill="currentColor">
+                  <path
+                    d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"
+                  />
+                </svg>
                 <span class="score-value">{{ friend.score }}</span>
               </div>
             </div>
@@ -93,7 +110,7 @@ import { ref } from 'vue'
 import { ArrowUp, Search, Loading } from '@element-plus/icons-vue'
 import { useFriendStore } from '@renderer/store/friend.store'
 
-const props = defineProps({
+defineProps({
   activeFriend: { type: Object, default: null }
 })
 
@@ -198,7 +215,9 @@ defineExpose({ toggleDrawer })
   font-size: 11px;
   color: rgba(255, 255, 255, 0.2);
   flex-shrink: 0;
-  transition: transform 0.3s ease, color 0.2s ease;
+  transition:
+    transform 0.3s ease,
+    color 0.2s ease;
 }
 
 .trigger-bar:hover .trigger-arrow {
@@ -224,16 +243,22 @@ defineExpose({ toggleDrawer })
   border: 1px solid rgba(248, 113, 113, 0.15);
   border-bottom: none;
   border-radius: 10px 10px 0 0;
-  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4), 0 -2px 8px rgba(248, 113, 113, 0.06);
+  box-shadow:
+    0 -8px 32px rgba(0, 0, 0, 0.4),
+    0 -2px 8px rgba(248, 113, 113, 0.06);
   height: calc(100vh - 260px);
 }
 
 /* 面板滑入动画 */
 .panel-slide-enter-active {
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+  transition:
+    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.2s ease;
 }
 .panel-slide-leave-active {
-  transition: transform 0.2s cubic-bezier(0.4, 0, 1, 1), opacity 0.15s ease;
+  transition:
+    transform 0.2s cubic-bezier(0.4, 0, 1, 1),
+    opacity 0.15s ease;
 }
 .panel-slide-enter-from {
   transform: translateY(12px);

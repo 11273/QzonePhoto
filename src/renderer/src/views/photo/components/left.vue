@@ -8,13 +8,33 @@
             <div class="friend-bar-back" @click="emit('exit-friend')">
               <el-icon><ArrowLeft /></el-icon>
             </div>
-            <el-tooltip v-if="friendCardInfo" placement="bottom" :show-after="200" popper-class="friend-info-popper">
+            <el-tooltip
+              v-if="friendCardInfo"
+              placement="bottom"
+              :show-after="200"
+              popper-class="friend-info-popper"
+            >
               <template #content>
                 <div class="online-tooltip">
-                  <div v-if="friendCardInfo.realname" class="online-tooltip-row">{{ friendCardInfo.realname }}</div>
-                  <div v-if="friendCardInfo.astroText || friendCardInfo.location" class="online-tooltip-sub">{{ [friendCardInfo.astroText, friendCardInfo.location].filter(Boolean).join(' · ') }}</div>
-                  <div v-if="friendLastActiveText" class="online-tooltip-sub">{{ friendLastActiveText }}</div>
-                  <div v-if="friendDeviceName" class="online-tooltip-sub">{{ friendDeviceName }}</div>
+                  <div v-if="friendCardInfo.realname" class="online-tooltip-row">
+                    {{ friendCardInfo.realname }}
+                  </div>
+                  <div
+                    v-if="friendCardInfo.astroText || friendCardInfo.location"
+                    class="online-tooltip-sub"
+                  >
+                    {{
+                      [friendCardInfo.astroText, friendCardInfo.location]
+                        .filter(Boolean)
+                        .join(' · ')
+                    }}
+                  </div>
+                  <div v-if="friendLastActiveText" class="online-tooltip-sub">
+                    {{ friendLastActiveText }}
+                  </div>
+                  <div v-if="friendDeviceName" class="online-tooltip-sub">
+                    {{ friendDeviceName }}
+                  </div>
                 </div>
               </template>
               <el-avatar
@@ -36,8 +56,15 @@
               {{ stripEmoji(currentFriend.name)?.[0] || '?' }}
             </el-avatar>
             <div class="user-info">
+              <!-- eslint-disable-next-line vue/no-v-html -- 名称已做 HTML 转义，仅注入表情 img 标签 -->
               <div class="nickname" v-html="renderFriendName(currentFriend.name)"></div>
-              <div class="uin" @click="toggleUinDisplay" :title="showUin ? '点击隐藏QQ号' : '点击显示QQ号'">{{ showUin ? currentFriend.uin : maskUin(currentFriend.uin) }}</div>
+              <div
+                class="uin"
+                :title="showUin ? '点击隐藏QQ号' : '点击显示QQ号'"
+                @click="toggleUinDisplay"
+              >
+                {{ showUin ? currentFriend.uin : maskUin(currentFriend.uin) }}
+              </div>
             </div>
             <div class="header-actions">
               <el-button
@@ -55,7 +82,11 @@
               <div class="stat-item">
                 <span class="label">亲密度</span>
                 <span class="value intimacy">
-                  <svg class="stat-heart" viewBox="0 0 16 16" fill="currentColor"><path d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"/></svg>
+                  <svg class="stat-heart" viewBox="0 0 16 16" fill="currentColor">
+                    <path
+                      d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"
+                    />
+                  </svg>
                   {{ friendCardInfo?.intimacyScore ?? currentFriend.score }}
                 </span>
               </div>
@@ -107,135 +138,135 @@
 
       <!-- 自己空间：用户信息卡片 -->
       <div v-else key="self" class="user-section">
-      <div class="user-card">
-        <div class="card-header">
-          <el-avatar
-            shape="square"
-            :size="32"
-            :src="`https://qlogo4.store.qq.com/qzone/${userStore.userInfo?.uin}/${userStore.userInfo?.uin}/100`"
-            class="user-avatar"
-          >
-            {{ userStore.userInfo?.nick?.[0] || 'Q' }}
-          </el-avatar>
-          <div class="user-info">
-            <div class="nickname">{{ userStore.userInfo?.nick || 'QZone用户' }}</div>
-            <div
-              class="uin"
-              :title="showUin ? '点击隐藏QQ号' : '点击显示QQ号'"
-              @click="toggleUinDisplay"
+        <div class="user-card">
+          <div class="card-header">
+            <el-avatar
+              shape="square"
+              :size="32"
+              :src="`https://qlogo4.store.qq.com/qzone/${userStore.userInfo?.uin}/${userStore.userInfo?.uin}/100`"
+              class="user-avatar"
             >
-              {{ displayUin }}
-            </div>
-          </div>
-          <!-- 登出按钮移到头像右边 -->
-          <div class="header-actions">
-            <el-button
-              text
-              :icon="Monitor"
-              class="action-btn open-web-btn"
-              title="打开官网"
-              @click="openQzoneWeb"
-            >
-            </el-button>
-            <el-popconfirm
-              title="确定要登出当前账号吗？"
-              confirm-button-text="确定登出"
-              cancel-button-text="取消"
-              width="200"
-              placement="top"
-              @confirm="confirmLogout"
-            >
-              <template #reference>
-                <el-button
-                  text
-                  :icon="SwitchButton"
-                  class="action-btn logout-btn header-logout"
-                  title="登出"
-                >
-                </el-button>
-              </template>
-            </el-popconfirm>
-          </div>
-        </div>
-        <div class="card-stats">
-          <div class="stat-grid">
-            <div class="stat-item">
-              <span class="label">黄钻等级</span>
-              <span class="value level">{{ userStore.userInfo?.level || 0 }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="label">成长值</span>
-              <span class="value growth">{{ userStore.userInfo?.score || 0 }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="label">成长速度</span>
-              <span class="value speed">{{ formatSpeed(userStore.userInfo?.speed || 0) }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="label">已用容量</span>
-              <span class="value storage">{{ formatStorage() }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 用户操作区域 - 管理器按钮并排布局 -->
-        <div class="card-actions managers-layout">
-          <div class="manager-item">
-            <el-button
-              text
-              class="action-btn download-btn manager-btn"
-              :class="{ 'has-active-tasks': hasActiveTasks }"
-              title="下载管理器"
-              @click="showDownloadProgress"
-            >
-              <div class="manager-btn-content">
-                <div class="icon-wrapper">
-                  <el-icon><Download /></el-icon>
-                  <!-- 活跃任务指示器 -->
-                  <div v-if="hasActiveTasks" class="active-indicator">
-                    <div class="pulse-ring"></div>
-                    <div class="pulse-dot"></div>
-                  </div>
-                </div>
-                <div class="text-wrapper">
-                  <div class="main-text">下载管理</div>
-                  <div v-if="activeTaskCount > 0" class="status-text">
-                    {{ statusText }}
-                  </div>
-                </div>
+              {{ userStore.userInfo?.nick?.[0] || 'Q' }}
+            </el-avatar>
+            <div class="user-info">
+              <div class="nickname">{{ userStore.userInfo?.nick || 'QZone用户' }}</div>
+              <div
+                class="uin"
+                :title="showUin ? '点击隐藏QQ号' : '点击显示QQ号'"
+                @click="toggleUinDisplay"
+              >
+                {{ displayUin }}
               </div>
-            </el-button>
+            </div>
+            <!-- 登出按钮移到头像右边 -->
+            <div class="header-actions">
+              <el-button
+                text
+                :icon="Monitor"
+                class="action-btn open-web-btn"
+                title="打开官网"
+                @click="openQzoneWeb"
+              >
+              </el-button>
+              <el-popconfirm
+                title="确定要登出当前账号吗？"
+                confirm-button-text="确定登出"
+                cancel-button-text="取消"
+                width="200"
+                placement="top"
+                @confirm="confirmLogout"
+              >
+                <template #reference>
+                  <el-button
+                    text
+                    :icon="SwitchButton"
+                    class="action-btn logout-btn header-logout"
+                    title="登出"
+                  >
+                  </el-button>
+                </template>
+              </el-popconfirm>
+            </div>
+          </div>
+          <div class="card-stats">
+            <div class="stat-grid">
+              <div class="stat-item">
+                <span class="label">黄钻等级</span>
+                <span class="value level">{{ userStore.userInfo?.level || 0 }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="label">成长值</span>
+                <span class="value growth">{{ userStore.userInfo?.score || 0 }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="label">成长速度</span>
+                <span class="value speed">{{ formatSpeed(userStore.userInfo?.speed || 0) }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="label">已用容量</span>
+                <span class="value storage">{{ formatStorage() }}</span>
+              </div>
+            </div>
           </div>
 
-          <div class="manager-item">
-            <el-button
-              text
-              class="action-btn upload-btn manager-btn"
-              :class="{ 'has-active-tasks': hasActiveUploadTasks }"
-              title="上传管理器"
-              @click="showUploadProgress"
-            >
-              <div class="manager-btn-content">
-                <div class="icon-wrapper">
-                  <el-icon><Upload /></el-icon>
-                  <!-- 活跃任务指示器 -->
-                  <div v-if="hasActiveUploadTasks" class="active-indicator upload-indicator">
-                    <div class="pulse-ring"></div>
-                    <div class="pulse-dot"></div>
+          <!-- 用户操作区域 - 管理器按钮并排布局 -->
+          <div class="card-actions managers-layout">
+            <div class="manager-item">
+              <el-button
+                text
+                class="action-btn download-btn manager-btn"
+                :class="{ 'has-active-tasks': hasActiveTasks }"
+                title="下载管理器"
+                @click="showDownloadProgress"
+              >
+                <div class="manager-btn-content">
+                  <div class="icon-wrapper">
+                    <el-icon><Download /></el-icon>
+                    <!-- 活跃任务指示器 -->
+                    <div v-if="hasActiveTasks" class="active-indicator">
+                      <div class="pulse-ring"></div>
+                      <div class="pulse-dot"></div>
+                    </div>
+                  </div>
+                  <div class="text-wrapper">
+                    <div class="main-text">下载管理</div>
+                    <div v-if="activeTaskCount > 0" class="status-text">
+                      {{ statusText }}
+                    </div>
                   </div>
                 </div>
-                <div class="text-wrapper">
-                  <div class="main-text">上传管理</div>
-                  <div v-if="activeUploadTaskCount > 0" class="status-text">
-                    {{ uploadStatusText }}
+              </el-button>
+            </div>
+
+            <div class="manager-item">
+              <el-button
+                text
+                class="action-btn upload-btn manager-btn"
+                :class="{ 'has-active-tasks': hasActiveUploadTasks }"
+                title="上传管理器"
+                @click="showUploadProgress"
+              >
+                <div class="manager-btn-content">
+                  <div class="icon-wrapper">
+                    <el-icon><Upload /></el-icon>
+                    <!-- 活跃任务指示器 -->
+                    <div v-if="hasActiveUploadTasks" class="active-indicator upload-indicator">
+                      <div class="pulse-ring"></div>
+                      <div class="pulse-dot"></div>
+                    </div>
+                  </div>
+                  <div class="text-wrapper">
+                    <div class="main-text">上传管理</div>
+                    <div v-if="activeUploadTaskCount > 0" class="status-text">
+                      {{ uploadStatusText }}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </el-button>
+              </el-button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
     </transition>
 
     <!-- 一级导航菜单 - TAB 样式 -->
@@ -334,10 +365,18 @@
                   </span>
                   <span class="album-text">{{ album.name }}</span>
                 </div>
-                <el-icon v-if="album.priv === 3" class="album-lock-icon priv-self" title="仅自己可见">
+                <el-icon
+                  v-if="album.priv === 3"
+                  class="album-lock-icon priv-self"
+                  title="仅自己可见"
+                >
                   <Lock />
                 </el-icon>
-                <el-icon v-else-if="album.priv === 2" class="album-lock-icon priv-password" title="密码访问">
+                <el-icon
+                  v-else-if="album.priv === 2"
+                  class="album-lock-icon priv-password"
+                  title="密码访问"
+                >
                   <Key />
                 </el-icon>
                 <el-popover
@@ -350,7 +389,12 @@
                   @before-enter="fetchAlbumQA(album)"
                 >
                   <template #reference>
-                    <el-icon class="album-lock-icon priv-question clickable" title="查看问答" @click.stop.prevent @mousedown.stop.prevent>
+                    <el-icon
+                      class="album-lock-icon priv-question clickable"
+                      title="查看问答"
+                      @click.stop.prevent
+                      @mousedown.stop.prevent
+                    >
                       <QuestionFilled />
                     </el-icon>
                   </template>
@@ -361,19 +405,37 @@
                     </div>
                     <div class="qa-item">
                       <span class="qa-label">答案</span>
-                      <span v-if="albumQAMap[album.id]?.answer != null" class="qa-text qa-answer">{{ albumQAMap[album.id].answer }}</span>
-                      <span v-else-if="albumQAMap[album.id]?.loading" class="qa-text qa-muted">...</span>
-                      <span v-else class="qa-text qa-muted">{{ isFriendMode ? '仅主人可见' : '-' }}</span>
+                      <span v-if="albumQAMap[album.id]?.answer != null" class="qa-text qa-answer">{{
+                        albumQAMap[album.id].answer
+                      }}</span>
+                      <span v-else-if="albumQAMap[album.id]?.loading" class="qa-text qa-muted"
+                        >...</span
+                      >
+                      <span v-else class="qa-text qa-muted">{{
+                        isFriendMode ? '仅主人可见' : '-'
+                      }}</span>
                     </div>
                   </div>
                 </el-popover>
-                <el-icon v-else-if="album.priv === 4" class="album-lock-icon priv-friend" title="QQ好友可见">
+                <el-icon
+                  v-else-if="album.priv === 4"
+                  class="album-lock-icon priv-friend"
+                  title="QQ好友可见"
+                >
                   <User />
                 </el-icon>
-                <el-icon v-else-if="album.priv === 6" class="album-lock-icon priv-partial" title="部分好友可见">
+                <el-icon
+                  v-else-if="album.priv === 6"
+                  class="album-lock-icon priv-partial"
+                  title="部分好友可见"
+                >
                   <View />
                 </el-icon>
-                <el-icon v-else-if="album.priv === 8" class="album-lock-icon priv-partial-hide" title="部分好友不可见">
+                <el-icon
+                  v-else-if="album.priv === 8"
+                  class="album-lock-icon priv-partial-hide"
+                  title="部分好友不可见"
+                >
                   <Hide />
                 </el-icon>
                 <span class="album-num">
@@ -420,7 +482,6 @@
             </div>
           </div>
         </div>
-
       </el-scrollbar>
     </div>
 
@@ -436,11 +497,19 @@
 </template>
 
 <script setup>
-import { onBeforeMount, ref, reactive, computed, nextTick, onBeforeUnmount, inject, watch } from 'vue'
+import {
+  onBeforeMount,
+  ref,
+  reactive,
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  inject,
+  watch
+} from 'vue'
 
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
-import { useFriendStore } from '@renderer/store/friend.store'
 import {
   Download,
   Upload,
@@ -453,7 +522,6 @@ import {
   Picture,
   User,
   UserFilled,
-  Search,
   VideoPlay,
   ArrowLeft,
   Lock,
@@ -500,21 +568,23 @@ const handlePhotoTypeSelect = (type) => {
   emit('module-changed', 'photo', type)
 }
 
-// 好友模块
-const friendStore = useFriendStore()
-
 // 处理好友名称中的表情代码
 const stripEmoji = (name) => (name || '').replace(/\[em\]e\d+\[\/em\]/g, '')
 const renderFriendName = (name) => {
   if (!name) return ''
   const escaped = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return escaped.replace(/\[em\](e\d+)\[\/em\]/g, (_, code) => `<img src="https://qzonestyle.gtimg.cn/qzone/em/${code}.gif" class="friend-emoji" alt="" />`)
+  return escaped.replace(
+    /\[em\](e\d+)\[\/em\]/g,
+    (_, code) =>
+      `<img src="https://qzonestyle.gtimg.cn/qzone/em/${code}.gif" class="friend-emoji" alt="" />`
+  )
 }
-
 
 // 好友模式下使用好友 uin，否则使用自己 uin
 const effectiveHostUin = computed(() =>
-  props.viewMode === 'friend' && props.currentFriend ? props.currentFriend.uin : userStore.userInfo.uin
+  props.viewMode === 'friend' && props.currentFriend
+    ? props.currentFriend.uin
+    : userStore.userInfo.uin
 )
 const isFriendMode = computed(() => props.viewMode === 'friend')
 const friendMeta = computed(() => (isFriendMode.value ? { skipAuthCheck: true } : {}))
@@ -524,7 +594,21 @@ const friendCardInfo = ref(null)
 const friendLastActiveTime = ref(null)
 const friendDeviceName = ref(null)
 
-const ASTRO_MAP = ['', '水瓶座', '双鱼座', '白羊座', '金牛座', '双子座', '巨蟹座', '狮子座', '处女座', '天秤座', '天蝎座', '射手座', '摩羯座']
+const ASTRO_MAP = [
+  '',
+  '水瓶座',
+  '双鱼座',
+  '白羊座',
+  '金牛座',
+  '双子座',
+  '巨蟹座',
+  '狮子座',
+  '处女座',
+  '天秤座',
+  '天蝎座',
+  '射手座',
+  '摩羯座'
+]
 
 const friendLastActiveText = computed(() => {
   if (!friendLastActiveTime.value) return ''
@@ -554,26 +638,37 @@ const fetchFriendCard = async (uin) => {
         commfrd: res.commfrd || 0
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 const fetchFriendLastActive = async () => {
   try {
     const res = await window.QzoneAPI.getVisitorStatus({ skipAuthCheck: true })
     if (res?.code === 0 && res?.data?.module_3?.data?.items && props.currentFriend) {
-      const match = res.data.module_3.data.items.find(i => String(i.uin) === String(props.currentFriend.uin))
+      const match = res.data.module_3.data.items.find(
+        (i) => String(i.uin) === String(props.currentFriend.uin)
+      )
       if (match) friendLastActiveTime.value = match.time || null
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 const fetchFriendDevice = async (uin) => {
   try {
-    const res = await window.QzoneAPI.getShuoshuo({ targetUin: uin, pos: 0, num: 1 }, { skipAuthCheck: true })
+    const res = await window.QzoneAPI.getShuoshuo(
+      { targetUin: uin, pos: 0, num: 1 },
+      { skipAuthCheck: true }
+    )
     if (res?.msglist?.[0]?.source_name) {
       friendDeviceName.value = res.msglist[0].source_name
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 // 好友空间统计信息（从相册 API 响应中提取）
@@ -585,7 +680,10 @@ const friendDiskUsed = computed(() => {
 })
 const friendPhotoTotal = computed(() => {
   if (!isFriendMode.value || !menuList.value) return '--'
-  return menuList.value.reduce((sum, cat) => sum + cat.albums.reduce((s, a) => s + (a.total || 0), 0), 0)
+  return menuList.value.reduce(
+    (sum, cat) => sum + cat.albums.reduce((s, a) => s + (a.total || 0), 0),
+    0
+  )
 })
 
 const selectAlbumItem = (categoryId, album) => {
@@ -634,16 +732,20 @@ watch(effectiveHostUin, () => {
   Object.keys(albumQAMap).forEach((key) => delete albumQAMap[key])
 })
 
-watch(() => props.currentFriend, (friend) => {
-  friendCardInfo.value = null
-  friendLastActiveTime.value = null
-  friendDeviceName.value = null
-  if (friend?.uin) {
-    fetchFriendCard(friend.uin)
-    fetchFriendLastActive()
-    fetchFriendDevice(friend.uin)
-  }
-}, { immediate: true })
+watch(
+  () => props.currentFriend,
+  (friend) => {
+    friendCardInfo.value = null
+    friendLastActiveTime.value = null
+    friendDeviceName.value = null
+    if (friend?.uin) {
+      fetchFriendCard(friend.uin)
+      fetchFriendLastActive()
+      fetchFriendDevice(friend.uin)
+    }
+  },
+  { immediate: true }
+)
 
 // 当前模块状态
 const currentModule = ref('album') // album, photo, video
@@ -1213,11 +1315,14 @@ const fetchPhotoData = async () => {
 
   try {
     // 获取初始数据
-    const initialRes = await window.QzoneAPI.getPhotoList({
-      hostUin: effectiveHostUin.value,
-      pageStart: 0,
-      pageNum: pageSize.value
-    }, friendMeta.value)
+    const initialRes = await window.QzoneAPI.getPhotoList(
+      {
+        hostUin: effectiveHostUin.value,
+        pageStart: 0,
+        pageNum: pageSize.value
+      },
+      friendMeta.value
+    )
     console.log('[Left] 初始相册列表数据:', JSON.parse(JSON.stringify(initialRes)))
 
     if (!initialRes || !initialRes.data) {
@@ -1267,13 +1372,16 @@ const fetchPhotoData = async () => {
           const nextPageStart = category.nextPageStart || currentLoaded
 
           try {
-            const categoryRes = await window.QzoneAPI.getPhotoList({
-              hostUin: effectiveHostUin.value,
-              pageStart: nextPageStart,
-              pageNum: pageSize.value,
-              mode: 4,
-              classId: category.classId
-            }, friendMeta.value)
+            const categoryRes = await window.QzoneAPI.getPhotoList(
+              {
+                hostUin: effectiveHostUin.value,
+                pageStart: nextPageStart,
+                pageNum: pageSize.value,
+                mode: 4,
+                classId: category.classId
+              },
+              friendMeta.value
+            )
 
             if (!categoryRes || !categoryRes.data) {
               console.warn(`[Left] 分类 ${categoryName} 加载失败`)
@@ -1353,12 +1461,15 @@ const fetchPhotoData = async () => {
 
       while (pageStart < totalAlbums && pageStart > 0) {
         try {
-          const nextRes = await window.QzoneAPI.getPhotoList({
-            hostUin: effectiveHostUin.value,
-            pageStart: pageStart,
-            pageNum: pageSize.value,
-            mode: 2 // normal模式
-          }, friendMeta.value)
+          const nextRes = await window.QzoneAPI.getPhotoList(
+            {
+              hostUin: effectiveHostUin.value,
+              pageStart: pageStart,
+              pageNum: pageSize.value,
+              mode: 2 // normal模式
+            },
+            friendMeta.value
+          )
 
           if (!nextRes || !nextRes.data || !nextRes.data.albumListModeSort) {
             break
@@ -1794,7 +1905,6 @@ defineExpose({
             color: rgba(255, 255, 255, 0.8);
           }
         }
-
       }
 
       .header-actions {
@@ -2941,7 +3051,9 @@ defineExpose({
 /* 上下文切换过渡动画 */
 .context-switch-enter-active,
 .context-switch-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
 }
 
 .context-switch-enter-from {
@@ -3054,7 +3166,9 @@ defineExpose({
     .online-tooltip-row {
       color: rgba(0, 0, 0, 0.85);
       font-weight: 500;
-      &.is-online-text { color: #16a34a; }
+      &.is-online-text {
+        color: #16a34a;
+      }
     }
 
     .online-tooltip-sub {
