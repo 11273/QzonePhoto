@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.2.1](///compare/v2.2.0...v2.2.1) (2026-04-22)
+
+### 🐛 Bug Fixes | Bug 修复
+
+* 让 cgi_list_photo 获得稳定 qq_photo_key，根治批量下载/回翻预览的加密占位 cd420c2
+
+### 🎫 Chores | 其他更新
+
+* 修复 ESLint 报错与告警 7a0b92b
+
 ## [2.2.0](///compare/v2.1.0...v2.2.0) (2026-04-21)
 
 ### ✨ Features | 新功能
