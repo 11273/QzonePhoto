@@ -25,10 +25,12 @@ export class QzonePhotoService {
     const opts = {}
     if (question !== undefined) opts.question = question
     if (answer !== undefined) opts.answer = answer
+    // 回带上一个 qq_photo_key：让服务端把当前会话当成"已信任"，
+    // 返回稳定 key（配对所有曾经签发的图片签名 URL），而不是每次都发
+    // 新的一次性签名票导致旧批次图片无法复用。
+    if (this.qq_photo_key) opts.qq_photo_key = this.qq_photo_key
     const result = await cgi_list_photo(uin, p_skey, hostUin, pageStart, pageNum, topicId, opts)
 
-    // 腾讯只在部分 cgi_list_photo 响应里下发新 qq_photo_key，没下发时保留旧值，
-    // 与浏览器 cookie jar 一致；否则后续 photo.store.qq.com 会返回 755B 占位 GIF。
     if (result.qq_photo_key) {
       this.qq_photo_key = result.qq_photo_key
     }

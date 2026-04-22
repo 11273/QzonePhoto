@@ -59,6 +59,7 @@ export async function fcg_list_album_v3(
  * @param {object} opts - 额外选项
  * @param {string} opts.question - 相册问题（priv=5 时需要）
  * @param {string} opts.answer - MD5 后的答案
+ * @param {string} opts.qq_photo_key - 已有的 qq_photo_key，回带给服务端以保持稳定 key（否则服务端会每次下发一次性临时 key，与图片签名 URL 严格绑定，导致跨分页无法复用）
  */
 export async function cgi_list_photo(uin, p_skey, hostUin, pageStart, pageNum, topicId, opts = {}) {
   const url = 'https://h5.qzone.qq.com/proxy/domain/photo.qzone.qq.com/fcgi-bin/cgi_list_photo'
@@ -77,10 +78,17 @@ export async function cgi_list_photo(uin, p_skey, hostUin, pageStart, pageNum, t
   if (opts.question !== undefined) params.question = opts.question
   if (opts.answer !== undefined) params.answer = opts.answer
 
+  // 模拟 Qzone 网页的请求签名：带 Referer/Origin + 已有的 qq_photo_key，
+  // 让服务端返回稳定 key；否则每次会下发新的一次性签名 key。
+  const cookieParts = [`uin=${uin}`, `p_skey=${p_skey}`]
+  if (opts.qq_photo_key) cookieParts.push(`qq_photo_key=${opts.qq_photo_key}`)
+
   const response = await request.get(url, {
     params,
     headers: {
-      Cookie: `uin=${uin};p_skey=${p_skey}`
+      Cookie: cookieParts.join(';'),
+      Referer: 'https://user.qzone.qq.com/',
+      Origin: 'https://user.qzone.qq.com'
     }
   })
 
