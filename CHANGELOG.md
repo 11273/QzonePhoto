@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.2](///compare/v2.2.1...v2.2.2) (2026-04-23)
+
+### 🐛 Bug Fixes | Bug 修复
+
+* macOS 打包走 ad-hoc 递归重签，修复 Tahoe 下启动即崩 695c3a3
+* 好友相册点问号不再请求 getAlbumQA，避免接口报错 bd99d4a
+
 ## [2.2.1](///compare/v2.2.0...v2.2.1) (2026-04-22)
 
 ### 🐛 Bug Fixes | Bug 修复
