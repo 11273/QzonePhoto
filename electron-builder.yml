@@ -84,7 +84,9 @@ mac:
   extendInfo:
     NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
   # 签名配置
-  hardenedRuntime: true
+  # 无 Apple Developer 证书时 electron-builder 会完全跳过签名；由 build/afterPack.js
+  # 里统一做递归 ad-hoc 重签，避免 macOS 14+ 因 Team ID 不一致导致启动崩溃。
+  hardenedRuntime: false
   gatekeeperAssess: false
   notarize: false
   artifactName: QzonePhoto-${version}-${os}-${arch}.${ext}
