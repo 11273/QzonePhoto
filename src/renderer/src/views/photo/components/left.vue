@@ -709,6 +709,7 @@ const loading = ref(false)
 const albumQAMap = reactive({})
 
 const fetchAlbumQA = async (album) => {
+  if (isFriendMode.value) return
   const cached = albumQAMap[album.id]
   if (cached && (cached.loading || cached.answer != null)) return
   albumQAMap[album.id] = { loading: true }
