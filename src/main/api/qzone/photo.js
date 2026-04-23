@@ -4,6 +4,306 @@ import { parseSetCookie } from '@main/utils'
 
 // Extract raw QQ number from cookie uin (strip "o" prefix)
 const rawUin = (uin) => String(uin).replace(/^o/, '')
+
+const toNonNegativeNumber = (value, fallback = 0) => {
+  const num = Number(value)
+  return Number.isFinite(num) && num >= 0 ? num : fallback
+}
+
+const getPhotoPayloadSnippet = (payload) => {
+  if (typeof payload !== 'string') return ''
+  return payload.slice(0, 160).replace(/\s+/g, ' ')
+}
+
+const isRecoverablePhotoPayload = (payload) => {
+  if (typeof payload !== 'string') return false
+
+  const text = payload.trim()
+  if (!/^[a-zA-Z_$][\w$]*\s*\(/.test(text)) return false
+
+  return (
+    text.includes('photoList') ||
+    text.includes('totalInAlbum') ||
+    text.includes('subcode') ||
+    text.includes('"code"') ||
+    text.includes("'code'")
+  )
+}
+
+const normalizePhotoPayload = (payload, pageStart, pageNum, overrides = {}) => {
+  const basePayload = payload && typeof payload === 'object' ? payload : {}
+  const baseData = basePayload.data && typeof basePayload.data === 'object' ? basePayload.data : {}
+  const photoList = Array.isArray(overrides.photoList ?? baseData.photoList)
+    ? (overrides.photoList ?? baseData.photoList)
+    : []
+  const requestedCount = toNonNegativeNumber(overrides.requestedCount ?? baseData.requestedCount, pageNum)
+  const totalInAlbum = toNonNegativeNumber(overrides.totalInAlbum ?? baseData.totalInAlbum)
+  const skippedCount = toNonNegativeNumber(overrides.skippedCount ?? baseData.skippedCount)
+  const loadedCount = toNonNegativeNumber(overrides.loadedCount ?? baseData.loadedCount, photoList.length)
+  const nextPageStartValue = Number(overrides.nextPageStart ?? baseData.nextPageStart)
+  const nextPageStart =
+    Number.isFinite(nextPageStartValue) && nextPageStartValue >= pageStart
+      ? nextPageStartValue
+      : pageStart + requestedCount
+  const hasMoreValue = overrides.hasMore ?? baseData.hasMore
+  const hasMore =
+    typeof hasMoreValue === 'boolean'
+      ? hasMoreValue
+      : totalInAlbum > 0
+        ? nextPageStart < totalInAlbum
+        : photoList.length === requestedCount
+
+  return {
+    ...basePayload,
+    code: typeof basePayload.code === 'number' ? basePayload.code : 0,
+    message: overrides.message ?? basePayload.message ?? '',
+    data: {
+      ...baseData,
+      photoList,
+      totalInAlbum,
+      hasMore,
+      nextPageStart,
+      requestedCount,
+      skippedCount,
+      loadedCount
+    }
+  }
+}
+
+const resolveMergedTotalInAlbum = (leftData = {}, rightData = {}) => {
+  const leftTotal = toNonNegativeNumber(leftData.totalInAlbum, -1)
+  const rightTotal = toNonNegativeNumber(rightData.totalInAlbum, -1)
+
+  if (leftTotal > 0) return leftTotal
+  if (rightTotal > 0) return rightTotal
+
+  return 0
+}
+
+const buildPhotoFailurePayload = (pageStart, pageNum, message, code = -1) => {
+  return {
+    code,
+    message,
+    data: {
+      photoList: [],
+      totalInAlbum: 0,
+      hasMore: false,
+      nextPageStart: pageStart + pageNum,
+      requestedCount: pageNum,
+      skippedCount: 0,
+      loadedCount: 0
+    }
+  }
+}
+
+const buildSkippedPhotoPayload = (pageStart, pageNum) => {
+  return normalizePhotoPayload(
+    {
+      code: 0,
+      message: `第 ${pageStart + 1} 张照片数据异常，已自动跳过`,
+      data: {}
+    },
+    pageStart,
+    pageNum,
+    {
+      photoList: [],
+      hasMore: true,
+      nextPageStart: pageStart + pageNum,
+      requestedCount: pageNum,
+      skippedCount: pageNum,
+      loadedCount: 0
+    }
+  )
+}
+
+const createPhotoRequestContext = (opts = {}) => ({
+  qqPhotoKey: opts.qq_photo_key || null
+})
+
+const buildPhotoRequestOptions = (opts = {}, context) => {
+  const requestOpts = { ...opts }
+  if (context.qqPhotoKey) {
+    requestOpts.qq_photo_key = context.qqPhotoKey
+  }
+  return requestOpts
+}
+
+const requestPhotoPage = async (
+  uin,
+  p_skey,
+  hostUin,
+  pageStart,
+  pageNum,
+  topicId,
+  opts = {},
+  context = createPhotoRequestContext(opts)
+) => {
+  const url = 'https://h5.qzone.qq.com/proxy/domain/photo.qzone.qq.com/fcgi-bin/cgi_list_photo'
+  const params = {
+    hostUin,
+    uin: rawUin(uin),
+    appid: 4,
+    pageStart,
+    pageNum,
+    inCharset: 'utf-8',
+    outCharset: 'utf-8',
+    g_tk: getGTK(p_skey),
+    topicId
+  }
+  const requestOpts = buildPhotoRequestOptions(opts, context)
+
+  // 支持回答问题访问（priv=5）和密码访问（priv=2）
+  if (requestOpts.question !== undefined) params.question = requestOpts.question
+  if (requestOpts.answer !== undefined) params.answer = requestOpts.answer
+
+  // 模拟 Qzone 网页的请求签名：带 Referer/Origin + 已有的 qq_photo_key，
+  // 让服务端返回稳定 key；否则每次会下发新的一次性临时 key，与图片签名 URL 严格绑定，导致跨分页无法复用。
+  const cookieParts = [`uin=${uin}`, `p_skey=${p_skey}`]
+  if (requestOpts.qq_photo_key) cookieParts.push(`qq_photo_key=${requestOpts.qq_photo_key}`)
+
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: cookieParts.join(';'),
+      Referer: 'https://user.qzone.qq.com/',
+      Origin: 'https://user.qzone.qq.com'
+    }
+  })
+
+  const setCookieHeader = response.headers?.['set-cookie']
+  if (setCookieHeader) {
+    const cookies = parseSetCookie(setCookieHeader)
+    if (cookies['qq_photo_key']) {
+      context.qqPhotoKey = cookies['qq_photo_key']
+    }
+  }
+
+  return response.data
+}
+
+const fetchPhotoPageWithTolerance = async (
+  uin,
+  p_skey,
+  hostUin,
+  pageStart,
+  pageNum,
+  topicId,
+  opts = {},
+  context = createPhotoRequestContext(opts)
+) => {
+  const payload = await requestPhotoPage(
+    uin,
+    p_skey,
+    hostUin,
+    pageStart,
+    pageNum,
+    topicId,
+    opts,
+    context
+  )
+
+  if (payload?.code === 0 && payload?.data) {
+    return normalizePhotoPayload(payload, pageStart, pageNum)
+  }
+
+  if (payload?.code === -10805) {
+    return {
+      ...payload,
+      data: {
+        ...(payload?.data && typeof payload.data === 'object' ? payload.data : {}),
+        photoList: [],
+        totalInAlbum: 0,
+        hasMore: false,
+        nextPageStart: pageStart + pageNum,
+        requestedCount: pageNum,
+        skippedCount: 0,
+        loadedCount: 0
+      }
+    }
+  }
+
+  if (isRecoverablePhotoPayload(payload)) {
+    if (pageNum <= 1) {
+      return buildSkippedPhotoPayload(pageStart, pageNum)
+    }
+
+    const leftCount = Math.floor(pageNum / 2)
+    const rightCount = pageNum - leftCount
+    const left = await fetchPhotoPageWithTolerance(
+      uin,
+      p_skey,
+      hostUin,
+      pageStart,
+      leftCount,
+      topicId,
+      opts,
+      context
+    )
+
+    if (left?.code !== 0) {
+      return left
+    }
+
+    const right = await fetchPhotoPageWithTolerance(
+      uin,
+      p_skey,
+      hostUin,
+      pageStart + leftCount,
+      rightCount,
+      topicId,
+      opts,
+      context
+    )
+
+    if (right?.code !== 0) {
+      return right
+    }
+
+    const leftData = left.data || {}
+    const rightData = right.data || {}
+    const totalInAlbum = resolveMergedTotalInAlbum(leftData, rightData)
+    const mergedPhotos = [...(leftData.photoList || []), ...(rightData.photoList || [])]
+    const mergedSkippedCount =
+      toNonNegativeNumber(leftData.skippedCount) + toNonNegativeNumber(rightData.skippedCount)
+    const mergedLoadedCount =
+      toNonNegativeNumber(leftData.loadedCount) + toNonNegativeNumber(rightData.loadedCount)
+    const mergedMessage =
+      mergedSkippedCount > 0 ? `已自动跳过 ${mergedSkippedCount} 张异常照片` : ''
+    const mergedNextPageStart = Math.max(
+      pageStart + pageNum,
+      toNonNegativeNumber(leftData.nextPageStart),
+      toNonNegativeNumber(rightData.nextPageStart)
+    )
+    const basePayload =
+      (leftData.totalInAlbum ? left : null) || (rightData.totalInAlbum ? right : null) || left || right
+
+    return normalizePhotoPayload(basePayload, pageStart, pageNum, {
+      photoList: mergedPhotos,
+      totalInAlbum,
+      hasMore: totalInAlbum > 0 ? mergedNextPageStart < totalInAlbum : true,
+      nextPageStart: mergedNextPageStart,
+      requestedCount: pageNum,
+      skippedCount: mergedSkippedCount,
+      loadedCount: mergedLoadedCount,
+      message: mergedMessage
+    })
+  }
+
+  if (payload && typeof payload === 'object') {
+    return buildPhotoFailurePayload(
+      pageStart,
+      pageNum,
+      payload?.message || `API 错误: code=${payload?.code}, message=${payload?.message}`,
+      typeof payload?.code === 'number' ? payload.code : -1
+    )
+  }
+
+  return buildPhotoFailurePayload(
+    pageStart,
+    pageNum,
+    `照片数据解析失败：${getPhotoPayloadSnippet(payload) || '响应格式异常'}`
+  )
+}
 /**
  * 获取相册列表
  * @param uin qq
@@ -62,45 +362,19 @@ export async function fcg_list_album_v3(
  * @param {string} opts.qq_photo_key - 已有的 qq_photo_key，回带给服务端以保持稳定 key（否则服务端会每次下发一次性临时 key，与图片签名 URL 严格绑定，导致跨分页无法复用）
  */
 export async function cgi_list_photo(uin, p_skey, hostUin, pageStart, pageNum, topicId, opts = {}) {
-  const url = 'https://h5.qzone.qq.com/proxy/domain/photo.qzone.qq.com/fcgi-bin/cgi_list_photo'
-  const params = {
+  const context = createPhotoRequestContext(opts)
+  const payload = await fetchPhotoPageWithTolerance(
+    uin,
+    p_skey,
     hostUin,
-    uin: rawUin(uin),
-    appid: 4,
     pageStart,
     pageNum,
-    inCharset: 'utf-8',
-    outCharset: 'utf-8',
-    g_tk: getGTK(p_skey),
-    topicId
-  }
-  // 支持回答问题访问（priv=5）和密码访问（priv=2）
-  if (opts.question !== undefined) params.question = opts.question
-  if (opts.answer !== undefined) params.answer = opts.answer
+    topicId,
+    opts,
+    context
+  )
 
-  // 模拟 Qzone 网页的请求签名：带 Referer/Origin + 已有的 qq_photo_key，
-  // 让服务端返回稳定 key；否则每次会下发新的一次性签名 key。
-  const cookieParts = [`uin=${uin}`, `p_skey=${p_skey}`]
-  if (opts.qq_photo_key) cookieParts.push(`qq_photo_key=${opts.qq_photo_key}`)
-
-  const response = await request.get(url, {
-    params,
-    headers: {
-      Cookie: cookieParts.join(';'),
-      Referer: 'https://user.qzone.qq.com/',
-      Origin: 'https://user.qzone.qq.com'
-    }
-  })
-
-  // 提取 set-cookie 中的 qq_photo_key
-  let qq_photo_key = null
-  const setCookieHeader = response.headers?.['set-cookie']
-  if (setCookieHeader) {
-    const cookies = parseSetCookie(setCookieHeader)
-    qq_photo_key = cookies['qq_photo_key'] || null
-  }
-
-  return { data: response.data, qq_photo_key }
+  return { data: payload, qq_photo_key: context.qqPhotoKey }
 }
 
 /**

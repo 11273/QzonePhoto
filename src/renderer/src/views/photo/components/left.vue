@@ -730,7 +730,9 @@ const fetchAlbumQA = async (album) => {
 
 // 切换好友/用户时清空问答缓存 + 加载好友名片
 watch(effectiveHostUin, () => {
-  Object.keys(albumQAMap).forEach((key) => delete albumQAMap[key])
+  Object.keys(albumQAMap).forEach((key) => {
+    delete albumQAMap[key]
+  })
 })
 
 watch(
@@ -1051,7 +1053,27 @@ const startDownloadAll = async () => {
               break
             }
 
-            if (!albumDetail?.data?.photoList || albumDetail.data.photoList.length === 0) {
+            const photoData = albumDetail?.data || {}
+            const photoList = Array.isArray(photoData.photoList) ? photoData.photoList : []
+            const nextPageStartValue = Number(photoData.nextPageStart)
+            const nextPageStart =
+              Number.isFinite(nextPageStartValue) && nextPageStartValue >= pageStart
+                ? nextPageStartValue
+                : pageStart + batchSize
+            const totalPhotos = Number(album.total)
+            const responseHasMore =
+              typeof photoData.hasMore === 'boolean'
+                ? photoData.hasMore
+                : totalPhotos > 0
+                  ? nextPageStart < totalPhotos
+                  : photoList.length === batchSize
+            const hasMore = responseHasMore
+
+            if (nextPageStart <= pageStart && hasMore) {
+              console.warn(`⚠️ 相册 ${album.name} 下载游标未推进，停止处理`, {
+                pageStart,
+                nextPageStart
+              })
               break
             }
 
@@ -1060,32 +1082,37 @@ const startDownloadAll = async () => {
               break
             }
 
-            // 立即添加这批照片到下载队列
-            const albumData = {
-              album: {
-                id: album.id,
-                name: generateUniqueAlbumName(album),
-                total: album.total,
-                desc: album.desc
-              },
-              photos: albumDetail.data.photoList,
-              uin: userStore.userInfo?.uin || 'unknown',
-              albumId: album.id,
-              ...(isFriendMode.value ? { friendUin: effectiveHostUin.value } : {})
+            if (photoList.length > 0) {
+              // 立即添加这批照片到下载队列
+              const albumData = {
+                album: {
+                  id: album.id,
+                  name: generateUniqueAlbumName(album),
+                  total: album.total,
+                  desc: album.desc
+                },
+                photos: photoList,
+                uin: userStore.userInfo?.uin || 'unknown',
+                albumId: album.id,
+                ...(isFriendMode.value ? { friendUin: effectiveHostUin.value } : {})
+              }
+
+              await window.QzoneAPI.download.addAlbum(albumData)
+              addedPhotosCount += photoList.length
             }
 
-            await window.QzoneAPI.download.addAlbum(albumData)
-            addedPhotosCount += albumDetail.data.photoList.length
-
             // 更新获取进度
-            downloadStore.updateFetchProgress(album.id, addedPhotosCount)
+            const processedCount =
+              Number.isFinite(totalPhotos) && totalPhotos > 0
+                ? Math.min(totalPhotos, nextPageStart)
+                : nextPageStart
+            downloadStore.updateFetchProgress(album.id, processedCount)
 
-            // 如果返回的照片数量少于batchSize，说明已获取完成
-            if (albumDetail.data.photoList.length < batchSize) {
+            if (!hasMore) {
               break
             }
 
-            pageStart += batchSize
+            pageStart = nextPageStart
             await new Promise((resolve) => setTimeout(resolve, 100))
           } catch (error) {
             console.error('获取相册照片批次失败:', error)
@@ -1608,7 +1635,9 @@ const setupDownloadListeners = () => {
 // 清理下载监听器
 const cleanupDownloadListeners = () => {
   try {
-    downloadListenerCleanups.forEach((cleanup) => cleanup())
+    downloadListenerCleanups.forEach((cleanup) => {
+      cleanup()
+    })
     downloadListenerCleanups.length = 0
   } catch (error) {
     console.error('清理下载监听器失败:', error)
@@ -1736,7 +1765,9 @@ const setupUploadListeners = () => {
 // 清理上传监听器
 const cleanupUploadListeners = () => {
   try {
-    uploadListenerCleanups.forEach((cleanup) => cleanup())
+    uploadListenerCleanups.forEach((cleanup) => {
+      cleanup()
+    })
     uploadListenerCleanups.length = 0
 
     // 清理防抖定时器
