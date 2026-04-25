@@ -467,35 +467,184 @@
           </el-sub-menu>
         </el-menu>
 
-        <!-- 照片模块 -->
-        <el-menu
-          v-else-if="currentModule === 'photo'"
-          :default-active="selectedPhotoType"
-          mode="vertical"
-          class="photo-menu"
-          @select="handlePhotoTypeSelect"
-        >
-          <el-menu-item index="my-photos">
-            <el-icon><User /></el-icon>
-            <span>我的照片</span>
-          </el-menu-item>
-          <el-menu-item v-if="!isFriendMode" index="friend-photos">
-            <el-icon><UserFilled /></el-icon>
-            <span>好友照片</span>
-          </el-menu-item>
-        </el-menu>
-
-        <!-- 视频模块统计信息 -->
-        <div v-else-if="currentModule === 'video'" class="video-stats-section">
-          <div class="stats-card">
-            <div class="stats-grid">
-              <div class="stat-item">
-                <div class="stat-label">总视频数</div>
-                <div class="stat-value">{{ videoStats.total || 0 }}</div>
+        <!-- 照片模块：来源 + 类型 + 年份 -->
+        <div v-else-if="currentModule === 'photo'" class="photo-side">
+          <!-- 来源切换（保留原 menu 风格但更紧凑） -->
+          <div class="filter-block">
+            <div class="filter-title">来源</div>
+            <div class="chip-row">
+              <div
+                class="chip"
+                :class="{ active: selectedPhotoType === 'my-photos' }"
+                @click="handlePhotoTypeSelect('my-photos')"
+              >
+                <el-icon><User /></el-icon>
+                我的照片
               </div>
-              <div class="stat-item">
-                <div class="stat-label">已加载</div>
-                <div class="stat-value loaded">{{ videoStats.loaded || 0 }}</div>
+              <div
+                v-if="!isFriendMode"
+                class="chip"
+                :class="{ active: selectedPhotoType === 'friend-photos' }"
+                @click="handlePhotoTypeSelect('friend-photos')"
+              >
+                <el-icon><UserFilled /></el-icon>
+                好友照片
+              </div>
+            </div>
+          </div>
+
+          <!-- 媒体类型 -->
+          <div v-if="selectedPhotoType === 'my-photos'" class="filter-block">
+            <div class="filter-title">媒体</div>
+            <div class="chip-row">
+              <div
+                v-for="opt in PHOTO_MEDIA_OPTIONS"
+                :key="opt.key"
+                class="chip"
+                :class="{ active: photoFilters.media === opt.key }"
+                @click="photoFilters.media = opt.key"
+              >
+                {{ opt.label }}
+              </div>
+            </div>
+          </div>
+
+          <!-- 年份筛选 -->
+          <div
+            v-if="selectedPhotoType === 'my-photos' && photoStats.years && photoStats.years.length > 0"
+            class="filter-block"
+          >
+            <div class="filter-title">年份</div>
+            <div class="chip-row chip-row-wrap">
+              <div
+                class="chip"
+                :class="{ active: photoFilters.year === 'all' }"
+                @click="photoFilters.year = 'all'"
+              >
+                全部
+              </div>
+              <div
+                v-for="y in photoStats.years"
+                :key="y"
+                class="chip"
+                :class="{ active: photoFilters.year === y }"
+                @click="photoFilters.year = y"
+              >
+                {{ y }}
+              </div>
+            </div>
+          </div>
+
+          <!-- 聚合 stats（已加载） -->
+          <div v-if="selectedPhotoType === 'my-photos' && photoStats.feedsCount > 0" class="agg-stats">
+            <div class="agg-row">
+              <span class="agg-icon">📋</span>
+              <span class="agg-key">动态</span>
+              <span class="agg-val">{{ photoStats.feedsCount }}</span>
+            </div>
+            <div class="agg-row">
+              <span class="agg-icon">💬</span>
+              <span class="agg-key">评论</span>
+              <span class="agg-val">{{ photoStats.commentSum }}</span>
+            </div>
+            <div class="agg-row">
+              <span class="agg-icon">❤️</span>
+              <span class="agg-key">点赞</span>
+              <span class="agg-val">{{ photoStats.likeSum }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 视频模块：统计 + 筛选 -->
+        <div v-else-if="currentModule === 'video'" class="video-side">
+          <!-- 三栏小数字 -->
+          <div class="video-stat-row">
+            <div class="video-stat">
+              <div class="num">{{ videoStats.total || 0 }}</div>
+              <div class="lab">总数</div>
+            </div>
+            <div class="video-stat">
+              <div class="num loaded">{{ videoStats.loaded || 0 }}</div>
+              <div class="lab">已加载</div>
+            </div>
+            <div class="video-stat">
+              <div class="num duration">{{ formatTotalDuration(videoStats.totalDuration) }}</div>
+              <div class="lab">总时长</div>
+            </div>
+          </div>
+
+          <!-- 磁盘空间条（仅自己） -->
+          <div v-if="!isFriendMode && videoStats.diskTotal > 0" class="disk-bar-wrap">
+            <div class="disk-bar-head">
+              <span class="disk-lab">视频空间</span>
+              <span class="disk-val">
+                <strong>{{ videoStats.diskUsed || 0 }}</strong> / {{ videoStats.diskTotal }} MB
+              </span>
+            </div>
+            <div class="disk-bar">
+              <div
+                class="disk-bar-fill"
+                :style="{
+                  width: `${Math.min(100, ((videoStats.diskUsed || 0) / videoStats.diskTotal) * 100)}%`
+                }"
+              ></div>
+            </div>
+            <div v-if="videoStats.dayTotal > 0" class="disk-quota">
+              今日上传 {{ videoStats.dayCount || 0 }} / {{ videoStats.dayTotal }}
+            </div>
+          </div>
+
+          <!-- 时长筛选 -->
+          <div class="filter-block">
+            <div class="filter-title">时长</div>
+            <div class="chip-row">
+              <div
+                v-for="opt in DURATION_OPTIONS"
+                :key="opt.key"
+                class="chip"
+                :class="{ active: videoFilters.duration === opt.key }"
+                @click="videoFilters.duration = opt.key"
+              >
+                {{ opt.label }}
+              </div>
+            </div>
+          </div>
+
+          <!-- 年份筛选（动态） -->
+          <div v-if="videoStats.years && videoStats.years.length > 0" class="filter-block">
+            <div class="filter-title">年份</div>
+            <div class="chip-row chip-row-wrap">
+              <div
+                class="chip"
+                :class="{ active: videoFilters.year === 'all' }"
+                @click="videoFilters.year = 'all'"
+              >
+                全部
+              </div>
+              <div
+                v-for="y in videoStats.years"
+                :key="y"
+                class="chip"
+                :class="{ active: videoFilters.year === y }"
+                @click="videoFilters.year = y"
+              >
+                {{ y }}
+              </div>
+            </div>
+          </div>
+
+          <!-- 排序 -->
+          <div class="filter-block">
+            <div class="filter-title">排序</div>
+            <div class="chip-row">
+              <div
+                v-for="opt in SORT_OPTIONS"
+                :key="opt.key"
+                class="chip"
+                :class="{ active: videoFilters.sort === opt.key }"
+                @click="videoFilters.sort = opt.key"
+              >
+                {{ opt.label }}
               </div>
             </div>
           </div>
@@ -772,11 +921,67 @@ watch(
 const currentModule = ref('album') // album, photo, video
 const selectedPhotoType = ref('my-photos')
 
-// 视频统计信息
+// 视频统计信息（被 video-module.vue 通过 leftRef.updateVideoStats 推送）
 const videoStats = ref({
   total: 0,
-  loaded: 0
+  loaded: 0,
+  totalDuration: 0,
+  diskUsed: 0,
+  diskTotal: 0,
+  dayCount: 0,
+  dayTotal: 0,
+  years: []
 })
+
+// 视频筛选 / 排序（暴露给 video-module 通过 leftRef.videoFilters 读取）
+const videoFilters = reactive({
+  duration: 'all', // all | short(<30s) | medium(30s-3min) | long(>3min)
+  year: 'all',
+  sort: 'newest' // newest | oldest | duration
+})
+
+const DURATION_OPTIONS = [
+  { key: 'all', label: '全部' },
+  { key: 'short', label: '< 30s' },
+  { key: 'medium', label: '30s-3min' },
+  { key: 'long', label: '> 3min' }
+]
+
+const SORT_OPTIONS = [
+  { key: 'newest', label: '最新' },
+  { key: 'oldest', label: '最早' },
+  { key: 'duration', label: '时长' }
+]
+
+// 把秒数格式化成"X 小时 / X 分钟 / X 秒"，sidebar 用紧凑形态
+const formatTotalDuration = (seconds) => {
+  if (!seconds || seconds <= 0) return '—'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h >= 1) return `${h}h${m > 0 ? m + 'm' : ''}`
+  if (m >= 1) return `${m}m`
+  return `${Math.floor(seconds)}s`
+}
+
+// 照片统计 + 筛选（被 photo-module.vue 通过 leftRef 推送/读取）
+const photoStats = ref({
+  feedsCount: 0,
+  commentSum: 0,
+  likeSum: 0,
+  years: []
+})
+
+const photoFilters = reactive({
+  media: 'all', // all | photo | video | text
+  year: 'all'
+})
+
+const PHOTO_MEDIA_OPTIONS = [
+  { key: 'all', label: '全部' },
+  { key: 'photo', label: '照片' },
+  { key: 'video', label: '视频' },
+  { key: 'text', label: '文字' }
+]
 
 // TAB 配置
 const tabs = [
@@ -1877,21 +2082,26 @@ onBeforeUnmount(() => {
   cleanupUploadListeners()
 })
 
-// 更新视频统计信息
+// 更新视频统计信息（合并字段，未传则保留旧值）
 const updateVideoStats = (stats) => {
-  if (stats) {
-    videoStats.value = {
-      total: stats.total || 0,
-      loaded: stats.loaded || 0
-    }
-  }
+  if (!stats) return
+  videoStats.value = { ...videoStats.value, ...stats }
+}
+
+// 更新照片统计信息
+const updatePhotoStats = (stats) => {
+  if (!stats) return
+  photoStats.value = { ...photoStats.value, ...stats }
 }
 
 // 暴露方法供父组件调用
 defineExpose({
   selectAlbumById,
   findAlbumById,
-  updateVideoStats
+  updateVideoStats,
+  updatePhotoStats,
+  videoFilters,
+  photoFilters
 })
 </script>
 
@@ -2950,48 +3160,204 @@ defineExpose({
   }
 }
 
-/* 视频统计区域样式 */
-.video-stats-section {
-  padding: 10px 6px;
+/* 视频/照片 sidebar 通用 */
+.video-side,
+.photo-side {
+  padding: 12px 10px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.stats-card {
-  padding: 10px;
+/* 三栏小数字 */
+.video-stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
 
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-  }
-
-  .stat-item {
+  .video-stat {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 12px 8px;
+    justify-content: center;
+    padding: 8px 4px;
     background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 8px;
-    transition: all 0.3s ease;
+    transition: background 0.15s ease;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.06);
-      transform: translateY(-2px);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .num {
+      font-size: 16px;
+      font-weight: 700;
+      color: #60a5fa;
+      line-height: 1.15;
+      font-variant-numeric: tabular-nums;
+
+      &.loaded {
+        color: #34d399;
+      }
+
+      &.duration {
+        color: #fbbf24;
+        font-size: 14px;
+      }
+    }
+
+    .lab {
+      margin-top: 3px;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.45);
+    }
+  }
+}
+
+/* 磁盘进度条 */
+.disk-bar-wrap {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 8px 10px;
+
+  .disk-bar-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+
+    .disk-lab {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .disk-val {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+      font-variant-numeric: tabular-nums;
+
+      strong {
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: 600;
+      }
     }
   }
 
-  .stat-label {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.5);
-    margin-bottom: 6px;
+  .disk-bar {
+    height: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 2px;
+    overflow: hidden;
+
+    .disk-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #60a5fa 0%, #818cf8 100%);
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
   }
 
-  .stat-value {
-    font-size: 20px;
-    font-weight: 700;
-    color: #60a5fa;
+  .disk-quota {
+    margin-top: 6px;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.35);
+  }
+}
 
-    &.loaded {
-      color: #34d399;
+/* 筛选块（chip 列表） */
+.filter-block {
+  .filter-title {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 500;
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+  }
+
+  .chip-row {
+    display: flex;
+    gap: 4px;
+    flex-wrap: nowrap;
+
+    &.chip-row-wrap {
+      flex-wrap: wrap;
+    }
+  }
+
+  .chip {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 5px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.55);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+
+    .el-icon {
+      font-size: 12px;
+    }
+
+    &:hover {
+      color: rgba(255, 255, 255, 0.85);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    &.active {
+      color: #60a5fa;
+      background: rgba(96, 165, 250, 0.12);
+      border-color: rgba(96, 165, 250, 0.35);
+    }
+  }
+
+  &.chip-row-wrap .chip {
+    flex: 0 0 auto;
+    min-width: 42px;
+  }
+}
+
+/* 聚合统计（照片侧） */
+.agg-stats {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  .agg-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+
+    .agg-icon {
+      font-size: 12px;
+      width: 14px;
+      text-align: center;
+    }
+
+    .agg-key {
+      flex: 1;
+      color: rgba(255, 255, 255, 0.45);
+    }
+
+    .agg-val {
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.9);
+      font-variant-numeric: tabular-nums;
     }
   }
 }

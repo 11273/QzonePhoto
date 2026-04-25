@@ -39,59 +39,60 @@
           <!-- 视频列表 -->
           <div v-else class="video-list">
             <div
-              v-for="video in videos"
+              v-for="video in displayVideos"
               :key="video.vid"
               class="video-card"
               :class="{ 'privacy-mode': privacyStore.privacyMode }"
               @click="handleVideoClick(video)"
             >
-              <!-- 视频封面 -->
+              <!-- 封面：占整张卡片 -->
               <div class="video-cover">
                 <el-image
                   :src="video.pre"
                   fit="cover"
                   class="cover-image"
                   loading="lazy"
-                  :preview-src-list="[video.pre]"
-                  hide-on-click-modal
                 >
-                  <template #placeholder>
-                    <div class="image-placeholder">
-                      <el-icon class="loading-icon"><Loading /></el-icon>
-                    </div>
-                  </template>
                   <template #error>
                     <div class="image-error">
                       <el-icon><VideoPlay /></el-icon>
                     </div>
                   </template>
                 </el-image>
-                <!-- 隐私模式遮罩 -->
-                <div v-if="privacyStore.privacyMode" class="privacy-overlay">
-                  <el-icon class="privacy-icon"><Hide /></el-icon>
-                  <div class="privacy-text">隐私保护</div>
-                </div>
-                <!-- 播放按钮覆盖层 -->
-                <div class="play-overlay">
+
+                <!-- 渐变蒙层（hover 时浮起） -->
+                <div class="cover-overlay">
                   <div class="play-button">
-                    <el-icon class="play-icon"><VideoPlay /></el-icon>
+                    <el-icon><VideoPlay /></el-icon>
                   </div>
                 </div>
-                <!-- 视频时长 -->
-                <div v-if="video.duration" class="duration-badge">
+
+                <!-- 隐私模式遮罩 -->
+                <div v-if="privacyStore.privacyMode" class="privacy-overlay">
+                  <el-icon><Hide /></el-icon>
+                  <span>隐私保护</span>
+                </div>
+
+                <!-- 左下：评论数 -->
+                <div v-if="video.commentCount > 0" class="cover-comment">
+                  💬 {{ video.commentCount }}
+                </div>
+                <!-- 右下：时长 -->
+                <div v-if="video.duration" class="cover-duration">
                   {{ formatDuration(video.duration) }}
                 </div>
               </div>
 
-              <!-- 视频信息 -->
-              <div class="video-info">
-                <div class="video-title">
-                  {{ formatUploadTime(video.uploadTime) }}
-                </div>
-                <div class="video-meta">
-                  <span v-if="video.desc" class="desc">{{ video.desc }}</span>
-                </div>
+              <!-- 卡片下方：仅一行日期 + 描述（如有） -->
+              <div class="video-foot">
+                <span class="date">{{ formatUploadTime(video.uploadTime) }}</span>
+                <span v-if="video.desc" class="desc" :title="video.desc">{{ video.desc }}</span>
               </div>
+            </div>
+
+            <!-- 筛选后无结果 -->
+            <div v-if="videos.length > 0 && displayVideos.length === 0" class="filter-empty">
+              当前筛选下没有视频
             </div>
 
             <!-- 加载更多提示 -->
@@ -181,6 +182,7 @@ const isFriendContext = computed(() => !!hostUinOverride?.value)
 const friendMeta = computed(() => (isFriendContext.value ? { skipAuthCheck: true } : {}))
 
 const videos = ref([])
+const userInfo = ref(null) // { diskUsed, diskTotal, dayCount, dayTotal, ... }
 const loading = ref(false)
 const total = ref(0)
 const currentStart = ref(0)
@@ -214,7 +216,8 @@ const fetchVideoList = async (isLoadMore = false) => {
       start: isLoadMore ? currentStart.value : 0,
       count: pageSize.value,
       need_old: 0,
-      getUserInfo: 0
+      // 首次拉取时让服务端返回 UserInfo（磁盘配额等），分页时省掉
+      getUserInfo: isLoadMore ? 0 : 1
     }
 
     const response = await window.QzoneAPI.getVideoList(params, friendMeta.value)
@@ -227,6 +230,9 @@ const fetchVideoList = async (isLoadMore = false) => {
       } else {
         videos.value = newVideos
         currentStart.value = 0
+        if (response.data.UserInfo) {
+          userInfo.value = response.data.UserInfo
+        }
       }
 
       total.value = response.data.total || 0
@@ -245,12 +251,49 @@ const fetchVideoList = async (isLoadMore = false) => {
   }
 }
 
+// 累计已加载视频的总时长 / 年份集合
+const totalDuration = computed(() =>
+  videos.value.reduce((sum, v) => sum + (v.duration || 0), 0)
+)
+const years = computed(() => {
+  const set = new Set()
+  videos.value.forEach((v) => {
+    if (v.uploadTime) set.add(new Date(v.uploadTime * 1000).getFullYear())
+  })
+  return [...set].sort((a, b) => b - a)
+})
+
+// 应用 sidebar 的筛选 / 排序
+const filters = computed(() => leftRef?.value?.videoFilters || {})
+
+const displayVideos = computed(() => {
+  let list = videos.value.slice()
+  const f = filters.value
+  if (f.duration === 'short') list = list.filter((v) => (v.duration || 0) < 30)
+  else if (f.duration === 'medium')
+    list = list.filter((v) => (v.duration || 0) >= 30 && (v.duration || 0) < 180)
+  else if (f.duration === 'long') list = list.filter((v) => (v.duration || 0) >= 180)
+  if (f.year && f.year !== 'all') {
+    list = list.filter((v) => new Date((v.uploadTime || 0) * 1000).getFullYear() === f.year)
+  }
+  if (f.sort === 'oldest') list.sort((a, b) => (a.uploadTime || 0) - (b.uploadTime || 0))
+  else if (f.sort === 'duration') list.sort((a, b) => (b.duration || 0) - (a.duration || 0))
+  else list.sort((a, b) => (b.uploadTime || 0) - (a.uploadTime || 0))
+  return list
+})
+
 // 更新左侧统计信息
 const updateLeftStats = () => {
   if (leftRef?.value?.updateVideoStats) {
     leftRef.value.updateVideoStats({
       total: total.value,
-      loaded: videos.value.length
+      loaded: videos.value.length,
+      totalDuration: totalDuration.value,
+      diskUsed: userInfo.value?.diskUsed ?? 0,
+      diskTotal: userInfo.value?.diskTotal ?? 0,
+      dayCount: userInfo.value?.dayCount ?? 0,
+      dayTotal: userInfo.value?.dayTotal ?? 0,
+      years: years.value
     })
   }
 }
@@ -601,205 +644,181 @@ onUnmounted(() => {
   min-height: 100%;
 }
 
+/* 极简视频网格：5-6 列自适应，无重边框 */
 .video-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px 14px;
   padding-bottom: 20px;
 }
 
 .video-card {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-  overflow: hidden;
   cursor: pointer;
-  transition: all 0.3s ease;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-
-  .play-button {
-    padding-right: 3px;
-  }
-
-  &:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-    border-color: rgba(255, 255, 255, 0.15);
-
-    .play-overlay {
-      opacity: 1;
-    }
-
-    /* 隐私模式下悬停时减少模糊 */
-    &.privacy-mode .cover-image :deep(.el-image__inner) {
-      filter: blur(8px);
-    }
-
-    /* 隐私模式下确保遮罩可见 */
-    &.privacy-mode .privacy-overlay {
-      opacity: 1;
-      background: rgba(0, 0, 0, 0.85);
-    }
-  }
-
-  /* 隐私模式样式 */
-  &.privacy-mode {
-    .cover-image :deep(.el-image__inner) {
-      filter: blur(15px);
-      transition: filter 0.3s ease;
-    }
-
-    .privacy-overlay {
-      opacity: 1;
-    }
-
-    .play-overlay {
-      opacity: 0; /* 隐私模式下隐藏播放按钮 */
-    }
-  }
-}
-
-.video-cover {
-  position: relative;
-  width: 100%;
-  padding-top: 56.25%; // 16:9 比例
-  background: rgba(0, 0, 0, 0.3);
-  overflow: hidden;
-}
-
-/* 隐私模式遮罩 - 视频卡片 */
-.privacy-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.8);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 3;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-  backdrop-filter: blur(2px);
+  gap: 6px;
 
-  .privacy-icon {
-    font-size: 24px;
-    color: #e6a23c;
-    margin-bottom: 4px;
-    opacity: 0.9;
+  .video-cover {
+    position: relative;
+    width: 100%;
+    padding-top: 56.25%; /* 16:9 */
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    overflow: hidden;
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease;
   }
 
-  .privacy-text {
-    font-size: 10px;
-    color: rgba(255, 255, 255, 0.8);
-    font-weight: 500;
-    text-align: center;
+  &:hover .video-cover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+
+  &:hover .cover-overlay {
+    opacity: 1;
   }
 }
 
 .cover-image {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
 }
 
-.image-placeholder,
 .image-error {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 32px;
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 28px;
 }
 
-.loading-icon {
-  animation: rotate 1s linear infinite;
-}
-
-@keyframes rotate {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.play-overlay {
+.cover-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0.05) 60%,
+    rgba(0, 0, 0, 0.45) 100%
+  );
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.3);
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.2s ease;
 }
 
 .play-button {
-  width: 50px;
-  height: 50px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.3s ease;
+  color: #fff;
+  font-size: 16px;
+  backdrop-filter: blur(2px);
+  transition: transform 0.15s ease;
 
   &:hover {
-    transform: scale(1.1);
+    transform: scale(1.08);
   }
 }
 
-.play-icon {
-  font-size: 24px;
-  color: #333;
-  margin-left: 3px;
-}
-
-.duration-badge {
+.cover-duration,
+.cover-comment {
   position: absolute;
-  bottom: 8px;
-  right: 8px;
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
-  padding: 2px 6px;
+  bottom: 6px;
+  padding: 1px 6px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(0, 0, 0, 0.6);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
+  letter-spacing: 0.2px;
 }
 
-.video-info {
-  padding: 10px;
+.cover-duration {
+  right: 6px;
 }
 
-.video-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: #ffffff;
-  line-height: 1.4;
-  margin-bottom: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.cover-comment {
+  left: 6px;
 }
 
-.video-meta {
+/* 隐私遮罩 */
+.privacy-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  gap: 4px;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+
+  .el-icon {
+    font-size: 22px;
+    color: #e6a23c;
+  }
+
+  span {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.75);
+  }
+}
+
+.video-card.privacy-mode .cover-image :deep(.el-image__inner) {
+  filter: blur(15px);
+  transition: filter 0.3s ease;
+}
+
+.video-card.privacy-mode:hover .cover-image :deep(.el-image__inner) {
+  filter: blur(8px);
+}
+
+/* 卡片下方一行轻文字 */
+.video-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.75);
+  font-variant-numeric: tabular-nums;
+
+  .date {
+    flex-shrink: 0;
+  }
 
   .desc {
-    white-space: nowrap;
+    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(255, 255, 255, 0.4);
   }
+}
+
+.filter-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 13px;
 }
 
 .load-more-tip,
@@ -807,8 +826,8 @@ onUnmounted(() => {
 .no-more-tip {
   text-align: center;
   padding: 20px;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 14px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
   grid-column: 1 / -1;
 }
 

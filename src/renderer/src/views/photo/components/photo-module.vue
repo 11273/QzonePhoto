@@ -514,6 +514,7 @@ const userStore = useUserStore()
 
 // 支持好友上下文
 const hostUinOverride = inject('hostUinOverride', null)
+const leftRef = inject('leftRef', null)
 const effectiveHostUin = computed(() => hostUinOverride?.value || userStore.userInfo.uin)
 const isFriendContext = computed(() => !!hostUinOverride?.value)
 const friendMeta = computed(() => (isFriendContext.value ? { skipAuthCheck: true } : {}))
@@ -567,13 +568,39 @@ const formatDateLabel = (dateStr) => {
   return `${year}年${month}月${day}日`
 }
 
-// 按日期分组动态
+// 媒体类型判定（all / photo / video / text）
+const detectFeedMedia = (feed) => {
+  if (!feed.media || feed.media.length === 0) return 'text'
+  const hasVideo = feed.media.some((m) => m.type === 'video')
+  if (hasVideo && feed.media.length === 1) return 'video'
+  return 'photo'
+}
+
+// 应用 sidebar 筛选（仅 my-photos 时生效）
+const filteredFeeds = computed(() => {
+  if (isFriendPhotos.value) return feeds.value
+  const f = leftRef?.value?.photoFilters || {}
+  let list = feeds.value
+  if (f.media && f.media !== 'all') {
+    list = list.filter((feed) => detectFeedMedia(feed) === f.media)
+  }
+  if (f.year && f.year !== 'all') {
+    list = list.filter((feed) => {
+      const t = feed.date ? new Date(feed.date).getFullYear() : null
+      return t === f.year
+    })
+  }
+  return list
+})
+
+// 按日期分组动态（使用筛选后的 list）
 const groupedFeeds = computed(() => {
-  if (!feeds.value || feeds.value.length === 0) return []
+  const src = filteredFeeds.value
+  if (!src || src.length === 0) return []
 
   const groups = new Map()
 
-  feeds.value.forEach((feed) => {
+  src.forEach((feed) => {
     const dateKey = feed.date // 使用 YYYY-MM-DD 格式作为 key
     if (!groups.has(dateKey)) {
       groups.set(dateKey, {
@@ -590,6 +617,28 @@ const groupedFeeds = computed(() => {
     return new Date(b.dateKey) - new Date(a.dateKey)
   })
 })
+
+// 推送聚合统计到 sidebar
+const updateLeftPhotoStats = () => {
+  if (!leftRef?.value?.updatePhotoStats || isFriendPhotos.value) return
+  const yearsSet = new Set()
+  let commentSum = 0
+  let likeSum = 0
+  feeds.value.forEach((feed) => {
+    if (feed.date) yearsSet.add(new Date(feed.date).getFullYear())
+    commentSum += feed.commentCount || 0
+    likeSum += feed.likeCount || 0
+  })
+  leftRef.value.updatePhotoStats({
+    feedsCount: feeds.value.length,
+    commentSum,
+    likeSum,
+    years: [...yearsSet].sort((a, b) => b - a)
+  })
+}
+
+watch(feeds, updateLeftPhotoStats, { deep: false })
+watch(() => props.photoType, updateLeftPhotoStats)
 
 // 滚动加载相关
 const loadMoreTrigger = ref(null)
