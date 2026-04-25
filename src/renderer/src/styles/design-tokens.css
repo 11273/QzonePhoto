@@ -117,3 +117,58 @@
 .ds-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--ds-bg-4);
 }
+
+/* === 暗色对话框（任意 el-dialog 加 popper-class="ds-dialog" 即可生效） === */
+.ds-dialog.el-dialog {
+  background: var(--ds-bg-1);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--ds-border-light);
+  border-radius: var(--ds-radius-xl);
+  box-shadow: var(--ds-shadow-xl);
+  overflow: hidden;
+}
+
+.ds-dialog .el-dialog__header {
+  padding: 16px 20px 12px;
+  margin-right: 0;
+  border-bottom: 1px solid var(--ds-border-faint);
+}
+
+.ds-dialog .el-dialog__title {
+  color: var(--ds-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.ds-dialog .el-dialog__headerbtn {
+  top: 12px;
+  right: 14px;
+}
+
+.ds-dialog .el-dialog__headerbtn .el-dialog__close {
+  color: var(--ds-text-tertiary);
+  font-size: 18px;
+  transition: var(--ds-transition-color);
+}
+
+.ds-dialog .el-dialog__headerbtn:hover .el-dialog__close {
+  color: var(--ds-text-primary);
+}
+
+.ds-dialog .el-dialog__body {
+  padding: 16px 20px;
+  color: var(--ds-text-secondary);
+  font-size: 13px;
+}
+
+.ds-dialog .el-dialog__footer {
+  padding: 10px 20px 14px;
+  border-top: 1px solid var(--ds-border-faint);
+}
+
+/* 暗色对话框遮罩 */
+.ds-dialog-overlay {
+  background: var(--ds-bg-overlay);
+  backdrop-filter: blur(2px);
+}

@@ -478,7 +478,7 @@ const getFormattedSpeed = () => {
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--ds-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -512,14 +512,10 @@ const getFormattedSpeed = () => {
 
 /* 更新容器 */
 .update-container {
-  background: linear-gradient(
-    135deg,
-    rgba(26, 26, 26, 0.95) 0%,
-    rgba(45, 45, 45, 0.95) 50%,
-    rgba(26, 26, 26, 0.95) 100%
-  );
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
+  background: var(--ds-bg-1);
+  border: 1px solid var(--ds-border-light);
+  border-radius: var(--ds-radius-xl);
+  box-shadow: var(--ds-shadow-xl);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   overflow: hidden;

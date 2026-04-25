@@ -1322,6 +1322,44 @@ const handleReplaceSettingChange = async (newValue) => {
   gap: 20px;
   height: 420px;
 
+  /* 1024px 以下：双列改单列，左列横铺 */
+  @media (max-width: 1024px) {
+    flex-direction: column;
+    height: auto;
+    max-height: 80vh;
+    gap: 12px;
+
+    .left-column {
+      width: 100% !important;
+      max-height: 180px;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+
+      > * {
+        flex: 1;
+        min-width: 140px;
+      }
+    }
+
+    .right-column {
+      flex: 1;
+      min-height: 280px;
+    }
+  }
+
+  /* 480px 以下：左列堆叠 */
+  @media (max-width: 480px) {
+    .left-column {
+      flex-direction: column;
+      max-height: none;
+
+      > * {
+        width: 100%;
+      }
+    }
+  }
+
   .left-column {
     width: 160px;
     flex-shrink: 0;

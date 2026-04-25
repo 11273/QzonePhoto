@@ -115,7 +115,7 @@
       :title="currentVideo?.title || currentVideo?.desc || '视频播放'"
       width="800px"
       top="5vh"
-      class="video-dialog"
+      class="video-dialog ds-dialog"
       :close-on-click-modal="false"
       @close="handleDialogClose"
     >

@@ -170,7 +170,7 @@
       :close-on-click-modal="false"
       :close-on-press-escape="true"
       width="380px"
-      class="album-access-dialog"
+      class="album-access-dialog ds-dialog"
       align-center
       @close="handleAccessCancel"
     >
@@ -213,7 +213,7 @@
       width="60%"
       :append-to-body="true"
       :close-on-click-modal="true"
-      class="video-preview-dialog"
+      class="video-preview-dialog ds-dialog"
       @close="closeVideoPreview"
     >
       <div class="video-preview-container">

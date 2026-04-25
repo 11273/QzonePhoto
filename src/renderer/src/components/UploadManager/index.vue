@@ -1054,6 +1054,49 @@ onUnmounted(async () => {
   display: flex;
   height: 465px;
 
+  /* 1024px 以下：左右双列改成上下，左列卡片横向铺开 */
+  @media (max-width: 1024px) {
+    flex-direction: column;
+    height: auto;
+    max-height: 80vh;
+
+    .left-column {
+      width: 100% !important;
+      border-right: none !important;
+      border-bottom: 1px solid var(--ds-border-light);
+      max-height: 200px;
+      flex-shrink: 0;
+
+      .progress-card,
+      .stats-card,
+      .speed-card {
+        display: inline-block;
+        width: calc(33.33% - 8px);
+        margin-right: 6px;
+        vertical-align: top;
+      }
+    }
+
+    .right-column {
+      flex: 1;
+      min-height: 300px;
+    }
+  }
+
+  /* 480px 以下：堆叠 + 紧凑 */
+  @media (max-width: 480px) {
+    .left-column {
+      max-height: none;
+      .progress-card,
+      .stats-card,
+      .speed-card {
+        display: block;
+        width: 100%;
+        margin-right: 0;
+      }
+    }
+  }
+
   .left-column {
     width: 200px;
     flex-shrink: 0;

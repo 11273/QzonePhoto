@@ -8,7 +8,7 @@
     :append-to-body="true"
     :lock-scroll="false"
     :modal-append-to-body="false"
-    class="upload-manager-dialog dark-theme"
+    class="upload-manager-dialog dark-theme ds-dialog"
     @update:model-value="handleDialogChange"
   >
     <!-- 顶部操作栏 -->
@@ -412,9 +412,9 @@
                 </el-button>
               </div>
               <div v-else class="album-selected">
-                <div class="album-name">{{ truncateText(albumName, 20) }}</div>
+                <div class="album-name" :title="albumName">{{ truncateText(albumName, 20) }}</div>
                 <div class="album-meta">
-                  <span class="meta-item">ID: {{ truncateText(albumId, 15) }}</span>
+                  <span class="meta-item ds-copyable" :title="`点击复制相册 ID: ${albumId}`" @click="copyToClipboard(albumId, '相册 ID')">ID: {{ truncateText(albumId, 15) }}</span>
                   <el-button
                     class="album-change-btn"
                     size="small"
@@ -446,6 +446,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getVideoMetadata } from '@renderer/utils/video-helper'
+import { copyToClipboard } from '@renderer/utils'
 import {
   Plus,
   Upload,
