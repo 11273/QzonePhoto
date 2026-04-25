@@ -58,12 +58,21 @@
             <div class="user-info">
               <!-- eslint-disable-next-line vue/no-v-html -- 名称已做 HTML 转义，仅注入表情 img 标签 -->
               <div class="nickname" v-html="renderFriendName(currentFriend.name)"></div>
-              <div
-                class="uin"
-                :title="showUin ? '点击隐藏QQ号' : '点击显示QQ号'"
-                @click="toggleUinDisplay"
-              >
-                {{ showUin ? currentFriend.uin : maskUin(currentFriend.uin) }}
+              <div class="uin-row">
+                <span
+                  class="uin uin-copyable"
+                  title="点击复制 QQ 号"
+                  @click="copyToClipboard(currentFriend.uin, 'QQ 号')"
+                >
+                  {{ showUin ? currentFriend.uin : maskUin(currentFriend.uin) }}
+                </span>
+                <el-icon
+                  class="uin-toggle"
+                  :title="showUin ? '隐藏' : '显示'"
+                  @click.stop="toggleUinDisplay"
+                >
+                  <component :is="showUin ? Hide : View" />
+                </el-icon>
               </div>
             </div>
             <div class="header-actions">
@@ -150,12 +159,21 @@
             </el-avatar>
             <div class="user-info">
               <div class="nickname">{{ userStore.userInfo?.nick || 'QZone用户' }}</div>
-              <div
-                class="uin"
-                :title="showUin ? '点击隐藏QQ号' : '点击显示QQ号'"
-                @click="toggleUinDisplay"
-              >
-                {{ displayUin }}
+              <div class="uin-row">
+                <span
+                  class="uin uin-copyable"
+                  title="点击复制 QQ 号"
+                  @click="copyToClipboard(userStore.userInfo?.uin, 'QQ 号')"
+                >
+                  {{ displayUin }}
+                </span>
+                <el-icon
+                  class="uin-toggle"
+                  :title="showUin ? '隐藏' : '显示'"
+                  @click.stop="toggleUinDisplay"
+                >
+                  <component :is="showUin ? Hide : View" />
+                </el-icon>
               </div>
             </div>
             <!-- 登出按钮移到头像右边 -->
@@ -534,7 +552,7 @@ import { ElMessage } from 'element-plus'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
 import FriendDrawer from './friend-drawer.vue'
 import UploadManager from '@renderer/components/UploadManager/index.vue'
-import { generateUniqueAlbumName } from '@renderer/utils'
+import { generateUniqueAlbumName, copyToClipboard } from '@renderer/utils'
 import { QZONE_CONFIG } from '@shared/const'
 import { formatBytes } from '@renderer/utils/formatters'
 
@@ -1924,17 +1942,47 @@ defineExpose({
           text-overflow: ellipsis;
         }
 
+        .uin-row {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          line-height: 1.1;
+        }
+
         .uin {
           font-size: 12px;
           color: rgba(255, 255, 255, 0.6);
-          line-height: 1.1;
-          cursor: pointer;
-
+          font-variant-numeric: tabular-nums;
           user-select: none;
-          transition: color 0.2s ease;
+          transition: all 0.2s ease;
+        }
+
+        .uin-copyable {
+          cursor: pointer;
+          padding: 1px 4px;
+          margin: -1px -4px;
+          border-radius: 3px;
 
           &:hover {
-            color: rgba(255, 255, 255, 0.8);
+            color: rgba(255, 255, 255, 0.95);
+            background: rgba(255, 255, 255, 0.06);
+          }
+          &:active {
+            background: rgba(255, 255, 255, 0.1);
+          }
+        }
+
+        .uin-toggle {
+          font-size: 11px;
+          color: rgba(255, 255, 255, 0.3);
+          cursor: pointer;
+          padding: 2px;
+          border-radius: 3px;
+          transition: all 0.15s ease;
+
+          &:hover {
+            color: rgba(255, 255, 255, 0.7);
+            background: rgba(255, 255, 255, 0.06);
           }
         }
       }

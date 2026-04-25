@@ -48,6 +48,8 @@ try {
     getVideoList: (data, meta) => ipcClient.call(IPC_PHOTO.GET_VIDEO_LIST, data, meta),
     // 获取相册问题和答案
     getAlbumQA: (data, meta) => ipcClient.call(IPC_PHOTO.GET_ALBUM_QA, data, meta),
+    // 获取相册访客信息（总访客 / 今日访客 / 最近访客列表）
+    getAlbumVisitors: (data, meta) => ipcClient.call(IPC_PHOTO.GET_ALBUM_VISITORS, data, meta),
     // 获取好友照片动态流
     getFriendPhotos: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FRIEND_PHOTOS, data, meta),
     // 获取好友亲密度列表

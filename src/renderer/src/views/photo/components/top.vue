@@ -46,12 +46,25 @@
                     <template v-if="currentAlbum.priv === 5">
                       <div class="priv-row">
                         <span class="priv-label">问题</span>
-                        <span class="priv-text">{{ currentAlbum.question || '...' }}</span>
+                        <span
+                          v-if="currentAlbum.question"
+                          class="priv-text copyable"
+                          title="点击复制"
+                          @click="copyToClipboard(currentAlbum.question, '问题')"
+                          >{{ currentAlbum.question }}</span
+                        >
+                        <span v-else class="priv-text muted">...</span>
                       </div>
                       <div class="priv-row">
                         <span class="priv-label">答案</span>
                         <span v-if="qaLoading" class="priv-text muted">加载中...</span>
-                        <span v-else-if="qaAnswer" class="priv-text answer">{{ qaAnswer }}</span>
+                        <span
+                          v-else-if="qaAnswer"
+                          class="priv-text answer copyable"
+                          title="点击复制"
+                          @click="copyToClipboard(qaAnswer, '答案')"
+                          >{{ qaAnswer }}</span
+                        >
                         <span v-else class="priv-text muted">{{
                           isFriendContext ? '仅相册主人可见' : '-'
                         }}</span>
@@ -76,6 +89,16 @@
                     <div v-if="viewtypeText" class="priv-row">
                       <span class="priv-label">类型</span>
                       <span class="priv-text muted">{{ viewtypeText }}</span>
+                    </div>
+
+                    <div class="priv-row">
+                      <span class="priv-label">ID</span>
+                      <span
+                        class="priv-text muted copyable mono"
+                        title="点击复制相册 ID"
+                        @click="copyToClipboard(currentAlbum.id, '相册 ID')"
+                        >{{ currentAlbum.id }}</span
+                      >
                     </div>
                   </div>
                 </el-popover>
@@ -125,6 +148,50 @@
                 :value="formatDateWithYear(currentAlbum.modifytime)"
                 label="最后更新"
               />
+
+              <!-- 访客（按需拉取，只有数据时显示） -->
+              <el-popover
+                v-if="visitorTotal > 0"
+                trigger="click"
+                placement="bottom-end"
+                :width="320"
+                popper-class="album-visitors-popper"
+              >
+                <template #reference>
+                  <div class="visitor-stat" @click.stop>
+                    <div class="stat-icon">👀</div>
+                    <div class="stat-content">
+                      <div class="stat-value">{{ visitorTotal }}</div>
+                      <div class="stat-label">
+                        访客<span v-if="visitorToday > 0" class="today-delta">
+                          · 今日 +{{ visitorToday }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <div class="visitor-popover">
+                  <div class="visitor-popover-header">最近访客 · 共 {{ visitorTotal }} 人</div>
+                  <div class="visitor-list">
+                    <div
+                      v-for="v in visitorItems"
+                      :key="v.uin"
+                      class="visitor-item"
+                      :title="`点击复制 QQ 号 ${v.uin}`"
+                      @click="copyToClipboard(v.uin, 'QQ 号')"
+                    >
+                      <el-avatar :size="28" :src="(v.img || '').replace('/50', '/100')">
+                        {{ v.name?.[0] || '?' }}
+                      </el-avatar>
+                      <div class="visitor-meta">
+                        <div class="visitor-name">{{ v.name }}</div>
+                        <div class="visitor-time">{{ formatVisitorTime(v.time) }}</div>
+                      </div>
+                    </div>
+                    <div v-if="visitorItems.length === 0" class="visitor-empty">暂无最近访客</div>
+                  </div>
+                </div>
+              </el-popover>
             </div>
           </div>
         </transition>
@@ -254,6 +321,7 @@ import {
 import StatCard from '@renderer/components/StatCard/index.vue'
 import UploadDialog from '@renderer/components/UploadDialog/index.vue'
 import { formatDateWithYear } from '@renderer/utils/formatters'
+import { copyToClipboard } from '@renderer/utils'
 import { useDownloadStore } from '@renderer/store/download.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { useUserStore } from '@renderer/store/user.store'
@@ -338,6 +406,54 @@ const viewtypeText = computed(() => {
   if (!v) return ''
   return QZONE_CONFIG.viewtypeMap[v] || ''
 })
+
+// 访客信息（cgi_get_visitor_simple，按需拉取）
+const visitorTotal = ref(0)
+const visitorToday = ref(0)
+const visitorItems = ref([])
+
+const fetchVisitors = async () => {
+  const albumId = currentAlbum.value?.id
+  if (!albumId) return
+  try {
+    const res = await window.QzoneAPI.getAlbumVisitors(
+      { hostUin: effectiveHostUin.value, albumId },
+      { skipAuthCheck: true }
+    )
+    const stat = res?.data?.modvisitcount?.[0]
+    visitorTotal.value = stat?.totalcount || 0
+    visitorToday.value = stat?.todaycount || 0
+    visitorItems.value = res?.data?.items || []
+  } catch (err) {
+    console.warn('[top] 获取相册访客失败:', err)
+    visitorTotal.value = 0
+    visitorToday.value = 0
+    visitorItems.value = []
+  }
+}
+
+watch(
+  () => currentAlbum.value?.id,
+  (id) => {
+    visitorTotal.value = 0
+    visitorToday.value = 0
+    visitorItems.value = []
+    if (id) fetchVisitors()
+  },
+  { immediate: true }
+)
+
+// 访客时间相对格式：刚刚 / 5分钟前 / 3天前 / 2024.06
+const formatVisitorTime = (t) => {
+  if (!t) return ''
+  const diff = Math.max(0, Date.now() / 1000 - t)
+  if (diff < 60) return '刚刚'
+  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`
+  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}天前`
+  const d = new Date(t * 1000)
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`
+}
 
 // 从localStorage恢复和保存照片尺寸设置
 onMounted(() => {
@@ -669,6 +785,51 @@ const refreshAlbum = async () => {
     gap: 28px;
     flex-wrap: wrap;
     transition: all 0.2s ease;
+  }
+}
+
+/* 访客 stat：与 StatCard 对齐，但是可点击 */
+.visitor-stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+
+  &:hover {
+    opacity: 0.85;
+  }
+
+  .stat-icon {
+    font-size: 16px;
+    opacity: 0.9;
+    flex-shrink: 0;
+  }
+
+  .stat-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .stat-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    line-height: 1.2;
+
+    .today-delta {
+      color: #10b981;
+    }
   }
 }
 
@@ -1354,7 +1515,102 @@ const refreshAlbum = async () => {
         color: #e6a23c;
         font-weight: 500;
       }
+
+      &.mono {
+        font-family:
+          ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+          monospace;
+        font-size: 11px;
+      }
+
+      &.copyable {
+        cursor: pointer;
+        border-radius: 3px;
+        padding: 1px 4px;
+        margin: -1px -4px;
+        transition: background-color 0.15s ease;
+
+        &:hover {
+          background: rgba(255, 255, 255, 0.06);
+        }
+        &:active {
+          background: rgba(255, 255, 255, 0.1);
+        }
+      }
     }
+  }
+}
+
+/* 访客弹层 */
+.album-visitors-popper.el-popper {
+  background: rgba(28, 28, 32, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  .visitor-popover-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+    padding-bottom: 8px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .visitor-list {
+    max-height: 320px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 2px;
+    }
+  }
+
+  .visitor-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .visitor-meta {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .visitor-name {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.85);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.3;
+    }
+
+    .visitor-time {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.4);
+      line-height: 1.2;
+      margin-top: 2px;
+    }
+  }
+
+  .visitor-empty {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 12px;
+    padding: 16px 0;
   }
 }
 </style>

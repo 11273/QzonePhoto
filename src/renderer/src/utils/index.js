@@ -2,6 +2,32 @@
  * Created by PanJiaChen on 16/11/18.
  */
 
+import { ElMessage } from 'element-plus'
+
+/**
+ * 复制文本到剪贴板，并弹一条轻量提示
+ * @param {string|number} text 要复制的内容
+ * @param {string} [label] 提示中显示的内容名（如 "QQ 号"），缺省则只显示"已复制"
+ */
+export async function copyToClipboard(text, label = '') {
+  if (text == null || text === '') return false
+  const value = String(text)
+  try {
+    await navigator.clipboard.writeText(value)
+    ElMessage({
+      message: label ? `已复制${label}：${value}` : `已复制：${value}`,
+      type: 'success',
+      duration: 1500,
+      grouping: true
+    })
+    return true
+  } catch (err) {
+    console.error('[copyToClipboard] 失败:', err)
+    ElMessage.error('复制失败')
+    return false
+  }
+}
+
 /**
  * Parse the time to string
  * @param {(Object|string|number)} time

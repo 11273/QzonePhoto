@@ -7,6 +7,7 @@ import {
   feeds_delete_cgi,
   cgi_video_get_data,
   cgi_get_albuminfo_v2,
+  cgi_get_visitor_simple,
   feeds2_html_picfeed
 } from '@main/api'
 import { fetchPhotosTolerantly } from './photoTolerance'
@@ -175,6 +176,10 @@ export class QzonePhotoService {
   }
 
   // 获取相册问题和答案
+  async getAlbumVisitors({ hostUin, albumId }, { uin, p_skey }) {
+    return await cgi_get_visitor_simple(uin, p_skey, hostUin, albumId)
+  }
+
   async getAlbumQA({ hostUin, albumId }, { uin, p_skey }) {
     return await cgi_get_albuminfo_v2(uin, p_skey, hostUin, albumId)
   }

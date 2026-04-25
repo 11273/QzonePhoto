@@ -34,6 +34,8 @@ export const IPC_PHOTO = {
   GET_VIDEO_LIST: 'photo:getVideoList',
   /** 获取相册问题和答案 */
   GET_ALBUM_QA: 'photo:getAlbumQA',
+  /** 获取相册访客信息 */
+  GET_ALBUM_VISITORS: 'photo:getAlbumVisitors',
   /** 获取好友照片动态流 */
   GET_FRIEND_PHOTOS: 'photo:getFriendPhotos'
 }

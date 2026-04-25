@@ -410,6 +410,30 @@ export async function feeds2_html_picfeed(uin, p_skey, start = 0, count = 20, be
  * @param albumId 相册ID
  * @returns { question, answer, priv, name, ... }
  */
+/**
+ * 获取相册访客信息（与 QQ 空间相册详情页"访客"同源接口）
+ * @returns data: { modvisitcount: [{ totalcount, todaycount }], items: [...visitors], calvisitcount: number[31] }
+ */
+export async function cgi_get_visitor_simple(uin, p_skey, hostUin, albumId) {
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/g.qzone.qq.com/cgi-bin/friendshow/cgi_get_visitor_simple'
+  const params = {
+    uin: hostUin,
+    mask: 2,
+    mod: 2,
+    contentid: albumId,
+    fupdate: 1,
+    g_tk: getGTK(p_skey)
+  }
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`
+    }
+  })
+  return response.data
+}
+
 export async function cgi_get_albuminfo_v2(uin, p_skey, hostUin, albumId) {
   const url =
     'https://user.qzone.qq.com/proxy/domain/photo.qzone.qq.com/cgi-bin/common/cgi_get_albuminfo_v2'
