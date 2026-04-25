@@ -14,7 +14,7 @@
       />
 
       <EmptyState
-        v-else-if="photoGroups.length === 0"
+        v-else-if="photoGroups.length === 0 && !hasMore && total === 0"
         icon="📭"
         title="相册为空"
         description="这个相册还没有照片"
@@ -123,8 +123,13 @@
           </div>
 
           <!-- 没有更多数据提示 -->
-          <div v-else-if="!hasMore && photoList.length > 0" class="no-more">
-            <span>已加载全部 {{ photoList.length }} 张照片</span>
+          <div v-else-if="!hasMore && (photoList.length > 0 || total > 0)" class="no-more">
+            <span>
+              已加载 {{ photoList.length }} / {{ total || photoList.length }} 张照片
+              <template v-if="total && photoList.length < total">
+                （其中 {{ total - photoList.length }} 张已跳过或不可读取）
+              </template>
+            </span>
           </div>
 
           <!-- 加载触发器 -->
@@ -405,25 +410,60 @@ const fetchPhotosByTopicId = async (topicId, pageStart = 0, pageNum = 100) => {
 
     // 标准化响应数据处理 - 修正：成功状态码是 0 而不是 200
     if (response?.code === 0 && response?.data) {
-      const photos = response.data.photoList || []
-      const total = response.data.totalInAlbum || 0
-
-      // 判断是否还有更多数据：
-      // 1. 当前返回的照片数量等于请求的数量，说明可能还有更多
-      // 2. 但总数必须大于当前已获取的数量（pageStart + photos.length）
-      const hasMore = photos.length === pageNum && pageStart + photos.length < total
+      const responseData = response.data
+      const photos = Array.isArray(responseData.photoList) ? responseData.photoList : []
+      const responseTotal = Number(responseData.totalInAlbum)
+      const fallbackTotal = Number(currentAlbum.value?.total)
+      const total =
+        Number.isFinite(responseTotal) && responseTotal > 0
+          ? responseTotal
+          : Number.isFinite(fallbackTotal) && fallbackTotal > 0
+            ? fallbackTotal
+            : 0
+      const nextPageStartValue = Number(responseData.nextPageStart)
+      const nextPageStart =
+        Number.isFinite(nextPageStartValue) && nextPageStartValue >= pageStart
+          ? nextPageStartValue
+          : pageStart + pageNum
+      const responseHasMore =
+        typeof responseData.hasMore === 'boolean'
+          ? responseData.hasMore
+          : total > 0
+            ? nextPageStart < total
+            : nextPageStart > pageStart
+      const hasMore = responseHasMore
+      const skippedCount = Number.isFinite(responseData.skippedCount)
+        ? responseData.skippedCount
+        : 0
+      const requestedCount = Number.isFinite(responseData.requestedCount)
+        ? responseData.requestedCount
+        : pageNum
 
       return {
         success: true,
         photos: photos,
         total: total,
-        hasMore: hasMore
+        hasMore: hasMore,
+        nextPageStart,
+        skippedCount,
+        requestedCount,
+        message: response.message || ''
       }
     }
 
     // 权限错误特殊处理
     if (response?.code === -10805) {
-      return { success: false, photos: [], total: 0, hasMore: false, error: '回答错误', code: -10805 }
+      return {
+        success: false,
+        photos: [],
+        total: 0,
+        hasMore: false,
+        nextPageStart: pageStart,
+        skippedCount: 0,
+        requestedCount: pageNum,
+        error: '回答错误',
+        code: -10805
+      }
     }
 
     return {
@@ -431,6 +471,9 @@ const fetchPhotosByTopicId = async (topicId, pageStart = 0, pageNum = 100) => {
       photos: [],
       total: 0,
       hasMore: false,
+      nextPageStart: pageStart,
+      skippedCount: 0,
+      requestedCount: pageNum,
       error: response?.message || `API 错误: code=${response?.code}, message=${response?.message}`,
       code: response?.code
     }
@@ -441,6 +484,9 @@ const fetchPhotosByTopicId = async (topicId, pageStart = 0, pageNum = 100) => {
       photos: [],
       total: 0,
       hasMore: false,
+      nextPageStart: pageStart,
+      skippedCount: 0,
+      requestedCount: pageNum,
       error: error.message || '网络请求失败'
     }
   }
@@ -513,13 +559,23 @@ const loadMorePhotos = async () => {
   loadingMore.value = true
 
   try {
-    const result = await fetchPhotosByTopicId(
-      currentAlbum.value.id,
-      photoList.value.length,
-      pageSize.value
-    )
+    const requestedPageSize = pageSize.value
+    const pageStart = currentPageStart.value
+    const result = await fetchPhotosByTopicId(currentAlbum.value.id, pageStart, requestedPageSize)
 
-    if (result.success && result.photos.length > 0) {
+    if (result.success) {
+      if (result.nextPageStart <= pageStart && result.hasMore) {
+        console.warn('加载更多照片游标未推进，停止继续加载', {
+          albumId: currentAlbum.value.id,
+          pageStart,
+          nextPageStart: result.nextPageStart
+        })
+        hasMore.value = false
+        return
+      }
+
+      currentPageStart.value = result.nextPageStart
+
       // 过滤重复照片（根据 lloc 或组合键）
       const existingKeys = new Set(
         photoList.value.map((p) => p.lloc || `${p.id}_${p.name}_${p.modifytime}`)
@@ -535,15 +591,9 @@ const loadMorePhotos = async () => {
       }
 
       // 更新总数
-      if (result.total > 0) {
-        total.value = result.total
-      }
+      total.value = result.total > 0 ? result.total : total.value || currentAlbum.value?.total || 0
 
-      // 检查是否还有更多数据
-      const currentTotal = photoList.value.length
-      if (currentTotal >= total.value || result.photos.length < pageSize.value || !result.hasMore) {
-        hasMore.value = false
-      }
+      hasMore.value = result.hasMore
     } else {
       hasMore.value = false
       if (!result.success) {
@@ -628,6 +678,9 @@ const handleScroll = () => {
 watch(currentAlbum, async (newAlbum) => {
   if (!newAlbum) {
     photoList.value = []
+    total.value = 0
+    hasMore.value = true
+    currentPageStart.value = 0
     return
   }
 
@@ -662,18 +715,9 @@ watch(currentAlbum, async (newAlbum) => {
 
     if (result.success) {
       photoList.value = result.photos
-      total.value = result.total
-
-      // 检查是否还有更多数据
-      if (
-        result.photos.length >= result.total ||
-        result.photos.length < pageSize.value ||
-        !result.hasMore
-      ) {
-        hasMore.value = false
-      } else {
-        hasMore.value = true
-      }
+      total.value = result.total > 0 ? result.total : newAlbum.total || 0
+      currentPageStart.value = result.nextPageStart
+      hasMore.value = result.hasMore
     } else {
       console.error('加载相册失败:', result.error)
 
@@ -686,8 +730,9 @@ watch(currentAlbum, async (newAlbum) => {
           const retry = await fetchPhotosByTopicId(newAlbum.id, 0, pageSize.value)
           if (retry.success) {
             photoList.value = retry.photos
-            total.value = retry.total
-            hasMore.value = retry.photos.length === pageSize.value && currentPageStart.value + retry.photos.length < retry.total
+            total.value = retry.total > 0 ? retry.total : newAlbum.total || 0
+            currentPageStart.value = retry.nextPageStart
+            hasMore.value = retry.hasMore
           } else if (retry.code === -10805) {
             ElMessage.error('回答错误')
             currentAlbum.value = null
@@ -745,13 +790,13 @@ const downloadCurrentAlbum = async () => {
     await fetchAndAddPhotosStream(
       currentAlbum.value,
       albumId,
-      (fetchedPhotos, currentBatch, totalFetched) => {
+      (fetchedPhotos, totalFetched, processedCount) => {
         // 更新获取进度
-        downloadStore.updateFetchProgress(albumId, totalFetched)
+        downloadStore.updateFetchProgress(albumId, processedCount)
 
         // 累计所有照片用于最终统计
         allPhotos.push(...fetchedPhotos)
-        totalAddedTasks += fetchedPhotos.length
+        totalAddedTasks = totalFetched
       }
     )
 
@@ -768,7 +813,7 @@ const downloadCurrentAlbum = async () => {
     downloadStore.setAlbumFetching(albumId, false)
 
     if (totalAddedTasks === 0) {
-      ElMessage.warning('当前相册没有照片')
+      ElMessage.warning('当前相册没有可下载的照片')
       downloadStore.clearAlbumDownloadState(albumId)
       return
     }
@@ -806,6 +851,7 @@ const fetchAndAddPhotosStream = async (album, albumId, onProgress = null) => {
   const batchSize = 100
   let pageStart = 0
   let totalFetched = 0
+  let processedCount = 0
 
   while (true) {
     // 检查取消标志
@@ -814,12 +860,28 @@ const fetchAndAddPhotosStream = async (album, albumId, onProgress = null) => {
     }
 
     try {
+      const currentBatchStart = pageStart
       const result = await fetchPhotosByTopicId(album.id, pageStart, batchSize)
 
       if (!result.success) {
         console.error('获取照片失败:', result.error)
         break
       }
+
+      if (result.nextPageStart <= currentBatchStart && result.hasMore) {
+        console.warn('下载照片时游标未推进，停止继续拉取', {
+          albumId,
+          pageStart: currentBatchStart,
+          nextPageStart: result.nextPageStart
+        })
+        break
+      }
+
+      const albumTotal = Number(album.total)
+      processedCount =
+        Number.isFinite(albumTotal) && albumTotal > 0
+          ? Math.min(albumTotal, result.nextPageStart)
+          : result.nextPageStart
 
       if (result.photos.length > 0) {
         // 清理照片数据
@@ -853,18 +915,27 @@ const fetchAndAddPhotosStream = async (album, albumId, onProgress = null) => {
 
         // 调用进度回调
         if (onProgress) {
-          onProgress(result.photos, result.photos.length, totalFetched)
+          onProgress(result.photos, totalFetched, processedCount)
         }
 
-        // 如果返回的数据少于batchSize，说明已经是最后一页
-        if (result.photos.length < batchSize) {
+        if (!result.hasMore) {
           break
         }
-
-        pageStart += batchSize
       } else {
+        if (onProgress) {
+          onProgress([], totalFetched, processedCount)
+        }
+
+        if (!result.hasMore) {
+          break
+        }
+      }
+
+      if (!result.hasMore) {
         break
       }
+
+      pageStart = result.nextPageStart
 
       // 避免请求过快，并检查取消状态
       await new Promise((resolve) => setTimeout(resolve, 100))
@@ -925,18 +996,9 @@ const refreshCurrentAlbum = async () => {
 
     if (result.success) {
       photoList.value = result.photos
-      total.value = result.total
-
-      // 检查是否还有更多数据
-      if (
-        result.photos.length >= result.total ||
-        result.photos.length < pageSize.value ||
-        !result.hasMore
-      ) {
-        hasMore.value = false
-      } else {
-        hasMore.value = true
-      }
+      total.value = result.total > 0 ? result.total : currentAlbum.value.total || 0
+      currentPageStart.value = result.nextPageStart
+      hasMore.value = result.hasMore
 
       // ElMessage.success(`已刷新相册：${currentAlbum.value.name}`)
     } else {
@@ -1126,6 +1188,9 @@ const selectAlbum = async (album, forceRefresh = false) => {
     photoList.value = []
     selectedPhotos.value = new Set()
     albumAccessToken.value = null
+    total.value = 0
+    currentPageStart.value = 0
+    hasMore.value = true
     return
   }
 
@@ -1156,6 +1221,8 @@ const selectAlbum = async (album, forceRefresh = false) => {
   selectedPhotos.value = new Set()
   // 重置分页状态
   photoList.value = []
+  total.value = 0
+  currentPageStart.value = 0
   hasMore.value = true
 
   // 相册改变时会自动触发 watch(currentAlbum) 进行加载
@@ -1347,8 +1414,7 @@ const checkAndLoadMore = async () => {
     hasMore.value &&
     !loading.value &&
     !isScrollLoading.value &&
-    !loadingMore.value &&
-    photoList.value.length > 0
+    !loadingMore.value
   ) {
     console.log('检测到照片内容未填满容器，自动加载更多...')
     await loadMorePhotos()
