@@ -9,6 +9,8 @@ import {
   cgi_get_albuminfo_v2,
   feeds2_html_picfeed
 } from '@main/api'
+import { fetchPhotosTolerantly } from './photoTolerance'
+
 export class QzonePhotoService {
   constructor() {
     this.qq_photo_key = null
@@ -29,13 +31,19 @@ export class QzonePhotoService {
     // 返回稳定 key（配对所有曾经签发的图片签名 URL），而不是每次都发
     // 新的一次性签名票导致旧批次图片无法复用。
     if (this.qq_photo_key) opts.qq_photo_key = this.qq_photo_key
-    const result = await cgi_list_photo(uin, p_skey, hostUin, pageStart, pageNum, topicId, opts)
 
-    if (result.qq_photo_key) {
-      this.qq_photo_key = result.qq_photo_key
-    }
-
-    return result.data
+    return await fetchPhotosTolerantly(
+      async (start, num) => {
+        const result = await cgi_list_photo(uin, p_skey, hostUin, start, num, topicId, opts)
+        if (result.qq_photo_key) {
+          this.qq_photo_key = result.qq_photo_key
+          opts.qq_photo_key = result.qq_photo_key
+        }
+        return result.data
+      },
+      pageStart,
+      pageNum
+    )
   }
 
   async getPhotoFloatviewList(
