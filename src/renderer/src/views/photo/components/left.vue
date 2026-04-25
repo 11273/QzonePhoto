@@ -3279,7 +3279,7 @@ defineExpose({
   .chip-row {
     display: flex;
     gap: 4px;
-    flex-wrap: nowrap;
+    flex-wrap: wrap; /* sidebar 太窄时自动换行，避免压字 */
 
     &.chip-row-wrap {
       flex-wrap: wrap;

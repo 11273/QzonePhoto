@@ -142,7 +142,18 @@
 
         <!-- 任务列表 -->
         <div v-loading="loading" class="task-list-container">
-          <div class="task-list">
+          <EmptyState
+            v-if="!loading && currentTasks.length === 0"
+            icon="📦"
+            title="暂无上传任务"
+            :description="
+              statusFilter !== 'all' || selectedAlbumId !== 'all'
+                ? '当前筛选条件下没有任务'
+                : '在相册详情里点上传，任务会出现在这里'
+            "
+            size="medium"
+          />
+          <div v-else class="task-list">
             <div
               v-for="task in currentTasks"
               :key="task.id"
@@ -305,6 +316,7 @@ import {
   Lock,
   InfoFilled
 } from '@element-plus/icons-vue'
+import EmptyState from '@renderer/components/EmptyState/index.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false }

@@ -364,7 +364,12 @@
           </el-scrollbar>
         </div>
         <div v-else class="task-detail-list progress-bar-layout">
-          <el-empty description="暂无任务" />
+          <EmptyState
+            icon="📦"
+            title="暂无下载任务"
+            description="在相册详情页点「下载相册」，任务会出现在这里"
+            size="medium"
+          />
         </div>
 
         <!-- 分页器 -->
@@ -388,6 +393,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder, VideoPlay, VideoPause, Refresh, Delete, Loading } from '@element-plus/icons-vue'
 import Pagination from '@renderer/components/Pagination/index.vue'
+import EmptyState from '@renderer/components/EmptyState/index.vue'
 import { formatTaskCount, formatTaskName } from '@renderer/utils/formatters'
 import { APP_NAME } from '@shared/const'
 

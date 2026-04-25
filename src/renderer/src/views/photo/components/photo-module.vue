@@ -1716,7 +1716,7 @@ onUnmounted(() => {
 }
 
 .timeline-container {
-  padding: 20px 40px;
+  padding: 16px 24px 24px;
   width: 100%;
   max-width: 100%;
 }
@@ -1725,128 +1725,116 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0;
+  /* 一条贯穿整个 feeds 的细时间线，所有 feed 都对齐到它 */
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    left: 18px;
+    top: 12px;
+    bottom: 12px;
+    width: 1px;
+    background: linear-gradient(
+      to bottom,
+      rgba(96, 165, 250, 0.18) 0%,
+      rgba(255, 255, 255, 0.04) 100%
+    );
+  }
 }
 
-/* 动态卡片 */
+/* 动态卡片：包成有边的圆角块 */
 .feed-card {
   display: flex;
   position: relative;
-  padding: 12px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  transition: all 0.2s ease;
+  padding: 12px 14px 12px 12px;
+  margin: 6px 0 6px 36px;
+  border-radius: var(--ds-radius-lg);
+  background: var(--ds-bg-2);
+  border: 1px solid var(--ds-border-faint);
+  transition: var(--ds-transition-all);
 
   &:hover {
-    background: rgba(255, 255, 255, 0.02);
-  }
-
-  &:last-child {
-    border-bottom: none;
+    background: var(--ds-bg-3);
+    border-color: var(--ds-border-light);
+    transform: translateX(1px);
   }
 
   &.selected {
-    background: rgba(64, 158, 255, 0.1);
-    border-radius: 8px;
-    padding-left: 12px;
-    padding-right: 12px;
+    background: rgba(96, 165, 250, 0.1);
+    border-color: var(--ds-accent-blue-border);
   }
 }
 
-/* 左侧时间线 */
+/* 左侧时间线指示点（绝对定位到 feeds-container 的轴上） */
 .feed-timeline {
-  position: relative;
-  width: 50px;
-  flex-shrink: 0;
+  position: absolute;
+  left: -24px;
+  top: 18px;
+  width: 14px;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-top: 4px;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 1;
 }
 
 .timeline-dot {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-  border: 2px solid rgba(59, 130, 246, 0.4);
-  box-shadow:
-    0 0 0 2px rgba(59, 130, 246, 0.1),
-    0 2px 4px rgba(59, 130, 246, 0.2);
-  z-index: 2;
-  flex-shrink: 0;
+  background: var(--ds-accent-blue);
+  border: 2px solid var(--ds-bg-0);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18);
+  transition: transform var(--ds-dur-fast) var(--ds-ease-soft);
+}
+
+.feed-card:hover .timeline-dot {
+  transform: scale(1.2);
+}
+
+/* 老的 timeline-line 不再用（feeds-container::before 替代） */
+.timeline-line {
+  display: none;
+}
+
+/* 日期分组标题：左对齐到时间线，配合轴上的"环" */
+.date-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 8px;
+  padding-left: 12px;
   position: relative;
-  transition: all 0.3s ease;
 
   &::before {
     content: '';
     position: absolute;
+    left: 13px;
     top: 50%;
-    left: 50%;
     transform: translate(-50%, -50%);
-    width: 4px;
-    height: 4px;
+    width: 11px;
+    height: 11px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.8);
+    background: var(--ds-bg-0);
+    border: 2px solid var(--ds-accent-blue);
+    z-index: 2;
   }
-}
-
-.feed-card:hover .timeline-dot {
-  transform: scale(1.15);
-  box-shadow:
-    0 0 0 3px rgba(59, 130, 246, 0.15),
-    0 2px 8px rgba(59, 130, 246, 0.3);
-}
-
-.timeline-line {
-  width: 2px;
-  flex: 1;
-  background: linear-gradient(
-    to bottom,
-    rgba(96, 165, 250, 0.3) 0%,
-    rgba(96, 165, 250, 0.15) 30%,
-    rgba(255, 255, 255, 0.06) 100%
-  );
-  margin-top: 6px;
-  border-radius: 1px;
-}
-
-.feed-card.is-last-in-group .timeline-line {
-  display: none;
-}
-
-/* 日期分组标题 */
-.date-group-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin: 24px 0 16px;
-  padding: 0 50px;
 
   .date-line {
-    flex: 1;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    display: none;
   }
 
   .date-text {
-    font-size: 13px;
+    margin-left: 24px;
+    font-size: 12px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--ds-text-secondary);
+    letter-spacing: 0.3px;
     white-space: nowrap;
-    padding: 4px 12px;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 2px 10px;
+    background: var(--ds-bg-2);
+    border-radius: var(--ds-radius-pill);
+    border: 1px solid var(--ds-border-light);
   }
-}
-
-.feed-card.is-first-in-group {
-  padding-top: 8px;
-}
-
-.feed-card.is-last-in-group {
-  padding-bottom: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 8px;
 }
 
 /* 加载更多指示器 */

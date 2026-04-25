@@ -5,3 +5,7 @@ out
 .eslintcache
 *.log*
 src/renderer/components.d.ts
+
+# Claude Code 工作区临时文件（截图、抓包等）
+.claude-tmp/
+.claude/scheduled_tasks.lock
