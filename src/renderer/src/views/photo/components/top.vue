@@ -18,11 +18,67 @@
             <div class="title-left">
               <h2 class="album-title">{{ currentAlbum.name }}</h2>
 
-              <!-- 权限信息显示 - 简化版本 -->
-              <div v-if="albumPermissionText" class="album-permissions">
-                <el-tooltip :content="albumPermissionText" placement="top" :show-after="500">
-                  <span class="permission-text">{{ shortPermissionText }}</span>
-                </el-tooltip>
+              <!-- 标题旁的灰字信息行（QZone 官方样式：照片数 / 权限文案，权限可点开看详情） -->
+              <div class="album-inline-info">
+                <span class="inline-count">{{ currentAlbum.total }}张</span>
+                <span class="inline-sep">/</span>
+                <el-popover
+                  trigger="click"
+                  placement="bottom-start"
+                  :width="280"
+                  popper-class="album-priv-popper"
+                  @before-enter="onPrivPopoverEnter"
+                >
+                  <template #reference>
+                    <span class="inline-priv" :class="`priv-${currentAlbum.priv || 1}`">
+                      {{ getPrivLabel(currentAlbum.priv) }}
+                      <el-icon class="inline-priv-arrow"><ArrowDown /></el-icon>
+                    </span>
+                  </template>
+                  <div class="priv-popover">
+                    <div class="priv-popover-header">
+                      <el-icon :class="`priv-${currentAlbum.priv || 1}`">
+                        <component :is="privIcon(currentAlbum.priv)" />
+                      </el-icon>
+                      <span>{{ getPrivLabel(currentAlbum.priv) }}</span>
+                    </div>
+
+                    <template v-if="currentAlbum.priv === 5">
+                      <div class="priv-row">
+                        <span class="priv-label">问题</span>
+                        <span class="priv-text">{{ currentAlbum.question || '...' }}</span>
+                      </div>
+                      <div class="priv-row">
+                        <span class="priv-label">答案</span>
+                        <span v-if="qaLoading" class="priv-text muted">加载中...</span>
+                        <span v-else-if="qaAnswer" class="priv-text answer">{{ qaAnswer }}</span>
+                        <span v-else class="priv-text muted">{{
+                          isFriendContext ? '仅相册主人可见' : '-'
+                        }}</span>
+                      </div>
+                    </template>
+
+                    <div v-if="currentAlbum.priv === 2" class="priv-row">
+                      <span class="priv-label">提示</span>
+                      <span class="priv-text muted">需输入密码访问</span>
+                    </div>
+
+                    <div v-if="enabledFeatures.length" class="priv-row">
+                      <span class="priv-label">允许</span>
+                      <span class="priv-text">{{ enabledFeatures.join(' · ') }}</span>
+                    </div>
+
+                    <div v-if="pypyPrivLabel" class="priv-row">
+                      <span class="priv-label">朋友圈</span>
+                      <span class="priv-text muted">{{ pypyPrivLabel }}</span>
+                    </div>
+
+                    <div v-if="viewtypeText" class="priv-row">
+                      <span class="priv-label">类型</span>
+                      <span class="priv-text muted">{{ viewtypeText }}</span>
+                    </div>
+                  </div>
+                </el-popover>
               </div>
             </div>
 
@@ -68,16 +124,6 @@
                 icon="🕒"
                 :value="formatDateWithYear(currentAlbum.modifytime)"
                 label="最后更新"
-              />
-
-              <!-- 问题和答案 - 点击切换显示 -->
-              <StatCard
-                v-if="currentAlbum.question"
-                :clickable="true"
-                :icon="qaShowAnswer ? '🔓' : '🔒'"
-                :value="currentAlbum.question"
-                :label="qaLabel"
-                @click="toggleQA"
               />
             </div>
           </div>
@@ -191,7 +237,20 @@
 
 <script setup>
 import { computed, ref, inject, onMounted, watch } from 'vue'
-import { Loading, Upload, Download, Refresh } from '@element-plus/icons-vue'
+import {
+  Loading,
+  Upload,
+  Download,
+  Refresh,
+  Lock,
+  Key,
+  User,
+  View,
+  Hide,
+  QuestionFilled,
+  Unlock,
+  ArrowDown
+} from '@element-plus/icons-vue'
 import StatCard from '@renderer/components/StatCard/index.vue'
 import UploadDialog from '@renderer/components/UploadDialog/index.vue'
 import { formatDateWithYear } from '@renderer/utils/formatters'
@@ -217,23 +276,17 @@ const allPhotos = inject('photoList', ref([]))
 const selectedPhotos = inject('selectedPhotos', ref(new Set()))
 const photoSize = inject('photoSize', ref('medium'))
 
-// 问答状态
-const qaShowAnswer = ref(false)
+// 问答状态（在 popover 打开时按需拉取）
 const qaAnswer = ref(null)
 const qaLoading = ref(false)
 
-const toggleQA = async () => {
-  if (qaShowAnswer.value) {
-    qaShowAnswer.value = false
-    return
-  }
-  qaShowAnswer.value = true
-  // 好友模式下无法获取答案，直接跳过API调用
+const fetchAnswer = async () => {
+  if (currentAlbum.value?.priv !== 5) return
   if (isFriendContext.value) {
     qaAnswer.value = ''
     return
   }
-  if (qaAnswer.value !== null) return
+  if (qaAnswer.value !== null || qaLoading.value) return
   qaLoading.value = true
   try {
     const res = await window.QzoneAPI.getAlbumQA({
@@ -248,45 +301,42 @@ const toggleQA = async () => {
   }
 }
 
+const onPrivPopoverEnter = () => fetchAnswer()
+
 // 切换相册时重置问答状态
 watch(
   () => currentAlbum.value?.id,
   () => {
-    qaShowAnswer.value = false
     qaAnswer.value = null
   }
 )
 
-const qaLabel = computed(() => {
-  if (!qaShowAnswer.value) return isFriendContext.value ? '仅主人可查看答案' : '点击查看答案'
-  if (qaLoading.value) return '加载中...'
-  if (isFriendContext.value) return '仅相册主人可见'
-  if (qaAnswer.value) return `答案：${qaAnswer.value}`
-  return '获取失败'
-})
+// 权限弹层数据
+const PRIV_ICONS = { 1: Unlock, 2: Key, 3: Lock, 4: User, 5: QuestionFilled, 6: View, 8: Hide }
+const privIcon = (priv) => PRIV_ICONS[priv] || Lock
+const getPrivLabel = (priv) => QZONE_CONFIG.privMap[priv] || '未知权限'
 
-// 计算相册权限文本
-const albumPermissionText = computed(() => {
-  if (!currentAlbum.value) return ''
-  return QZONE_UTILS.getAlbumPermissionText(currentAlbum.value)
-})
-
-// 计算简化的权限文本
-const shortPermissionText = computed(() => {
-  if (!currentAlbum.value) return ''
-
-  const privText = QZONE_CONFIG.privMap[currentAlbum.value.priv] || '未知权限'
+const enabledFeatures = computed(() => {
+  const a = currentAlbum.value
+  if (!a) return []
   const features = []
+  if (QZONE_UTILS.checkAllowReprint(a)) features.push('转载')
+  if (QZONE_UTILS.checkAllowShare(a)) features.push('分享')
+  if (QZONE_UTILS.checkAllowMark(a)) features.push('圈人')
+  if (QZONE_UTILS.checkShowCameraInfo(a)) features.push('显示相机信息')
+  return features
+})
 
-  // if (QZONE_UTILS.checkAllowShare(currentAlbum.value)) features.push('分享')
-  if (QZONE_UTILS.checkShowCameraInfo(currentAlbum.value)) features.push('相机信息')
+const pypyPrivLabel = computed(() => {
+  const py = currentAlbum.value?.pypriv
+  return py ? QZONE_CONFIG.pyPrivMap[py] || '' : ''
+})
 
-  // 如果有功能权限，只显示主权限 + 第一个功能
-  if (features.length > 0) {
-    return `${privText} / ${features[0]}${features.length > 1 ? '等' : ''}`
-  }
-
-  return privText
+// 相册类型（弹层里展示）
+const viewtypeText = computed(() => {
+  const v = currentAlbum.value?.viewtype
+  if (!v) return ''
+  return QZONE_CONFIG.viewtypeMap[v] || ''
 })
 
 // 从localStorage恢复和保存照片尺寸设置
@@ -532,19 +582,67 @@ const refreshAlbum = async () => {
     margin-top: 6px;
   }
 
-  .album-permissions {
-    display: inline-block;
+  .album-inline-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.55);
+    line-height: 1.4;
+    font-weight: 400;
 
-    .permission-text {
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.6);
-      background: rgba(255, 255, 255, 0.05);
+    .inline-count {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .inline-sep {
+      color: rgba(255, 255, 255, 0.2);
+    }
+
+    .inline-priv {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      cursor: pointer;
       padding: 2px 6px;
-      border-radius: 3px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      font-weight: 400;
-      line-height: 1.2;
-      cursor: help;
+      margin-left: -2px;
+      border-radius: 4px;
+      transition: all 0.15s ease;
+      color: rgba(255, 255, 255, 0.65);
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.92);
+
+        .inline-priv-arrow {
+          opacity: 0.9;
+        }
+      }
+
+      /* 不同 priv 颜色提示，但保持低饱和、和标题样式协调 */
+      &.priv-3 {
+        color: rgba(255, 130, 130, 0.85);
+      }
+      &.priv-2,
+      &.priv-5 {
+        color: rgba(245, 180, 70, 0.92);
+      }
+      &.priv-4 {
+        color: rgba(120, 180, 255, 0.85);
+      }
+      &.priv-6 {
+        color: rgba(120, 180, 255, 0.75);
+      }
+      &.priv-8 {
+        color: rgba(255, 160, 110, 0.85);
+      }
+    }
+
+    .inline-priv-arrow {
+      font-size: 10px;
+      opacity: 0.45;
+      margin-left: 1px;
+      transition: opacity 0.15s ease;
     }
   }
 
@@ -573,6 +671,7 @@ const refreshAlbum = async () => {
     transition: all 0.2s ease;
   }
 }
+
 
 /* 操作区域 */
 .action-section {
@@ -1182,5 +1281,80 @@ const refreshAlbum = async () => {
     line-height: 1;
   }
 }
+</style>
 
+<style lang="scss">
+/* 权限弹层（el-popover 渲染到 body，需要非 scoped 样式） */
+.album-priv-popper.el-popper {
+  background: rgba(28, 28, 32, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  .priv-popover {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12px;
+
+    .priv-popover-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 600;
+      font-size: 13px;
+
+      .el-icon {
+        font-size: 15px;
+        &.priv-1 {
+          color: #10b981;
+        }
+        &.priv-3 {
+          color: rgba(255, 100, 100, 0.95);
+        }
+        &.priv-2,
+        &.priv-5 {
+          color: #e6a23c;
+        }
+        &.priv-4 {
+          color: #60a5fa;
+        }
+        &.priv-6 {
+          color: #60a5fa;
+        }
+        &.priv-8 {
+          color: rgba(255, 150, 100, 0.95);
+        }
+      }
+    }
+
+    .priv-row {
+      display: flex;
+      gap: 10px;
+      padding: 4px 0;
+      align-items: baseline;
+      line-height: 1.5;
+    }
+
+    .priv-label {
+      flex-shrink: 0;
+      width: 44px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    .priv-text {
+      flex: 1;
+      word-break: break-all;
+
+      &.muted {
+        color: rgba(255, 255, 255, 0.45);
+      }
+
+      &.answer {
+        color: #e6a23c;
+        font-weight: 500;
+      }
+    }
+  }
+}
 </style>
