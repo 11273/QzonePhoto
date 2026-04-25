@@ -557,22 +557,22 @@ const getFormattedSpeed = () => {
 }
 
 .update-icon.icon-checking {
-  background: linear-gradient(135deg, #409eff 0%, #66b3ff 100%);
+  background: linear-gradient(135deg, #60a5fa 0%, #7eb8fc 100%);
   animation: pulse-icon 2s ease-in-out infinite;
 }
 
 .update-icon.icon-available {
-  background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
+  background: linear-gradient(135deg, #34d399 0%, #52e3a8 100%);
   animation: glow-green 2s ease-in-out infinite alternate;
 }
 
 .update-icon.icon-downloading {
-  background: linear-gradient(135deg, #e6a23c 0%, #f7ba2a 100%);
+  background: linear-gradient(135deg, #fbbf24 0%, #fdcc54 100%);
   animation: pulse-icon 1.5s ease-in-out infinite;
 }
 
 .update-icon.icon-downloaded {
-  background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
+  background: linear-gradient(135deg, #34d399 0%, #52e3a8 100%);
   animation: success-pulse 1s ease-out;
 }
 
@@ -581,7 +581,7 @@ const getFormattedSpeed = () => {
 }
 
 .update-icon.icon-error {
-  background: linear-gradient(135deg, #f56c6c 0%, #f78989 100%);
+  background: linear-gradient(135deg, #f87171 0%, #fb9090 100%);
   animation: error-shake 0.5s ease-in-out;
 }
 
@@ -618,9 +618,9 @@ const getFormattedSpeed = () => {
 }
 
 .version-info-new {
-  color: #67c23a;
+  color: #34d399;
   font-weight: 600;
-  text-shadow: 0 0 10px rgba(103, 194, 58, 0.3);
+  text-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
   white-space: nowrap;
   display: flex;
   align-items: center;
@@ -684,7 +684,7 @@ const getFormattedSpeed = () => {
   left: 50%;
   width: 20px;
   height: 20px;
-  border: 2px solid #409eff;
+  border: 2px solid #60a5fa;
   border-radius: 50%;
   transform: translate(-50%, -50%);
   animation: pulse-ring 2s ease-out infinite;
@@ -713,9 +713,9 @@ const getFormattedSpeed = () => {
 .new-version {
   font-size: 24px;
   font-weight: 700;
-  color: #67c23a;
+  color: #34d399;
   margin-bottom: 4px;
-  text-shadow: 0 0 10px rgba(103, 194, 58, 0.3);
+  text-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
 }
 
 .version-label {
@@ -762,7 +762,7 @@ const getFormattedSpeed = () => {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #e6a23c 0%, #f7ba2a 100%);
+  background: linear-gradient(90deg, #fbbf24 0%, #fdcc54 100%);
   border-radius: 4px;
   transition: width 0.3s ease;
   position: relative;
@@ -806,7 +806,7 @@ const getFormattedSpeed = () => {
 }
 
 .ready-icon {
-  color: #67c23a;
+  color: #34d399;
   margin-bottom: 16px;
   animation: success-bounce 0.8s ease-out;
 }
@@ -842,13 +842,13 @@ const getFormattedSpeed = () => {
 }
 
 .error-icon {
-  color: #f56c6c;
+  color: #f87171;
   margin-bottom: 16px;
   animation: error-pulse 0.6s ease-out;
 }
 
 .error-message {
-  color: #f56c6c;
+  color: #f87171;
   font-size: 14px;
   margin: 0;
   line-height: 1.4;
@@ -859,7 +859,7 @@ const getFormattedSpeed = () => {
 }
 
 .error-detail {
-  color: #f56c6c;
+  color: #f87171;
   font-size: 14px;
   margin: 0;
   line-height: 1.4;
@@ -897,15 +897,15 @@ const getFormattedSpeed = () => {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #409eff 0%, #66b3ff 100%);
+  background: linear-gradient(135deg, #60a5fa 0%, #7eb8fc 100%);
   color: white;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
+  box-shadow: 0 2px 8px rgba(96, 165, 250, 0.3);
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.4);
-  background: linear-gradient(135deg, #66b3ff 0%, #409eff 100%);
+  box-shadow: 0 4px 12px rgba(96, 165, 250, 0.4);
+  background: linear-gradient(135deg, #7eb8fc 0%, #60a5fa 100%);
 }
 
 .btn-secondary {
@@ -921,15 +921,15 @@ const getFormattedSpeed = () => {
 }
 
 .btn-danger {
-  background: linear-gradient(135deg, #f56c6c 0%, #f78989 100%);
+  background: linear-gradient(135deg, #f87171 0%, #fb9090 100%);
   color: white;
-  box-shadow: 0 2px 8px rgba(245, 108, 108, 0.3);
+  box-shadow: 0 2px 8px rgba(248, 113, 113, 0.3);
 }
 
 .btn-danger:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(245, 108, 108, 0.4);
-  background: linear-gradient(135deg, #f78989 0%, #f56c6c 100%);
+  box-shadow: 0 4px 12px rgba(248, 113, 113, 0.4);
+  background: linear-gradient(135deg, #fb9090 0%, #f87171 100%);
 }
 
 /* 动画效果 */
@@ -945,10 +945,10 @@ const getFormattedSpeed = () => {
 
 @keyframes glow-green {
   from {
-    box-shadow: 0 0 10px rgba(103, 194, 58, 0.3);
+    box-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
   }
   to {
-    box-shadow: 0 0 20px rgba(103, 194, 58, 0.6);
+    box-shadow: 0 0 20px rgba(52, 211, 153, 0.6);
   }
 }
 

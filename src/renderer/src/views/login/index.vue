@@ -68,10 +68,10 @@
               <div
                 v-for="user in localAccounts"
                 :key="user.uin"
-                class="p-1.5 flex flex-col items-center transition-opacity"
+                class="local-account-item p-1.5 flex flex-col items-center"
                 :class="{
                   'cursor-pointer': !isLoggingIn,
-                  'cursor-not-allowed opacity-30': isLoggingIn
+                  'cursor-not-allowed is-disabled': isLoggingIn
                 }"
               >
                 <el-tooltip :content="`${user.uin}`" placement="top" :disabled="isLoggingIn">
@@ -325,10 +325,14 @@ onUnmounted(() => {
       align-items: center;
       justify-content: space-evenly;
       flex-direction: column;
-      border-radius: 10px;
-      background-color: rgba(0, 0, 0, 0.5);
+      border-radius: var(--ds-radius-xl);
+      background: var(--ds-bg-1);
+      border: 1px solid var(--ds-border-light);
+      box-shadow: var(--ds-shadow-lg);
+      backdrop-filter: blur(20px);
       p {
         font-size: 14px;
+        color: var(--ds-text-secondary);
       }
     }
 
@@ -343,7 +347,7 @@ onUnmounted(() => {
       h3 {
         margin: 0;
         font-size: 18px;
-        color: rgba(255, 255, 255, 0.9);
+        color: var(--ds-text-primary);
         font-weight: 600;
       }
 
@@ -353,17 +357,19 @@ onUnmounted(() => {
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        transition: all 0.3s ease;
-        color: rgba(255, 255, 255, 0.5);
+        transition: all var(--ds-dur-slow) var(--ds-ease-soft);
+        color: var(--ds-text-tertiary);
         padding: 2px;
+        border-radius: var(--ds-radius-sm);
 
         &:hover {
-          color: rgba(255, 255, 255, 0.8);
+          color: var(--ds-text-primary);
+          background: var(--ds-bg-3);
           transform: rotate(180deg);
         }
 
         &:active {
-          color: rgba(255, 255, 255, 0.6);
+          color: var(--ds-text-secondary);
           transform: rotate(180deg) scale(0.95);
         }
       }
@@ -437,7 +443,36 @@ onUnmounted(() => {
 
     // 平滑过渡效果
     .transition-opacity {
-      transition: opacity 0.3s ease;
+      transition: opacity var(--ds-dur-slow) var(--ds-ease-soft);
+    }
+
+    // 本地账号头像
+    .local-account-item {
+      transition:
+        opacity var(--ds-dur-base) var(--ds-ease-soft),
+        transform var(--ds-dur-base) var(--ds-ease-soft);
+
+      &:not(.is-disabled):hover {
+        transform: translateY(-2px);
+      }
+
+      &.is-disabled {
+        opacity: 0.3;
+      }
+
+      :deep(.el-avatar) {
+        transition: box-shadow var(--ds-dur-base) var(--ds-ease-soft);
+      }
+
+      &:not(.is-disabled):hover :deep(.el-avatar) {
+        box-shadow: 0 0 0 2px var(--ds-accent-blue-soft);
+      }
+
+      span {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--ds-text-secondary);
+      }
     }
   }
 }

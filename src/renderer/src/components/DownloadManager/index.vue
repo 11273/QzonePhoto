@@ -45,7 +45,7 @@
               size="small"
               active-text=""
               inactive-text=""
-              active-color="#409EFF"
+              active-color="#60a5fa"
               inactive-color="#DCDFE6"
               @change="handleReplaceSettingChange"
             />
@@ -1188,11 +1188,11 @@ const handleReplaceSettingChange = async (newValue) => {
             }
 
             &:hover {
-              border-color: #409eff;
+              border-color: #60a5fa;
             }
 
             &.is-focus {
-              border-color: #409eff;
+              border-color: #60a5fa;
               background: rgba(255, 255, 255, 0.05);
             }
           }
@@ -1225,8 +1225,8 @@ const handleReplaceSettingChange = async (newValue) => {
           }
 
           &.is-checked .el-switch__core {
-            background-color: #409eff;
-            border-color: #409eff;
+            background-color: #60a5fa;
+            border-color: #60a5fa;
           }
 
           .el-switch__label {
@@ -1234,7 +1234,7 @@ const handleReplaceSettingChange = async (newValue) => {
             font-size: 11px;
 
             &.is-active {
-              color: #409eff;
+              color: #60a5fa;
             }
           }
         }
@@ -1258,35 +1258,35 @@ const handleReplaceSettingChange = async (newValue) => {
       }
 
       &.el-button--success {
-        background: #67c23a;
-        border-color: #67c23a;
+        background: #34d399;
+        border-color: #34d399;
         color: #fff;
 
         &:hover {
-          background: #85ce61;
-          border-color: #85ce61;
+          background: #52e3a8;
+          border-color: #52e3a8;
         }
       }
 
       &.el-button--warning {
-        background: #e6a23c;
-        border-color: #e6a23c;
+        background: #fbbf24;
+        border-color: #fbbf24;
         color: #fff;
 
         &:hover {
-          background: #ebb563;
-          border-color: #ebb563;
+          background: #fccc54;
+          border-color: #fccc54;
         }
       }
 
       &.el-button--danger {
-        background: #f56c6c;
-        border-color: #f56c6c;
+        background: #f87171;
+        border-color: #f87171;
         color: #fff;
 
         &:hover {
-          background: #f78989;
-          border-color: #f78989;
+          background: #fb9090;
+          border-color: #fb9090;
         }
       }
     }
@@ -1351,7 +1351,7 @@ const handleReplaceSettingChange = async (newValue) => {
           .progress-percentage {
             font-size: 18px;
             font-weight: 700;
-            color: #409eff;
+            color: #60a5fa;
             line-height: 1;
           }
         }
@@ -1395,7 +1395,7 @@ const handleReplaceSettingChange = async (newValue) => {
           .current-speed {
             font-size: 16px;
             font-weight: 700;
-            color: #67c23a;
+            color: #34d399;
             line-height: 1;
             margin-bottom: 4px;
           }
@@ -1436,19 +1436,19 @@ const handleReplaceSettingChange = async (newValue) => {
               flex-shrink: 0;
 
               &.downloading {
-                background: #409eff;
+                background: #60a5fa;
               }
               &.completed {
-                background: #67c23a;
+                background: #34d399;
               }
               &.paused {
-                background: #e6a23c;
+                background: #fbbf24;
               }
               &.waiting {
                 background: #909399;
               }
               &.error {
-                background: #f56c6c;
+                background: #f87171;
               }
               &.cancelled {
                 background: #909399;
@@ -1519,8 +1519,8 @@ const handleReplaceSettingChange = async (newValue) => {
             }
 
             &.is-active .el-radio-button__inner {
-              background: #409eff;
-              border-color: #409eff;
+              background: #60a5fa;
+              border-color: #60a5fa;
               color: #fff;
             }
           }
@@ -1710,24 +1710,24 @@ const handleReplaceSettingChange = async (newValue) => {
                         flex-shrink: 0;
 
                         &.downloading {
-                          background: rgba(64, 158, 255, 0.2);
-                          color: #409eff;
+                          background: rgba(96, 165, 250, 0.2);
+                          color: #60a5fa;
                         }
                         &.completed {
-                          background: rgba(103, 194, 58, 0.2);
-                          color: #67c23a;
+                          background: rgba(52, 211, 153, 0.2);
+                          color: #34d399;
                         }
                         &.paused {
-                          background: rgba(230, 162, 60, 0.2);
-                          color: #e6a23c;
+                          background: rgba(251, 191, 36, 0.2);
+                          color: #fbbf24;
                         }
                         &.waiting {
                           background: rgba(144, 147, 153, 0.2);
                           color: #909399;
                         }
                         &.error {
-                          background: rgba(245, 108, 108, 0.2);
-                          color: #f56c6c;
+                          background: rgba(248, 113, 113, 0.2);
+                          color: #f87171;
                         }
                         &.cancelled {
                           background: rgba(144, 147, 153, 0.2);
@@ -1757,7 +1757,7 @@ const handleReplaceSettingChange = async (newValue) => {
 
                   .progress-percent {
                     font-size: 11px;
-                    color: #409eff;
+                    color: #60a5fa;
                     font-weight: 600;
                     text-align: right;
                     flex-shrink: 0;
@@ -1799,12 +1799,12 @@ const handleReplaceSettingChange = async (newValue) => {
                     }
 
                     .speed-info {
-                      color: #67c23a;
+                      color: #34d399;
                       white-space: nowrap;
                     }
 
                     .eta-info {
-                      color: #e6a23c;
+                      color: #fbbf24;
                       white-space: nowrap;
                     }
                   }

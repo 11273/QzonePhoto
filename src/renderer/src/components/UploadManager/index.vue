@@ -429,13 +429,13 @@ const handleImageError = (event) => {
 const getProgressColor = (status) => {
   switch (status) {
     case 'uploading':
-      return '#409eff'
+      return '#60a5fa'
     case 'completed':
-      return '#67c23a'
+      return '#34d399'
     case 'error':
-      return '#f56c6c'
+      return '#f87171'
     case 'paused':
-      return '#e6a23c'
+      return '#fbbf24'
     default:
       return '#909399'
   }
@@ -1004,46 +1004,46 @@ onUnmounted(async () => {
       }
 
       &.el-button--success {
-        background: #67c23a;
-        border-color: #67c23a;
+        background: #34d399;
+        border-color: #34d399;
         color: #fff;
 
         &:hover {
-          background: #85ce61;
-          border-color: #85ce61;
+          background: #52e3a8;
+          border-color: #52e3a8;
         }
       }
 
       &.el-button--warning {
-        background: #e6a23c;
-        border-color: #e6a23c;
+        background: #fbbf24;
+        border-color: #fbbf24;
         color: #fff;
 
         &:hover {
-          background: #ebb563;
-          border-color: #ebb563;
+          background: #fccc54;
+          border-color: #fccc54;
         }
       }
 
       &.el-button--primary {
-        background: #409eff;
-        border-color: #409eff;
+        background: #60a5fa;
+        border-color: #60a5fa;
         color: #fff;
 
         &:hover {
-          background: #66b1ff;
-          border-color: #66b1ff;
+          background: #7eb8fc;
+          border-color: #7eb8fc;
         }
       }
 
       &.el-button--danger {
-        background: #f56c6c;
-        border-color: #f56c6c;
+        background: #f87171;
+        border-color: #f87171;
         color: #fff;
 
         &:hover {
-          background: #f78989;
-          border-color: #f78989;
+          background: #fb9090;
+          border-color: #fb9090;
         }
       }
     }
@@ -1091,7 +1091,7 @@ onUnmounted(async () => {
           .progress-percentage {
             font-size: 18px;
             font-weight: 700;
-            color: #67c23a;
+            color: #34d399;
             line-height: 1;
           }
 
@@ -1128,19 +1128,19 @@ onUnmounted(async () => {
               color: #909399;
             }
             &.uploading {
-              color: #409eff;
+              color: #60a5fa;
             }
             &.waiting {
-              color: #e6a23c;
+              color: #fbbf24;
             }
             &.completed {
-              color: #67c23a;
+              color: #34d399;
             }
             &.error {
-              color: #f56c6c;
+              color: #f87171;
             }
             &.paused {
-              color: #e6a23c;
+              color: #fbbf24;
             }
           }
         }
@@ -1154,7 +1154,7 @@ onUnmounted(async () => {
         .current-speed {
           font-size: 16px;
           font-weight: 700;
-          color: #67c23a;
+          color: #34d399;
           line-height: 1;
           margin-bottom: 4px;
         }
@@ -1218,23 +1218,23 @@ onUnmounted(async () => {
           }
 
           &.is-uploading {
-            border-color: rgba(64, 158, 255, 0.3);
-            background: rgba(64, 158, 255, 0.05);
+            border-color: rgba(96, 165, 250, 0.3);
+            background: rgba(96, 165, 250, 0.05);
           }
 
           &.is-error {
-            border-color: rgba(245, 108, 108, 0.3);
-            background: rgba(245, 108, 108, 0.05);
+            border-color: rgba(248, 113, 113, 0.3);
+            background: rgba(248, 113, 113, 0.05);
           }
 
           &.is-completed {
-            border-color: rgba(103, 194, 58, 0.3);
-            background: rgba(103, 194, 58, 0.05);
+            border-color: rgba(52, 211, 153, 0.3);
+            background: rgba(52, 211, 153, 0.05);
           }
 
           &.is-paused {
-            border-color: rgba(230, 162, 60, 0.3);
-            background: rgba(230, 162, 60, 0.05);
+            border-color: rgba(251, 191, 36, 0.3);
+            background: rgba(251, 191, 36, 0.05);
           }
 
           .task-info {
@@ -1268,7 +1268,7 @@ onUnmounted(async () => {
                 color: rgba(255, 255, 255, 0.6);
 
                 &.video-icon {
-                  color: #409eff;
+                  color: #60a5fa;
                 }
 
                 &.document-icon {
@@ -1317,23 +1317,23 @@ onUnmounted(async () => {
                 flex-wrap: wrap;
 
                 .album-name {
-                  color: #409eff;
-                  background: rgba(64, 158, 255, 0.12);
+                  color: #60a5fa;
+                  background: rgba(96, 165, 250, 0.12);
                   padding: 1px 4px;
                   border-radius: 3px;
                   font-size: 9px;
                   font-weight: 500;
-                  border: 1px solid rgba(64, 158, 255, 0.2);
+                  border: 1px solid rgba(96, 165, 250, 0.2);
                 }
 
                 .file-size {
-                  background: rgba(103, 194, 58, 0.12);
-                  color: rgba(103, 194, 58, 0.9);
+                  background: rgba(52, 211, 153, 0.12);
+                  color: rgba(52, 211, 153, 0.9);
                   padding: 1px 4px;
                   border-radius: 3px;
                   font-size: 9px;
                   font-weight: 500;
-                  border: 1px solid rgba(103, 194, 58, 0.2);
+                  border: 1px solid rgba(52, 211, 153, 0.2);
                   flex-shrink: 0;
                 }
 
@@ -1361,18 +1361,18 @@ onUnmounted(async () => {
                   cursor: help;
 
                   .error-text {
-                    color: #f56c6c;
+                    color: #f87171;
                     flex: 1;
                   }
 
                   .retry-count {
-                    color: rgba(245, 108, 108, 0.7);
+                    color: rgba(248, 113, 113, 0.7);
                     font-size: 9px;
                   }
 
                   // 不同类型错误图标的样式
                   .error-icon-file {
-                    color: #e6a23c;
+                    color: #fbbf24;
                   }
 
                   .error-icon-network {
@@ -1380,15 +1380,15 @@ onUnmounted(async () => {
                   }
 
                   .error-icon-auth {
-                    color: #f56c6c;
+                    color: #f87171;
                   }
 
                   .error-icon-info {
-                    color: #409eff;
+                    color: #60a5fa;
                   }
 
                   .error-icon-general {
-                    color: #f56c6c;
+                    color: #f87171;
                   }
                 }
               }
@@ -1413,7 +1413,7 @@ onUnmounted(async () => {
               }
 
               .speed-text {
-                color: #67c23a;
+                color: #34d399;
               }
             }
           }

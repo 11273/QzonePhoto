@@ -106,7 +106,9 @@
               :key="friend.uin"
               class="drawer-friend-item"
               :class="{ active: activeFriend?.uin === friend.uin }"
+              :title="`${friend.name}（${friend.uin}）— 右键复制 QQ 号`"
               @click="handleEnter(friend)"
+              @contextmenu.prevent="copyToClipboard(friend.uin, 'QQ 号')"
             >
               <el-avatar :size="30" :src="avatarUrl(friend)">
                 {{ stripEmoji(primaryName(friend))?.[0] || '?' }}
@@ -152,6 +154,7 @@
 import { ref } from 'vue'
 import { ArrowUp, Search, Loading } from '@element-plus/icons-vue'
 import { useFriendStore, FRIEND_TAB } from '@renderer/store/friend.store'
+import { copyToClipboard } from '@renderer/utils'
 
 defineProps({
   activeFriend: { type: Object, default: null }
@@ -227,18 +230,19 @@ defineExpose({ toggleDrawer })
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(248, 113, 113, 0.18);
-  background: linear-gradient(135deg, rgba(248, 113, 113, 0.06) 0%, rgba(248, 113, 113, 0.02) 100%);
+  border-radius: var(--ds-radius-lg);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.08) 0%, rgba(248, 113, 113, 0.03) 100%);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: var(--ds-transition-all);
   user-select: none;
 }
 
 .trigger-bar:hover,
 .trigger-bar.active {
-  border-color: rgba(248, 113, 113, 0.35);
-  background: linear-gradient(135deg, rgba(248, 113, 113, 0.1) 0%, rgba(248, 113, 113, 0.04) 100%);
+  border-color: rgba(248, 113, 113, 0.5);
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.16) 0%, rgba(248, 113, 113, 0.06) 100%);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.06);
 }
 
 .trigger-heart {
@@ -406,7 +410,7 @@ defineExpose({ toggleDrawer })
 }
 
 .drawer-search :deep(.el-input__inner::placeholder) {
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--ds-text-quaternary);
 }
 
 .drawer-search :deep(.el-input__prefix .el-icon) {

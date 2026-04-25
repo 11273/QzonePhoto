@@ -2241,37 +2241,36 @@ onUnmounted(() => {
 
 .video-info {
   margin-top: 16px;
-  padding: 12px;
-  border-radius: 6px;
+  padding: 10px 12px;
+  border-radius: var(--ds-radius-md);
   font-size: 13px;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  gap: 8px;
+  background: var(--ds-bg-2);
+  border: 1px solid var(--ds-border-light);
 
   .info-item {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 12px;
-    background: linear-gradient(135deg, #409eff 0%, #67c23a 100%);
-    border-radius: 20px;
-    border: none;
-    color: white;
-    font-weight: 500;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    padding: 4px 10px;
+    background: var(--ds-bg-3);
+    border-radius: var(--ds-radius-sm);
+    border: 1px solid var(--ds-border-faint);
+    color: var(--ds-text-secondary);
 
     .label {
-      font-weight: 600;
-      color: white;
-      font-size: 12px;
+      font-weight: 500;
+      color: var(--ds-text-tertiary);
+      font-size: 11px;
     }
 
     .value {
-      color: white;
+      color: var(--ds-text-primary);
       font-size: 12px;
       font-weight: 600;
+      font-variant-numeric: tabular-nums;
     }
   }
 

@@ -76,7 +76,7 @@ const iconSize = computed(() => {
   align-items: center;
   justify-content: center;
   width: 100%;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--ds-text-primary);
 
   &.small {
     min-height: 80px;
@@ -114,7 +114,7 @@ const iconSize = computed(() => {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--ds-bg-overlay);
     backdrop-filter: blur(4px);
     z-index: 1000;
   }
@@ -140,8 +140,8 @@ const iconSize = computed(() => {
 .spinner-ring {
   width: 24px;
   height: 24px;
-  border: 3px solid rgba(255, 255, 255, 0.2);
-  border-top: 3px solid currentColor;
+  border: 3px solid var(--ds-border-strong);
+  border-top: 3px solid var(--ds-accent-blue);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }

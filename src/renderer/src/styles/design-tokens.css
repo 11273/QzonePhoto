@@ -1,0 +1,119 @@
+/**
+ * 全局设计令牌（design tokens）
+ *
+ * 给所有 Vue 组件复用。Vue scoped style 里直接 `var(--ds-xxx)`。
+ *
+ * 命名约定：
+ *   --ds-bg-*       背景色
+ *   --ds-border-*   边框色
+ *   --ds-text-*     文本色
+ *   --ds-accent-*   主题强调色
+ *   --ds-state-*    状态色（成功/警告/错误/信息）
+ *   --ds-radius-*   圆角
+ *   --ds-shadow-*   阴影
+ *   --ds-ease-*     过渡缓动
+ *   --ds-dur-*      过渡时长
+ */
+:root {
+  /* === 背景层级（黑色系，半透明叠加） === */
+  --ds-bg-0: rgba(20, 20, 24, 0.97); /* 主体最深底（弹层） */
+  --ds-bg-1: rgba(28, 28, 32, 0.95); /* 次级底（卡片大块） */
+  --ds-bg-2: rgba(255, 255, 255, 0.03); /* 卡片轻底 */
+  --ds-bg-3: rgba(255, 255, 255, 0.05); /* hover 轻提亮 */
+  --ds-bg-4: rgba(255, 255, 255, 0.08); /* hover 强提亮 */
+  --ds-bg-overlay: rgba(0, 0, 0, 0.65); /* 遮罩 */
+  --ds-bg-overlay-strong: rgba(0, 0, 0, 0.85); /* 强遮罩 */
+
+  /* === 边框层级（白色系，半透明） === */
+  --ds-border-faint: rgba(255, 255, 255, 0.05);
+  --ds-border-light: rgba(255, 255, 255, 0.08);
+  --ds-border-medium: rgba(255, 255, 255, 0.12);
+  --ds-border-strong: rgba(255, 255, 255, 0.2);
+
+  /* === 文本色（多档灰） === */
+  --ds-text-primary: rgba(255, 255, 255, 0.92);
+  --ds-text-secondary: rgba(255, 255, 255, 0.7);
+  --ds-text-tertiary: rgba(255, 255, 255, 0.5);
+  --ds-text-quaternary: rgba(255, 255, 255, 0.35);
+  --ds-text-disabled: rgba(255, 255, 255, 0.2);
+
+  /* === 主题强调色 === */
+  --ds-accent-blue: #60a5fa;
+  --ds-accent-blue-soft: rgba(96, 165, 250, 0.12);
+  --ds-accent-blue-border: rgba(96, 165, 250, 0.35);
+
+  --ds-accent-green: #34d399;
+  --ds-accent-green-soft: rgba(52, 211, 153, 0.12);
+  --ds-accent-green-border: rgba(52, 211, 153, 0.35);
+
+  --ds-accent-yellow: #fbbf24;
+  --ds-accent-yellow-soft: rgba(251, 191, 36, 0.12);
+  --ds-accent-yellow-border: rgba(251, 191, 36, 0.35);
+
+  --ds-accent-red: #f87171;
+  --ds-accent-red-soft: rgba(248, 113, 113, 0.12);
+  --ds-accent-red-border: rgba(248, 113, 113, 0.35);
+
+  /* === 语义状态色 === */
+  --ds-state-success: var(--ds-accent-green);
+  --ds-state-warning: var(--ds-accent-yellow);
+  --ds-state-error: var(--ds-accent-red);
+  --ds-state-info: var(--ds-accent-blue);
+
+  /* === 圆角 === */
+  --ds-radius-xs: 3px;
+  --ds-radius-sm: 4px;
+  --ds-radius-md: 6px;
+  --ds-radius-lg: 8px;
+  --ds-radius-xl: 10px;
+  --ds-radius-pill: 999px;
+
+  /* === 阴影 === */
+  --ds-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --ds-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --ds-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --ds-shadow-xl: 0 16px 40px rgba(0, 0, 0, 0.4);
+
+  /* === 过渡 === */
+  --ds-ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+  --ds-ease-springy: cubic-bezier(0.16, 1, 0.3, 1);
+  --ds-dur-fast: 0.15s;
+  --ds-dur-base: 0.2s;
+  --ds-dur-slow: 0.3s;
+
+  /* === 复合：常用过渡组合（直接用即可） === */
+  --ds-transition-bg: background-color var(--ds-dur-fast) var(--ds-ease-soft);
+  --ds-transition-color: color var(--ds-dur-fast) var(--ds-ease-soft);
+  --ds-transition-all: all var(--ds-dur-base) var(--ds-ease-soft);
+}
+
+/* === 全局可复制元素：复用一致的 hover 表现 === */
+.ds-copyable {
+  cursor: pointer;
+  border-radius: var(--ds-radius-xs);
+  padding: 1px 4px;
+  margin: -1px -4px;
+  transition: var(--ds-transition-bg);
+}
+.ds-copyable:hover {
+  background: var(--ds-bg-3);
+}
+.ds-copyable:active {
+  background: var(--ds-bg-4);
+}
+
+/* === 全局滚动条（暗色） === */
+.ds-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.ds-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ds-scroll::-webkit-scrollbar-thumb {
+  background: var(--ds-bg-3);
+  border-radius: var(--ds-radius-pill);
+}
+.ds-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--ds-bg-4);
+}

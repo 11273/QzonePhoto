@@ -1975,9 +1975,9 @@ onUnmounted(async () => {
     align-items: center;
     gap: 8px;
     padding: 8px 16px;
-    background: rgba(103, 194, 58, 0.1);
+    background: rgba(52, 211, 153, 0.1);
     border-radius: 8px;
-    color: #67c23a;
+    color: #34d399;
     font-size: 13px;
     font-weight: 500;
 
@@ -2012,8 +2012,8 @@ onUnmounted(async () => {
     }
 
     &.primary-btn {
-      background: linear-gradient(135deg, #409eff 0%, #4dabf7 100%);
-      border: 1px solid #409eff;
+      background: linear-gradient(135deg, #60a5fa 0%, #7eb8fc 100%);
+      border: 1px solid #60a5fa;
       color: #ffffff;
 
       &:hover {
@@ -2024,19 +2024,19 @@ onUnmounted(async () => {
 
     &.secondary-btn {
       background: transparent;
-      border: 1px solid #409eff;
-      color: #409eff;
+      border: 1px solid #60a5fa;
+      color: #60a5fa;
 
       &:hover {
-        background: rgba(64, 158, 255, 0.1);
+        background: rgba(96, 165, 250, 0.1);
         border-color: #5bacff;
         color: #5bacff;
       }
     }
 
     &.success-btn {
-      background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
-      border: 1px solid #67c23a;
+      background: linear-gradient(135deg, #34d399 0%, #52e3a8 100%);
+      border: 1px solid #34d399;
       color: #ffffff;
 
       &:hover {
@@ -2055,8 +2055,8 @@ onUnmounted(async () => {
     }
 
     &.warning-btn {
-      background: linear-gradient(135deg, #e6a23c 0%, #eebe77 100%);
-      border: 1px solid #e6a23c;
+      background: linear-gradient(135deg, #fbbf24 0%, #eebe77 100%);
+      border: 1px solid #fbbf24;
       color: #ffffff;
 
       &:hover {
@@ -2067,13 +2067,13 @@ onUnmounted(async () => {
 
     &.danger-btn {
       background: transparent;
-      border: 1px solid #f56c6c;
-      color: #f56c6c;
+      border: 1px solid #f87171;
+      color: #f87171;
 
       &:hover {
-        background: rgba(245, 108, 108, 0.1);
-        border-color: #f78989;
-        color: #f78989;
+        background: rgba(248, 113, 113, 0.1);
+        border-color: #fb9090;
+        color: #fb9090;
       }
     }
   }
@@ -2085,7 +2085,7 @@ onUnmounted(async () => {
   margin-left: 10px;
 
   .notice-icon {
-    color: #409eff;
+    color: #60a5fa;
     font-size: 15px;
     flex-shrink: 0;
   }
@@ -2131,8 +2131,8 @@ onUnmounted(async () => {
   cursor: pointer;
 
   &.is-dragover {
-    background: rgba(64, 158, 255, 0.1);
-    border-color: #409eff;
+    background: rgba(96, 165, 250, 0.1);
+    border-color: #60a5fa;
   }
 
   .drop-icon {
@@ -2202,42 +2202,42 @@ onUnmounted(async () => {
   }
 
   &.upload-failed {
-    border-color: rgba(245, 108, 108, 0.5);
-    background: rgba(245, 108, 108, 0.1);
+    border-color: rgba(248, 113, 113, 0.5);
+    background: rgba(248, 113, 113, 0.1);
 
     &:hover {
-      border-color: rgba(245, 108, 108, 0.7);
-      background: rgba(245, 108, 108, 0.15);
+      border-color: rgba(248, 113, 113, 0.7);
+      background: rgba(248, 113, 113, 0.15);
     }
   }
 
   &.upload-uploading {
-    border-color: rgba(64, 158, 255, 0.5);
-    background: rgba(64, 158, 255, 0.1);
+    border-color: rgba(96, 165, 250, 0.5);
+    background: rgba(96, 165, 250, 0.1);
 
     &:hover {
-      border-color: rgba(64, 158, 255, 0.7);
-      background: rgba(64, 158, 255, 0.15);
+      border-color: rgba(96, 165, 250, 0.7);
+      background: rgba(96, 165, 250, 0.15);
     }
   }
 
   &.upload-waiting {
-    border-color: rgba(230, 162, 60, 0.3);
-    background: rgba(230, 162, 60, 0.05);
+    border-color: rgba(251, 191, 36, 0.3);
+    background: rgba(251, 191, 36, 0.05);
 
     &:hover {
-      border-color: rgba(230, 162, 60, 0.5);
-      background: rgba(230, 162, 60, 0.1);
+      border-color: rgba(251, 191, 36, 0.5);
+      background: rgba(251, 191, 36, 0.1);
     }
   }
 
   &.upload-completed {
-    border-color: rgba(103, 194, 58, 0.5);
-    background: rgba(103, 194, 58, 0.1);
+    border-color: rgba(52, 211, 153, 0.5);
+    background: rgba(52, 211, 153, 0.1);
 
     &:hover {
-      border-color: rgba(103, 194, 58, 0.7);
-      background: rgba(103, 194, 58, 0.15);
+      border-color: rgba(52, 211, 153, 0.7);
+      background: rgba(52, 211, 153, 0.15);
     }
   }
 
@@ -2380,7 +2380,7 @@ onUnmounted(async () => {
       z-index: 5;
 
       .el-icon {
-        color: #409eff;
+        color: #60a5fa;
         margin-bottom: 8px;
       }
 
@@ -2451,24 +2451,24 @@ onUnmounted(async () => {
       }
 
       &.failed {
-        background: rgba(245, 108, 108, 0.95);
+        background: rgba(248, 113, 113, 0.95);
         color: white;
-        border: 1px solid rgba(245, 108, 108, 1);
-        box-shadow: 0 1px 6px rgba(245, 108, 108, 0.4);
+        border: 1px solid rgba(248, 113, 113, 1);
+        box-shadow: 0 1px 6px rgba(248, 113, 113, 0.4);
         animation: pulse 2s infinite;
         cursor: help;
 
         &:hover {
           transform: scale(1.05);
-          box-shadow: 0 2px 8px rgba(245, 108, 108, 0.6);
+          box-shadow: 0 2px 8px rgba(248, 113, 113, 0.6);
         }
       }
 
       &.uploading {
-        background: rgba(64, 158, 255, 0.95);
+        background: rgba(96, 165, 250, 0.95);
         color: white;
-        border: 1px solid rgba(64, 158, 255, 1);
-        box-shadow: 0 1px 6px rgba(64, 158, 255, 0.4);
+        border: 1px solid rgba(96, 165, 250, 1);
+        box-shadow: 0 1px 6px rgba(96, 165, 250, 0.4);
         animation: pulse 1.5s ease-in-out infinite;
 
         &:hover {
@@ -2477,10 +2477,10 @@ onUnmounted(async () => {
       }
 
       &.waiting {
-        background: rgba(230, 162, 60, 0.95);
+        background: rgba(251, 191, 36, 0.95);
         color: white;
-        border: 1px solid rgba(230, 162, 60, 1);
-        box-shadow: 0 1px 6px rgba(230, 162, 60, 0.4);
+        border: 1px solid rgba(251, 191, 36, 1);
+        box-shadow: 0 1px 6px rgba(251, 191, 36, 0.4);
 
         &:hover {
           transform: scale(1.05);
@@ -2499,10 +2499,10 @@ onUnmounted(async () => {
       }
 
       &.completed {
-        background: rgba(103, 194, 58, 0.95);
+        background: rgba(52, 211, 153, 0.95);
         color: white;
-        border: 1px solid rgba(103, 194, 58, 1);
-        box-shadow: 0 1px 6px rgba(103, 194, 58, 0.4);
+        border: 1px solid rgba(52, 211, 153, 1);
+        box-shadow: 0 1px 6px rgba(52, 211, 153, 0.4);
         animation: scaleIn 0.3s ease-out;
 
         &:hover {
@@ -2534,10 +2534,10 @@ onUnmounted(async () => {
 
         .progress-fill {
           height: 100%;
-          background: linear-gradient(90deg, #409eff 0%, #66b1ff 100%);
+          background: linear-gradient(90deg, #60a5fa 0%, #7eb8fc 100%);
           border-radius: 2px;
           transition: width 0.3s ease;
-          box-shadow: 0 0 4px rgba(64, 158, 255, 0.6);
+          box-shadow: 0 0 4px rgba(96, 165, 250, 0.6);
         }
       }
 
@@ -2556,15 +2556,15 @@ onUnmounted(async () => {
       width: 22px;
       height: 22px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
-      border: 1px solid #67c23a;
+      background: linear-gradient(135deg, #34d399 0%, #52e3a8 100%);
+      border: 1px solid #34d399;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       color: white;
-      box-shadow: 0 2px 8px rgba(103, 194, 58, 0.3);
+      box-shadow: 0 2px 8px rgba(52, 211, 153, 0.3);
 
       .el-icon {
         font-size: 12px;
@@ -2573,12 +2573,12 @@ onUnmounted(async () => {
       &:hover {
         transform: scale(1.15) translateY(-1px);
         background: linear-gradient(135deg, #7aca52 0%, #95d373 100%);
-        box-shadow: 0 4px 12px rgba(103, 194, 58, 0.4);
+        box-shadow: 0 4px 12px rgba(52, 211, 153, 0.4);
       }
 
       &:active {
         transform: scale(1.05);
-        box-shadow: 0 2px 4px rgba(103, 194, 58, 0.3);
+        box-shadow: 0 2px 4px rgba(52, 211, 153, 0.3);
       }
     }
 
@@ -2609,17 +2609,17 @@ onUnmounted(async () => {
     }
 
     .pause-btn-top:hover {
-      background: linear-gradient(135deg, #e6a23c 0%, #f0b86e 100%);
+      background: linear-gradient(135deg, #fbbf24 0%, #f0b86e 100%);
       transform: scale(1.1) translateY(-1px);
       border-color: rgba(255, 255, 255, 0.6);
-      box-shadow: 0 4px 12px rgba(230, 162, 60, 0.4);
+      box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4);
     }
 
     .resume-btn-top:hover {
-      background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
+      background: linear-gradient(135deg, #34d399 0%, #52e3a8 100%);
       transform: scale(1.1) translateY(-1px);
       border-color: rgba(255, 255, 255, 0.6);
-      box-shadow: 0 4px 12px rgba(103, 194, 58, 0.4);
+      box-shadow: 0 4px 12px rgba(52, 211, 153, 0.4);
     }
 
     .pause-btn-top:active,
@@ -2653,15 +2653,15 @@ onUnmounted(async () => {
       }
 
       &:hover {
-        background: linear-gradient(135deg, #f56c6c 0%, #f78989 100%);
+        background: linear-gradient(135deg, #f87171 0%, #fb9090 100%);
         transform: scale(1.1) translateY(-1px);
         border-color: rgba(255, 255, 255, 0.6);
-        box-shadow: 0 4px 12px rgba(245, 108, 108, 0.4);
+        box-shadow: 0 4px 12px rgba(248, 113, 113, 0.4);
       }
 
       &:active {
         transform: scale(1.05);
-        box-shadow: 0 2px 6px rgba(245, 108, 108, 0.3);
+        box-shadow: 0 2px 6px rgba(248, 113, 113, 0.3);
       }
     }
   }
@@ -2710,17 +2710,17 @@ onUnmounted(async () => {
       .file-size {
         background: linear-gradient(
           135deg,
-          rgba(64, 158, 255, 0.2) 0%,
-          rgba(64, 158, 255, 0.1) 100%
+          rgba(96, 165, 250, 0.2) 0%,
+          rgba(96, 165, 250, 0.1) 100%
         );
-        color: rgba(64, 158, 255, 0.9);
+        color: rgba(96, 165, 250, 0.9);
         padding: 3px 8px;
         border-radius: 6px;
         font-size: 10px;
         font-weight: 600;
         flex-shrink: 0;
-        border: 1px solid rgba(64, 158, 255, 0.2);
-        box-shadow: 0 1px 2px rgba(64, 158, 255, 0.1);
+        border: 1px solid rgba(96, 165, 250, 0.2);
+        box-shadow: 0 1px 2px rgba(96, 165, 250, 0.1);
       }
 
       .create-time {
@@ -2789,7 +2789,7 @@ onUnmounted(async () => {
       .stat-value {
         font-size: 14px;
         font-weight: 600;
-        color: #409eff;
+        color: #60a5fa;
         text-align: right;
         max-width: 80px;
         overflow: hidden;
@@ -2841,16 +2841,16 @@ onUnmounted(async () => {
           white-space: nowrap;
 
           &.primary {
-            color: #409eff;
+            color: #60a5fa;
           }
           &.warning {
-            color: #e6a23c;
+            color: #fbbf24;
           }
           &.info {
             color: #909399;
           }
           &.danger {
-            color: #f56c6c;
+            color: #f87171;
           }
         }
       }
@@ -2885,12 +2885,12 @@ onUnmounted(async () => {
         .speed-value {
           font-size: 16px;
           font-weight: 600;
-          color: #67c23a;
+          color: #34d399;
           transition: all 0.3s ease;
           line-height: 1;
 
           &.uploading {
-            color: #409eff;
+            color: #60a5fa;
             animation: pulse 2s infinite;
           }
         }
@@ -2982,7 +2982,7 @@ onUnmounted(async () => {
 
         &:hover {
           transform: translateY(-1px);
-          box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
+          box-shadow: 0 2px 8px rgba(96, 165, 250, 0.3);
         }
       }
     }
@@ -3006,7 +3006,7 @@ onUnmounted(async () => {
         }
 
         &:hover {
-          background: rgba(64, 158, 255, 0.1);
+          background: rgba(96, 165, 250, 0.1);
           color: #5bacff;
         }
       }

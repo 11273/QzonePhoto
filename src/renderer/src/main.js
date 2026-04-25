@@ -1,4 +1,5 @@
 import './assets/main.css'
+import '@renderer/styles/design-tokens.css'
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'

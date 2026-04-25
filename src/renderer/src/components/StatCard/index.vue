@@ -50,21 +50,21 @@ defineProps({
   gap: 10px;
   padding: 8px 0;
   min-width: 0;
-  transition: all 0.2s ease;
+  transition: var(--ds-transition-all);
 
   &.clickable {
     cursor: pointer;
     padding: 8px 12px;
-    border-radius: 8px;
+    border-radius: var(--ds-radius-lg);
 
     &:hover {
-      background: rgba(255, 255, 255, 0.06);
+      background: var(--ds-bg-3);
     }
   }
 
   &.primary {
     .stat-value {
-      color: #60a5fa;
+      color: var(--ds-accent-blue);
       font-weight: 700;
     }
     .stat-icon {
@@ -123,11 +123,11 @@ defineProps({
 .stat-value {
   font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--ds-text-primary);
   line-height: 1.2;
 
   &.level {
-    color: #fbbf24;
+    color: var(--ds-accent-yellow);
     text-shadow: 0 0 3px rgba(251, 191, 36, 0.3);
   }
 
@@ -149,7 +149,7 @@ defineProps({
 
 .stat-label {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--ds-text-tertiary);
   line-height: 1.2;
   letter-spacing: 0.01em;
 }

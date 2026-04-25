@@ -61,7 +61,7 @@ const iconSize = computed(() => {
   align-items: center;
   justify-content: center;
   width: 100%;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ds-text-secondary);
 
   &.small {
     min-height: 120px;
@@ -98,9 +98,9 @@ const iconSize = computed(() => {
   }
 
   &.card {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
+    background: var(--ds-bg-2);
+    border: 1px solid var(--ds-border-light);
+    border-radius: var(--ds-radius-xl);
     backdrop-filter: blur(10px);
   }
 }
@@ -119,14 +119,14 @@ const iconSize = computed(() => {
 .empty-title {
   font-size: 18px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--ds-text-primary);
   margin: 0 0 8px 0;
   line-height: 1.4;
 }
 
 .empty-description {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--ds-text-tertiary);
   margin: 0 0 20px 0;
   line-height: 1.5;
 }

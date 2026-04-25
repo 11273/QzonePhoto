@@ -32,7 +32,12 @@
           <Icon icon="qzone" size="large" color="#F15A24" />
         </div>
         <span v-if="appDescription" class="app-title">{{ appDescription }}</span>
-        <div v-if="appVersion" class="version-container no-drag" @click="handleVersionClick(false)">
+        <div
+          v-if="appVersion"
+          class="version-container no-drag"
+          @click="handleVersionClick(false)"
+          @contextmenu.prevent="copyToClipboard(appVersion, '版本号')"
+        >
           <span
             class="app-version"
             :class="{
@@ -208,6 +213,7 @@ import { useUserStore } from '@renderer/store/user.store'
 import Icon from '@renderer/components/Icon/index.vue'
 import ProgressBar from '@renderer/components/ProgressBar/index.vue'
 import { formatBytes } from '@renderer/utils/formatters'
+import { copyToClipboard } from '@renderer/utils'
 
 // 简单的版本号格式化函数
 const formatVersion = (version) => {
@@ -280,12 +286,13 @@ const progressText = computed(() => {
 
 // 版本号提示文本
 const getVersionTooltip = () => {
+  const suffix = '\n右键复制版本号'
   if (updateState.checking) {
-    return '正在检查更新...'
+    return '正在检查更新...' + suffix
   } else if (updateState.hasUpdate) {
-    return '发现新版本，点击查看详情'
+    return '发现新版本，点击查看详情' + suffix
   } else {
-    return '点击检查更新'
+    return '点击检查更新' + suffix
   }
 }
 
@@ -948,35 +955,35 @@ onUnmounted(() => {
   gap: 6px;
   position: relative;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: var(--ds-transition-all);
   padding: 4px 8px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-bg-2);
   backdrop-filter: blur(10px);
 }
 
 .version-container:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--ds-bg-4);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--ds-shadow-sm);
 }
 
 .app-version {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--ds-text-secondary);
   font-weight: 500;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: var(--ds-transition-all);
   letter-spacing: 0.3px;
 }
 
 .app-version.has-update {
-  color: #67c23a;
-  text-shadow: 0 0 8px rgba(103, 194, 58, 0.4);
+  color: var(--ds-state-success);
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.4);
 }
 
 .app-version.checking {
-  color: #409eff;
-  text-shadow: 0 0 8px rgba(64, 158, 255, 0.4);
+  color: var(--ds-state-info);
+  text-shadow: 0 0 8px rgba(96, 165, 250, 0.4);
 }
 
 .checking-indicator {
@@ -991,8 +998,8 @@ onUnmounted(() => {
 .checking-spinner {
   width: 12px;
   height: 12px;
-  border: 1.5px solid rgba(64, 158, 255, 0.2);
-  border-top: 1.5px solid #409eff;
+  border: 1.5px solid rgba(96, 165, 250, 0.2);
+  border-top: 1.5px solid var(--ds-state-info);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -1000,12 +1007,12 @@ onUnmounted(() => {
 .update-dot {
   width: 6px;
   height: 6px;
-  background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
+  background: linear-gradient(135deg, var(--ds-state-success) 0%, #85ce61 100%);
   border-radius: 50%;
   margin-left: 2px;
   box-shadow:
-    0 0 0 2px rgba(103, 194, 58, 0.3),
-    0 0 6px rgba(103, 194, 58, 0.6);
+    0 0 0 2px rgba(52, 211, 153, 0.3),
+    0 0 6px rgba(52, 211, 153, 0.6);
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
