@@ -53,7 +53,9 @@ export const IPC_USER = {
 
 export const IPC_FRIEND = {
   /** 获取好友亲密度列表 */
-  GET_FRIEND_LIST: 'friend:getFriendList'
+  GET_FRIEND_LIST: 'friend:getFriendList',
+  /** 获取 QQ 好友及分组 */
+  GET_QQ_FRIENDS: 'friend:getQQFriends'
 }
 
 export const IPC_DOWNLOAD = {

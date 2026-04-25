@@ -10,6 +10,9 @@ export function createFriendHandlers(service) {
   return {
     [IPC_FRIEND.GET_FRIEND_LIST]: async (_, { payload, headers }) => {
       return friendService.getFriendList(payload, headers)
+    },
+    [IPC_FRIEND.GET_QQ_FRIENDS]: async (_, { payload, headers }) => {
+      return friendService.getQQFriends(payload, headers)
     }
   }
 }
