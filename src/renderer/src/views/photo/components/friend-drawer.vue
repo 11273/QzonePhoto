@@ -23,6 +23,39 @@
     <!-- 展开面板 — 绝对定位向上展开，不影响布局 -->
     <transition name="panel-slide">
       <div v-show="isExpanded" class="drawer-panel">
+        <!-- 批量下载分组进度条（贴顶，跨整个面板宽度） -->
+        <div v-if="batchActive" class="batch-progress-strip">
+          <div class="batch-progress-info">
+            <el-icon class="batch-spinner is-loading"><Loading /></el-icon>
+            <div class="batch-progress-texts">
+              <div class="batch-progress-line">
+                分组「{{ currentGroupName }}」 {{ batchProgress.current }}/{{ batchProgress.total }}
+              </div>
+              <div class="batch-progress-sub">
+                <span class="batch-progress-friend">{{
+                  batchProgress.friendName || '准备中...'
+                }}</span>
+                <span class="batch-progress-stat"
+                  >已入队 {{ batchProgress.addedAlbums }} 个相册</span
+                >
+              </div>
+            </div>
+            <button
+              class="batch-cancel-btn"
+              :disabled="batchCancelling"
+              @click="cancelBatchDownload"
+            >
+              {{ batchCancelling ? '取消中' : '取消' }}
+            </button>
+          </div>
+          <div class="batch-progress-bar">
+            <div
+              class="batch-progress-bar-fill"
+              :style="{ width: batchProgressPercent + '%' }"
+            ></div>
+          </div>
+        </div>
+
         <!-- 顶层 Tab -->
         <div class="drawer-sub-tabs">
           <div
@@ -31,9 +64,7 @@
             @click="friendStore.switchTab(FRIEND_TAB.QQ_GROUP)"
           >
             <svg class="tab-heart" viewBox="0 0 16 16" fill="currentColor">
-              <path
-                d="M2 3h12v2H2V3zm0 4h12v2H2V7zm0 4h12v2H2v-2z"
-              />
+              <path d="M2 3h12v2H2V3zm0 4h12v2H2V7zm0 4h12v2H2v-2z" />
             </svg>
             <span>分组</span>
           </div>
@@ -78,9 +109,24 @@
               :label="`${opt.gpname} (${opt.count})`"
             />
           </el-select>
+          <el-tooltip
+            v-if="canBatchDownload"
+            :content="`下载分组「${currentGroupName}」全部好友相册（${batchScopeCount} 人）`"
+            placement="top"
+            :show-after="300"
+          >
+            <button
+              class="batch-group-btn"
+              :class="{ active: batchActive }"
+              :disabled="batchActive"
+              @click="handleBatchDownload"
+            >
+              <el-icon><Download /></el-icon>
+            </button>
+          </el-tooltip>
         </div>
 
-        <!-- 搜索 -->
+        <!-- 搜索 + 输入 QQ 号入口 -->
         <div class="drawer-search">
           <el-input
             v-model="friendStore.searchQuery"
@@ -89,6 +135,11 @@
             size="small"
             clearable
           />
+          <el-tooltip content="输入 QQ 号进入任意空间" placement="top" :show-after="300">
+            <button class="enter-by-uin-btn" @click="enterByUinVisible = true">
+              <el-icon><Plus /></el-icon>
+            </button>
+          </el-tooltip>
         </div>
 
         <!-- 好友列表 -->
@@ -147,14 +198,21 @@
         </div>
       </div>
     </transition>
+
+    <!-- 输入 QQ 号进入空间 -->
+    <EnterByUinDialog v-model:visible="enterByUinVisible" @enter-friend="handleEnterFromUin" />
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { ArrowUp, Search, Loading } from '@element-plus/icons-vue'
+import { ref, computed } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowUp, Search, Plus, Loading, Download } from '@element-plus/icons-vue'
 import { useFriendStore, FRIEND_TAB } from '@renderer/store/friend.store'
-import { copyToClipboard } from '@renderer/utils'
+import { useUserStore } from '@renderer/store/user.store'
+import { useDownloadStore } from '@renderer/store/download.store'
+import { copyToClipboard, generateUniqueAlbumName } from '@renderer/utils'
+import EnterByUinDialog from './enter-by-uin-dialog.vue'
 
 defineProps({
   activeFriend: { type: Object, default: null }
@@ -162,8 +220,261 @@ defineProps({
 
 const emit = defineEmits(['enter-friend'])
 const friendStore = useFriendStore()
+const userStore = useUserStore()
+const downloadStore = useDownloadStore()
 
 const isExpanded = ref(false)
+const enterByUinVisible = ref(false)
+
+const handleEnterFromUin = (friend) => {
+  emit('enter-friend', friend)
+  isExpanded.value = false
+}
+
+// ===== 批量下载分组好友相册 =====
+const batchActive = ref(false)
+const batchCancelling = ref(false)
+const batchCancelled = ref(false)
+const batchProgress = ref({
+  current: 0,
+  total: 0,
+  friendName: '',
+  addedAlbums: 0,
+  skippedAlbums: 0,
+  failedFriends: 0
+})
+
+const batchScopeCount = computed(() => friendStore.filteredList.length)
+
+const canBatchDownload = computed(
+  () =>
+    friendStore.currentTab === FRIEND_TAB.QQ_GROUP &&
+    friendStore.selectedGroupId !== friendStore.ALL_GROUP_ID &&
+    batchScopeCount.value > 0
+)
+
+const currentGroupName = computed(() => {
+  const opt = friendStore.groupOptions.find((o) => o.gpid === friendStore.selectedGroupId)
+  return opt?.gpname || '当前分组'
+})
+
+const batchProgressPercent = computed(() => {
+  const { current, total } = batchProgress.value
+  if (!total) return 0
+  return Math.min(100, Math.round((current / total) * 100))
+})
+
+const handleBatchDownload = async () => {
+  if (!canBatchDownload.value || batchActive.value) return
+  const friends = friendStore.filteredList.slice()
+  if (!friends.length) return
+
+  try {
+    await ElMessageBox.confirm(
+      `即将批量下载分组「${currentGroupName.value}」中 ${friends.length} 位好友的全部相册，` +
+        `期间将逐位拉取相册并加入下载队列，可点击进度栏「取消」中途停止。是否继续？`,
+      '批量下载分组相册',
+      {
+        confirmButtonText: '开始下载',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    return
+  }
+
+  batchActive.value = true
+  batchCancelling.value = false
+  batchCancelled.value = false
+  batchProgress.value = {
+    current: 0,
+    total: friends.length,
+    friendName: '',
+    addedAlbums: 0,
+    skippedAlbums: 0,
+    failedFriends: 0
+  }
+
+  ElMessage.info(`开始批量下载分组「${currentGroupName.value}」(${friends.length} 位好友)`)
+
+  for (let i = 0; i < friends.length; i++) {
+    if (batchCancelled.value) break
+    const friend = friends[i]
+    batchProgress.value.current = i + 1
+    batchProgress.value.friendName = stripEmoji(primaryName(friend)) || String(friend.uin)
+    try {
+      const counts = await downloadFriendAllAlbums(friend)
+      batchProgress.value.addedAlbums += counts.added
+      batchProgress.value.skippedAlbums += counts.skipped
+    } catch (err) {
+      console.error('[FriendDrawer] 批量下载好友失败', friend.uin, err)
+      batchProgress.value.failedFriends += 1
+    }
+    if (!batchCancelled.value) await new Promise((r) => setTimeout(r, 200))
+  }
+
+  const { addedAlbums, skippedAlbums, failedFriends } = batchProgress.value
+  if (batchCancelled.value) {
+    ElMessage.warning(`已取消批量下载，已加入 ${addedAlbums} 个相册`)
+  } else if (addedAlbums > 0) {
+    ElMessage.success(
+      `🎉 分组「${currentGroupName.value}」批量下载完成！成功加入 ${addedAlbums} 个相册` +
+        (skippedAlbums > 0 ? `，跳过 ${skippedAlbums} 个空/无权限相册` : '') +
+        (failedFriends > 0 ? `，${failedFriends} 位好友处理失败` : '')
+    )
+    downloadStore.showManager()
+  } else {
+    ElMessage.warning(
+      `批量下载结束：未加入任何相册` +
+        (skippedAlbums > 0 ? `（跳过 ${skippedAlbums} 个空/无权限相册）` : '') +
+        (failedFriends > 0 ? `，${failedFriends} 位好友处理失败` : '')
+    )
+  }
+
+  batchActive.value = false
+  batchCancelling.value = false
+  batchCancelled.value = false
+}
+
+const cancelBatchDownload = () => {
+  if (!batchActive.value || batchCancelling.value) return
+  batchCancelling.value = true
+  batchCancelled.value = true
+  ElMessage.info('正在停止批量下载（当前相册完成后停止）...')
+}
+
+// 拉取好友全部相册列表（最多 10 页 × 100）
+const fetchAllAlbumsForFriend = async (friendUin) => {
+  const collected = []
+  const seen = new Set()
+  const pageNum = 100
+  let pageStart = 0
+
+  for (let i = 0; i < 10; i++) {
+    if (batchCancelled.value) break
+    try {
+      const res = await window.QzoneAPI.getPhotoList(
+        { hostUin: friendUin, pageStart, pageNum },
+        { skipAuthCheck: true }
+      )
+      const data = res?.data || {}
+      let albums = []
+      if (Array.isArray(data.albumListModeSort) && data.albumListModeSort.length) {
+        albums = data.albumListModeSort
+      } else if (Array.isArray(data.albumListModeClass) && data.albumListModeClass.length) {
+        albums = data.albumListModeClass.flatMap((c) => c.albumList || [])
+      } else if (Array.isArray(data.albumList)) {
+        albums = data.albumList
+      }
+
+      let fresh = 0
+      for (const a of albums) {
+        if (a?.id && !seen.has(a.id)) {
+          seen.add(a.id)
+          collected.push(a)
+          fresh++
+        }
+      }
+
+      const total = Number(data.albumsInUser) || 0
+      if (fresh === 0) break
+      if (total > 0 && collected.length >= total) break
+      pageStart = collected.length
+      await new Promise((r) => setTimeout(r, 80))
+    } catch (err) {
+      console.error('[FriendDrawer] 拉取好友相册列表失败', friendUin, err)
+      break
+    }
+  }
+  return collected
+}
+
+// 流式获取好友某相册照片并加入下载队列
+const downloadFriendAllAlbums = async (friend) => {
+  let added = 0
+  let skipped = 0
+
+  const albums = await fetchAllAlbumsForFriend(friend.uin)
+  if (!albums.length) return { added, skipped }
+
+  for (const album of albums) {
+    if (batchCancelled.value) break
+    if (downloadStore.isAlbumDownloading(album.id) || downloadStore.isAlbumFetching(album.id)) {
+      skipped++
+      continue
+    }
+
+    downloadStore.startAlbumFetch(album.id, album.total || 0)
+    let addedPhotos = 0
+    let pageStart = 0
+    const batchSize = 100
+
+    while (!batchCancelled.value) {
+      try {
+        const detail = await window.QzoneAPI.getPhotoByTopicId(
+          { hostUin: friend.uin, topicId: album.id, pageStart, pageNum: batchSize },
+          { skipAuthCheck: true }
+        )
+        if (detail?.code !== undefined && detail.code !== 0) break
+
+        const photoData = detail?.data || {}
+        const photoList = Array.isArray(photoData.photoList) ? photoData.photoList : []
+        const nextPageStartValue = Number(photoData.nextPageStart)
+        const nextPageStart =
+          Number.isFinite(nextPageStartValue) && nextPageStartValue >= pageStart
+            ? nextPageStartValue
+            : pageStart + batchSize
+        const totalPhotos = Number(album.total)
+        const hasMore =
+          typeof photoData.hasMore === 'boolean'
+            ? photoData.hasMore
+            : totalPhotos > 0
+              ? nextPageStart < totalPhotos
+              : photoList.length === batchSize
+
+        if (nextPageStart <= pageStart && hasMore) break
+
+        if (photoList.length > 0) {
+          await window.QzoneAPI.download.addAlbum({
+            album: {
+              id: album.id,
+              name: generateUniqueAlbumName(album),
+              total: album.total,
+              desc: album.desc
+            },
+            photos: photoList,
+            uin: userStore.userInfo?.uin || 'unknown',
+            albumId: album.id,
+            friendUin: friend.uin
+          })
+          addedPhotos += photoList.length
+        }
+
+        const processedCount =
+          Number.isFinite(totalPhotos) && totalPhotos > 0
+            ? Math.min(totalPhotos, nextPageStart)
+            : nextPageStart
+        downloadStore.updateFetchProgress(album.id, processedCount)
+
+        if (!hasMore) break
+        pageStart = nextPageStart
+        await new Promise((r) => setTimeout(r, 100))
+      } catch (err) {
+        console.error('[FriendDrawer] 拉取相册照片失败', album.id, err)
+        break
+      }
+    }
+
+    downloadStore.setAlbumFetching(album.id, false)
+    downloadStore.resetAlbumState(album.id)
+    if (addedPhotos > 0) added++
+    else skipped++
+    await new Promise((r) => setTimeout(r, 150))
+  }
+
+  return { added, skipped }
+}
 
 const stripEmoji = (name) => (name || '').replace(/\[em\]e\d+\[\/em\]/g, '')
 const renderName = (name) => {
@@ -313,6 +624,34 @@ defineExpose({ toggleDrawer })
   opacity: 0;
 }
 
+/* ===== 输入 QQ 号入口（搜索栏右侧小按钮） ===== */
+.enter-by-uin-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 6px;
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+  font-size: 13px;
+}
+
+.enter-by-uin-btn:hover {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.5);
+  transform: scale(1.05);
+}
+
+.enter-by-uin-btn:active {
+  transform: scale(0.95);
+}
+
 /* ===== 顶层 Tab ===== */
 .drawer-sub-tabs {
   display: flex;
@@ -357,12 +696,146 @@ defineExpose({ toggleDrawer })
 
 /* ===== 分组选择器 ===== */
 .drawer-group-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 10px 6px;
   flex-shrink: 0;
 }
 
 .drawer-group-select :deep(.el-select) {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 批量下载分组按钮 */
+.batch-group-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 6px;
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+  font-size: 13px;
+}
+
+.batch-group-btn:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.5);
+  transform: scale(1.05);
+}
+
+.batch-group-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.batch-group-btn:disabled,
+.batch-group-btn.active {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 批量下载进度条 */
+.batch-progress-strip {
+  flex-shrink: 0;
+  padding: 8px 10px 6px;
+  background: rgba(248, 113, 113, 0.06);
+  border-bottom: 1px solid rgba(248, 113, 113, 0.18);
+}
+
+.batch-progress-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-spinner {
+  font-size: 14px;
+  color: #f87171;
+  flex-shrink: 0;
+}
+
+.batch-progress-texts {
+  flex: 1;
+  min-width: 0;
+}
+
+.batch-progress-line {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-progress-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+  line-height: 1.25;
+}
+
+.batch-progress-friend {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #f87171;
+}
+
+.batch-progress-stat {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.batch-cancel-btn {
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.batch-cancel-btn:hover:not(:disabled) {
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #f87171;
+}
+
+.batch-cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.batch-progress-bar {
+  margin-top: 6px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.batch-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #f87171 0%, #fb923c 100%);
+  border-radius: 2px;
+  transition: width 0.3s ease;
 }
 
 .drawer-group-select :deep(.el-select__wrapper) {
@@ -386,8 +859,16 @@ defineExpose({ toggleDrawer })
 }
 
 .drawer-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 10px 6px;
   flex-shrink: 0;
+}
+
+.drawer-search :deep(.el-input) {
+  flex: 1;
+  min-width: 0;
 }
 
 .drawer-search :deep(.el-input__wrapper) {
