@@ -1,5 +1,5 @@
 import { getGTK } from '@main/api/utils/helpers'
-import request from '@main/api/utils/request'
+import { h2Post } from '@main/api/utils/h2-client'
 import { calculateFileMD5, readFileAsBuffer } from '@main/utils/file-processor'
 
 // ==================== 常量定义 ====================
@@ -17,10 +17,23 @@ const APP_IDS = {
   VIDEO_QZONE: 'video_qzone'
 }
 
-/** 上传类型 */
+/** 上传类型（对齐 QQ 空间网页版 H5 上传） */
 const UPLOAD_TYPES = {
-  NORMAL: 2, // 普通上传（封面）
-  ADVANCED: 3 // 高级上传（图片/视频）
+  PIC: 2, // 图片 / 视频封面
+  VIDEO: 3 // 视频
+}
+
+/** 图片清晰度（对应网页版「照片尺寸」：普通 / 高清 / 原图） */
+const PIC_CLARITY = {
+  NORMAL: 0,
+  HD: 1,
+  ORIGINAL: 2
+}
+
+/** 视频清晰度（对应网页版「视频质量」：普通 / 原画） */
+const VIDEO_CLARITY = {
+  NORMAL: 0,
+  ORIGINAL: 1
 }
 
 /** 默认配置 */
@@ -67,7 +80,7 @@ function buildVideoBizReq(fileName, picTitle, picDesc, uploadTime, playTime) {
     sAlbumID: '',
     iAlbumTypeID: 0,
     iBitmap: 0,
-    iUploadType: UPLOAD_TYPES.ADVANCED,
+    iUploadType: UPLOAD_TYPES.VIDEO,
     iUpPicType: 0,
     iBatchID: 0,
     sPicPath: '',
@@ -84,6 +97,8 @@ function buildVideoBizReq(fileName, picTitle, picDesc, uploadTime, playTime) {
     iIsNew: 111,
     iIsOriginalVideo: 0,
     iIsFormatF20: 0,
+    clarityType: VIDEO_CLARITY.ORIGINAL,
+    isFormatF20: true,
     extend_info: {
       video_type: '3',
       domainid: '5'
@@ -114,7 +129,7 @@ function buildImageBizReq(
     sAlbumID: albumId,
     iAlbumTypeID: 0,
     iBitmap: 0,
-    iUploadType: UPLOAD_TYPES.ADVANCED,
+    iUploadType: UPLOAD_TYPES.PIC,
     iUpPicType: 0,
     iBatchID: batchId,
     sPicPath: '',
@@ -122,6 +137,7 @@ function buildImageBizReq(
     iPicHight: picHeight,
     iWaterType: 0,
     iDistinctUse: 0,
+    clarityType: PIC_CLARITY.HD,
     iNeedFeeds: 1,
     iUploadTime: Math.floor(uploadTime / 1000),
     mapExt: null,
@@ -156,7 +172,7 @@ function buildVideoCoverBizReq(
     sAlbumID: albumId,
     iAlbumTypeID: 0,
     iBitmap: 0,
-    iUploadType: UPLOAD_TYPES.NORMAL,
+    iUploadType: UPLOAD_TYPES.PIC,
     iUpPicType: 0,
     iBatchID: batchId,
     sPicPath: '',
@@ -216,7 +232,7 @@ async function uploadFileInChunks(
 ) {
   const appid = isVideo ? APP_IDS.VIDEO_QZONE : APP_IDS.PIC_QZONE
   const uploadUrl = isVideo ? UPLOAD_ENDPOINTS.FILE_UPLOAD_VIDEO : UPLOAD_ENDPOINTS.FILE_UPLOAD
-  const uploadType = isVideo ? undefined : UPLOAD_TYPES.NORMAL
+  const uploadType = isVideo ? undefined : UPLOAD_TYPES.PIC
 
   let offset = 0
   while (offset < fileLen) {
@@ -256,9 +272,7 @@ async function uploadFileInChunks(
       finalUrl = `${uploadUrl}?${queryParams.toString()}`
     }
 
-    const uploadResponse = await request.post(finalUrl, uploadPayload, {
-      headers: buildHeaders(uin, p_skey)
-    })
+    const uploadResponse = await h2Post(finalUrl, uploadPayload, buildHeaders(uin, p_skey))
 
     console.log(
       `${logPrefix} 分片上传: offset=${offset}, end=${end}, flag=${uploadResponse.data?.data?.flag}`
@@ -369,9 +383,7 @@ export async function fileBatchControl(
     checksum
   })
 
-  const response = await request.post(url, payload, {
-    headers: buildHeaders(uin, p_skey)
-  })
+  const response = await h2Post(url, payload, buildHeaders(uin, p_skey))
 
   console.log(`[fileBatchControl] 初始化响应: ret=${response.data.ret}`)
 
@@ -424,10 +436,11 @@ export async function fileUpload(
     end,
     cmd: isVideo ? 'FileUploadVideo' : 'FileUpload',
     slice_size: sliceSize,
-    biz_req: isVideo ? {} : { iUploadType: UPLOAD_TYPES.NORMAL }
+    biz_req: isVideo ? {} : { iUploadType: UPLOAD_TYPES.PIC }
   }
 
   // 视频上传需要额外的查询参数
+  let finalUrl = uploadUrl
   if (isVideo && totalSize > 0) {
     const queryParams = new URLSearchParams({
       seq: seq.toString(),
@@ -438,18 +451,11 @@ export async function fileUpload(
       type: 'json',
       g_tk: getGTK(p_skey)
     })
-    const finalUrl = `${uploadUrl}?${queryParams.toString()}`
-
-    const response = await request.post(finalUrl, payload, {
-      headers: buildHeaders(uin, p_skey)
-    })
-    return response.data
+    finalUrl = `${uploadUrl}?${queryParams.toString()}`
   }
 
-  const response = await request.post(uploadUrl, payload, {
-    headers: buildHeaders(uin, p_skey)
-  })
-
+  // 走 HTTP/2 单连接多路复用，对齐网页版上传性能
+  const response = await h2Post(finalUrl, payload, buildHeaders(uin, p_skey))
   return response.data
 }
 
@@ -541,9 +547,7 @@ export async function uploadVideoCover(
 
     console.log(`${logPrefix} 初始化封面上传`)
 
-    const initResponse = await request.post(url, payload, {
-      headers: buildHeaders(uin, p_skey)
-    })
+    const initResponse = await h2Post(url, payload, buildHeaders(uin, p_skey))
 
     console.log(`${logPrefix} 初始化响应: ret=${initResponse.data.ret}`)
 

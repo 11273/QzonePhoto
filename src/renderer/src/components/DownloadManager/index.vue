@@ -2,7 +2,6 @@
   <el-dialog
     v-model="visible"
     title="下载管理器"
-    width="750px"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
     :append-to-body="true"
@@ -1367,19 +1366,27 @@ const handleReplaceSettingChange = async (newValue) => {
   }
 
   .left-column {
-    width: 160px;
+    width: 170px;
     flex-shrink: 0;
+    padding: 8px 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 
     &.optimized-layout {
       .progress-card {
         display: flex;
         flex-direction: column;
-        gap: 8px;
-        padding: 12px;
+        gap: 6px;
+        padding: 8px 10px;
         background: #2a2a2a;
         border-radius: 8px;
         border: 1px solid #333;
-        margin-bottom: 12px;
+        margin-bottom: 0;
+        flex: 1 1 0;
+        min-height: 0;
+        justify-content: center;
         text-align: center;
 
         .progress-top {
@@ -1421,11 +1428,16 @@ const handleReplaceSettingChange = async (newValue) => {
       }
 
       .speed-card {
-        padding: 12px;
+        padding: 8px 10px;
         background: #2a2a2a;
         border-radius: 6px;
         border: 1px solid #333;
-        margin-bottom: 12px;
+        margin-bottom: 0;
+        flex: 1 1 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
         text-align: center;
 
         h5 {
@@ -1453,13 +1465,18 @@ const handleReplaceSettingChange = async (newValue) => {
       }
 
       .status-card {
-        padding: 12px;
+        padding: 8px 10px;
         background: #2a2a2a;
         border-radius: 6px;
         border: 1px solid #333;
+        flex: 1.6 1 0; // 有 6 行内容，份额更大
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
 
         h5 {
-          margin: 0 0 10px 0;
+          flex-shrink: 0;
+          margin: 0 0 6px 0;
           font-size: 12px;
           color: #fff;
           font-weight: 600;
@@ -1470,7 +1487,7 @@ const handleReplaceSettingChange = async (newValue) => {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 4px 0;
+            padding: 2px 0;
             font-size: 11px;
 
             .status-dot {

@@ -61,8 +61,8 @@ export class DownloadService {
     // 服务管理器引用
     this.serviceManager = null
 
-    // 异步初始化（使用默认数据库）
-    this.initializeAsync()
+    // 异步初始化（使用默认数据库），保留 promise 以串行化后续调用
+    this._initPromise = this.initializeAsync()
   }
 
   // 获取用户专用的数据库路径
@@ -73,15 +73,23 @@ export class DownloadService {
   }
 
   // 设置当前用户并切换数据库
+  // 串行化所有调用：避免 IPC 并发触发时 steno 写同一个 .tmp 文件冲突导致 rename ENOENT
   async setCurrentUser(uin) {
+    const prev = this._switchPromise || this._initPromise || Promise.resolve()
+    let release
+    this._switchPromise = new Promise((r) => {
+      release = r
+    })
     try {
+      try {
+        await prev
+      } catch (e) {
+        logger.warn('上一次切换/初始化未成功，继续:', e?.message || e)
+      }
       // 如果用户ID没有变化，直接返回
       if (this.currentUin === uin) {
-        // if (is.dev) console.debug(`[DownloadService] 用户ID未变化: ${uin}`)
         return
       }
-
-      // if (is.dev) console.debug(`[DownloadService] 切换用户: ${this.currentUin} -> ${uin}`)
 
       // 保存当前数据库
       if (this.db && this.dbInitialized) {
@@ -108,11 +116,11 @@ export class DownloadService {
 
       // 触发全量更新
       this.triggerUpdate([])
-
-      // if (is.dev) console.debug(`[DownloadService] 用户切换完成: ${uin}`)
     } catch (error) {
       logger.error('切换用户失败:', error)
       throw error
+    } finally {
+      release()
     }
   }
 

@@ -3,7 +3,9 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { promisify } from 'util'
-import sizeOf from 'image-size'
+// image-size v2 改成命名导出 + 只接受 Uint8Array（不再支持直传路径），
+// v1 兼容用法（默认导出 + filePath 字符串）会报 "sizeOf is not a function"。
+import { imageSize } from 'image-size'
 
 const readFile = promisify(fs.readFile)
 
@@ -91,8 +93,58 @@ export function isVideoFile(filePath) {
 }
 
 /**
- * 获取视频时长（降级方案 - 基于文件大小预估）
- * 注意：应优先使用视频元数据服务 (video-metadata.js) 提取精确时长
+ * MP4/MOV box 直接解析 mvhd 拿真实时长（毫秒），不支持的容器返回 0
+ * @private
+ */
+async function parseMp4Duration(filePath) {
+  let fh
+  try {
+    fh = await fs.promises.open(filePath, 'r')
+    const stat = await fh.stat()
+    if (stat.size < 16) return 0
+    // moov 可能在文件头部（streamable mp4）或尾部，两边都扫
+    const headSize = Math.min(stat.size, 4 * 1024 * 1024)
+    const head = Buffer.alloc(headSize)
+    await fh.read(head, 0, headSize, 0)
+    let d = findMvhdDuration(head, 0, headSize)
+    if (d === 0 && stat.size > headSize) {
+      const tail = Buffer.alloc(headSize)
+      await fh.read(tail, 0, headSize, stat.size - headSize)
+      d = findMvhdDuration(tail, 0, headSize)
+    }
+    return d
+  } catch {
+    return 0
+  } finally {
+    if (fh) await fh.close().catch(() => {})
+  }
+}
+
+function findMvhdDuration(buf, start, end) {
+  // 'mvhd' = 6d 76 68 64
+  for (let i = start; i < end - 32; i++) {
+    if (buf[i] === 0x6d && buf[i + 1] === 0x76 && buf[i + 2] === 0x68 && buf[i + 3] === 0x64) {
+      const version = buf.readUInt8(i + 4)
+      if (version === 0) {
+        const timescale = buf.readUInt32BE(i + 4 + 12)
+        const duration = buf.readUInt32BE(i + 4 + 16)
+        if (timescale > 0 && duration > 0) return Math.round((duration / timescale) * 1000)
+      } else if (version === 1) {
+        const timescale = buf.readUInt32BE(i + 4 + 20)
+        const dh = buf.readUInt32BE(i + 4 + 24)
+        const dl = buf.readUInt32BE(i + 4 + 28)
+        if (timescale > 0) {
+          const duration = dh * 0x100000000 + dl
+          if (duration > 0) return Math.round((duration / timescale) * 1000)
+        }
+      }
+    }
+  }
+  return 0
+}
+
+/**
+ * 获取视频时长：优先 MP4/MOV box 精确解析，失败才退回按文件大小估算
  * @param {string} filePath 视频文件路径
  * @returns {Promise<number>} 视频时长（毫秒）
  */
@@ -102,26 +154,28 @@ export async function getVideoDuration(filePath) {
       console.warn('[file-processor] 非视频文件:', filePath)
       return 0
     }
-
     if (!fs.existsSync(filePath)) {
       console.warn('[file-processor] 视频文件不存在:', filePath)
       return 0
     }
 
-    // 基于文件大小预估时长
-    const stats = await fs.promises.stat(filePath)
-    const fileSizeMB = stats.size / (1024 * 1024)
-    // 假设平均码率 2 Mbps
-    const estimatedDurationSeconds = (fileSizeMB * 8) / 2
-    const durationMs = Math.max(1000, Math.round(estimatedDurationSeconds * 1000))
+    // 1) 精确：MP4/MOV 容器直接读 mvhd box
+    const realDuration = await parseMp4Duration(filePath)
+    if (realDuration > 0) {
+      console.log('[file-processor] 通过 MP4 box 解析时长:', {
+        file: path.basename(filePath),
+        durationMs: realDuration
+      })
+      return realDuration
+    }
 
-    console.warn('[file-processor] 使用预估时长（降级方案）:', {
-      file: path.basename(filePath),
-      sizeMB: fileSizeMB.toFixed(2),
-      durationMs
+    // 2) 拿不到精确时长（如 fMP4 mvhd=0，时长在 moof 内部）— 返回 0
+    // 让上游传 iPlayTime=0 给服务端，服务端会自己根据视频解析
+    // （不要按文件大小×码率估算，4K 高码率视频估算可能远超 10 分钟触发 -530 误拒）
+    console.warn('[file-processor] 无法精确解析视频时长（容器格式不标准），iPlayTime 将传 0:', {
+      file: path.basename(filePath)
     })
-
-    return durationMs
+    return 0
   } catch (error) {
     console.error('[file-processor] getVideoDuration 失败:', error.message)
     // 最终默认值 10 秒
@@ -167,24 +221,21 @@ export async function getImageDimensions(filePath) {
       return { width: 0, height: 0 }
     }
 
-    // 尝试多种方式获取尺寸
+    // image-size v2：imageSize(Uint8Array)，只接受 buffer
+    // 大图只读文件头部 (~256KB) 就够识别格式头，避免把整张图读进内存
     let dimensions = null
-
-    // 方法1: 直接使用 sizeOf
     try {
-      dimensions = sizeOf(filePath)
-    } catch (directError) {
-      console.warn('[file-processor] 直接读取失败，尝试Buffer方式:', directError.message)
-
-      // 方法2: 先读取文件内容再解析
+      const headSize = Math.min(stats.size, 256 * 1024)
+      const buf = Buffer.alloc(headSize)
+      const fh = await fs.promises.open(filePath, 'r')
       try {
-        const buffer = await fs.promises.readFile(filePath)
-        if (buffer && buffer.length > 0) {
-          dimensions = sizeOf(buffer)
-        }
-      } catch (bufferError) {
-        console.warn('[file-processor] Buffer方式也失败:', bufferError.message)
+        await fh.read(buf, 0, headSize, 0)
+      } finally {
+        await fh.close().catch(() => {})
       }
+      dimensions = imageSize(buf)
+    } catch (e) {
+      console.warn('[file-processor] 读取图片尺寸失败:', e.message)
     }
 
     if (

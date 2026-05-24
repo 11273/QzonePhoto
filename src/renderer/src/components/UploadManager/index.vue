@@ -2,7 +2,6 @@
   <el-dialog
     v-model="visible"
     title="上传管理器"
-    width="900px"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
     :append-to-body="true"
@@ -77,7 +76,7 @@
         <div class="progress-card">
           <div class="progress-top">
             <div class="progress-circle">
-              <el-progress :percentage="overallProgress" type="circle" :width="60" />
+              <el-progress :percentage="overallProgress" type="circle" :width="50" />
             </div>
             <div class="progress-info">
               <div class="progress-percentage">{{ overallProgress }}%</div>
@@ -1112,9 +1111,12 @@ onUnmounted(async () => {
   .left-column {
     width: 200px;
     flex-shrink: 0;
-    padding: 15px;
+    padding: 8px 10px;
     border-right: 1px solid rgba(255, 255, 255, 0.08);
-    overflow-y: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 
     .progress-card,
     .stats-card,
@@ -1122,18 +1124,28 @@ onUnmounted(async () => {
       background: rgba(255, 255, 255, 0.02);
       border: 1px solid rgba(255, 255, 255, 0.06);
       border-radius: 6px;
-      padding: 12px;
-      margin-bottom: 12px;
+      padding: 8px 10px;
+      margin-bottom: 0; // 用容器的 gap 撑开间距
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
 
       .card-title {
-        margin: 0 0 12px 0;
-        font-size: 12px;
-        font-weight: 600;
-        color: rgba(255, 255, 255, 0.8);
+        margin: 0 0 6px 0;
+        font-size: 11px;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.7);
         display: flex;
         align-items: center;
         gap: 4px;
       }
+    }
+
+    // 任务状态有 6 行内容，份额更大一些
+    .stats-card {
+      flex: 1.6 1 0;
     }
 
     .progress-card {
@@ -1163,7 +1175,7 @@ onUnmounted(async () => {
       .stats-list {
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 4px;
 
         .stat-row {
           display: flex;

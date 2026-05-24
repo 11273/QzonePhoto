@@ -5,7 +5,7 @@
 // import path from 'path'
 
 /*
-TODO 
+TODO
 1. 自动打包日志
 2. 所有进程都共用日志
 */
@@ -165,6 +165,11 @@ class Logger {
         break
       default:
         console.log(fullLogMessage)
+    }
+    try {
+      fs.appendFileSync(DEV_LOG_PATH, fullLogMessage + '\n')
+    } catch {
+      // ignore
     }
   }
 

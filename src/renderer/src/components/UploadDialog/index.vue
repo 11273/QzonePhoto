@@ -2,7 +2,6 @@
   <el-dialog
     :model-value="visible"
     :title="dialogTitle"
-    width="1020px"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
     :append-to-body="true"
@@ -11,88 +10,143 @@
     class="upload-manager-dialog dark-theme ds-dialog"
     @update:model-value="handleDialogChange"
   >
-    <!-- 顶部操作栏 -->
-    <div class="header-actions">
-      <div class="actions-left">
-        <!-- 初始状态：显示选择文件 -->
+    <!-- 紧凑工具栏：相册信息 + 并发 | 主操作 -->
+    <div class="ud-toolbar">
+      <!-- 左：上下文 chip（相册 + 并发） -->
+      <div class="ud-toolbar-left">
+        <el-popover
+          v-model:visible="albumPickerVisible"
+          placement="bottom-start"
+          :width="320"
+          trigger="click"
+          popper-class="upload-album-picker-popper"
+          :show-arrow="false"
+        >
+          <template #reference>
+            <div
+              class="album-chip"
+              :class="{ clickable: true, overridden: !!targetAlbumOverride }"
+              :title="
+                effectiveAlbumId
+                  ? `当前上传到相册：${effectiveAlbumName}（ID: ${effectiveAlbumId}）\n点击切换`
+                  : '请选择相册'
+              "
+            >
+              <el-icon><FolderOpened /></el-icon>
+              <span class="album-chip-name">{{ effectiveAlbumName }}</span>
+              <el-icon class="album-chip-arrow"><ArrowDown /></el-icon>
+            </div>
+          </template>
+
+          <div class="album-picker">
+            <div class="album-picker-header">
+              <el-input
+                v-model="albumPickerQuery"
+                placeholder="搜索相册名 / ID"
+                size="small"
+                clearable
+              />
+            </div>
+            <div class="album-picker-list">
+              <div v-if="!availableAlbums.length" class="album-picker-empty">
+                未找到相册列表（请等待左侧加载完成或刷新）
+              </div>
+              <div
+                v-for="a in filteredAlbums"
+                :key="a.id"
+                class="album-picker-item"
+                :class="{ active: a.id === effectiveAlbumId }"
+                :title="`${a.name} · ${a.total || 0} 张 · ${a.className || ''}`"
+                @click="pickTargetAlbum(a)"
+              >
+                <el-icon class="item-icon"><FolderOpened /></el-icon>
+                <div class="item-info">
+                  <span class="item-name">{{ a.name }}</span>
+                  <span class="item-meta">{{ a.total || 0 }}张 · {{ a.className || '其他' }}</span>
+                </div>
+                <el-icon v-if="a.id === effectiveAlbumId" class="item-check">
+                  <CircleCheck />
+                </el-icon>
+              </div>
+              <div v-if="availableAlbums.length && !filteredAlbums.length" class="album-picker-empty">
+                没有匹配「{{ albumPickerQuery }}」的相册
+              </div>
+            </div>
+          </div>
+        </el-popover>
+
+        <el-tooltip placement="bottom" :show-after="300">
+          <template #content>
+            <div style="line-height: 1.5">
+              同时上传几个文件<br />
+              <span style="color: #fbbf24">≥2 时上传完成顺序会乱</span><br />
+              单文件带宽充足建议 1，小文件批量建议 3-5
+            </div>
+          </template>
+          <div class="concurrency-chip">
+            <span class="chip-label">并发</span>
+            <el-input-number
+              v-model="uploadConcurrency"
+              :min="1"
+              :max="10"
+              size="small"
+              controls-position="right"
+              class="chip-input"
+              @change="handleConcurrencyChange"
+            />
+          </div>
+        </el-tooltip>
+
+        <!-- 卡片大小选择器：默认最小，文件多时不会出现外层滚动 -->
+        <el-tooltip content="调整文件卡片大小" placement="bottom" :show-after="300">
+          <div class="size-chip">
+            <span class="chip-label">大小</span>
+            <el-radio-group v-model="cardSize" size="small" class="size-radio">
+              <el-radio-button label="mini">最小</el-radio-button>
+              <el-radio-button label="sm">小</el-radio-button>
+              <el-radio-button label="md">中</el-radio-button>
+              <el-radio-button label="lg">大</el-radio-button>
+            </el-radio-group>
+          </div>
+        </el-tooltip>
+      </div>
+
+      <!-- 右：主操作（根据状态切换） -->
+      <div class="ud-toolbar-right">
+        <!-- 空状态：单个主 CTA -->
         <el-button
           v-if="localFiles.length === 0"
-          class="action-btn primary-btn"
-          size="default"
           type="primary"
+          size="default"
           @click="triggerFileSelect"
         >
           <el-icon><Plus /></el-icon>
           选择文件
         </el-button>
-        <!-- 有文件且未锁定：显示添加和重新选择 -->
-        <template v-else-if="!uploadLocked && localFiles.length > 0">
-          <el-button
-            class="action-btn primary-btn"
-            size="default"
-            type="primary"
-            @click="triggerFileSelect"
-          >
+
+        <!-- 有文件未锁定 -->
+        <template v-else-if="!uploadLocked">
+          <el-button size="small" plain @click="triggerFileSelect">
             <el-icon><Plus /></el-icon>
-            添加照片
+            添加
           </el-button>
-          <el-button
-            class="action-btn secondary-btn"
-            size="default"
-            type="primary"
-            plain
-            @click="startNewBatch"
-          >
-            <el-icon><Refresh /></el-icon>
-            重新选择
+          <el-button size="small" plain type="danger" @click="clearAllFiles">
+            <el-icon><Delete /></el-icon>
+            清空
+          </el-button>
+          <el-button type="success" size="default" :disabled="uploading" @click="startUploadAll">
+            <el-icon><Upload /></el-icon>
+            开始上传
           </el-button>
         </template>
-        <!-- 批次完成后：显示新建批次按钮 -->
-        <el-button
-          v-else-if="batchCompleted && localFiles.length > 0"
-          class="action-btn primary-btn"
-          size="default"
-          type="primary"
-          @click="startNewBatch"
-        >
-          <el-icon><Plus /></el-icon>
-          新建批次
-        </el-button>
-        <!-- 上传中/暂停时：不显示添加或重新选择按钮，用户必须先清空列表 -->
-        <!-- 有文件时始终显示清空列表（包括上传中、暂停时） -->
-        <el-button
-          v-if="localFiles.length > 0"
-          class="action-btn danger-btn"
-          size="default"
-          type="danger"
-          plain
-          @click="clearAllFiles"
-        >
-          <el-icon><Delete /></el-icon>
-          清空列表
-        </el-button>
-      </div>
 
-      <div class="actions-right">
-        <!-- 有文件且未锁定或未开始上传：显示开始上传 -->
-        <el-button
-          v-if="localFiles.length > 0 && !uploadLocked"
-          class="action-btn success-btn"
-          size="default"
-          type="success"
-          :disabled="uploading"
-          @click="startUploadAll"
-        >
-          <el-icon><Upload /></el-icon>
-          开始上传
-        </el-button>
-        <!-- 上传中：显示暂停全部/继续全部 -->
+        <!-- 上传中 / 暂停 -->
         <template v-else-if="uploadLocked && !batchCompleted">
           <el-button
             v-if="hasActiveTasks"
-            class="action-btn warning-btn"
-            size="default"
             type="warning"
+            size="default"
+            plain
             @click="pauseAllTasks"
           >
             <el-icon><VideoPause /></el-icon>
@@ -100,25 +154,34 @@
           </el-button>
           <el-button
             v-if="hasPausedTasks"
-            class="action-btn success-btn"
-            size="default"
             type="success"
+            size="default"
             @click="resumeAllTasks"
           >
             <el-icon><VideoPlay /></el-icon>
             继续全部
           </el-button>
-          <div class="upload-status-text">
-            <el-icon v-if="hasActiveTasks" class="is-loading"><Loading /></el-icon>
-            <el-icon v-else-if="hasPausedTasks"><VideoPause /></el-icon>
-            <span>{{ uploadStatusText }}</span>
-          </div>
+          <el-button size="small" plain type="danger" @click="clearAllFiles">
+            <el-icon><Delete /></el-icon>
+            清空
+          </el-button>
         </template>
+
+        <!-- 批次完成 -->
+        <el-button
+          v-else-if="batchCompleted"
+          type="primary"
+          size="default"
+          @click="startNewBatch"
+        >
+          <el-icon><Plus /></el-icon>
+          新建批次
+        </el-button>
       </div>
     </div>
 
     <!-- 分栏布局 -->
-    <div class="layout-columns">
+    <div class="layout-columns" :class="{ 'has-files': localFiles.length > 0 }">
       <!-- 左侧：文件列表区域 -->
       <div class="left-column">
         <!-- 拖拽上传区域 -->
@@ -132,17 +195,23 @@
           @click="triggerFileSelect"
         >
           <div class="drop-icon">
-            <el-icon :size="60"><Upload /></el-icon>
+            <el-icon :size="40"><Upload /></el-icon>
           </div>
-          <p class="drop-text">将文件拖到此处，或点击上方按钮选择</p>
-          <p class="drop-hint">支持 JPG、PNG、GIF、BMP、WEBP、MP4、MOV、AVI 格式</p>
+          <p class="drop-text">将文件拖到此处 或 点击「选择文件」</p>
+          <div class="drop-formats">
+            <span>JPG</span><span>PNG</span><span>GIF</span><span>WEBP</span><span>MP4</span><span>MOV</span><span>AVI</span>
+          </div>
+          <div class="drop-rules">
+            <el-icon><InfoFilled /></el-icon>
+            <span>图片 ≤ 500MB · 视频 ≤ 1GB · 视频时长 ≤ 10 分钟</span>
+          </div>
         </div>
 
         <!-- 文件列表 -->
         <div v-else class="file-list">
           <!-- 文件网格 -->
           <div class="file-grid-container">
-            <div class="file-grid">
+            <div class="file-grid" :class="`size-${cardSize}`">
               <div
                 v-for="(file, index) in currentPageFiles"
                 :key="file.uid"
@@ -179,12 +248,18 @@
                       </div>
                     </template>
                   </el-image>
+                  <!-- 视频缩略图：优先用 videoCover（真实视频帧 JPEG）显示，不去解码整个视频文件 -->
+                  <img
+                    v-else-if="isVideoFile(file.name) && file.videoCover"
+                    :src="file.videoCover"
+                    :alt="file.name"
+                    class="thumbnail-image"
+                  />
                   <video
                     v-else-if="isVideoFile(file.name) && file.preview"
                     :src="file.preview"
                     class="thumbnail-video"
                     preload="metadata"
-                    controls
                     @error="(event) => handleVideoError(event, file)"
                   ></video>
                   <div v-else-if="isVideoFile(file.name)" class="video-icon">
@@ -284,6 +359,20 @@
                     <div class="progress-text">{{ file.progress }}%</div>
                   </div>
 
+                  <!-- 失败时在卡片底部显示醒目错误信息 -->
+                  <div
+                    v-if="
+                      (file.uploadStatus === 'failed' || file.uploadStatus === 'error') &&
+                      file.errorMessage
+                    "
+                    class="error-message-overlay"
+                  >
+                    <el-icon :size="14"><Warning /></el-icon>
+                    <span class="error-text" :title="file.errorMessage">{{
+                      file.errorMessage
+                    }}</span>
+                  </div>
+
                   <!-- 删除按钮 -->
                   <div class="delete-btn" @click.stop="removeFile(index)">
                     <el-icon :size="16"><Close /></el-icon>
@@ -317,19 +406,12 @@
           </div>
         </div>
 
-        <!-- 温馨提示 (底部固定提示条) -->
-        <div class="upload-notice">
-          <el-icon class="notice-icon"><InfoFilled /></el-icon>
-          <span class="notice-text"
-            >上传照片到 QQ 空间相册后，系统会自动生成一条动态到您的空间</span
-          >
-        </div>
       </div>
 
-      <!-- 右侧：统计区域 -->
-      <div class="right-column">
-        <!-- 任务统计卡片 -->
-        <div class="stat-card">
+      <!-- 右侧：统计区域 —— 空状态下隐藏整列（目标相册信息已经在顶部 tip 显示） -->
+      <div v-if="localFiles.length > 0" class="right-column">
+        <!-- 任务统计卡片 —— 空状态下隐藏（没文件时显示一堆 0 没意义） -->
+        <div v-if="localFiles.length > 0" class="stat-card">
           <h5 class="card-title">
             <el-icon><DataAnalysis /></el-icon>
             任务统计
@@ -346,15 +428,15 @@
           </div>
         </div>
 
-        <!-- 上传进度卡片 -->
-        <div class="progress-card">
+        <!-- 上传进度卡片 —— 空状态下隐藏 -->
+        <div v-if="localFiles.length > 0" class="progress-card">
           <h5 class="card-title">
             <el-icon><Upload /></el-icon>
             上传进度
           </h5>
           <div class="progress-content">
             <div class="progress-circle-wrapper">
-              <el-progress :percentage="overallProgress" type="circle" :width="70" />
+              <el-progress :percentage="overallProgress" type="circle" :width="56" />
             </div>
             <div class="progress-stats">
               <div class="stat-row">
@@ -377,8 +459,8 @@
           </div>
         </div>
 
-        <!-- 上传速度卡片 -->
-        <div class="speed-card">
+        <!-- 上传速度卡片 —— 空状态下隐藏 -->
+        <div v-if="localFiles.length > 0" class="speed-card">
           <h5 class="card-title">
             <el-icon><Timer /></el-icon>
             上传速度
@@ -402,39 +484,37 @@
             目标相册
           </h5>
           <div class="album-content">
-            <template v-if="contextMode === 'global'">
-              <!-- 全局模式：需要选择相册 -->
-              <div v-if="!albumId" class="album-select-hint">
-                <span class="hint-text">请选择目标相册</span>
-                <el-button class="album-btn" size="small" type="primary" @click="selectTargetAlbum">
-                  <el-icon><FolderOpened /></el-icon>
-                  选择相册
+            <div v-if="!effectiveAlbumId" class="album-select-hint">
+              <span class="hint-text">请选择目标相册</span>
+              <el-button class="album-btn" size="small" type="primary" @click="selectTargetAlbum">
+                <el-icon><FolderOpened /></el-icon>
+                选择相册
+              </el-button>
+            </div>
+            <div v-else class="album-selected">
+              <div class="album-name" :title="effectiveAlbumName">
+                {{ truncateText(effectiveAlbumName, 20) }}
+                <span v-if="targetAlbumOverride" class="album-override-tag">已切换</span>
+              </div>
+              <div class="album-meta">
+                <span
+                  class="meta-item ds-copyable"
+                  :title="`点击复制相册 ID: ${effectiveAlbumId}`"
+                  @click="copyToClipboard(effectiveAlbumId, '相册 ID')"
+                  >ID: {{ truncateText(effectiveAlbumId, 15) }}</span
+                >
+                <el-button
+                  class="album-change-btn"
+                  size="small"
+                  type="primary"
+                  text
+                  @click="selectTargetAlbum"
+                >
+                  <el-icon><Refresh /></el-icon>
+                  更换
                 </el-button>
               </div>
-              <div v-else class="album-selected">
-                <div class="album-name" :title="albumName">{{ truncateText(albumName, 20) }}</div>
-                <div class="album-meta">
-                  <span class="meta-item ds-copyable" :title="`点击复制相册 ID: ${albumId}`" @click="copyToClipboard(albumId, '相册 ID')">ID: {{ truncateText(albumId, 15) }}</span>
-                  <el-button
-                    class="album-change-btn"
-                    size="small"
-                    type="primary"
-                    text
-                    @click="selectTargetAlbum"
-                  >
-                    <el-icon><Refresh /></el-icon>
-                    更换相册
-                  </el-button>
-                </div>
-              </div>
-            </template>
-            <template v-else>
-              <!-- 相册模式：显示当前相册信息 -->
-              <div class="album-name">{{ truncateText(albumName, 20) }}</div>
-              <div class="album-meta">
-                <span class="meta-item">ID: {{ truncateText(albumId, 15) }}</span>
-              </div>
-            </template>
+            </div>
           </div>
         </div>
       </div>
@@ -464,7 +544,8 @@ import {
   CircleCheck,
   Loading,
   Picture,
-  InfoFilled
+  InfoFilled,
+  ArrowDown
 } from '@element-plus/icons-vue'
 
 const props = defineProps({
@@ -480,6 +561,11 @@ const props = defineProps({
   albumName: {
     type: String,
     default: '未命名相册'
+  },
+  // 可选：完整相册列表，用于在弹窗内切换上传目标相册
+  availableAlbums: {
+    type: Array,
+    default: () => []
   },
   // 添加上下文模式支持
   contextMode: {
@@ -569,6 +655,58 @@ const uploading = computed(() => uploadStats.value.uploading > 0)
 // 上传是否锁定（锁定后不允许添加新文件到当前批次）
 const uploadLocked = ref(false)
 
+// 多文件并发上传数（1-10），默认 1（逐个上传，保证完成顺序）
+const uploadConcurrency = ref(1)
+
+// 卡片大小：mini/sm/md/lg，默认 sm —— 兼顾「能看清缩略图」与「单页放得下」
+const cardSize = ref('sm')
+
+// 目标相册（默认 = 当前 props 相册，用户可在弹窗内切换为其他相册上传）
+const targetAlbumOverride = ref(null) // { id, name } | null
+const effectiveAlbumId = computed(() => targetAlbumOverride.value?.id || props.albumId)
+const effectiveAlbumName = computed(
+  () => targetAlbumOverride.value?.name || props.albumName || '默认相册'
+)
+// 外部 props 相册切换时清掉本地 override（用户在主视图切了其他相册）
+// 必须监听 props.albumId 而不是 effectiveAlbumId，否则会立刻把自己设置的 override 清空
+watch(
+  () => props.albumId,
+  (newId, oldId) => {
+    if (oldId && newId !== oldId) {
+      targetAlbumOverride.value = null
+    }
+  }
+)
+
+// 相册选择 popover
+const albumPickerVisible = ref(false)
+const albumPickerQuery = ref('')
+const filteredAlbums = computed(() => {
+  const q = albumPickerQuery.value.trim().toLowerCase()
+  const list = props.availableAlbums || []
+  if (!q) return list
+  return list.filter(
+    (a) => (a.name || '').toLowerCase().includes(q) || (a.id || '').toLowerCase().includes(q)
+  )
+})
+const handleConcurrencyChange = async (n) => {
+  try {
+    const updated = await window.QzoneAPI.upload.setConcurrency(n)
+    uploadConcurrency.value = updated
+    if (updated > 1) {
+      ElMessage.info({
+        message: `并发 ${updated}：将同时上传 ${updated} 个文件，完成顺序可能与添加顺序不一致`,
+        duration: 4000
+      })
+    } else {
+      ElMessage.success('已切换为逐个上传')
+    }
+  } catch (e) {
+    console.error('设置并发数失败:', e)
+    ElMessage.error('设置并发数失败')
+  }
+}
+
 // 当前批次是否全部完成
 const batchCompleted = computed(() => {
   if (localFiles.value.length === 0) return false
@@ -593,22 +731,6 @@ const hasActiveTasks = computed(() => {
 // 是否有暂停的任务
 const hasPausedTasks = computed(() => {
   return localFiles.value.some((file) => file.uploadStatus === 'paused')
-})
-
-// 上传状态文本
-const uploadStatusText = computed(() => {
-  const uploadingCount = localFiles.value.filter((f) => f.uploadStatus === 'uploading').length
-  const waitingCount = localFiles.value.filter((f) => f.uploadStatus === 'waiting').length
-  const pausedCount = localFiles.value.filter((f) => f.uploadStatus === 'paused').length
-
-  if (uploadingCount > 0) {
-    return `正在上传 ${uploadingCount} 个文件...`
-  } else if (waitingCount > 0) {
-    return `等待上传 ${waitingCount} 个文件...`
-  } else if (pausedCount > 0) {
-    return `已暂停 ${pausedCount} 个文件`
-  }
-  return '上传中，请等待当前批次完成...'
 })
 
 // ==================== 会话管理 ====================
@@ -641,13 +763,7 @@ const currentPage = ref(1)
 const pageSize = 20 // 减小分页大小，提升性能
 
 // 计算属性
-const dialogTitle = computed(() => {
-  if (props.contextMode === 'global') {
-    return '全局上传管理器'
-  } else {
-    return `${props.albumName} - 上传管理器`
-  }
-})
+const dialogTitle = computed(() => '上传管理器')
 
 const totalPages = computed(() => Math.ceil(localFiles.value.length / pageSize))
 const currentPageFiles = computed(() => {
@@ -833,9 +949,12 @@ const addFileByPath = async (filePath) => {
       return
     }
 
-    // 检查文件大小（最大500MB）
-    if (fileInfo.fileSize > 500 * 1024 * 1024) {
-      ElMessage.error(`文件过大：${fileInfo.fileName}，最大支持500MB`)
+    // 检查文件大小：视频 1GB / 图片 500MB（对齐 QQ 空间网页版上限）
+    const isVideo = isVideoFile(fileInfo.fileName)
+    const maxSize = isVideo ? 1024 * 1024 * 1024 : 500 * 1024 * 1024
+    if (fileInfo.fileSize > maxSize) {
+      const label = isVideo ? '视频最大支持 1GB' : '图片最大支持 500MB'
+      ElMessage.error(`文件过大：${fileInfo.fileName}，${label}`)
       return
     }
 
@@ -866,14 +985,29 @@ const addFileByPath = async (filePath) => {
     }
 
     // 先添加文件到列表，不立即生成预览（避免阻塞 UI）
+    // 注意：push 之后必须从 localFiles.value 拿回引用，那才是 Vue 包装的 reactive proxy；
+    // 直接用本地变量 fileItem 改字段不会触发 UI 响应式更新
     localFiles.value.push(fileItem)
+    const reactiveFile = localFiles.value[localFiles.value.length - 1]
 
-    // 如果是视频文件，异步提取元数据
-    if (isVideoFile(fileInfo.fileName)) {
-      getVideoMetadata(filePath)
+    // 如果是视频文件，异步提取元数据；把 promise 挂在 reactive 引用上以便上传前 await
+    if (isVideo) {
+      reactiveFile.metadataPromise = getVideoMetadata(filePath)
         .then((metadata) => {
-          fileItem.videoDuration = metadata.duration
-          fileItem.videoCover = metadata.cover
+          reactiveFile.videoDuration = metadata.duration
+          reactiveFile.videoCover = metadata.cover
+          // QQ 空间视频时长上限 10 分钟（600000ms），服务端硬卡（ret=-530）
+          // 把文件留在列表里标记错误状态，让用户看到具体原因，不要静默移除
+          if (metadata.duration > 600000) {
+            const minutes = (metadata.duration / 60000).toFixed(1)
+            reactiveFile.uploadStatus = 'failed'
+            reactiveFile.errorMessage = `视频时长 ${minutes} 分钟，超过 QQ 空间 10 分钟上限`
+            ElMessage.error({
+              message: `${fileInfo.fileName}:${reactiveFile.errorMessage}`,
+              duration: 6000
+            })
+            return
+          }
           console.log(`[UploadDialog] 视频元数据提取成功:`, {
             file: fileInfo.fileName,
             duration: metadata.duration,
@@ -885,9 +1019,9 @@ const addFileByPath = async (filePath) => {
         })
     }
 
-    // 如果是第一个文件，自动选中
+    // 如果是第一个文件，自动选中（用 reactive proxy）
     if (localFiles.value.length === 1) {
-      selectedFile.value = fileItem
+      selectedFile.value = reactiveFile
     }
 
     // 预览将在需要时按需生成（见 generatePreviewsForCurrentPage）
@@ -1065,13 +1199,24 @@ const clearAllFiles = async () => {
 const startUploadAll = async () => {
   if (localFiles.value.length === 0) return
 
-  if (!props.albumId) {
+  if (!effectiveAlbumId.value) {
     ElMessage.error('请先选择目标相册')
     return
   }
 
   try {
+    // 等所有视频的元数据提取完成（拿真实时长 + cover），否则 fileItem.videoDuration
+    // 还是 null，主进程会走降级估算（按文件大小×码率估），fMP4 等格式会估超 10 分钟被服务端 -530 拒
+    const pendingMetadata = localFiles.value
+      .filter((f) => f.metadataPromise && (!f.uploadStatus || f.uploadStatus === 'normal'))
+      .map((f) => f.metadataPromise)
+    if (pendingMetadata.length > 0) {
+      console.log(`[UploadDialog] 等待 ${pendingMetadata.length} 个视频元数据提取完成...`)
+      await Promise.all(pendingMetadata)
+    }
+
     // 准备文件数据（排除已经失败的任务，只上传正常状态的文件）
+    // 视频任务必须传 videoDuration —— 主进程用它做 iPlayTime 校验
     const filesToUpload = localFiles.value
       .filter((file) => !file.uploadStatus || file.uploadStatus === 'normal')
       .map((file) => ({
@@ -1079,7 +1224,8 @@ const startUploadAll = async () => {
         name: file.name,
         title: file.title,
         size: file.size,
-        type: file.type
+        type: file.type,
+        videoDuration: file.videoDuration || null
       }))
 
     if (filesToUpload.length === 0) {
@@ -1094,8 +1240,8 @@ const startUploadAll = async () => {
     // 调用主进程上传API，获取任务ID列表（传递会话ID）
     const taskIds = await window.QzoneAPI.upload.addBatchTasks(
       filesToUpload,
-      props.albumId,
-      props.albumName,
+      effectiveAlbumId.value,
+      effectiveAlbumName.value,
       currentSessionId.value // 传递当前会话ID
     )
 
@@ -1134,10 +1280,25 @@ const startUploadAll = async () => {
 
 // 任务操作方法已移至UploadManager组件
 
-// 选择目标相册（全局模式使用）
+// 切换目标相册（在弹窗内挑选一个不同于当前页相册的目标）
+const pickTargetAlbum = (album) => {
+  if (!album?.id) return
+  if (uploadLocked.value) {
+    ElMessage.warning('已锁定上传批次，无法切换相册；请先清空当前批次')
+    return
+  }
+  // 如果选回当前 props 相册 → 清掉 override；否则记录
+  if (album.id === effectiveAlbumId.value) {
+    targetAlbumOverride.value = null
+  } else {
+    targetAlbumOverride.value = { id: album.id, name: album.name }
+  }
+  albumPickerVisible.value = false
+  ElMessage.success(`已切换目标相册：${album.name}`)
+}
+// 兼容老的调用名：右侧空状态卡片上的「选择相册」按钮（global 模式）
 const selectTargetAlbum = () => {
-  ElMessage.info('相册选择功能正在开发中')
-  // TODO: 实现相册选择弹窗
+  albumPickerVisible.value = !albumPickerVisible.value
 }
 
 // 图片加载调试方法
@@ -1147,7 +1308,7 @@ const onImageLoad = () => {
 
 // 重试单个文件上传
 const retryUpload = async (file) => {
-  if (!props.albumId) {
+  if (!effectiveAlbumId.value) {
     ElMessage.error('请先选择目标相册')
     return
   }
@@ -1177,8 +1338,8 @@ const retryUpload = async (file) => {
           size: file.size,
           type: file.type
         },
-        props.albumId,
-        props.albumName
+        effectiveAlbumId.value,
+        effectiveAlbumName.value
       )
 
       // 保存新的任务ID
@@ -1295,7 +1456,7 @@ const generateSessionId = () => {
  */
 const checkAndHandlePendingTasks = async () => {
   // 只在相册模式下检查
-  if (props.contextMode !== 'album' || !props.albumId) {
+  if (props.contextMode !== 'album' || !effectiveAlbumId.value) {
     if (!currentSessionId.value) {
       currentSessionId.value = generateSessionId()
       sessionAlbumId.value = null
@@ -1307,10 +1468,10 @@ const checkAndHandlePendingTasks = async () => {
     checkingSession.value = true
 
     // 检测相册是否切换了
-    const albumChanged = sessionAlbumId.value && sessionAlbumId.value !== props.albumId
+    const albumChanged = sessionAlbumId.value && sessionAlbumId.value !== effectiveAlbumId.value
     if (albumChanged) {
       // console.log(
-      //   `[UploadDialog] 检测到相册切换: ${sessionAlbumId.value} -> ${props.albumId}，清空本地会话`
+      //   `[UploadDialog] 检测到相册切换: ${sessionAlbumId.value} -> ${effectiveAlbumId.value}，清空本地会话`
       // )
       // 相册切换了，清空之前的本地会话数据
       localFiles.value = []
@@ -1325,9 +1486,9 @@ const checkAndHandlePendingTasks = async () => {
     if (
       currentSessionId.value &&
       localFiles.value.length > 0 &&
-      sessionAlbumId.value === props.albumId
+      sessionAlbumId.value === effectiveAlbumId.value
     ) {
-      // console.log(`[UploadDialog] 恢复本地会话: ${currentSessionId.value} (相册: ${props.albumId})`)
+      // console.log(`[UploadDialog] 恢复本地会话: ${currentSessionId.value} (相册: ${effectiveAlbumId.value})`)
       sessionMode.value = 'continue'
 
       // 重新加载预览图（关闭时预览图可能丢失）
@@ -1338,14 +1499,14 @@ const checkAndHandlePendingTasks = async () => {
     }
 
     // 2. 检查后端是否有未完成任务
-    const pendingTasks = await window.QzoneAPI.upload.getPendingTasksByAlbum(props.albumId)
+    const pendingTasks = await window.QzoneAPI.upload.getPendingTasksByAlbum(effectiveAlbumId.value)
 
     if (pendingTasks && pendingTasks.length > 0) {
       // 有后端未完成任务，获取该会话的所有任务（包括已完成的）
       sessionMode.value = 'continue'
       const detectedSessionId = pendingTasks[0].sessionId || generateSessionId()
       currentSessionId.value = detectedSessionId
-      sessionAlbumId.value = props.albumId // 记录会话关联的相册ID
+      sessionAlbumId.value = effectiveAlbumId.value // 记录会话关联的相册ID
       uploadLocked.value = true // 恢复锁定状态
 
       // 获取该会话的所有任务（包括已完成的）
@@ -1356,16 +1517,16 @@ const checkAndHandlePendingTasks = async () => {
 
       await loadPendingTasksToLocal(allSessionTasks)
       // console.log(
-      //   `[UploadDialog] 自动恢复 ${allSessionTasks.length} 个任务 (会话: ${currentSessionId.value}, 相册: ${props.albumId})`
+      //   `[UploadDialog] 自动恢复 ${allSessionTasks.length} 个任务 (会话: ${currentSessionId.value}, 相册: ${effectiveAlbumId.value})`
       // )
     } else {
       // 没有后端未完成任务，重置所有状态
       sessionMode.value = 'new'
       currentSessionId.value = generateSessionId()
-      sessionAlbumId.value = props.albumId // 记录会话关联的相册ID
+      sessionAlbumId.value = effectiveAlbumId.value // 记录会话关联的相册ID
       uploadLocked.value = false // 重置锁定状态
       localFiles.value = [] // 清空本地文件列表
-      // console.log(`[UploadDialog] 开始新会话: ${currentSessionId.value} (相册: ${props.albumId})`)
+      // console.log(`[UploadDialog] 开始新会话: ${currentSessionId.value} (相册: ${effectiveAlbumId.value})`)
     }
   } catch (error) {
     console.error('[UploadDialog] 检查未完成任务失败:', error)
@@ -1373,7 +1534,7 @@ const checkAndHandlePendingTasks = async () => {
     if (!currentSessionId.value) {
       sessionMode.value = 'new'
       currentSessionId.value = generateSessionId()
-      sessionAlbumId.value = props.albumId
+      sessionAlbumId.value = effectiveAlbumId.value
     }
   } finally {
     checkingSession.value = false
@@ -1535,7 +1696,7 @@ const handleStatsUpdate = (stats) => {
 
 // 加载相册的失败任务到localFiles
 const loadAlbumFailedTasks = async () => {
-  if (!props.albumId) return
+  if (!effectiveAlbumId.value) return
 
   try {
     // 获取当前相册的失败任务
@@ -1543,7 +1704,7 @@ const loadAlbumFailedTasks = async () => {
       page: 1,
       pageSize: 100, // 一次加载最多100个失败任务
       status: 'error',
-      albumId: props.albumId
+      albumId: effectiveAlbumId.value
     })
 
     const failedTasks = result.tasks || []
@@ -1656,7 +1817,7 @@ const handleDetailedStatusUpdate = (status) => {
     status.failedTasks
       .filter((failedTask) => {
         // 在相册模式下，只处理当前相册的失败任务
-        return props.contextMode === 'global' || failedTask.albumId === props.albumId
+        return props.contextMode === 'global' || failedTask.albumId === effectiveAlbumId.value
       })
       .forEach((failedTask) => {
         // 避免重复处理同一个任务
@@ -1786,7 +1947,7 @@ const handleTaskChanges = (tasks) => {
         // 这种情况主要发生在：任务刚创建，前端还没收到 taskId 时
         if (!file.taskId && file.name === task.filename && file.size === task.total) {
           // 再次确认是同一相册（防止不同相册的同名文件被误匹配）
-          if (props.contextMode === 'album' && props.albumId && task.albumId === props.albumId) {
+          if (props.contextMode === 'album' && effectiveAlbumId.value && task.albumId === effectiveAlbumId.value) {
             return true
           }
           // 全局模式下，没有相册限制，可以匹配
@@ -1809,9 +1970,9 @@ const handleTaskChanges = (tasks) => {
       }
 
       // 相册模式：只处理当前相册的任务更新（非删除操作）
-      if (props.contextMode === 'album' && props.albumId && task.albumId !== props.albumId) {
+      if (props.contextMode === 'album' && effectiveAlbumId.value && task.albumId !== effectiveAlbumId.value) {
         // console.log(
-        //   `[UploadDialog] 跳过非当前相册的任务: ${task.filename} (任务相册: ${task.albumId}, 当前相册: ${props.albumId})`
+        //   `[UploadDialog] 跳过非当前相册的任务: ${task.filename} (任务相册: ${task.albumId}, 当前相册: ${effectiveAlbumId.value})`
         // )
         return
       }
@@ -1891,7 +2052,7 @@ watch(
         // console.log(`[UploadDialog] 打开弹窗 - 初始完成数: ${initialCompletedCount.value}`)
 
         // 在相册模式下，如果不是继续会话，则加载失败任务到localFiles
-        if (props.contextMode === 'album' && props.albumId && sessionMode.value !== 'continue') {
+        if (props.contextMode === 'album' && effectiveAlbumId.value && sessionMode.value !== 'continue') {
           await loadAlbumFailedTasks()
         }
 
@@ -1919,6 +2080,14 @@ onMounted(async () => {
   if (props.visible) {
     await window.QzoneAPI.upload.setManagerOpen(true)
   }
+
+  // 加载当前并发数（持久化在主进程的 settings 里）
+  try {
+    const c = await window.QzoneAPI.upload.getConcurrency()
+    if (c) uploadConcurrency.value = c
+  } catch (e) {
+    console.warn('获取并发数失败:', e)
+  }
 })
 
 // 组件销毁时清理
@@ -1930,60 +2099,271 @@ onUnmounted(async () => {
 })
 </script>
 
-<style lang="scss" scoped>
-// 保持原有的样式，只是精简了一些不必要的部分
-:deep(.upload-manager-dialog) {
-  &.dark-theme {
-    .el-dialog {
-      background: #1a1a1a;
-      color: #e0e0e0;
+<style lang="scss">
+/* 相册选择 popover —— teleport 到 body，故不能放在 scoped 块里 */
+.upload-album-picker-popper.el-popover {
+  background: #1c1f24 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  padding: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
 
-      .el-dialog__header {
-        background: linear-gradient(135deg, #1e1e1e 0%, #2a2a2a 100%);
-        border-bottom: 1px solid #333;
+  .album-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
 
-        .el-dialog__title {
-          color: #e0e0e0;
-          font-weight: 600;
-        }
-      }
+  .album-picker-header {
+    .el-input__wrapper {
+      background: rgba(255, 255, 255, 0.06);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset !important;
+    }
+    .el-input__inner {
+      color: rgba(255, 255, 255, 0.9);
+    }
+    .el-input__inner::placeholder {
+      color: rgba(255, 255, 255, 0.35);
+    }
+  }
 
-      .el-dialog__body {
-        background: #1a1a1a;
-        padding: 0;
+  .album-picker-list {
+    max-height: 280px;
+    overflow-y: auto;
+    margin-top: 2px;
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+    }
+  }
+
+  .album-picker-empty {
+    padding: 16px 8px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 12px;
+  }
+
+  .album-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+
+    .item-icon {
+      color: #60a5fa;
+      flex-shrink: 0;
+    }
+    .item-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .item-name {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 13px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .item-meta {
+      color: rgba(255, 255, 255, 0.45);
+      font-size: 11px;
+    }
+    .item-check {
+      color: #34d399;
+      flex-shrink: 0;
+    }
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+    &.active {
+      background: rgba(96, 165, 250, 0.14);
+      .item-name {
+        color: #60a5fa;
       }
     }
   }
 }
+</style>
 
-.header-actions {
+<style lang="scss" scoped>
+// dialog 容器尺寸 / header / body 共用样式已抽到 styles/app-dialog.scss
+
+/* ==================== 紧凑工具栏 ==================== */
+.ud-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  background: transparent;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.02);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0; // 关键：工具栏定高，不挤压下方文件区
 
-  .actions-left,
-  .actions-right {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-  }
-
-  .upload-status-text {
+  .ud-toolbar-left,
+  .ud-toolbar-right {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 16px;
-    background: rgba(52, 211, 153, 0.1);
-    border-radius: 8px;
-    color: #34d399;
-    font-size: 13px;
-    font-weight: 500;
+    min-width: 0;
+  }
+
+  /* 相册 chip */
+  .album-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    height: 32px;
+    background: rgba(96, 165, 250, 0.1);
+    border: 1px solid rgba(96, 165, 250, 0.25);
+    border-radius: 16px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.9);
+    max-width: 240px;
+    transition: all 0.2s ease;
+
+    &.clickable {
+      cursor: pointer;
+
+      &:hover {
+        background: rgba(96, 165, 250, 0.18);
+        border-color: rgba(96, 165, 250, 0.45);
+      }
+    }
+
+    &.overridden {
+      background: rgba(251, 191, 36, 0.12);
+      border-color: rgba(251, 191, 36, 0.45);
+
+      .el-icon,
+      .album-chip-name {
+        color: #fbbf24;
+      }
+    }
 
     .el-icon {
-      font-size: 16px;
+      color: #60a5fa;
+      flex-shrink: 0;
+    }
+
+    .album-chip-name {
+      font-weight: 600;
+      color: #60a5fa;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .album-chip-arrow {
+      font-size: 10px;
+      opacity: 0.7;
+    }
+
+    .album-chip-change {
+      padding: 0 6px;
+      height: 22px;
+      font-size: 11px;
+    }
+  }
+
+  /* 并发 chip */
+  .concurrency-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 6px 0 10px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    cursor: help;
+
+    .chip-label {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.7);
+      font-weight: 500;
+    }
+
+    :deep(.chip-input) {
+      width: 72px;
+
+      .el-input-number__decrease,
+      .el-input-number__increase {
+        background: transparent;
+        border-color: transparent;
+      }
+
+      .el-input__wrapper {
+        background: transparent;
+        box-shadow: none !important;
+        padding: 0;
+      }
+
+      .el-input__inner {
+        text-align: center;
+        font-weight: 600;
+        font-size: 13px;
+      }
+    }
+  }
+
+  /* 卡片大小 chip */
+  .size-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px 0 10px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+
+    .chip-label {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.7);
+      font-weight: 500;
+    }
+
+    :deep(.size-radio) {
+      .el-radio-button__inner {
+        padding: 4px 8px;
+        height: 22px;
+        line-height: 14px;
+        font-size: 11px;
+        background: transparent;
+        border-color: rgba(255, 255, 255, 0.15);
+        color: rgba(255, 255, 255, 0.7);
+        box-shadow: none !important;
+      }
+
+      .el-radio-button:first-child .el-radio-button__inner {
+        border-left-color: rgba(255, 255, 255, 0.15);
+        border-radius: 11px 0 0 11px;
+      }
+
+      .el-radio-button:last-child .el-radio-button__inner {
+        border-radius: 0 11px 11px 0;
+      }
+
+      .el-radio-button__original-radio:checked + .el-radio-button__inner {
+        background: rgba(96, 165, 250, 0.2);
+        border-color: rgba(96, 165, 250, 0.5);
+        color: #60a5fa;
+        font-weight: 600;
+        box-shadow: -1px 0 0 0 rgba(96, 165, 250, 0.5) !important;
+      }
     }
   }
 
@@ -2082,6 +2462,7 @@ onUnmounted(async () => {
 
 .upload-notice {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-left: 10px;
 
@@ -2096,11 +2477,42 @@ onUnmounted(async () => {
     font-size: 12px;
     line-height: 1.4;
   }
+
+  /* 顶部展示：作为首屏 tip，更醒目 */
+  &.top {
+    margin: 0 24px 12px;
+    padding: 10px 14px;
+    background: linear-gradient(90deg, rgba(96, 165, 250, 0.1), rgba(96, 165, 250, 0.04));
+    border: 1px solid rgba(96, 165, 250, 0.25);
+    border-radius: 8px;
+
+    .notice-icon {
+      font-size: 16px;
+    }
+
+    .notice-text {
+      flex: 1;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.92);
+    }
+
+    .target-album {
+      color: #60a5fa;
+      font-weight: 600;
+    }
+
+    .change-album-btn {
+      flex-shrink: 0;
+    }
+  }
 }
 
+/* ==================== 主体分栏 ==================== */
+// 关键：flex:1 + min-height:0 让分栏占满 body 剩余空间且能正确收缩
 .layout-columns {
   display: flex;
-  height: 450px;
+  flex: 1;
+  min-height: 0;
 
   .left-column {
     flex: 1;
@@ -2108,63 +2520,150 @@ onUnmounted(async () => {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    min-width: 0;
+    min-height: 0;
   }
 
   .right-column {
-    width: 220px;
-    padding: 12px;
-    overflow-y: hide;
+    width: 200px;
+    padding: 8px 10px;
+    overflow: hidden;
     background: transparent;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px; // 卡片间隔由 gap 控制，配合 :last-child margin-bottom: 0
   }
 }
 
-// 拖拽上传区域
+// 让右侧卡片在容器内均匀分布，撑满高度不留空白；窗口尺寸变化时自适应
+.right-column {
+  .stat-card,
+  .progress-card,
+  .speed-card,
+  .album-card {
+    flex: 1 1 0;
+    min-height: 0;
+    margin-bottom: 0 !important;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  // 进度卡片有圆形进度图 + 多行统计，需要更多份额
+  .progress-card {
+    flex: 1.4 1 0;
+  }
+}
+
+/* ==================== 拖拽区（空状态） ==================== */
 .upload-drop-area {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 12px;
   border: 2px dashed rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
-  margin: 12px;
-  transition: all 0.3s ease;
+  border-radius: 12px;
+  margin: 16px 20px;
+  background: rgba(255, 255, 255, 0.015);
+  transition: all 0.2s ease;
   cursor: pointer;
 
+  &:hover {
+    border-color: rgba(96, 165, 250, 0.4);
+    background: rgba(96, 165, 250, 0.04);
+  }
+
   &.is-dragover {
-    background: rgba(96, 165, 250, 0.1);
     border-color: #60a5fa;
+    background: rgba(96, 165, 250, 0.1);
+    transform: scale(1.01);
   }
 
   .drop-icon {
-    color: rgba(255, 255, 255, 0.3);
-    margin-bottom: 16px;
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(96, 165, 250, 0.08);
+    border-radius: 50%;
+    color: #60a5fa;
   }
 
   .drop-text {
     font-size: 14px;
-    color: rgba(255, 255, 255, 0.7);
-    margin: 0 0 6px 0;
+    color: rgba(255, 255, 255, 0.85);
+    margin: 0;
+    font-weight: 500;
   }
 
-  .drop-hint {
+  .drop-formats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+
+    span {
+      display: inline-block;
+      padding: 2px 8px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+  }
+
+  .drop-rules {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 6px 12px;
+    background: rgba(251, 191, 36, 0.06);
+    border: 1px solid rgba(251, 191, 36, 0.2);
+    border-radius: 6px;
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.4);
-    margin: 0;
+    color: rgba(251, 191, 36, 0.85);
+
+    .el-icon {
+      font-size: 12px;
+    }
   }
 }
 
-// 文件列表
+// 文件列表 —— 关键：file-grid-container 是唯一可滚动层，外层 dialog 不滚
 .file-list {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
 
   .file-grid-container {
     flex: 1;
     overflow-y: auto;
-    padding: 10px;
+    overflow-x: hidden;
+    padding: 8px;
+    min-height: 0;
+
+    /* 自定义滚动条，与暗色主题对齐 */
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+      &:hover {
+        background: rgba(255, 255, 255, 0.25);
+      }
+    }
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
   }
 
   .pagination-wrapper {
@@ -2173,15 +2672,71 @@ onUnmounted(async () => {
     display: flex;
     justify-content: center;
     background: transparent;
+    flex-shrink: 0;
   }
 }
 
-// 文件网格
+// 文件网格 —— 按 cardSize 切换列宽，默认 mini 让 20 个/页基本无需滚动
 .file-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 16px;
-  padding: 0 8px;
+  gap: 10px;
+  padding: 0 4px;
+
+  &.size-mini {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 8px;
+
+    .file-card .file-thumbnail {
+      padding-top: 100%; /* 方形缩略图，节省纵向空间 */
+    }
+
+    .file-card .file-info {
+      padding: 6px 8px;
+
+      :deep(.el-input) {
+        display: none;
+      }
+
+      .file-meta {
+        font-size: 10px;
+        .file-size {
+          padding: 2px 6px;
+          font-size: 10px;
+        }
+        .create-time {
+          display: none;
+        }
+      }
+    }
+  }
+
+  &.size-sm {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+
+    .file-card .file-info {
+      padding: 7px 8px;
+
+      :deep(.el-input) {
+        margin-bottom: 4px;
+        .el-input__inner {
+          height: 24px;
+          line-height: 24px;
+          font-size: 11px;
+        }
+      }
+    }
+  }
+
+  &.size-md {
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 12px;
+  }
+
+  &.size-lg {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 14px;
+  }
 }
 
 // 文件卡片
@@ -2553,6 +3108,35 @@ onUnmounted(async () => {
       }
     }
 
+    .error-message-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(180deg, rgba(220, 38, 38, 0.92) 0%, rgba(185, 28, 28, 0.96) 100%);
+      padding: 6px 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      z-index: 13;
+      color: #fff;
+      box-shadow: 0 -2px 8px rgba(220, 38, 38, 0.4);
+
+      .el-icon {
+        flex-shrink: 0;
+      }
+
+      .error-text {
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.3;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+      }
+    }
+
     .retry-btn-top {
       width: 22px;
       height: 22px;
@@ -2680,16 +3264,16 @@ onUnmounted(async () => {
   }
 
   .file-info {
-    padding: 12px;
+    padding: 8px;
     background: rgba(0, 0, 0, 0.1);
 
     :deep(.el-input) {
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       .el-input__inner {
         color: rgba(255, 255, 255, 0.9);
         font-size: 12px;
-        height: 28px;
-        line-height: 28px;
+        height: 26px;
+        line-height: 26px;
         font-weight: 500;
         transition: all 0.3s ease;
 
@@ -2747,7 +3331,7 @@ onUnmounted(async () => {
   }
 }
 
-// 右侧卡片基础样式
+// 右侧卡片基础样式 —— 紧凑版，4 张卡片要在 78vh 高度内全部装下不滚动
 .stat-card,
 .progress-card,
 .speed-card,
@@ -2755,14 +3339,18 @@ onUnmounted(async () => {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 6px;
-  padding: 10px;
-  margin-bottom: 10px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
 
   .card-title {
-    margin: 0 0 8px 0;
-    font-size: 12px;
+    margin: 0 0 6px 0;
+    font-size: 11px;
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.8);
+    color: rgba(255, 255, 255, 0.7);
     display: flex;
     align-items: center;
     gap: 4px;
@@ -2774,7 +3362,7 @@ onUnmounted(async () => {
   .stat-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 5px;
 
     .stat-row {
       display: flex;
@@ -2788,7 +3376,7 @@ onUnmounted(async () => {
       }
 
       .stat-value {
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 600;
         color: #60a5fa;
         text-align: right;
@@ -2805,15 +3393,15 @@ onUnmounted(async () => {
 .progress-card {
   .progress-content {
     display: flex;
-    gap: 12px;
+    gap: 10px;
     align-items: center;
 
     .progress-circle-wrapper {
       flex-shrink: 0;
 
       :deep(.el-progress) {
-        width: 70px !important;
-        height: 70px !important;
+        width: 56px !important;
+        height: 56px !important;
       }
     }
 
@@ -2821,7 +3409,7 @@ onUnmounted(async () => {
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 4px;
 
       .stat-row {
         display: flex;
@@ -2864,7 +3452,7 @@ onUnmounted(async () => {
   .speed-display {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 6px;
 
     .speed-row {
       display: flex;
@@ -2937,6 +3525,19 @@ onUnmounted(async () => {
       white-space: nowrap;
       cursor: default;
       max-width: 100%;
+
+      .album-override-tag {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 6px;
+        font-size: 10px;
+        font-weight: 600;
+        color: #fbbf24;
+        background: rgba(251, 191, 36, 0.15);
+        border: 1px solid rgba(251, 191, 36, 0.35);
+        border-radius: 10px;
+        vertical-align: middle;
+      }
     }
 
     .album-meta {

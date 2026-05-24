@@ -12,12 +12,12 @@
       },
       "runtimeArgs": ["--sourcemap"],
       "env": {
-        "REMOTE_DEBUGGING_PORT": "9222"
+        "REMOTE_DEBUGGING_PORT": "9224"
       }
     },
     {
       "name": "Debug Renderer Process",
-      "port": 9222,
+      "port": 9224,
       "request": "attach",
       "type": "chrome",
       "webRoot": "${workspaceFolder}/src/renderer",

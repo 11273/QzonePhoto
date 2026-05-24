@@ -6,6 +6,7 @@
       :visible="showUpload"
       :album-id="currentAlbum?.id"
       :album-name="currentAlbum?.name"
+      :available-albums="availableAlbums"
       context-mode="album"
       @close="handleUploadDialogClose"
     />
@@ -336,6 +337,19 @@ const isFriendContext = computed(() => !!hostUinOverride?.value)
 const effectiveHostUin = computed(() => hostUinOverride?.value || userStore.userInfo?.uin)
 
 const currentAlbum = inject('currentAlbum', ref(null))
+const leftRef = inject('leftRef', ref(null))
+// 给上传弹窗提供完整相册列表用于切换上传目标
+const availableAlbums = computed(() => {
+  const menu = leftRef?.value?.menuList || []
+  return menu.flatMap((cat) =>
+    (cat.albums || []).map((a) => ({
+      id: a.id,
+      name: a.name,
+      total: a.total,
+      className: cat.className
+    }))
+  )
+})
 const selectAllCallback = inject('selectAllCallback', null)
 const downloadAllCallback = inject('downloadAllCallback', null)
 const cancelDownloadCallback = inject('cancelDownloadCallback', null)

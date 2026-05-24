@@ -1,0 +1,113 @@
+// 应用内统一的「上传 / 下载管理」深色弹窗规范
+// 三个弹窗（UploadDialog、UploadManager、DownloadManager）共用这一份尺寸与色板
+// 关键约束（来自产品需求）：
+//   1. 弹窗大小在默认窗口下固定，不随内容增减而变化
+//   2. 内容区出现滚动时，仅内部滚动，弹窗本身永不出滚动条
+//   3. 窗口尺寸变化时弹窗自适应（width: min, height: vh）
+
+$app-dialog-classes: '.upload-manager-dialog, .download-manager-dialog';
+
+// 让 overlay 容器垂直居中弹窗，避免依赖 el-dialog 默认 top: 15vh 导致下方留白过大
+.el-overlay-dialog:has(.upload-manager-dialog),
+.el-overlay-dialog:has(.download-manager-dialog) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+}
+
+#{$app-dialog-classes} {
+  // 固定尺寸：高度恒定 78vh，宽度跟随窗口（最大 1100，至少 720，两侧留 80px）
+  // 用 height 而不是 max-height —— 后者会让弹窗随内容缩水，违反「始终一样大」需求
+  width: clamp(720px, calc(100vw - 80px), 1100px) !important;
+  height: 78vh !important;
+  max-height: 78vh !important;
+  // 居中（双保险）：margin auto 在 flex 容器里把剩余空间均分到上下/左右
+  margin: auto !important;
+  top: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+
+  background: #1a1a1a;
+  color: #e0e0e0;
+
+  .el-dialog__header {
+    flex-shrink: 0;
+    background: #1a1a1a; // 与 body 同色，消除标题区与内容区之间的视觉断层
+    border-bottom: none; // 移除分隔线（用户视觉上像是阴影）
+    box-shadow: none;
+    padding: 10px 18px !important;
+    margin: 0 !important;
+
+    .el-dialog__title {
+      color: #e0e0e0;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .el-dialog__headerbtn {
+      top: 6px;
+    }
+  }
+
+  // body 占满剩余高度，自身永远不滚（内部子区域必须有自己的 overflow-y:auto）
+  .el-dialog__body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    background: #1a1a1a;
+    display: flex;
+    flex-direction: column;
+    border-top: none;
+    box-shadow: none;
+
+    // 弹窗内部统一压平视觉：清掉 Element Plus / 自定义类带来的多余阴影、彩色边
+    // 只保留我们显式声明的 ds-* 设计令牌阴影
+    .el-input__wrapper,
+    .el-textarea__inner,
+    .el-input-number,
+    .el-select__wrapper,
+    .el-button,
+    .el-popper {
+      box-shadow: none !important;
+    }
+    // Element Plus 的 input 默认用 inset box-shadow 当边框 —— 移除后用真边框补回
+    .el-input__wrapper,
+    .el-select__wrapper {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      transition: border-color 0.15s;
+      &.is-focus,
+      &:focus-within {
+        border-color: rgba(96, 165, 250, 0.55);
+      }
+    }
+    // 任务行/卡片不要再叠一层带颜色的「外发光」边，只用左边的细色条/文字徽标区分状态
+    .task-item,
+    .task-detail-item,
+    .progress-task {
+      &.is-completed,
+      &.is-uploading,
+      &.is-error,
+      &.is-paused,
+      &.is-waiting {
+        background: rgba(255, 255, 255, 0.02) !important;
+        border-color: rgba(255, 255, 255, 0.06) !important;
+      }
+    }
+
+    // 三个管理器内部都是 header-actions/ud-toolbar + layout-columns 的两段式结构
+    // 工具栏占自身高度，主内容区 flex:1 撑满剩余空间
+    > .header-actions,
+    > .ud-toolbar {
+      flex-shrink: 0;
+    }
+
+    > .layout-columns {
+      flex: 1 1 auto !important;
+      height: auto !important; // 覆盖各 manager 自定义的 465px 等固定值
+      min-height: 0 !important;
+    }
+  }
+}

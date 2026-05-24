@@ -2101,7 +2101,8 @@ defineExpose({
   updateVideoStats,
   updatePhotoStats,
   videoFilters,
-  photoFilters
+  photoFilters,
+  menuList // 暴露分类后的相册列表给 UploadDialog 切换上传目标
 })
 </script>
 

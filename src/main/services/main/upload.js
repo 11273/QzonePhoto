@@ -5,11 +5,10 @@ import logger from '@main/core/logger'
 import { is } from '@electron-toolkit/utils'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
-import { fileBatchControl, fileUpload, getFileChunk, uploadVideoCover } from '@main/api'
+import { fileBatchControl, fileUpload, uploadVideoCover } from '@main/api'
 import {
   calculateFileMD5,
   getFileInfo,
-  readFileAsBuffer,
   getImageDimensions,
   isVideoFile,
   getVideoDuration,
@@ -38,8 +37,12 @@ const PRIORITY = {
 }
 
 // 默认配置
-const DEFAULT_CONCURRENCY = 1 // 上传并发数设置为1，确保一张一张上传
-const DEFAULT_CHUNK_SIZE = 16384 // 16KB
+const DEFAULT_CONCURRENCY = 1 // 同时上传几个文件；UI 暴露 1-10 让用户调
+const DEFAULT_CHUNK_SIZE = 16384 // 16KB（腾讯接口固定 slice_size）
+const CHUNK_PARALLELISM = 4 // 单文件内并发分片数
+// 总活跃 H2 stream ≈ concurrency × CHUNK_PARALLELISM；
+// 实测腾讯 H2 单连接对单 IP 的并发限流约 16-20；并发太高会撞 NGHTTP2_REFUSED_STREAM
+// 撞了有 h2-client 自动重试兜底，但会拖慢
 const DEFAULT_PAGE_SIZE = 50
 const MAX_ACTIVE_TASKS_IN_MEMORY = 500
 
@@ -87,7 +90,18 @@ export class UploadService {
 
   // 设置当前用户并切换数据库
   async setCurrentUser(uin, p_skey, hostUin) {
+    // 串行化所有调用，避免 IPC 并发触发时 steno 写 .tmp 冲突
+    const prev = this._switchPromise || Promise.resolve()
+    let release
+    this._switchPromise = new Promise((r) => {
+      release = r
+    })
     try {
+      try {
+        await prev
+      } catch {
+        // 上一次失败也继续
+      }
       // 处理登出（清除用户）
       if (!uin || !p_skey) {
         // if (is.dev) console.debug(`[UploadService] 用户登出，清空数据`)
@@ -152,6 +166,8 @@ export class UploadService {
     } catch (error) {
       logger.error('切换用户失败:', error)
       throw error
+    } finally {
+      release()
     }
   }
 
@@ -270,7 +286,7 @@ export class UploadService {
     try {
       const savedConcurrency = this.getSetting('concurrency')
       if (savedConcurrency) {
-        this.concurrency = Math.max(1, Math.min(5, parseInt(savedConcurrency)))
+        this.concurrency = Math.max(1, Math.min(10, parseInt(savedConcurrency)))
       }
     } catch (error) {
       logger.error('加载设置失败:', error)
@@ -343,7 +359,7 @@ export class UploadService {
   }
 
   async setConcurrency(newConcurrency) {
-    const validConcurrency = Math.max(1, Math.min(5, parseInt(newConcurrency)))
+    const validConcurrency = Math.max(1, Math.min(10, parseInt(newConcurrency)))
     this.concurrency = validConcurrency
     await this.setSetting('concurrency', validConcurrency)
     // if (is.dev) console.debug(`[UploadService] 并发数已设置为 ${validConcurrency}`)
@@ -389,7 +405,10 @@ export class UploadService {
       // 移除了分片相关字段：currentOffset, sliceSize
       // 失败重试时将重新整体上传，不再断点续传
       retryCount: 0, // 重试次数
-      lastRetryTime: null // 最后重试时间
+      lastRetryTime: null, // 最后重试时间
+      // 视频元数据（由渲染进程提取，主进程在初始化上传时使用）
+      videoDuration: options.videoDuration || null,
+      videoCover: options.videoCover || null
     }
   }
 
@@ -1139,11 +1158,18 @@ export class UploadService {
       let playTime = 0
 
       if (isVideo) {
-        // 优先使用任务中保存的时长，如果没有则使用降级方案
-        playTime = task.videoDuration || (await getVideoDuration(task.filePath))
+        // 优先用 renderer 通过 HTMLVideoElement 读到的真实时长（支持 fMP4）
+        // 兜底用主进程 MP4 box 解析；都拿不到才用按文件大小估算（极不准）
+        const isAccurate = task.videoDuration != null && task.videoDuration > 0
+        playTime = isAccurate ? task.videoDuration : await getVideoDuration(task.filePath)
         console.log(
-          `[UploadService] 检测到视频文件: ${task.filename}, 时长: ${playTime}ms, 来源: ${task.videoDuration ? '元数据' : '降级预估'}`
+          `[UploadService] 检测到视频文件: ${task.filename}, 时长: ${playTime}ms, 来源: ${isAccurate ? 'renderer 精确' : '主进程兜底'}`
         )
+        // QQ 空间硬限：视频时长 ≤ 10 分钟，超了服务端会 ret=-530 拒
+        // 只在拿到精确时长时拦截，避免估算不准误拒（如 fMP4 估算可能远大于真实）
+        if (isAccurate && playTime > 600000) {
+          throw new Error(`视频时长 ${(playTime / 1000).toFixed(0)} 秒，超过 QQ 空间 10 分钟上限`)
+        }
       }
 
       // 调用初始化API
@@ -1207,198 +1233,207 @@ export class UploadService {
     }
   }
 
-  // 执行上传（简化版，整体上传不支持断点续传）
+  // 执行上传（流式读取 + 多路并发分片）
   async performChunkedUpload(task) {
     // 验证文件路径
     if (!task.filePath) {
       throw new Error('文件路径为空')
     }
 
-    let fileBuffer
+    // 流式打开文件，按 offset 读分片，避免大文件整文件读入内存
+    let fileHandle
     try {
-      fileBuffer = await readFileAsBuffer(task.filePath)
-      if (!fileBuffer) {
-        throw new Error('文件已被移动或删除，无法读取')
-      }
+      fileHandle = await fs.promises.open(task.filePath, 'r')
     } catch {
       throw new Error('文件已被移动或删除，无法读取')
     }
 
-    let lastTime = Date.now()
-    let lastBytes = 0
+    const sliceSize = this.defaultChunkSize
+    const total = task.total
+    const totalChunks = Math.ceil(total / sliceSize)
 
-    // 设置取消令牌
+    // 取消令牌
     const cancelToken = { cancelled: false }
     this.cancelTokens.set(task.id, cancelToken)
 
-    let currentOffset = 0
-    const sliceSize = this.defaultChunkSize
+    // 并发状态
+    let lastTime = Date.now()
+    let lastBytes = 0
+    let bytesDone = 0
+    let nextSeq = 0
+    let finalResult = null // 服务端返回 flag===1 那次响应（带 sVid）
+    let firstError = null
 
-    while (currentOffset < task.total && !cancelToken.cancelled) {
-      const chunkData = getFileChunk(fileBuffer, currentOffset, sliceSize)
-      if (!chunkData) {
-        throw new Error('无法获取文件分片数据')
-      }
+    const worker = async () => {
+      while (!cancelToken.cancelled && !firstError) {
+        const seq = nextSeq++
+        if (seq >= totalChunks) break
 
-      const end = Math.min(currentOffset + sliceSize, task.total)
-      const seq = Math.floor(currentOffset / sliceSize)
+        const offset = seq * sliceSize
+        const end = Math.min(offset + sliceSize, total)
+        const len = end - offset
 
-      try {
-        // 调用上传API
-        const result = await fileUpload(
-          this.currentHostUin,
-          this.currentPSkey,
-          this.currentHostUin,
-          task.session,
-          currentOffset,
-          chunkData,
-          end,
-          seq,
-          '',
-          sliceSize,
-          task.isVideo || false,
-          task.total
-        )
+        // 按 offset 读分片
+        const buf = Buffer.allocUnsafe(len)
+        try {
+          await fileHandle.read(buf, 0, len, offset)
+        } catch (e) {
+          if (!firstError) firstError = new Error('读取分片失败: ' + e.message)
+          return
+        }
+        const chunkData = buf.toString('base64')
 
-        if (!result) {
-          throw new Error('上传API返回空结果')
+        let result
+        try {
+          result = await fileUpload(
+            this.currentHostUin,
+            this.currentPSkey,
+            this.currentHostUin,
+            task.session,
+            offset,
+            chunkData,
+            end,
+            seq,
+            '',
+            sliceSize,
+            task.isVideo || false,
+            total
+          )
+        } catch (e) {
+          if (!firstError) firstError = e
+          return
         }
 
-        if (result.ret !== 0) {
-          throw new Error(`上传分片失败: ${result.msg || `错误代码: ${result.ret}`}`)
+        if (!result || result.ret !== 0 || !result.data) {
+          if (!firstError) {
+            firstError = new Error(`上传分片失败: ${result?.msg || `错误代码: ${result?.ret}`}`)
+          }
+          return
         }
 
-        if (!result.data) {
-          throw new Error('上传API返回数据为空')
-        }
-
-        // 更新进度
-        currentOffset = end
-        task.uploaded = end
+        // 累加已完成字节（并发安全：单线程 JS 中 += 是原子的）
+        bytesDone += len
+        task.uploaded = bytesDone
         const now = Date.now()
-
-        // 更新进度和速度
-        if (task.total > 0) {
-          const newProgress = Math.round((task.uploaded / task.total) * 100)
-
-          // 计算速度（每500ms计算一次）
+        if (total > 0) {
+          const newProgress = Math.round((bytesDone / total) * 100)
           const shouldUpdateSpeed = now - lastTime >= 500
           if (shouldUpdateSpeed) {
             const timeDiff = (now - lastTime) / 1000
-            const bytesDiff = task.uploaded - lastBytes
+            const bytesDiff = bytesDone - lastBytes
             task.speed = Math.round(bytesDiff / timeDiff)
             lastTime = now
-            lastBytes = task.uploaded
+            lastBytes = bytesDone
           }
-
-          // 更新进度
           const progressChanged = newProgress !== task.progress
           if (progressChanged) {
             task.progress = newProgress
-
-            // 定期更新数据库（每10%更新一次，减少I/O）
-            if (newProgress % 10 === 0) {
-              this.updateTaskInDB(task)
-            }
+            if (newProgress % 10 === 0) this.updateTaskInDB(task)
           }
-
-          // 【核心改进】直接推送进度到渲染进程，不再依赖事件推送器的定时器
-          // 进度变化或速度更新时立即推送（内置200ms节流）
           if (progressChanged || shouldUpdateSpeed) {
             this.pushTaskProgressDirect(task)
           }
         }
 
-        // 检查是否完成
-        if (result.data.flag === 1) {
-          task.progress = 100
-          task.uploaded = task.total
-
-          // 如果是视频上传，需要上传封面
-          if (task.isVideo && result.data.biz && result.data.biz.sVid) {
-            const vid = result.data.biz.sVid
-            console.log('[UploadService] 视频上传完成，开始上传封面，vid:', vid)
-
-            let coverPath = null
-            try {
-              // 优先使用任务中保存的封面
-              if (task.videoCover) {
-                coverPath = await extractVideoCover(task.videoCover, task.filePath)
-                console.log('[UploadService] 使用任务中保存的视频封面:', coverPath)
-              } else {
-                // 如果任务中没有封面，动态提取
-                console.log('[UploadService] 任务中无封面，开始动态提取视频元数据...')
-                const metadata = await getVideoMetadata(task.filePath)
-
-                if (metadata && metadata.cover) {
-                  coverPath = await extractVideoCover(metadata.cover, task.filePath)
-                  console.log('[UploadService] 动态提取视频封面成功:', coverPath)
-                } else {
-                  throw new Error('无法提取视频封面')
-                }
-              }
-
-              // 计算批次信息
-              const batchTasks = this.db.data.tasks.filter((t) => t.batchId === task.batchId)
-              const completedInBatch = batchTasks.filter(
-                (t) => t.status === UPLOAD_TASK_STATUS.COMPLETED
-              ).length
-              const failedInBatch = batchTasks.filter(
-                (t) => t.status === UPLOAD_TASK_STATUS.ERROR
-              ).length
-              const currentIndex =
-                batchTasks.findIndex((t) => t.id === task.id) + 1 + completedInBatch + failedInBatch
-
-              const mutliPicInfo = {
-                iBatUploadNum: batchTasks.length,
-                iCurUpload: currentIndex,
-                iSuccNum: completedInBatch,
-                iFailNum: failedInBatch
-              }
-
-              // 上传封面
-              await uploadVideoCover(
-                this.currentUin,
-                this.currentPSkey,
-                this.currentHostUin,
-                vid,
-                coverPath,
-                task.albumId,
-                task.albumName,
-                task.filename,
-                task.batchId,
-                mutliPicInfo
-              )
-
-              console.log('[UploadService] 视频封面上传成功')
-            } catch (coverError) {
-              console.error('[UploadService] 视频封面处理失败:', coverError)
-              // 封面上传失败，整个任务失败
-              throw new Error(`视频封面上传失败: ${coverError.message}`)
-            } finally {
-              // 清理临时封面文件
-              if (coverPath) {
-                await deleteTempFile(coverPath)
-              }
-            }
-          }
-
-          break
-        }
-      } catch (error) {
-        // 对网络错误进行友好处理
-        let errorMessage = error.message
-        if (error.message.includes('timeout') || error.message.includes('网络')) {
-          errorMessage = '网络超时，请重试'
-        } else if (error.message.includes('401') || error.message.includes('认证')) {
-          errorMessage = '登录已过期，请重新登录'
-        }
-        throw new Error(errorMessage)
+        // 拿到最终完成响应（任意一片返回 flag===1 都保留）
+        if (result.data.flag === 1) finalResult = result
       }
+    }
+
+    try {
+      await Promise.all(
+        Array.from({ length: Math.min(CHUNK_PARALLELISM, totalChunks) }, () => worker())
+      )
+    } finally {
+      await fileHandle.close().catch(() => {})
     }
 
     if (cancelToken.cancelled) {
       throw { cancelled: true, message: '上传已取消' }
+    }
+    if (firstError) {
+      // 网络错误友好处理
+      const msg = firstError.message || String(firstError)
+      let friendly = msg
+      if (/-530\b/.test(msg)) friendly = '视频时长超过 10 分钟（QQ 空间限制）'
+      else if (/-531\b/.test(msg)) friendly = '视频文件过大（QQ 空间最大约 1GB）'
+      else if (/timeout|网络/.test(msg)) friendly = '网络超时，请重试'
+      else if (/401|认证/.test(msg)) friendly = '登录已过期，请重新登录'
+      throw new Error(friendly)
+    }
+    if (!finalResult) {
+      throw new Error('上传完成但未收到服务端最终响应')
+    }
+
+    // 完成处理：进度=100 + 视频封面上传
+    const result = finalResult
+    task.progress = 100
+    task.uploaded = task.total
+
+    // 如果是视频上传，需要上传封面
+    if (task.isVideo && result.data.biz && result.data.biz.sVid) {
+      const vid = result.data.biz.sVid
+      console.log('[UploadService] 视频上传完成，开始上传封面，vid:', vid)
+
+      // task.videoCover / metadata.cover 是 base64 data URL，需要先写到 tmp 文件
+      // 上传完封面后由 finally 统一删除
+      let coverPath = null
+      try {
+        if (task.videoCover) {
+          coverPath = await extractVideoCover(task.videoCover, task.filePath)
+          console.log('[UploadService] 使用任务中保存的视频封面:', coverPath)
+        } else {
+          console.log('[UploadService] 任务中无封面，开始动态提取视频元数据...')
+          const metadata = await getVideoMetadata(task.filePath)
+          if (metadata && metadata.cover) {
+            coverPath = await extractVideoCover(metadata.cover, task.filePath)
+            console.log('[UploadService] 动态提取视频封面成功:', coverPath)
+          } else {
+            throw new Error('无法提取视频封面')
+          }
+        }
+
+        // 计算批次信息
+        const batchTasks = this.db.data.tasks.filter((t) => t.batchId === task.batchId)
+        const completedInBatch = batchTasks.filter(
+          (t) => t.status === UPLOAD_TASK_STATUS.COMPLETED
+        ).length
+        const failedInBatch = batchTasks.filter((t) => t.status === UPLOAD_TASK_STATUS.ERROR).length
+        const currentIndex =
+          batchTasks.findIndex((t) => t.id === task.id) + 1 + completedInBatch + failedInBatch
+
+        const mutliPicInfo = {
+          iBatUploadNum: batchTasks.length,
+          iCurUpload: currentIndex,
+          iSuccNum: completedInBatch,
+          iFailNum: failedInBatch
+        }
+
+        // 上传封面
+        await uploadVideoCover(
+          this.currentUin,
+          this.currentPSkey,
+          this.currentHostUin,
+          vid,
+          coverPath,
+          task.albumId,
+          task.albumName,
+          task.filename,
+          task.batchId,
+          mutliPicInfo
+        )
+
+        console.log('[UploadService] 视频封面上传成功')
+      } catch (coverError) {
+        console.error('[UploadService] 视频封面处理失败:', coverError)
+        // 封面上传失败，整个任务失败
+        throw new Error(`视频封面上传失败: ${coverError.message}`)
+      } finally {
+        // 清理临时封面文件
+        if (coverPath) {
+          await deleteTempFile(coverPath)
+        }
+      }
     }
   }
 
