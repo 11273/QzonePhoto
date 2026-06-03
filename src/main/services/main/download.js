@@ -175,6 +175,9 @@ export class DownloadService {
       this.db.data.tasks ||= []
       this.db.data.settings ||= {}
       this.db.data.uin = this.currentUin // 更新用户ID
+      this.db.data.tasks.forEach((task) => {
+        delete task.request_headers
+      })
 
       // 写入默认数据
       await this.db.write()
@@ -326,7 +329,7 @@ export class DownloadService {
   // 创建任务对象
   createTask(options) {
     const now = Date.now()
-    return {
+    const task = {
       id: this.generateTaskId(),
       name: options.filename || path.basename(options.url),
       type: options.type || 'image',
@@ -345,8 +348,19 @@ export class DownloadService {
       error: null,
       thumbnail_url: options.thumbnailUrl || options.url,
       album_id: options.albumId,
-      album_name: options.albumName
+      album_name: options.albumName,
+      source_key: options.sourceKey || '',
+      referer: options.referer || ''
     }
+    if (options.requestHeaders) {
+      Object.defineProperty(task, 'request_headers', {
+        value: options.requestHeaders,
+        enumerable: false,
+        configurable: true,
+        writable: true
+      })
+    }
+    return task
   }
 
   // 添加单个任务
@@ -425,17 +439,97 @@ export class DownloadService {
     return taskIds
   }
 
+  // 按动态/说说聚合下载 —— 每条动态独立子目录，文件名带时间前缀
+  // feeds: [{ skey, time, desc, albumId, albumName, photos: [...] }, ...]
+  async addFeedsTasks({ feeds = [], uin, friendUin = null }, headers = {}) {
+    const userInfo = {
+      uin: uin || this.currentUin,
+      p_skey: headers.p_skey || null,
+      hostUin: friendUin || uin || this.currentUin
+    }
+
+    // 顶层根目录：[uin]/说说 (好友空间下挂在 好友相册 子树)
+    const rootDir = friendUin
+      ? path.join(
+          this.downloadPath,
+          this.sanitizeFilename(userInfo.uin || 'unknown'),
+          '好友相册',
+          this.sanitizeFilename(String(friendUin)),
+          '说说'
+        )
+      : path.join(
+          this.downloadPath,
+          this.sanitizeFilename(userInfo.uin || 'unknown'),
+          '说说'
+        )
+
+    const allTaskIds = []
+    const batchSize = 500
+
+    for (const feed of feeds) {
+      if (!feed?.photos?.length) continue
+
+      // 子目录名：{YYYYMMDD-HHmm}_{desc 摘要 or skey 短码}
+      const ts = parseInt(feed.time, 10)
+      const d = ts ? new Date(ts * 1000) : new Date()
+      const pad = (n) => String(n).padStart(2, '0')
+      const dateTag = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
+      const descSnippet = (feed.desc || '')
+        .replace(/[\r\n\t]+/g, ' ')
+        .replace(/<[^>]+>/g, '')
+        .slice(0, 20)
+        .trim()
+      const skeyShort = (feed.skey || '').slice(-8)
+      const dirName = descSnippet
+        ? `${dateTag}_${descSnippet}`
+        : `${dateTag}_${skeyShort || 'feed'}`
+
+      const feedDir = path.join(rootDir, this.sanitizeFilename(dirName))
+
+      // 复用 processBatch：用虚拟相册装载（albumId = skey）以便和真正相册任务区分
+      const virtualAlbum = {
+        id: feed.skey || feed.albumId || dirName,
+        name: feed.albumName || '说说',
+        sourceKey: feed.sourceKey || '',
+        referer: feed.referer || ''
+      }
+
+      // 大动态分批
+      for (let i = 0; i < feed.photos.length; i += batchSize) {
+        const batch = feed.photos.slice(i, i + batchSize)
+        const batchIds = await this.processBatch(batch, feedDir, virtualAlbum, userInfo, headers)
+        allTaskIds.push(...batchIds)
+        this.triggerUpdate(batchIds)
+        if (i + batchSize < feed.photos.length) {
+          await new Promise((resolve) => setTimeout(resolve, 5))
+        }
+      }
+    }
+
+    await this.db.write()
+    this.processQueue()
+
+    return allTaskIds
+  }
+
   // 处理单批次任务
   async processBatch(photos, albumDir, album, userInfo = null, headers = null) {
     const tasks = []
     const taskIds = []
+    const requestHeaders = this.buildQzoneImageRequestHeaders(album, userInfo, headers)
 
     // 分离视频和图片
     const videos = photos.filter((photo) => photo.is_video)
     let images = photos.filter((photo) => !photo.is_video)
 
     // 好友相册：通过 floatview API 获取 raw 原图 URL
-    if (userInfo?.hostUin && userInfo.hostUin !== userInfo.uin && images.length > 0) {
+    if (
+      userInfo?.hostUin &&
+      userInfo.hostUin !== userInfo.uin &&
+      album?.id &&
+      images.some((photo) => !photo.raw) &&
+      images.length > 0
+    ) {
       images = await this.enrichPhotosWithRaw(images, album, userInfo, headers)
     }
 
@@ -452,6 +546,9 @@ export class DownloadService {
         thumbnailUrl: photo.pre || photo.url,
         albumId: album.id || album.name,
         albumName: album.name,
+        sourceKey: photo.sourceKey || album.sourceKey || '',
+        referer: album.referer || '',
+        requestHeaders,
         priority: PRIORITY.NORMAL
       })
       tasks.push(task)
@@ -475,6 +572,9 @@ export class DownloadService {
               thumbnailUrl: video.pre || video.url,
               albumId: album.id || album.name,
               albumName: album.name,
+              sourceKey: video.sourceKey || album.sourceKey || '',
+              referer: album.referer || '',
+              requestHeaders,
               priority: PRIORITY.NORMAL
             })
             tasks.push(task)
@@ -500,6 +600,9 @@ export class DownloadService {
                   thumbnailUrl: videoInfo.cover_url || videoInfo.pre || videoInfo.url,
                   albumId: album.id || album.name,
                   albumName: album.name,
+                  sourceKey: video.sourceKey || album.sourceKey || '',
+                  referer: album.referer || '',
+                  requestHeaders,
                   priority: PRIORITY.NORMAL
                 })
                 tasks.push(task)
@@ -517,6 +620,9 @@ export class DownloadService {
                   thumbnailUrl: video.pre || video.url,
                   albumId: album.id || album.name,
                   albumName: album.name,
+                  sourceKey: video.sourceKey || album.sourceKey || '',
+                  referer: album.referer || '',
+                  requestHeaders,
                   priority: PRIORITY.NORMAL
                 })
                 tasks.push(task)
@@ -535,6 +641,9 @@ export class DownloadService {
                 thumbnailUrl: video.pre || video.url,
                 albumId: album.id || album.name,
                 albumName: album.name,
+                sourceKey: video.sourceKey || album.sourceKey || '',
+                referer: album.referer || '',
+                requestHeaders,
                 priority: PRIORITY.NORMAL
               })
               tasks.push(task)
@@ -861,6 +970,31 @@ export class DownloadService {
     }
   }
 
+  buildQzoneImageRequestHeaders(album = {}, userInfo = {}, headers = {}) {
+    const rawUin = String(userInfo?.uin || this.currentUin || '').replace(/^o/, '')
+    const p_skey = headers?.p_skey || userInfo?.p_skey || ''
+    const referer =
+      album?.referer ||
+      (album?.sourceKey === 'fav' && rawUin
+        ? `https://user.qzone.qq.com/${rawUin}/myhome/favorite`
+        : rawUin
+          ? `https://user.qzone.qq.com/${rawUin}`
+          : 'https://user.qzone.qq.com/')
+    const requestHeaders = {
+      Referer: referer,
+      Origin: 'https://user.qzone.qq.com'
+    }
+    if (userInfo?.uin && p_skey) {
+      requestHeaders.Cookie = [
+        `uin=${userInfo.uin}`,
+        `p_uin=${userInfo.uin}`,
+        `skey=${p_skey}`,
+        `p_skey=${p_skey}`
+      ].join('; ')
+    }
+    return requestHeaders
+  }
+
   // 下载文件 - 保持原有逻辑
   async downloadFile(task, filePath, cancelToken) {
     const writer = fs.createWriteStream(filePath)
@@ -870,14 +1004,17 @@ export class DownloadService {
 
     try {
       const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        ...(task.request_headers || {})
       }
 
       // qq.com 图片下载需要 qq_photo_key cookie
       try {
         const qq_photo_key = this.serviceManager?.get(ServiceNames.PHOTO)?.qq_photo_key
         if (qq_photo_key) {
-          headers['Cookie'] = `qq_photo_key=${qq_photo_key}`
+          headers['Cookie'] = headers['Cookie']
+            ? `${headers['Cookie']}; qq_photo_key=${qq_photo_key}`
+            : `qq_photo_key=${qq_photo_key}`
         }
       } catch {
         // ignore: 服务未就绪或缺少 key 时不附加 cookie

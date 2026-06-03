@@ -22,7 +22,7 @@ import Icon from '@renderer/components/Icon/index.vue'
 
 const props = defineProps({
   icon: {
-    type: [String, Object],
+    type: [String, Object, Function],
     default: '📭'
   },
   title: {

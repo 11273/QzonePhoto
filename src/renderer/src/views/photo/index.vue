@@ -5,6 +5,8 @@
         ref="leftRef"
         :view-mode="viewMode"
         :current-friend="currentFriend"
+        :active-module="currentModule"
+        :photo-type="photoType"
         @album-selected="handleAlbumSelected"
         @module-changed="handleModuleChanged"
         @enter-friend="handleEnterFriend"
@@ -20,6 +22,7 @@
         @album-click="handleAlbumClick"
       />
       <VideoModule v-if="currentModule === 'video'" ref="videoModuleRef" class="flex-1" />
+      <FeedsModule v-if="currentModule === 'feeds'" ref="feedsModuleRef" class="flex-1" />
     </div>
 
     <!-- 相册查看弹窗（从动态跳转） -->
@@ -59,6 +62,7 @@ import Left from '@renderer/views/photo/components/left.vue'
 import Main from '@renderer/views/photo/components/main.vue'
 import PhotoModule from '@renderer/views/photo/components/photo-module.vue'
 import VideoModule from '@renderer/views/photo/components/video-module.vue'
+import FeedsModule from '@renderer/views/photo/components/feeds-module.vue'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
 import { useDownloadStore } from '@renderer/store/download.store'
 
@@ -68,6 +72,7 @@ const mainRef = ref()
 const leftRef = ref()
 const photoModuleRef = ref()
 const videoModuleRef = ref()
+const feedsModuleRef = ref()
 const dialogMainRef = ref()
 
 // 当前模块状态
@@ -90,15 +95,12 @@ const currentDialogAlbum = ref(null)
 const handleEnterFriend = (friend) => {
   currentFriend.value = friend
   viewMode.value = 'friend'
-  // 进入好友空间默认显示相册 tab
-  currentModule.value = 'album'
 }
 
 // 退出好友空间，回到自己空间
 const handleExitFriend = () => {
   viewMode.value = 'self'
   currentFriend.value = null
-  currentModule.value = 'album'
 }
 
 // 处理相册选择

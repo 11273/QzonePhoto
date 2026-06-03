@@ -5,8 +5,8 @@
     :style="iconStyle"
     @click="handleClick"
   >
-    <!-- Element Plus 图标 -->
-    <component :is="icon" v-if="isElementIcon" :class="iconClass" />
+    <!-- 组件型图标：Element Plus / Lucide / 任意 Vue 组件 -->
+    <component :is="icon" v-if="isComponentIcon" :class="iconClass" />
 
     <!-- 内联SVG -->
     <svg
@@ -32,7 +32,7 @@ import { computed } from 'vue'
 
 const props = defineProps({
   icon: {
-    type: [String, Object],
+    type: [String, Object, Function],
     required: true
   },
   size: {
@@ -89,8 +89,9 @@ const ICON_DEFINITIONS = {
   }
 }
 
-const isElementIcon = computed(() => {
-  return typeof props.icon === 'object' && props.icon.name
+// Vue 组件类（Element Plus icon、lucide-vue-next icon、任意 SFC）都走 <component :is> 渲染
+const isComponentIcon = computed(() => {
+  return typeof props.icon === 'object' || typeof props.icon === 'function'
 })
 
 const isInlineSvg = computed(() => {
@@ -127,9 +128,9 @@ const iconStyle = computed(() => ({
 }))
 
 const iconClass = computed(() => ({
-  'icon-element': isElementIcon.value,
+  'icon-element': isComponentIcon.value,
   'icon-svg': isInlineSvg.value,
-  'icon-text': !isElementIcon.value && !isInlineSvg.value
+  'icon-text': !isComponentIcon.value && !isInlineSvg.value
 }))
 
 const handleClick = (event) => {

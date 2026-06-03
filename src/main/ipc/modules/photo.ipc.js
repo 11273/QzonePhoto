@@ -45,6 +45,27 @@ export function createPhotoHandlers(service) {
     },
     [IPC_PHOTO.GET_FRIEND_PHOTOS]: async (_, { payload, headers }) => {
       return photoService.getFriendPhotos(payload, headers)
+    },
+    [IPC_PHOTO.GET_FRIEND_FEEDS]: async (_, { payload, headers }) => {
+      return photoService.getFriendFeeds(payload, headers)
+    },
+    [IPC_PHOTO.GET_HOME_FEEDS]: async (_, { payload, headers }) => {
+      return photoService.getHomeFeeds(payload, headers)
+    },
+    [IPC_PHOTO.GET_FEED_COMMENTS]: async (_, { payload, headers }) => {
+      return photoService.getFeedComments(payload, headers)
+    },
+    [IPC_PHOTO.GET_FEEDS_COUNT]: async (_, { payload, headers }) => {
+      return photoService.getFeedsCount(payload, headers)
+    },
+    [IPC_PHOTO.GET_ABOUT_ME_FEEDS]: async (_, { payload, headers }) => {
+      return photoService.getAboutMeFeeds(payload, headers)
+    },
+    [IPC_PHOTO.GET_LAST_YEAR_FEEDS]: async (_, { payload, headers }) => {
+      return photoService.getLastYearFeeds(payload, headers)
+    },
+    [IPC_PHOTO.GET_FAV_LIST]: async (_, { payload, headers }) => {
+      return photoService.getFavList(payload, headers)
     }
   }
 }

@@ -224,8 +224,13 @@
                 }"
                 @click="handleCardClick(file)"
               >
-                <!-- 缩略图 -->
+                <!-- 缩略图（隐私模式打码） -->
                 <div class="file-thumbnail">
+                  <!-- 隐私遮罩 —— 与相册列表风格一致 -->
+                  <div v-if="privacyStore.privacyMode" class="privacy-overlay">
+                    <el-icon class="privacy-icon"><Hide /></el-icon>
+                    <span class="privacy-text">隐私保护</span>
+                  </div>
                   <el-image
                     v-if="isImageFile(file.name) && file.preview"
                     :src="file.preview"
@@ -527,6 +532,9 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getVideoMetadata } from '@renderer/utils/video-helper'
 import { copyToClipboard } from '@renderer/utils'
+import { usePrivacyStore } from '@renderer/store/privacy.store'
+
+const privacyStore = usePrivacyStore()
 import {
   Plus,
   Upload,
@@ -545,7 +553,8 @@ import {
   Loading,
   Picture,
   InfoFilled,
-  ArrowDown
+  ArrowDown,
+  Hide
 } from '@element-plus/icons-vue'
 
 const props = defineProps({
@@ -2804,6 +2813,32 @@ onUnmounted(async () => {
     background: linear-gradient(135deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.3) 100%);
     overflow: hidden;
     border-radius: 8px 8px 0 0;
+
+    /* 隐私模式遮罩（与主相册一致） */
+    .privacy-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      z-index: 5;
+      backdrop-filter: blur(2px);
+      pointer-events: none;
+      border-radius: inherit; /* 跟随父 file-thumbnail 圆角 */
+
+      .privacy-icon {
+        font-size: 22px;
+        color: #e6a23c;
+      }
+      .privacy-text {
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.8);
+        font-weight: 500;
+      }
+    }
 
     img {
       position: absolute;

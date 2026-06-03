@@ -7,7 +7,9 @@ import {
   IPC_USER,
   IPC_FRIEND,
   IPC_UPDATE,
-  IPC_FILE
+  IPC_FILE,
+  IPC_SHELL,
+  IPC_WINDOW
 } from '@shared/ipc-channels'
 import { ipcClient } from '@preload/lib/ipc-client'
 import { registerAuthExpiredCallback } from '@preload/lib/auth-checker'
@@ -52,6 +54,20 @@ try {
     getAlbumVisitors: (data, meta) => ipcClient.call(IPC_PHOTO.GET_ALBUM_VISITORS, data, meta),
     // 获取好友照片动态流
     getFriendPhotos: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FRIEND_PHOTOS, data, meta),
+    // 获取「好友动态」时间线（scope=0 好友 / scope=7 特别关心）
+    getFriendFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FRIEND_FEEDS, data, meta),
+    // 获取「我的主页 / 好友主页」时间线
+    getHomeFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_HOME_FEEDS, data, meta),
+    // 拉某条好友动态的评论列表（顶层评论 + 子回复，预渲染 HTML）
+    getFeedComments: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FEED_COMMENTS, data, meta),
+    // 顶部 5 类动态未读计数（动态 tab 角标）
+    getFeedsCount: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FEEDS_COUNT, data, meta),
+    // 「与我相关」时间线（feeds2_html_pav_all）
+    getAboutMeFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_ABOUT_ME_FEEDS, data, meta),
+    // 「那年今日」时间线（feeds2_html_today_lastyear）
+    getLastYearFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_LAST_YEAR_FEEDS, data, meta),
+    // 「我的收藏」列表（get_fav_list）
+    getFavList: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FAV_LIST, data, meta),
     // 获取好友亲密度列表
     getFriendList: (data, meta) => ipcClient.call(IPC_FRIEND.GET_FRIEND_LIST, data, meta),
     // 获取 QQ 好友及分组
@@ -64,6 +80,8 @@ try {
     getVisitorDetail: (data, meta) => ipcClient.call(IPC_USER.VISITOR_DETAIL, data, meta),
     // 获取说说列表（含评论IP、设备型号）
     getShuoshuo: (data, meta) => ipcClient.call(IPC_USER.SHUOSHUO, data, meta),
+    // 同步给内置 QQ 空间网页窗口使用，避免打开用户主页时重复登录
+    setQzoneAuth: (auth) => ipcRenderer.invoke(IPC_WINDOW.SET_QZONE_AUTH, auth),
 
     // 文件系统相关API
     openFileDialog: (data) => ipcClient.call(IPC_FILE.DIALOG_OPEN_FILE, data),
@@ -77,6 +95,7 @@ try {
       // 任务管理
       addTask: (options) => ipcClient.call(IPC_DOWNLOAD.ADD_TASK, options),
       addAlbum: (albumData) => ipcClient.call(IPC_DOWNLOAD.ADD_ALBUM, albumData),
+      addFeeds: (feedsData) => ipcClient.call(IPC_DOWNLOAD.ADD_FEEDS, feedsData),
       getTasks: (params = {}) => ipcClient.call(IPC_DOWNLOAD.GET_TASKS, params),
       getActiveTasks: () => ipcClient.call(IPC_DOWNLOAD.GET_ACTIVE_TASKS),
       getStats: () => ipcClient.call(IPC_DOWNLOAD.GET_STATS),
@@ -234,6 +253,10 @@ try {
         ipcClient.removeAllListeners(IPC_UPDATE.DOWNLOADED)
         ipcClient.removeAllListeners(IPC_UPDATE.ERROR)
       }
+    },
+
+    shell: {
+      openExternal: (url) => ipcClient.call(IPC_SHELL.OPEN_EXTERNAL, url)
     }
   }
 

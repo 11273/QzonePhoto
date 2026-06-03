@@ -23,6 +23,11 @@ export function createDownloadHandlers(service) {
       return await downloadService.addAlbumTasks(context.payload, context.headers)
     },
 
+    // 添加动态/说说下载任务（按动态聚合）
+    [IPC_DOWNLOAD.ADD_FEEDS]: async (event, context) => {
+      return await downloadService.addFeedsTasks(context.payload, context.headers)
+    },
+
     // 获取任务列表（分页）
     [IPC_DOWNLOAD.GET_TASKS]: async (event, context) => {
       const { page = 1, pageSize = 50, status = null } = context?.payload || {}

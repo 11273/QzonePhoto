@@ -5,6 +5,91 @@ import { parseSetCookie } from '@main/utils'
 // Extract raw QQ number from cookie uin (strip "o" prefix)
 const rawUin = (uin) => String(uin).replace(/^o/, '')
 
+const cleanArray = (items) => (Array.isArray(items) ? items : []).filter(Boolean)
+
+const evalObjectLiteral = (source) => {
+  if (!source || typeof source !== 'string') return null
+  try {
+    return Function('"use strict";return (' + source + ')')()
+  } catch {
+    return null
+  }
+}
+
+const extractHomeModuleData = (html = '') => {
+  const match = String(html).match(/var\s+_feedsdata\s*=\s*({[\s\S]*?})\s*;\s*(?:for\s*\(|if\s*\()/)
+  return evalObjectLiteral(match?.[1])
+}
+
+const extractHomeFeedBlocks = (html = '') => {
+  const source = String(html || '')
+  const blocks = []
+  const startPattern = /<li\b[^>]*class=(["'])[^"']*\bf-single\b[^"']*\1[^>]*>/gi
+  let match
+  while ((match = startPattern.exec(source))) {
+    const start = match.index
+    const next = source.slice(startPattern.lastIndex).search(/<li\b[^>]*class=(["'])[^"']*\bf-single\b[^"']*\1[^>]*>/i)
+    const end = next >= 0 ? startPattern.lastIndex + next : source.indexOf('</ul>', startPattern.lastIndex)
+    if (end > start) blocks.push(source.slice(start, end))
+  }
+  return blocks
+}
+
+const attachHomeFeedHtml = (feeds, html = '') => {
+  const blocks = extractHomeFeedBlocks(html)
+  if (!blocks.length) return feeds
+  const used = new Set()
+  return feeds.map((feed, index) => {
+    const key = String(feed?.key || '')
+    const idPart = `${feed?.uin || ''}_${feed?.appid || ''}_${feed?.typeid || ''}_${feed?.abstime || ''}_${feed?.feedno || ''}`
+    let blockIndex = blocks.findIndex((block, blockIdx) => {
+      if (used.has(blockIdx)) return false
+      return (key && block.includes(`data-key="${key}"`)) || (idPart && block.includes(idPart))
+    })
+    if (blockIndex < 0 && !used.has(index)) blockIndex = index
+    if (blockIndex >= 0 && blocks[blockIndex]) {
+      used.add(blockIndex)
+      return { ...feed, html: feed.html || blocks[blockIndex] }
+    }
+    return feed
+  })
+}
+
+const normalizeHomeFeedsPayload = (payload, html = '', fallbackPager = {}) => {
+  const body = payload || {}
+  const data = body.data || {}
+  const main = data.main || {}
+  const feeds = cleanArray([
+    ...cleanArray(data.host_data),
+    ...cleanArray(data.firstpage_data),
+    ...cleanArray(data.friend_data),
+    ...cleanArray(data.about_data),
+    ...cleanArray(data.data)
+  ])
+  const withHtml = attachHomeFeedHtml(feeds, html)
+  const start = Number(fallbackPager.start || 0)
+  const nextOffset = Number(main.offset)
+  return {
+    code: body.code === '' ? 0 : Number(body.code ?? 0),
+    message: body.message || '',
+    hasMore: !!(main.hasMoreFeeds || main.hasMoreFeeds_0) && withHtml.length > 0,
+    pager: {
+      start: Number.isFinite(nextOffset) && nextOffset > start ? nextOffset : start + withHtml.length,
+      count: Number(fallbackPager.count || 10)
+    },
+    feeds: withHtml
+  }
+}
+
+const homeHtmlErrorMessage = (html = '') => {
+  const text = String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  if (/主人设置了保密|没有权限|无权|访问受限|仅主人|权限/.test(text)) {
+    return '对不起，主人设置了保密，您没有权限查看'
+  }
+  if (/登录|请先登录|未登录/.test(text)) return '登录态已失效，请重新登录'
+  return '主页响应解析失败'
+}
+
 /**
  * 获取相册列表
  * @param uin qq
@@ -319,6 +404,246 @@ export async function feeds2_html_picfeed_qqtab(uin, p_skey, hostUin, begintime 
 }
 
 /**
+ * 拉某条好友动态的评论列表（infocenter 评论 CGI）。
+ *
+ * 关键参数（从网页实际请求逆向，多 feed 样本对比验证）：
+ *   - method: POST + form-urlencoded（GET 不稳）
+ *   - hostUin = feed 作者 uin（**不是** self 登录 uin）
+ *   - uin     = self 登录 uin
+ *   - topicId = data-topicid，格式 `<feedAuthor>_<tid>__1`
+ *   - feedsType = 8 固定（不是 feeds3 raw 里的 data-feedstype=100）
+ *
+ * 只对 appid=311 (说说) 调；相册/日志/视频/分享的评论已经在
+ * feeds3_html_more 第一次返回的 HTML 里，不需要二次请求。
+ *
+ * 响应：frameElement.callback({ ret, result: { feeds: <HTML> } })，
+ * axios interceptor 已自动解 callback wrap。
+ *
+ * @param {string} uin       cookie uin（登录者）
+ * @param {string} p_skey    登录 skey
+ * @param {object} feedRef   { topicId, hostUin, feedsType, start, num, sort }
+ */
+export async function emotion_cgi_ic_getcomments(uin, p_skey, feedRef = {}) {
+  const {
+    topicId,
+    hostUin,
+    feedsType = 8,
+    start = 0,
+    num = 20,
+    sort = 1
+  } = feedRef
+  if (!topicId || !hostUin) {
+    return { code: -1, message: 'missing topicId/hostUin' }
+  }
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/taotao.qzone.qq.com/cgi-bin/emotion_cgi_ic_getcomments'
+  const params = { g_tk: getGTK(p_skey) }
+  const body = new URLSearchParams({
+    topicId,
+    hostUin: String(hostUin),
+    uin: rawUin(uin),
+    feedsType: String(feedsType),
+    start: String(start),
+    num: String(num),
+    sort: String(sort),
+    source: 'ic',
+    format: 'fs',
+    plat: 'qzone',
+    ref: 'feeds',
+    inCharset: 'utf-8',
+    outCharset: 'utf-8',
+    paramstr: '1',
+    isfakereq: '1',
+    qzreferrer: `https://user.qzone.qq.com/${rawUin(uin)}/infocenter`
+  })
+  const response = await request.post(url, body.toString(), {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`,
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      Origin: 'https://user.qzone.qq.com',
+      Referer: `https://user.qzone.qq.com/${rawUin(uin)}/infocenter`
+    }
+  })
+  // axios interceptor 解 frameElement.callback 后：
+  //   { ret, needVerify, err, msg, result: { feeds: <HTML>, ... } }
+  const body2 = response.data || {}
+  return {
+    code: body2.ret ?? body2.code ?? 0,
+    message: body2.msg || body2.message || '',
+    feedsHtml: body2.result?.feeds || body2.data?.feeds || ''
+  }
+}
+
+/**
+ * 拉「好友动态」时间线（QQ 空间网页右上「动态」入口对应的接口）。
+ *
+ * 这个接口返回 `_Callback({...})` 包裹的 JS object literal —— 单引号、
+ * unquoted key、嵌入大量 \x3C 转义的 HTML，标准 JSON.parse 解析不了。
+ * 我们用 Function('return (...)') 在主进程内 eval（vs renderer eval 风险
+ * 等价；服务器本身已经被信任），抽出 data 数组 + 翻页指针。
+ *
+ * @param {string} uin    cookie uin (带 o 前缀)
+ * @param {string} p_skey 登录 skey
+ * @param {string} hostUin 浏览者自己的 QQ（feeds3 只看自己接收到的好友动态）
+ * @param {object} pager   { pagenum, begintime, externparam, count }
+ */
+export async function feeds3_html_more(uin, p_skey, hostUin, pager = {}) {
+  const { pagenum = 1, begintime = 0, externparam = 'undefined', count = 10, dayspac = 0, scope = 0 } = pager
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/feeds3_html_more'
+  const params = {
+    uin: hostUin || rawUin(uin),
+    scope,
+    view: 1,
+    daylist: '',
+    uinlist: '',
+    gid: '',
+    flag: 1,
+    filter: 'all',
+    applist: 'all',
+    refresh: 0,
+    aisortEndTime: 0,
+    aisortOffset: 0,
+    getAisort: 0,
+    aisortBeginTime: 0,
+    pagenum,
+    externparam,
+    firstGetGroup: 0,
+    icServerTime: 0,
+    mixnocache: 0,
+    scene: 0,
+    begintime: begintime || 'undefined',
+    count,
+    dayspac: dayspac || 'undefined',
+    sidomain: 'qzonestyle.gtimg.cn',
+    useutf8: 1,
+    outputhtmlfeed: 1,
+    rd: Math.random(),
+    usertime: Date.now(),
+    g_tk: getGTK(p_skey)
+  }
+
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${hostUin || rawUin(uin)}/infocenter`
+    }
+  })
+
+  // axios 全局 interceptor 已经把 _Callback({...}) 解包成 object，并把
+  // 内部 JS object literal 也 eval 过了。data 长这样：
+  //   { code, subcode, message, data: { main: {...}, data: [...] } }
+  const body = response.data || {}
+  const inner = body.data || {}
+  const main = inner.main || {}
+  const list = Array.isArray(inner.data) ? inner.data : []
+
+  return {
+    code: body.code ?? 0,
+    hasMore: !!main.hasMoreFeeds,
+    pager: {
+      pagenum: main.pagenum ? Number(main.pagenum) : pagenum + 1,
+      begintime: main.begintime ? Number(main.begintime) : 0,
+      externparam: main.externparam || '',
+      dayspac: main.dayspac ? Number(main.dayspac) : 0
+    },
+    feeds: list
+  }
+}
+
+/**
+ * 拉「我的主页 / 好友主页」动态。
+ *
+ * 官方主页首屏不是 emotion_cgi_msglist_v6，而是先加载 feeds_html_module，
+ * 响应里同时包含 _feedsdata 元数据和完整 feed HTML。后续分页走
+ * feeds_html_act_all，并复用同一套 outputhtmlfeed 结构。
+ */
+export async function feeds_home_html(uin, p_skey, hostUin, pager = {}) {
+  const { start = 0, count = 10 } = pager
+  const loginUin = rawUin(uin)
+  const targetUin = hostUin || loginUin
+
+  if (!targetUin || !loginUin || !p_skey) {
+    return { code: -1, message: '登录态缺失', hasMore: false, pager: { start, count }, feeds: [] }
+  }
+
+  if (Number(start) <= 0) {
+    const url =
+      'https://user.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/feeds_html_module'
+    const params = {
+      g_iframeUser: 1,
+      i_uin: targetUin,
+      i_login_uin: loginUin,
+      mode: 4,
+      previewV8: 1,
+      style: 35,
+      version: 8,
+      needDelOpr: true,
+      transparence: true,
+      hideExtend: false,
+      showcount: count,
+      MORE_FEEDS_CGI: 'http://ic2.s8.qzone.qq.com/cgi-bin/feeds/feeds_html_act_all',
+      refer: 2,
+      paramstring: 'os-mac|100'
+    }
+    const response = await request.get(url, {
+      params,
+      headers: {
+        Cookie: `uin=${uin};p_skey=${p_skey}`,
+        Referer: `https://user.qzone.qq.com/${targetUin}/main`
+      },
+      responseType: 'text'
+    })
+    const html = String(response.data || '')
+    const payload = extractHomeModuleData(html)
+    if (!payload) {
+      return {
+        code: -1,
+        message: homeHtmlErrorMessage(html),
+        hasMore: false,
+        pager: { start, count },
+        feeds: []
+      }
+    }
+    return normalizeHomeFeedsPayload(payload, html, { start, count })
+  }
+
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/feeds_html_act_all'
+  const params = {
+    uin: targetUin,
+    hostuin: targetUin,
+    scope: 0,
+    filter: 'all',
+    flag: 1,
+    refresh: 0,
+    firstGetGroup: 0,
+    mixnocache: 0,
+    scene: 0,
+    begintime: 'undefined',
+    icServerTime: '',
+    start,
+    count,
+    sidomain: 'qzonestyle.gtimg.cn',
+    useutf8: 1,
+    outputhtmlfeed: 1,
+    refer: 2,
+    r: Math.random(),
+    g_tk: getGTK(p_skey)
+  }
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${targetUin}/main`
+    }
+  })
+  return normalizeHomeFeedsPayload(response.data || {}, '', { start, count })
+}
+
+/**
  * 删除动态
  * @param uin qq
  * @param p_skey 登录后有
@@ -455,4 +780,167 @@ export async function cgi_get_albuminfo_v2(uin, p_skey, hostUin, albumId) {
     }
   })
   return response.data
+}
+
+/**
+ * 顶部 5 类动态未读计数（动态 tab 角标用）
+ * 返回：{ myFeeds / friendFeeds / specialCareFeeds / aboutHostFeeds / replyHostFeeds }_new_cnt
+ */
+export async function cgi_get_feeds_count(uin, p_skey, hostUin) {
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/cgi_get_feeds_count.cgi'
+  const params = {
+    uin: hostUin || rawUin(uin),
+    rd: Math.random(),
+    g_tk: getGTK(p_skey)
+  }
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${hostUin || rawUin(uin)}`
+    }
+  })
+  // axios interceptor 已解 callback({...})
+  const body = response.data || {}
+  return {
+    code: body.code ?? 0,
+    counts: body.data || {}
+  }
+}
+
+/**
+ * 「与我相关」时间线（feeds2_html_pav_all）
+ *   - scope=1 固定，分页用 offset / count
+ *   - 返回结构与 feeds3_html_more 类似，但 main.hasMoreFeeds + main.offset
+ */
+export async function feeds2_html_pav_all(uin, p_skey, hostUin, pager = {}) {
+  const { offset = 0, count = 10, beginTime = 0, endTime = 0 } = pager
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/feeds2_html_pav_all'
+  const params = {
+    uin: hostUin || rawUin(uin),
+    begin_time: beginTime,
+    end_time: endTime,
+    getappnotification: 1,
+    getnotifi: 1,
+    has_get_key: 0,
+    offset,
+    set: 0,
+    count,
+    useutf8: 1,
+    outputhtmlfeed: 1,
+    grz: Math.random(),
+    scope: 1,
+    g_tk: getGTK(p_skey)
+  }
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${hostUin || rawUin(uin)}`
+    }
+  })
+  const body = response.data || {}
+  const inner = body.data || {}
+  const main = inner.main || {}
+  const list = Array.isArray(inner.data) ? inner.data : []
+  return {
+    code: body.code ?? 0,
+    hasMore: !!main.hasMoreFeeds,
+    pager: {
+      offset: main.offset ? Number(main.offset) : offset + count,
+      hostMore: main.host_more || ''
+    },
+    feeds: list
+  }
+}
+
+/**
+ * 「我的收藏」列表（fav.qzone.qq.com/cgi-bin/get_fav_list）
+ *   - type: 0=全部 / 1=网页 / 2=本地图片 / 3=日志 / 4=相册照片 / 5=说说 / 6=文字 / 7=分享
+ *   - 返回结构：{ total_num, fav_list: [{ id, type, create_time, title, abstract, desp,
+ *                                       img_list[], origin_img_list[], shuoshuo_info{owner_uin,owner_nam,...},
+ *                                       user_agent, ... }] }
+ */
+export async function get_fav_list(uin, p_skey, opts = {}) {
+  const { type = 0, start = 0, num = 10 } = opts
+  // 注意：必须走 user.qzone.qq.com 域的 proxy，不走 h5.qzone.qq.com。
+  // h5 域服务器对 cookie 校验严格（需要 ptcz / pt4_token 等），
+  // 而主进程 axios 只能给 uin / p_skey；同 CGI 走 user 域 proxy 同样 200，cookie 校验更宽松。
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/fav.qzone.qq.com/cgi-bin/get_fav_list'
+  const params = {
+    uin: rawUin(uin),
+    type,
+    start,
+    num,
+    inCharset: 'utf-8',
+    outCharset: 'utf-8',
+    need_nick: 1,
+    need_cnt: start === 0 ? 1 : 0,
+    need_new_user: start === 0 ? 1 : 0,
+    fupdate: 1,
+    callback: '_Callback',
+    random: Math.random(),
+    g_tk: getGTK(p_skey)
+  }
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `uin=${uin}; p_uin=${uin}; skey=${p_skey}; p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${rawUin(uin)}/myhome/favorite`,
+      Host: 'user.qzone.qq.com'
+    }
+  })
+  const body = response.data || {}
+  const data = body.data && typeof body.data === 'object' ? body.data : body
+  return {
+    code: body.code ?? 0,
+    total: Number(data.total_num) || 0,
+    favList: Array.isArray(data.fav_list) ? data.fav_list : []
+  }
+}
+
+/**
+ * 「那年今日」时间线（feeds2_html_today_lastyear）
+ *   - year 是要回顾的年份；count 一次取多少条
+ *   - 数据为空时 main.host_more / friend_more 会给出友好提示文案
+ */
+export async function feeds2_html_today_lastyear(uin, p_skey, opts = {}) {
+  const { year, count = 8, mode = 1 } = opts
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/feeds2_html_today_lastyear'
+  const params = {
+    login_uin: rawUin(uin),
+    mode,
+    refer: 'qzone',
+    useutf8: 1,
+    count,
+    year: year ?? new Date().getFullYear() - 1,
+    g_tk: getGTK(p_skey)
+  }
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${rawUin(uin)}`
+    }
+  })
+  const body = response.data || {}
+  const inner = body.data || {}
+  const main = inner.main || {}
+  const list = [
+    ...(Array.isArray(inner.data) ? inner.data : []),
+    ...(Array.isArray(inner.host_data) ? inner.host_data : []),
+    ...(Array.isArray(inner.friend_data) ? inner.friend_data : []),
+    ...(Array.isArray(inner.about_data) ? inner.about_data : []),
+    ...(Array.isArray(inner.firstpage_data) ? inner.firstpage_data : [])
+  ].filter((item) => item && typeof item === 'object' && item.html)
+  return {
+    code: body.code ?? 0,
+    hasMore: !!(main.hasMoreFeeds_0 || main.hasMoreFeeds_1) && list.length > 0,
+    emptyHint: main.friend_more || main.host_more || '',
+    feeds: list
+  }
 }

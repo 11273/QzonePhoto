@@ -202,18 +202,40 @@ const SPECIAL_EMOJI_MAP = {
   // 例如: 'e400846': 'emoji_400846'
 }
 
+const cleanupMentionNick = (nick) => {
+  const cleaned = String(nick || '')
+    .replace(/\[em\]e\d+\[\/em\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned || String(nick || '')
+}
+
+const normalizeRichTextInput = (value) =>
+  String(value || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t\f\v]+\n/g, '\n')
+    .replace(/\n[ \t\f\v]+/g, '\n')
+    .replace(/[ \t\f\v]*\n[ \t\f\v]*(?=(?:\[em\]e\d+\[\/em\]|@\{uin:))/g, '')
+    .replace(/(\[em\]e\d+\[\/em\]|@\{uin:[^}]+\})[ \t\f\v]*\n[ \t\f\v]*/g, '$1')
+    .replace(/[ \t\f\v]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
 /**
  * 解析富文本内容（同时处理@提及和表情）
  * @param {string} text - 原始文本
  * @returns {Array} 解析后的片段数组
  */
 export const parseRichText = (text) => {
+  text = normalizeRichTextInput(text)
   if (!text) return []
 
   const segments = []
   // 同时匹配 @提及 和 表情
   // 使用联合正则表达式一次性处理所有特殊内容
-  const combinedRegex = /@\{uin:(\d+),nick:([^,}]+)(?:,(?:who|auto):(\d+))?\}|\[em\](e\d+)\[\/em\]/g
+  const combinedRegex = /@\{uin:([\w-]+)((?:,[^}]*)?)\}|\[em\](e\d+)\[\/em\]/g
   let lastIndex = 0
   let match
 
@@ -228,16 +250,19 @@ export const parseRichText = (text) => {
 
     // 判断是@提及还是表情
     if (match[1]) {
+      const attrs = match[2] || ''
+      const nick = attrs.match(/(?:^|,)nick:([^,}]*)/)?.[1] || ''
+      const who = attrs.match(/(?:^|,)who:(\d+)/)?.[1] || '0'
       // @提及
       segments.push({
         type: 'mention',
         uin: match[1],
-        nick: match[2],
-        who: match[3] || '0'
+        nick: cleanupMentionNick(nick) || match[1],
+        who
       })
-    } else if (match[4]) {
+    } else if (match[3]) {
       // 表情
-      const emojiCode = match[4]
+      const emojiCode = match[3]
       const imageUrl = SPECIAL_EMOJI_MAP[emojiCode]
         ? getQQEmojiUrl(SPECIAL_EMOJI_MAP[emojiCode])
         : getQQEmojiUrl(emojiCode)

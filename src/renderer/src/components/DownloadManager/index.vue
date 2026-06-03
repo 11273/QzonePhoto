@@ -202,6 +202,9 @@
               <div class="task-container">
                 <!-- 左侧：缩略图 -->
                 <div class="task-thumbnail">
+                  <div v-if="privacyStore.privacyMode" class="privacy-overlay">
+                    <el-icon class="privacy-icon"><Hide /></el-icon>
+                  </div>
                   <el-image
                     :key="`img_${task.id}`"
                     :src="task.thumbnail_url"
@@ -212,7 +215,7 @@
                   >
                     <template #error>
                       <div class="thumbnail-placeholder">
-                        <el-icon>{{ getTaskIcon(task.type) }}</el-icon>
+                        <el-icon><component :is="getTaskIcon(task.type)" /></el-icon>
                       </div>
                     </template>
                     <template #placeholder>
@@ -390,9 +393,13 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Folder, VideoPlay, VideoPause, Refresh, Delete, Loading } from '@element-plus/icons-vue'
+import { Folder, VideoPlay, VideoPause, Refresh, Delete, Loading, Hide } from '@element-plus/icons-vue'
+import { Image as LucideImage, Archive, Clapperboard, FileText } from '@lucide/vue'
 import Pagination from '@renderer/components/Pagination/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
+import { usePrivacyStore } from '@renderer/store/privacy.store'
+
+const privacyStore = usePrivacyStore()
 import { formatTaskCount, formatTaskName } from '@renderer/utils/formatters'
 import { APP_NAME } from '@shared/const'
 
@@ -794,12 +801,12 @@ const getTaskStatusText = (status) => {
 
 const getTaskIcon = (type) => {
   const iconMap = {
-    image: '🖼️',
-    zip: '📁',
-    video: '🎬',
-    document: '📄'
+    image: LucideImage,
+    zip: Archive,
+    video: Clapperboard,
+    document: FileText
   }
-  return iconMap[type] || '📄'
+  return iconMap[type] || FileText
 }
 
 const getTasksByStatus = (status) => {
@@ -1652,6 +1659,24 @@ const handleReplaceSettingChange = async (newValue) => {
                 overflow: hidden;
                 position: relative;
                 background: rgba(255, 255, 255, 0.05);
+
+                .privacy-overlay {
+                  position: absolute;
+                  inset: 0;
+                  z-index: 3;
+                  background: rgba(0, 0, 0, 0.8);
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  backdrop-filter: blur(2px);
+                  pointer-events: none;
+                  border-radius: inherit; /* 跟随父 .task-thumbnail 圆角 */
+
+                  .privacy-icon {
+                    font-size: 16px;
+                    color: #e6a23c;
+                  }
+                }
 
                 .thumbnail-image {
                   width: 100%;

@@ -1,0 +1,392 @@
+/* =============================================================
+   时间线 + 卡片设计语言
+   ----
+   照片(photo-module) / 说说(feeds-module) 共用的基础视觉。
+   不带 scoped，挂在全局 styles 里两个组件都能命中。
+
+   设计原则（"优雅大气"）：
+   1. 玻璃质感 —— 卡片半透明 + backdrop blur，看得到背景动画
+   2. 主轴渐变 —— 时间线不是单调一根灰线，而是顶/尾透明、中段
+      蓝色的渐变，自然引导视线
+   3. 微动效 —— hover 时卡片提升 + 蓝色光晕 + 圆点放大
+   4. 信息层级 —— 时间/标题/正文/元信息 字号梯度清晰
+   ============================================================= */
+
+/* 顶级容器：左侧时间线主轴 */
+.tl-container {
+  padding: 28px 32px 48px;
+  min-height: 100%;
+  position: relative;
+
+  /* 主轴：3px 渐变线，比 2px 更显层次；用径向渐变让中段更亮 */
+  &::before {
+    content: '';
+    position: absolute;
+    left: 52px;
+    top: 24px;
+    bottom: 24px;
+    width: 3px;
+    background:
+      linear-gradient(
+        180deg,
+        transparent 0%,
+        rgba(96, 165, 250, 0.4) 6%,
+        rgba(96, 165, 250, 0.18) 20%,
+        rgba(96, 165, 250, 0.12) 80%,
+        rgba(96, 165, 250, 0.4) 94%,
+        transparent 100%
+      );
+    border-radius: 2px;
+    box-shadow: 0 0 8px rgba(96, 165, 250, 0.15);
+  }
+}
+
+/* 日期分组头：玻璃 chip，圆点在主轴上 */
+.tl-date-group {
+  margin-top: 24px;
+
+  &:first-child {
+    margin-top: 4px;
+  }
+
+  .tl-date-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 12px;
+    padding-left: 12px;
+    position: relative;
+
+    /* 日期锚点：玻璃球大一号，与 .tl-dot 风格统一 */
+    &::before {
+      content: '';
+      position: absolute;
+      left: 13px;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: radial-gradient(
+        circle at 35% 30%,
+        #bfdbfe 0%,
+        #60a5fa 45%,
+        #2563eb 100%
+      );
+      border: 2px solid var(--ds-bg-0, #141418);
+      box-shadow:
+        0 0 0 2px rgba(96, 165, 250, 0.28),
+        0 0 10px rgba(96, 165, 250, 0.45);
+      z-index: 2;
+    }
+
+    .tl-date-text {
+      margin-left: 28px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      color: rgba(255, 255, 255, 0.85);
+      padding: 4px 14px;
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(8px);
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .tl-date-count {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+    }
+  }
+}
+
+/* 卡片本体：玻璃质感 + hover 微抬升 + 蓝色光晕 */
+.tl-card {
+  position: relative;
+  display: flex;
+  margin: 10px 0 10px 36px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(96, 165, 250, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(96, 165, 250, 0.08);
+
+    .tl-dot {
+      transform: scale(1.25);
+      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25), 0 0 12px rgba(96, 165, 250, 0.45);
+    }
+  }
+}
+
+/* 时间线圆点 */
+.tl-dot-wrap {
+  position: absolute;
+  left: -24px;
+  top: 20px;
+  width: 14px;
+  display: flex;
+  justify-content: center;
+  z-index: 1;
+}
+
+.tl-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  /* 蓝色径向高光，模拟玻璃球质感 */
+  background: radial-gradient(
+    circle at 35% 30%,
+    #93c5fd 0%,
+    #60a5fa 45%,
+    #3b82f6 100%
+  );
+  border: 2px solid var(--ds-bg-0, #141418);
+  box-shadow:
+    0 0 0 2px rgba(96, 165, 250, 0.22),
+    0 0 8px rgba(96, 165, 250, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* 卡片右侧内容 */
+.tl-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 卡片头：时间 + chips + spacer + 操作 */
+.tl-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tl-time {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  letter-spacing: 0.2px;
+  flex-shrink: 0;
+}
+
+/* 通用 chip：玻璃质感 */
+.tl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  transition: background 0.15s, color 0.15s;
+
+  .el-icon {
+    font-size: 11px;
+  }
+
+  /* 私密标识 */
+  &.is-secret {
+    color: #fb923c;
+    background: rgba(251, 146, 60, 0.1);
+    border-color: rgba(251, 146, 60, 0.25);
+  }
+
+  /* 定位标识 */
+  &.is-loc {
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.2);
+  }
+
+  /* 相册标识（可点击） */
+  &.is-album {
+    color: #60a5fa;
+    background: rgba(96, 165, 250, 0.1);
+    border-color: rgba(96, 165, 250, 0.25);
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(96, 165, 250, 0.18);
+    }
+  }
+}
+
+.tl-spacer {
+  flex: 1;
+}
+
+/* 头部操作按钮 */
+.tl-action-btn {
+  font-size: 12px !important;
+  padding: 5px 10px !important;
+  color: rgba(96, 165, 250, 0.9) !important;
+  border-radius: 8px !important;
+  transition: all 0.15s !important;
+
+  &:hover {
+    color: #fff !important;
+    background: rgba(96, 165, 250, 0.15) !important;
+  }
+
+  :deep(.el-icon) {
+    margin-right: 4px;
+  }
+}
+
+/* 媒体网格通用 */
+.tl-media {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 4px;
+}
+
+.tl-media-item {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: zoom-in;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+  }
+
+  &:hover img {
+    transform: scale(1.04);
+  }
+
+  /* 视频角标 */
+  .tl-media-video {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    backdrop-filter: blur(4px);
+  }
+}
+
+/* 「+N」收纳块 */
+.tl-media-more {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: zoom-in;
+  transition: all 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+}
+
+/* 隐私模式 overlay */
+.tl-privacy-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  z-index: 3;
+  border-radius: inherit;
+  pointer-events: none;
+
+  .el-icon {
+    font-size: 20px;
+    color: #e6a23c;
+  }
+  span {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.78);
+  }
+}
+
+/* 底部互动行 */
+.tl-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+
+  .tl-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+
+    &.clickable {
+      cursor: pointer;
+      transition: color 0.15s;
+
+      &:hover {
+        color: #60a5fa;
+      }
+    }
+  }
+}
+
+/* 加载更多 / 末尾 */
+.tl-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+
+  .el-icon {
+    font-size: 16px;
+  }
+}
+
+.tl-end {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 12px;
+}

@@ -11,6 +11,7 @@ import './permission' // permission control
 import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import '@renderer/styles/app-dialog.scss'
+import '@renderer/styles/timeline-card.scss'
 import { ElMessage } from 'element-plus'
 
 import router from './router'

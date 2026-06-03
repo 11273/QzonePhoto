@@ -3,6 +3,48 @@ import { BrowserWindow, screen, session, shell } from 'electron'
 import path, { join } from 'path'
 import { ServiceNames } from '@main/services/service-manager'
 
+const QZONE_PARTITION = 'persist:qzone'
+const QZONE_COOKIE_URLS = [
+  'https://user.qzone.qq.com',
+  'https://qzone.qq.com',
+  'https://i.qq.com',
+  'https://qzs.qq.com'
+]
+
+const rawQqUin = (uin) => String(uin || '').replace(/^o/, '').trim()
+const qqCookieUin = (uin) => {
+  const raw = rawQqUin(uin)
+  return raw ? `o${raw}` : ''
+}
+
+const isQzoneWebUrl = (value) => {
+  try {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol)) return false
+    const host = url.hostname.toLowerCase()
+    return (
+      host === 'user.qzone.qq.com' ||
+      host === 'i.qq.com' ||
+      host === 'qzone.qq.com' ||
+      host.endsWith('.qzone.qq.com') ||
+      host === 'qzs.qq.com' ||
+      host.endsWith('.qzs.qq.com')
+    )
+  } catch {
+    return false
+  }
+}
+
+const normalizeQzoneWebUrl = (value) => {
+  try {
+    const url = new URL(value)
+    if (url.protocol === 'http:') url.protocol = 'https:'
+    return url.toString()
+  } catch {
+    return value
+  }
+}
+
 export class WindowManager {
   static #instance = null
 
@@ -16,11 +58,94 @@ export class WindowManager {
     this.windows = new Map() // 窗口池 {id: BrowserWindow}
     this.mainWindowId = null
     this.services = null // 服务管理器引用
+    this.qzoneAuth = {
+      uin: '',
+      p_skey: '',
+      cookies: {}
+    }
   }
 
   // 设置服务管理器引用
   setServices(services) {
     this.services = services
+  }
+
+  setQzoneAuth(auth = {}) {
+    if (auth.clear) {
+      this.qzoneAuth = {
+        uin: '',
+        p_skey: '',
+        cookies: {}
+      }
+      session
+        .fromPartition(QZONE_PARTITION)
+        .clearStorageData({ storages: ['cookies'] })
+        .catch((error) => {
+          if (is.dev) console.warn('[WindowManager] 清理 QQ 空间 cookie 失败:', error)
+        })
+      return
+    }
+
+    const nextUin = auth.uin ? rawQqUin(auth.uin) : ''
+    const nextPSkey = auth.p_skey ? String(auth.p_skey).trim() : ''
+    const nextCookies =
+      auth.cookies && typeof auth.cookies === 'object' && !Array.isArray(auth.cookies)
+        ? Object.fromEntries(
+            Object.entries(auth.cookies)
+              .filter(([, value]) => value)
+              .map(([key, value]) => [key, String(value)])
+          )
+        : {}
+
+    if (!nextUin && !nextPSkey && !Object.keys(nextCookies).length) return
+
+    this.qzoneAuth = {
+      uin: nextUin || this.qzoneAuth.uin,
+      p_skey: nextPSkey || this.qzoneAuth.p_skey,
+      cookies: {
+        ...this.qzoneAuth.cookies,
+        ...nextCookies
+      }
+    }
+  }
+
+  async _readQzoneCookieMap(ses = session.fromPartition(QZONE_PARTITION)) {
+    const cookieLists = await Promise.all(
+      QZONE_COOKIE_URLS.map((url) => ses.cookies.get({ url }).catch(() => []))
+    )
+    return Object.fromEntries(
+      cookieLists
+        .flat()
+        .filter((cookie) => cookie?.name && cookie?.value)
+        .map((cookie) => [cookie.name, String(cookie.value)])
+    )
+  }
+
+  async _writeQzoneCookies(ses, cookieValues = {}) {
+    const cookiesToSet = Object.entries(cookieValues)
+      .filter(([, value]) => value)
+      .map(([name, value]) => ({ name, value: String(value) }))
+
+    await Promise.all(
+      QZONE_COOKIE_URLS.flatMap((url) =>
+        cookiesToSet.map((cookie) =>
+          ses.cookies
+            .set({
+              url,
+              domain: '.qq.com',
+              path: '/',
+              secure: true,
+              httpOnly: false,
+              ...cookie
+            })
+            .catch((error) => {
+              if (is.dev) {
+                console.warn(`[WindowManager] 写入 QQ 空间 cookie ${cookie.name} 失败:`, error)
+              }
+            })
+        )
+      )
+    )
   }
 
   // 获取主窗口
@@ -68,7 +193,7 @@ export class WindowManager {
         nodeIntegration: false,
         contextIsolation: true,
         webSecurity: true,
-        partition: 'persist:qzone'
+        partition: QZONE_PARTITION
       }
     })
 
@@ -103,6 +228,10 @@ export class WindowManager {
 
     // 处理外部链接
     win.webContents.setWindowOpenHandler((details) => {
+      if (isQzoneWebUrl(details.url)) {
+        this.openQzoneWeb({ url: details.url })
+        return { action: 'deny' }
+      }
       shell.openExternal(details.url)
       return { action: 'deny' }
     })
@@ -115,36 +244,38 @@ export class WindowManager {
         !url.startsWith(process.env['ELECTRON_RENDERER_URL'] || '')
       ) {
         event.preventDefault()
+        if (isQzoneWebUrl(url)) {
+          this.openQzoneWeb({ url })
+          return
+        }
         shell.openExternal(url)
       }
     })
 
     const filter = { urls: ['*://*.qq.com/*', '*://*.qpic.cn/*', '*://*/*'] }
 
-    // session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, cb) => {
-    //   // 根据 URL 设置对应的 referer
-    //   let referer = details.url // 默认设置为请求的 URL 本身
-    //   // 提取域名
-    //   try {
-    //     const url = new URL(details.url)
-    //     referer = url.origin // 设置为请求的源（协议+域名）
-    //   } catch (e) {
-    //     console.error('URL 解析失败:', details.url, e)
-    //   }
-    //   details.requestHeaders['referer'] = referer
-    //   details.requestHeaders['origin'] = referer
-    //   cb({ requestHeaders: details.requestHeaders })
-    // })
-
     // 获取 persist:qzone 对应的 session
-    const qzoneSession = session.fromPartition('persist:qzone')
+    const qzoneSession = session.fromPartition(QZONE_PARTITION)
 
     // 在正确的 session 上监听请求
     qzoneSession.webRequest.onBeforeSendHeaders(filter, (details, cb) => {
       let referer = details.url
+      let origin = details.url
       try {
         const url = new URL(details.url)
         referer = url.origin
+        origin = url.origin
+
+        const isQzoneImage =
+          details.resourceType === 'image' &&
+          (url.hostname.endsWith('qpic.cn') ||
+            url.hostname.includes('photo.store.qq.com') ||
+            url.hostname.includes('qzone.qq.com'))
+
+        if (isQzoneImage) {
+          referer = 'https://user.qzone.qq.com/'
+          origin = 'https://user.qzone.qq.com'
+        }
 
         // 对 photo.store.qq.com 请求注入 qq_photo_key cookie
         if (url.hostname.includes('photo.store.qq.com')) {
@@ -159,8 +290,8 @@ export class WindowManager {
       } catch (e) {
         console.error('URL 解析失败:', details.url, e)
       }
-      details.requestHeaders['referer'] = referer
-      details.requestHeaders['origin'] = referer
+      details.requestHeaders.Referer = referer
+      details.requestHeaders.Origin = origin
       cb({ requestHeaders: details.requestHeaders })
     })
 
@@ -188,6 +319,90 @@ export class WindowManager {
     }
 
     return win
+  }
+
+  async openQzoneWeb({ url, uin, p_skey, cookies, targetUin } = {}) {
+    const targetUrl =
+      url && isQzoneWebUrl(url)
+        ? normalizeQzoneWebUrl(url)
+        : targetUin
+          ? `https://user.qzone.qq.com/${String(targetUin).replace(/^o/, '')}`
+          : 'https://user.qzone.qq.com'
+
+    const qzoneWindow = new BrowserWindow({
+      width: 1400,
+      height: 900,
+      minWidth: 900,
+      minHeight: 650,
+      title: 'QQ空间',
+      frame: true,
+      autoHideMenuBar: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        webSecurity: true,
+        allowRunningInsecureContent: false,
+        partition: QZONE_PARTITION
+      }
+    })
+
+    this._registerWindow(qzoneWindow, 'qzone-web')
+
+    qzoneWindow.webContents.setWindowOpenHandler((details) => {
+      if (isQzoneWebUrl(details.url)) {
+        this.openQzoneWeb({ url: details.url })
+        return { action: 'deny' }
+      }
+      shell.openExternal(details.url)
+      return { action: 'deny' }
+    })
+
+    qzoneWindow.webContents.on('will-navigate', (event, nextUrl) => {
+      if (isQzoneWebUrl(nextUrl)) return
+      try {
+        const parsed = new URL(nextUrl)
+        if (parsed.protocol === 'https:' && parsed.hostname.endsWith('.qq.com')) return
+      } catch {
+        // ignore parse errors and block below
+      }
+      event.preventDefault()
+      shell.openExternal(nextUrl)
+    })
+
+    const ses = qzoneWindow.webContents.session
+    const sessionCookies = await this._readQzoneCookieMap(ses)
+    const providedCookies =
+      cookies && typeof cookies === 'object' && !Array.isArray(cookies)
+        ? cookies
+        : {}
+    const authCookies = {
+      ...sessionCookies,
+      ...this.qzoneAuth.cookies,
+      ...providedCookies
+    }
+    const authUin = rawQqUin(
+      uin || this.qzoneAuth.uin || authCookies.p_uin || authCookies.uin || authCookies.pt2gguin
+    )
+    const authPSkey = p_skey || this.qzoneAuth.p_skey || authCookies.p_skey || ''
+    const cookieUin = qqCookieUin(authUin)
+    const cookieValues = {
+      ...authCookies,
+      ...(cookieUin ? { uin: cookieUin, p_uin: cookieUin } : {}),
+      ...(authPSkey ? { p_skey: authPSkey } : {})
+    }
+
+    if (authUin || authPSkey || Object.keys(cookieValues).length) {
+      this.setQzoneAuth({ uin: authUin, p_skey: authPSkey, cookies: cookieValues })
+      await this._writeQzoneCookies(ses, cookieValues)
+    }
+
+    await qzoneWindow.loadURL(targetUrl)
+
+    if (is.dev) {
+      qzoneWindow.webContents.openDevTools()
+    }
+
+    return qzoneWindow
   }
 
   // 创建通用窗口

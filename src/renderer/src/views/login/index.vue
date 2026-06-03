@@ -14,7 +14,7 @@
             <el-icon :size="40" class="is-loading">
               <Loading />
             </el-icon>
-            <span class="text-white text-lg">正在登录中...</span>
+            <span class="text-white text-lg">{{ loginMessage }}</span>
           </div>
         </div>
 
@@ -60,7 +60,7 @@
         </div>
 
         <el-text v-if="msg" type="info" size="small">{{ msg }}</el-text>
-        <p :class="{ 'opacity-50': isLoggingIn }">使用QQ手机版扫码登录，或点击头像授权登录。</p>
+        <p :class="{ 'opacity-50': isLoggingIn }">扫码或点击下方头像快速登录</p>
         <!-- 本地账号头像列表 -->
         <div class="w-full">
           <el-scrollbar>
@@ -110,6 +110,7 @@ let scanTimer = null // 用于监听扫码状态
 let localAccountsTimer = null // 用于定时刷新本地账号列表
 const localAccounts = ref([]) // 本地账号列表
 const isLoggingIn = ref(false) // 专门用于头像登录的等待状态
+const loginMessage = ref('正在登录中...')
 const scanStatus = ref('waiting') // 扫码状态: waiting(待扫码), scanned(已扫码待确认), expired(已过期)
 let previousScanStatus = 'waiting' // 记录上一次的状态，用于检测取消扫码
 
@@ -163,12 +164,25 @@ const checkScanStatus = () => {
 
       if (code == 0) {
         // 登录成功
-        msg.value = message || '登录成功'
+        isLoggingIn.value = true
+        loading.value = true
+        loginMessage.value = '登录成功，正在进入空间...'
+        msg.value = message || '登录成功，正在进入空间...'
         scanStatus.value = 'success'
         clearTimers() // 停止所有定时器
-        userStore.login(data).then(() => {
-          router.replace('/')
-        })
+        try {
+          await userStore.login(data)
+          await router.replace('/')
+        } catch (error) {
+          console.error('扫码登录失败:', error)
+          isLoggingIn.value = false
+          loading.value = false
+          loginMessage.value = '正在登录中...'
+          msg.value = '登录失败，请重试'
+          scanStatus.value = 'waiting'
+          ElMessage.error('登录失败，请重试')
+          setTimeout(() => getQrcode(), 1500)
+        }
       } else if (code == 67) {
         // 二维码认证中 - 已扫码，等待用户确认
         msg.value = message || '请在手机上确认登录'
@@ -211,7 +225,9 @@ const checkScanStatus = () => {
     })
     .finally(() => {
       // 继续轮询
-      scanTimer = setTimeout(() => checkScanStatus(), 1500)
+      if (!isLoggingIn.value && scanStatus.value !== 'success') {
+        scanTimer = setTimeout(() => checkScanStatus(), 1500)
+      }
     })
 }
 
@@ -247,6 +263,7 @@ const loginWithLocalAccount = async (user) => {
   try {
     isLoggingIn.value = true
     loading.value = true
+    loginMessage.value = '正在登录，马上进入空间...'
     msg.value = '正在登录...'
     scanStatus.value = 'waiting' // 重置扫码状态
 
@@ -257,10 +274,12 @@ const loginWithLocalAccount = async (user) => {
     console.log('[loginWithLocalAccount] :>> ', data)
     // 假设 userStore.login 支持传入本地账号数据
     await userStore.login(data.url)
-    router.replace('/')
+    loginMessage.value = '登录成功，正在进入空间...'
+    await router.replace('/')
   } catch (err) {
     console.error('本地账号登录失败:', err)
     msg.value = '登录失败，请重试'
+    loginMessage.value = '正在登录中...'
     ElMessage.error('本地账号登录失败，请重试')
 
     // 登录失败时重新启动二维码轮询
@@ -331,8 +350,8 @@ onUnmounted(() => {
       box-shadow: var(--ds-shadow-lg);
       backdrop-filter: blur(20px);
       p {
-        font-size: 14px;
-        color: var(--ds-text-secondary);
+        font-size: 12px;
+        color: var(--ds-text-tertiary);
       }
     }
 
@@ -346,9 +365,9 @@ onUnmounted(() => {
 
       h3 {
         margin: 0;
-        font-size: 18px;
+        font-size: 22px;
         color: var(--ds-text-primary);
-        font-weight: 600;
+        font-weight: 700;
       }
 
       // 标题右侧的刷新按钮（朴素样式）
@@ -393,8 +412,8 @@ onUnmounted(() => {
         bottom: 0;
         background: linear-gradient(
           135deg,
-          rgba(103, 194, 58, 0.96) 0%,
-          rgba(67, 160, 71, 0.96) 100%
+          rgba(52, 211, 153, 0.94) 0%,
+          rgba(16, 185, 129, 0.94) 100%
         );
         border-radius: 8px;
         display: flex;
@@ -402,7 +421,7 @@ onUnmounted(() => {
         justify-content: center;
         z-index: 10;
         backdrop-filter: blur(3px);
-        box-shadow: 0 4px 16px rgba(103, 194, 58, 0.4);
+        box-shadow: var(--ds-shadow-md);
 
         .success-content {
           display: flex;

@@ -1,1 +1,229 @@
 @import 'tailwindcss';
+
+/* =============================================================
+   全局 UI 抛光层
+   ----
+   只放对所有页面都生效的视觉/交互改进，不要在这里做组件级样式。
+   ============================================================= */
+
+/* === 滚动条统一（暗色细滚动条，hover 时高亮） === */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Element Plus 内嵌 el-scrollbar 自定义 thumb 同步 */
+.el-scrollbar__bar {
+  opacity: 0.4;
+  transition: opacity 0.2s ease;
+}
+.el-scrollbar:hover .el-scrollbar__bar {
+  opacity: 0.85;
+}
+.el-scrollbar__thumb {
+  background-color: rgba(255, 255, 255, 0.18) !important;
+}
+.el-scrollbar__thumb:hover {
+  background-color: rgba(255, 255, 255, 0.32) !important;
+}
+
+/* === 全局可访问性 focus ring（键盘 Tab 才显示，鼠标点击不显示） === */
+*:focus {
+  outline: none;
+}
+*:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.65);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* === Element Plus 按钮微交互：hover 微抬升，active 回弹 === */
+.el-button:not(.is-text):not(.is-disabled) {
+  transition: transform 0.12s ease, box-shadow 0.15s ease, background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+.el-button:not(.is-text):not(.is-disabled):hover {
+  transform: translateY(-1px);
+}
+.el-button:not(.is-text):not(.is-disabled):active {
+  transform: translateY(0);
+}
+
+/* text 类按钮 hover 时给浅色背景（之前部分页面没统一） */
+.el-button.is-text:not(.is-disabled):hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* === 全局过渡：路由/弹层级别 fade === */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* === 图片加载更柔和 === */
+img {
+  -webkit-user-drag: none;
+}
+.el-image__inner {
+  transition: opacity 0.2s ease;
+}
+
+/* === 选区颜色统一 === */
+::selection {
+  background: rgba(96, 165, 250, 0.35);
+  color: #fff;
+}
+
+/* === 隐私保护遮罩统一：大图显示文字，小缩略图只保留图标 === */
+:root {
+  --qz-privacy-media-blur: 14px;
+  --qz-privacy-backdrop-blur: 2px;
+  --qz-privacy-bg: rgba(0, 0, 0, 0.8);
+  --qz-privacy-icon-color: #e6a23c;
+  --qz-privacy-text-color: rgba(230, 162, 60, 0.86);
+}
+
+:where(.qz-privacy-overlay, .privacy-overlay, .tl-privacy-overlay, .mp-thumb-privacy, .fc-privacy) {
+  container-type: size;
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: rgba(255, 255, 255, 0.78);
+  background: var(--qz-privacy-bg) !important;
+  backdrop-filter: blur(var(--qz-privacy-backdrop-blur)) !important;
+  pointer-events: none;
+}
+
+:where(.file-thumbnail, .task-thumbnail, .mp-thumb, .photo-wrapper, .card-image-wrapper):has(
+    > :where(.qz-privacy-overlay, .privacy-overlay, .tl-privacy-overlay, .mp-thumb-privacy, .fc-privacy)
+  )
+  :where(img, video, .thumbnail-image, .thumbnail-video, .el-image__inner) {
+  filter: blur(var(--qz-privacy-media-blur));
+  transition: filter 0.3s ease;
+}
+
+:where(.qz-privacy-overlay, .privacy-overlay, .tl-privacy-overlay, .mp-thumb-privacy, .fc-privacy)
+  :where(.qz-privacy-icon, .privacy-icon, .el-icon) {
+  font-size: 18px !important;
+  color: var(--qz-privacy-icon-color) !important;
+  opacity: 0.92 !important;
+  margin: 0 !important;
+}
+
+:where(.qz-privacy-overlay, .privacy-overlay, .tl-privacy-overlay, .mp-thumb-privacy, .fc-privacy)
+  :where(.qz-privacy-text, .privacy-text, span) {
+  font-size: 11px !important;
+  line-height: 1 !important;
+  font-weight: 500 !important;
+  color: var(--qz-privacy-text-color) !important;
+  margin: 0 !important;
+}
+
+@container (max-width: 96px) {
+  :where(.qz-privacy-overlay, .privacy-overlay, .tl-privacy-overlay, .mp-thumb-privacy, .fc-privacy)
+    :where(.qz-privacy-text, .privacy-text, span) {
+    display: none;
+  }
+
+  :where(.qz-privacy-overlay, .privacy-overlay, .tl-privacy-overlay, .mp-thumb-privacy, .fc-privacy)
+    :where(.qz-privacy-icon, .privacy-icon, .el-icon) {
+    font-size: 14px !important;
+  }
+}
+
+@container (max-height: 72px) {
+  :where(.qz-privacy-overlay, .privacy-overlay, .tl-privacy-overlay, .mp-thumb-privacy, .fc-privacy)
+    :where(.qz-privacy-text, .privacy-text, span) {
+    display: none;
+  }
+
+  :where(.qz-privacy-overlay, .privacy-overlay, .tl-privacy-overlay, .mp-thumb-privacy, .fc-privacy)
+    :where(.qz-privacy-icon, .privacy-icon, .el-icon) {
+    font-size: 14px !important;
+  }
+}
+
+/* === 通用骨架屏（暗色背景） === */
+.skeleton {
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  border-radius: 6px;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    transparent 100%
+  );
+  animation: skeleton-shimmer 1.4s infinite;
+}
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* === el-popover 在暗色主题下统一深色背景 === */
+.el-popover.el-popper {
+  background: rgba(28, 28, 32, 0.98) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+.el-popper__arrow::before {
+  background: rgba(28, 28, 32, 0.98) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* === el-tooltip 同样深色统一 === */
+.el-popper.is-dark {
+  background: rgba(0, 0, 0, 0.92) !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+.el-popper.is-dark .el-popper__arrow::before {
+  background: rgba(0, 0, 0, 0.92) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}

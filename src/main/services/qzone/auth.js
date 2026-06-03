@@ -108,7 +108,7 @@ export class QzoneAuthService {
 
       if (!p_skey || !uin) throw new Error('Required cookies not found')
 
-      return { p_skey, uin }
+      return { p_skey, uin, cookies }
     } catch (error) {
       console.error('Error fetching login info:', error)
       throw error

@@ -4,11 +4,18 @@ import {
   cgi_floatview_photo_list_v2,
   cgi_delpic_multi_v2,
   feeds2_html_picfeed_qqtab,
+  feeds_home_html,
   feeds_delete_cgi,
   cgi_video_get_data,
   cgi_get_albuminfo_v2,
   cgi_get_visitor_simple,
-  feeds2_html_picfeed
+  feeds2_html_picfeed,
+  feeds3_html_more,
+  emotion_cgi_ic_getcomments,
+  cgi_get_feeds_count,
+  feeds2_html_pav_all,
+  feeds2_html_today_lastyear,
+  get_fav_list
 } from '@main/api'
 import { fetchPhotosTolerantly } from './photoTolerance'
 
@@ -154,6 +161,42 @@ export class QzonePhotoService {
   // 获取QQ空间动态（说说）
   async getFeeds({ hostUin, begintime, fuin }, { uin, p_skey }) {
     return await feeds2_html_picfeed_qqtab(uin, p_skey, hostUin, begintime, fuin)
+  }
+
+  // 拉「好友动态」（feeds3_html_more）—— 网页右上「动态」入口的接口
+  //   scope=0: 好友动态；scope=7: 特别关心（同接口换 scope）
+  async getFriendFeeds({ hostUin, pagenum, begintime, externparam, count, dayspac, scope }, { uin, p_skey }) {
+    return await feeds3_html_more(uin, p_skey, hostUin, { pagenum, begintime, externparam, count, dayspac, scope })
+  }
+
+  // 拉「我的主页 / 好友主页」时间线（官方主页 feeds_html_module + feeds_html_act_all）
+  async getHomeFeeds({ hostUin, start, count }, { uin, p_skey }) {
+    return await feeds_home_html(uin, p_skey, hostUin, { start, count })
+  }
+
+  // 拉某条好友动态的评论列表（按需展开"剩余 N 条评论"时调用）
+  async getFeedComments({ topicId, hostUin, feedsType, start, num, sort }, { uin, p_skey }) {
+    return await emotion_cgi_ic_getcomments(uin, p_skey, { topicId, hostUin, feedsType, start, num, sort })
+  }
+
+  // 顶部 5 类动态未读计数
+  async getFeedsCount({ hostUin }, { uin, p_skey }) {
+    return await cgi_get_feeds_count(uin, p_skey, hostUin)
+  }
+
+  // 「与我相关」时间线
+  async getAboutMeFeeds({ hostUin, offset, count, beginTime, endTime }, { uin, p_skey }) {
+    return await feeds2_html_pav_all(uin, p_skey, hostUin, { offset, count, beginTime, endTime })
+  }
+
+  // 「那年今日」时间线
+  async getLastYearFeeds({ year, count, mode }, { uin, p_skey }) {
+    return await feeds2_html_today_lastyear(uin, p_skey, { year, count, mode })
+  }
+
+  // 「我的收藏」列表
+  async getFavList({ type, start, num }, { uin, p_skey }) {
+    return await get_fav_list(uin, p_skey, { type, start, num })
   }
 
   // 删除动态

@@ -5,9 +5,6 @@
       <div v-if="viewMode === 'friend' && currentFriend" key="friend" class="user-section">
         <div class="user-card friend-card">
           <div class="card-header">
-            <div class="friend-bar-back" @click="emit('exit-friend')">
-              <el-icon><ArrowLeft /></el-icon>
-            </div>
             <el-tooltip
               v-if="friendCardInfo"
               placement="bottom"
@@ -206,6 +203,7 @@
               </el-popconfirm>
             </div>
           </div>
+
           <div class="card-stats">
             <div class="stat-grid">
               <div class="stat-item">
@@ -538,17 +536,17 @@
           <!-- 聚合 stats（已加载） -->
           <div v-if="selectedPhotoType === 'my-photos' && photoStats.feedsCount > 0" class="agg-stats">
             <div class="agg-row">
-              <span class="agg-icon">📋</span>
+              <ClipboardList :size="12" class="agg-icon" />
               <span class="agg-key">动态</span>
               <span class="agg-val">{{ photoStats.feedsCount }}</span>
             </div>
             <div class="agg-row">
-              <span class="agg-icon">💬</span>
+              <MessageCircle :size="12" class="agg-icon" />
               <span class="agg-key">评论</span>
               <span class="agg-val">{{ photoStats.commentSum }}</span>
             </div>
             <div class="agg-row">
-              <span class="agg-icon">❤️</span>
+              <Heart :size="12" class="agg-icon" />
               <span class="agg-key">点赞</span>
               <span class="agg-val">{{ photoStats.likeSum }}</span>
             </div>
@@ -649,11 +647,177 @@
             </div>
           </div>
         </div>
+
+        <div v-else-if="currentModule === 'feeds'" class="feeds-side feeds-side-min">
+          <section class="fd-panel fd-cover">
+            <div class="fd-cover-top">
+              <div class="fd-cover-copy">
+                <span class="fd-kicker">{{ feedsStats.activeSourceLabel || '动态' }}</span>
+                <strong>{{ feedsStats.loaded || 0 }} 条动态</strong>
+                <span>{{ feedsPulseText }}</span>
+              </div>
+              <div class="fd-orbit" title="当前页媒体数">
+                <strong>{{ formatFeedsBigNum(feedsStats.mediaCount || 0) }}</strong>
+                <span>媒体</span>
+              </div>
+            </div>
+            <div class="fd-cover-pills">
+              <span>{{ feedsMediaText }}</span>
+              <span>{{ feedsEngagementTotal }} 互动</span>
+              <span>{{ formatFeedsBigNum(feedsStats.viewCount || 0) }} 浏览</span>
+            </div>
+          </section>
+
+          <section v-if="feedsTypeRows.length" class="fd-panel fd-mix">
+            <div class="fd-panel-head">
+              <span>内容比例</span>
+              <em>{{ feedsMediaRate }} 有媒体</em>
+            </div>
+            <div class="fd-mix-track">
+              <span
+                v-for="(row, i) in feedsTypeRows.slice(0, 5)"
+                :key="row.label"
+                :style="{ width: row.percent + '%', background: modColor(i) }"
+                :title="`${row.label} ${row.count}`"
+              ></span>
+            </div>
+            <div class="fd-mix-tags">
+              <span v-for="(row, i) in feedsTypeRows.slice(0, 4)" :key="row.label">
+                <i :style="{ background: modColor(i) }"></i>{{ row.label }} {{ row.count }}
+              </span>
+            </div>
+          </section>
+
+          <section class="fd-panel fd-soft-grid">
+            <div>
+              <span>平均点赞</span>
+              <strong>{{ feedsAvgLike }}</strong>
+            </div>
+            <div>
+              <span>平均评论</span>
+              <strong>{{ feedsAvgComment }}</strong>
+            </div>
+            <div>
+              <span>有浏览</span>
+              <strong>{{ feedsViewedRate }}</strong>
+            </div>
+            <div>
+              <span>作者</span>
+              <strong>{{ feedsUniqueAuthorCount }}</strong>
+            </div>
+          </section>
+
+          <section v-if="feedsActionRows.length" class="fd-panel">
+            <div class="fd-panel-head">
+              <span>与我相关</span>
+              <em>{{ feedsActionRows.length }} 类动作</em>
+            </div>
+            <div class="fd-action-cloud">
+              <span v-for="row in feedsActionRows.slice(0, 6)" :key="row.label">
+                {{ row.label }} <strong>{{ row.count }}</strong>
+              </span>
+            </div>
+          </section>
+
+          <section v-if="feedsStats.topAuthors && feedsStats.topAuthors.length" class="fd-panel">
+            <div class="fd-panel-head">
+              <span>常出现的人</span>
+              <em>{{ feedsUniqueAuthorCount }} 人</em>
+            </div>
+            <div class="fd-people-stack">
+              <a
+                v-for="author in feedsStats.topAuthors.slice(0, 5)"
+                :key="author.uin || author.name"
+                class="fd-person"
+                :href="author.uin ? `https://user.qzone.qq.com/${author.uin}` : undefined"
+                rel="noopener"
+                :title="`${author.name} · ${author.count} 条动态`"
+                @click.prevent="openQzoneProfile(author.uin)"
+              >
+                <img :src="author.avatar" :alt="author.name" referrerpolicy="no-referrer" />
+                <span>{{ author.name }}</span>
+                <strong>{{ author.count }}</strong>
+              </a>
+            </div>
+          </section>
+
+          <section v-if="feedsStats.sourceBadgeRows && feedsStats.sourceBadgeRows.length" class="fd-panel">
+            <div class="fd-panel-head">
+              <span>未读提醒</span>
+            </div>
+            <div class="fd-action-cloud">
+              <span v-for="row in feedsStats.sourceBadgeRows" :key="row.key">
+                {{ row.label }} <strong>{{ row.count > 99 ? '99+' : row.count }}</strong>
+              </span>
+            </div>
+          </section>
+
+          <section v-if="feedsDynamicMod || feedsStats.trend?.length || feedsStats.recentVisitors?.length" class="fd-panel fd-space-card">
+            <div class="fd-panel-head">
+              <span>空间热度</span>
+              <em v-if="feedsDynamicMod">动态 {{ formatFeedsBigNum(feedsDynamicMod.total || 0) }}</em>
+            </div>
+            <div v-if="feedsDynamicMod" class="fd-space-line">
+              <strong>{{ formatFeedsBigNum(feedsDynamicMod.total || 0) }}</strong>
+              <span>动态浏览</span>
+              <em v-if="feedsDynamicMod.today > 0">今日 +{{ feedsDynamicMod.today }}</em>
+            </div>
+            <svg
+              v-if="feedsTrendMax > 0"
+              class="mn-spark mn-spark-area"
+              viewBox="0 0 220 44"
+              preserveAspectRatio="none"
+            >
+              <defs>
+                <linearGradient id="mn-spark-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#60a5fa" stop-opacity="0.32" />
+                  <stop offset="100%" stop-color="#60a5fa" stop-opacity="0" />
+                </linearGradient>
+              </defs>
+              <polygon :points="trendAreaPolygon(feedsStats.trend, 220, 44)" fill="url(#mn-spark-fill)" />
+              <polyline
+                :points="trendPolyline(feedsStats.trend, 220, 44)"
+                fill="none"
+                stroke="#60a5fa"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <circle :cx="220 - 4" :cy="trendLastY(feedsStats.trend, 44)" r="3" fill="#60a5fa" />
+            </svg>
+          </section>
+
+          <section v-if="feedsStats.recentVisitors && feedsStats.recentVisitors.length" class="fd-panel fd-visitors">
+            <div class="fd-panel-head">
+              <span>最近来过</span>
+              <em>{{ feedsStats.recentVisitors.length }}</em>
+            </div>
+            <div class="mn-avatars">
+              <a
+                v-for="v in feedsStats.recentVisitors.slice(0, 12)"
+                :key="v.uin"
+                class="mn-avatar"
+                :class="{ 'is-friend': v.isFriend }"
+                :href="`https://user.qzone.qq.com/${v.uin}`"
+                rel="noopener"
+                :title="`${v.name || v.uin}${v.time ? ' · ' + formatRelativeTime(v.time) : ''}`"
+                @click.prevent="openQzoneProfile(v.uin)"
+              >
+                <img :src="v.img" :alt="v.name" referrerpolicy="no-referrer" />
+                <span v-if="v.haveNewFeeds" class="mn-avatar-dot"></span>
+              </a>
+            </div>
+          </section>
+        </div>
       </el-scrollbar>
     </div>
 
     <!-- 好友抽屉 -->
-    <FriendDrawer :active-friend="currentFriend" @enter-friend="(f) => emit('enter-friend', f)" />
+    <FriendDrawer
+      :active-friend="currentFriend"
+      @enter-friend="(f) => emit('enter-friend', f)"
+      @exit-friend="emit('exit-friend')"
+    />
 
     <!-- 下载管理器弹窗 -->
     <DownloadManager v-model="downloadProgressVisible" />
@@ -690,13 +854,14 @@ import {
   User,
   UserFilled,
   VideoPlay,
-  ArrowLeft,
   Lock,
   Hide,
   Key,
   View,
-  QuestionFilled
+  QuestionFilled,
+  ChatLineRound
 } from '@element-plus/icons-vue'
+import { ClipboardList, MessageCircle, Heart } from '@lucide/vue'
 import { ElMessage } from 'element-plus'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
 import FriendDrawer from './friend-drawer.vue'
@@ -862,7 +1027,9 @@ const selectAlbumItem = (categoryId, album) => {
 
 const props = defineProps({
   viewMode: { type: String, default: 'self' },
-  currentFriend: { type: Object, default: null }
+  currentFriend: { type: Object, default: null },
+  activeModule: { type: String, default: 'album' },
+  photoType: { type: String, default: 'my-photos' }
 })
 
 const emit = defineEmits(['album-selected', 'module-changed', 'enter-friend', 'exit-friend'])
@@ -918,8 +1085,28 @@ watch(
 )
 
 // 当前模块状态
-const currentModule = ref('album') // album, photo, video
+const currentModule = ref('album') // album, photo, video, feeds
 const selectedPhotoType = ref('my-photos')
+
+watch(
+  () => props.activeModule,
+  (module) => {
+    if (module && currentModule.value !== module) {
+      currentModule.value = module
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.photoType,
+  (type) => {
+    if (type && selectedPhotoType.value !== type) {
+      selectedPhotoType.value = type
+    }
+  },
+  { immediate: true }
+)
 
 // 视频统计信息（被 video-module.vue 通过 leftRef.updateVideoStats 推送）
 const videoStats = ref({
@@ -987,7 +1174,8 @@ const PHOTO_MEDIA_OPTIONS = [
 const tabs = [
   { key: 'album', label: '相册', icon: Folder },
   { key: 'photo', label: '照片', icon: Picture },
-  { key: 'video', label: '视频', icon: VideoPlay }
+  { key: 'video', label: '视频', icon: VideoPlay },
+  { key: 'feeds', label: '动态', icon: ChatLineRound }
 ]
 
 // QQ号脱敏显示
@@ -2017,6 +2205,21 @@ const openQzoneWeb = async () => {
   }
 }
 
+const openQzoneProfile = async (targetUin) => {
+  const normalizedUin = String(targetUin || '').replace(/^o/, '')
+  if (!normalizedUin) return
+  try {
+    await window.api.invoke('window:openQzoneWeb', {
+      uin: userStore.Uin,
+      p_skey: userStore.PSkey,
+      targetUin: normalizedUin
+    })
+  } catch (error) {
+    console.error('打开 QQ 空间失败:', error)
+    ElMessage.error('打开 QQ 空间失败')
+  }
+}
+
 // 打开好友 QQ 空间
 const openFriendQzoneWeb = async () => {
   if (!props.currentFriend?.uin) return
@@ -2069,7 +2272,8 @@ watch(
       apiData.value = null
       clickItem.value = null
       selectedAlbumKey.value = ''
-      currentModule.value = 'album'
+      currentModule.value = props.activeModule || currentModule.value
+      selectedPhotoType.value = props.photoType || selectedPhotoType.value
       // 立即清空右侧相册内容，避免残留上一个好友的数据
       emit('album-selected', null)
       nextTick(() => fetchPhotoData())
@@ -2094,12 +2298,175 @@ const updatePhotoStats = (stats) => {
   photoStats.value = { ...photoStats.value, ...stats }
 }
 
-// 暴露方法供父组件调用
+// ============ 「动态」模块：sidebar 数据 ============
+// feeds-module 推两类数据：
+//   1) 当前 sub-tab 的批次聚合（loaded / mediaCount / likeCount / cmtCount / activeSourceLabel）
+//   2) 访客 / 浏览统计（totalViews / todayViews / visitorCount / blockedCount / mods / trend / recentVisitors）
+const feedsStats = reactive({
+  loaded: 0,
+  activeSourceKey: '',
+  activeSourceLabel: '',
+  mediaCount: 0,
+  imageCount: 0,
+  videoCount: 0,
+  cmtCount: 0,
+  likeCount: 0,
+  fwdCount: 0,
+  viewCount: 0,
+  mediaFeedCount: 0,
+  commentedFeedCount: 0,
+  likedFeedCount: 0,
+  viewedFeedCount: 0,
+  downloadableFeedCount: 0,
+  typeCounts: {},
+  actionCounts: {},
+  topAuthors: [],
+  oldestTime: 0,
+  latestTime: 0,
+  sourceBadgeRows: [],
+
+  totalViews: 0,
+  todayViews: 0,
+  visitorCount: 0,
+  blockedCount: 0,
+  mods: [],
+  trend: [],
+  recentVisitors: []
+})
+const updateFeedsStats = (stats) => {
+  if (!stats) return
+  Object.assign(feedsStats, stats)
+}
+
+// 给 30 天 sparkline 归一化用
+const feedsTrendMax = computed(() => Math.max(0, ...(feedsStats.trend || [])))
+
+const feedsDynamicMod = computed(() =>
+  (feedsStats.mods || []).find((m) => Number(m.mod) === 8 || m.name === '动态') || null
+)
+
+const feedsEngagementTotal = computed(() =>
+  (feedsStats.likeCount || 0) + (feedsStats.cmtCount || 0) + (feedsStats.fwdCount || 0)
+)
+
+const feedsUniqueAuthorCount = computed(() => feedsStats.topAuthors?.length
+  ? Math.max(feedsStats.topAuthors.length, Number(feedsStats.uniqueAuthorCount || 0))
+  : Number(feedsStats.uniqueAuthorCount || 0)
+)
+
+const toPercentText = (value, total) => {
+  if (!total) return '0%'
+  return `${Math.round((value / total) * 100)}%`
+}
+
+const feedsAvgLike = computed(() => {
+  const loaded = feedsStats.loaded || 0
+  return loaded ? ((feedsStats.likeCount || 0) / loaded).toFixed((feedsStats.likeCount || 0) >= loaded * 10 ? 0 : 1) : '0'
+})
+const feedsAvgComment = computed(() => {
+  const loaded = feedsStats.loaded || 0
+  return loaded ? ((feedsStats.cmtCount || 0) / loaded).toFixed((feedsStats.cmtCount || 0) >= loaded * 10 ? 0 : 1) : '0'
+})
+const feedsMediaRate = computed(() => toPercentText(feedsStats.mediaFeedCount || 0, feedsStats.loaded || 0))
+const feedsViewedRate = computed(() => toPercentText(feedsStats.viewedFeedCount || 0, feedsStats.loaded || 0))
+const feedsMediaText = computed(() => {
+  const imageCount = Number(feedsStats.imageCount || 0)
+  const videoCount = Number(feedsStats.videoCount || 0)
+  if (!imageCount && !videoCount) return '暂无媒体'
+  if (imageCount && videoCount) return `${imageCount} 图 · ${videoCount} 视频`
+  return imageCount ? `${imageCount} 张照片` : `${videoCount} 个视频`
+})
+const feedsPulseText = computed(() => {
+  const pieces = []
+  if (feedsTimeRangeText.value) pieces.push(feedsTimeRangeText.value)
+  if (feedsUniqueAuthorCount.value) pieces.push(`${feedsUniqueAuthorCount.value} 人`)
+  if (feedsEngagementTotal.value) pieces.push(`${feedsEngagementTotal.value} 次互动`)
+  return pieces.length ? pieces.join(' · ') : '继续滚动会补全这一页'
+})
+
+const feedsTypeRows = computed(() => {
+  const entries = Object.entries(feedsStats.typeCounts || {})
+    .map(([label, count]) => ({ label, count: Number(count) || 0 }))
+    .filter((row) => row.count > 0)
+    .sort((a, b) => b.count - a.count)
+  const total = Math.max(1, entries.reduce((sum, row) => sum + row.count, 0))
+  return entries.map((row) => ({
+    ...row,
+    percent: Math.max(6, Math.round((row.count / total) * 100))
+  }))
+})
+
+const feedsActionRows = computed(() =>
+  Object.entries(feedsStats.actionCounts || {})
+    .map(([label, count]) => ({ label, count: Number(count) || 0 }))
+    .filter((row) => row.count > 0)
+    .sort((a, b) => b.count - a.count)
+)
+
+const feedsTimeRangeText = computed(() => {
+  const latest = Number(feedsStats.latestTime || 0)
+  const oldest = Number(feedsStats.oldestTime || 0)
+  if (!latest && !oldest) return ''
+  if (latest && oldest && latest !== oldest) {
+    const days = Math.max(1, Math.ceil((latest - oldest) / 86400))
+    return days <= 1 ? '今天范围' : `跨度 ${days} 天`
+  }
+  return formatRelativeTime(latest || oldest)
+})
+
+// 模块颜色（蓝紫青绿 主调，按 i 循环）—— 跟 60a5fa 主色保持同色系
+const MOD_PALETTE = ['#60a5fa', '#a78bfa', '#34d399', '#fbbf24', '#f87171', '#22d3ee', '#94a3b8']
+const modColor = (i) => MOD_PALETTE[i % MOD_PALETTE.length]
+
+// 12345 → 1.2万；100000 → 10万
+const formatFeedsBigNum = (n) => {
+  if (!n && n !== 0) return ''
+  if (n < 10000) return String(n)
+  return (n / 10000).toFixed(n < 100000 ? 1 : 0) + '万'
+}
+
+// 把 trend 数组（N 天）转成 SVG polyline 的 points 字符串
+const trendPolyline = (arr, w, h) => {
+  if (!arr || !arr.length) return ''
+  const max = Math.max(...arr, 1)
+  const step = w / Math.max(arr.length - 1, 1)
+  return arr.map((v, i) => `${(i * step).toFixed(1)},${(h - (v / max) * (h - 4) - 2).toFixed(1)}`).join(' ')
+}
+
+// 同样的归一化，但闭合到底部形成填充多边形
+const trendAreaPolygon = (arr, w, h) => {
+  if (!arr || !arr.length) return ''
+  const line = trendPolyline(arr, w, h)
+  return `0,${h} ${line} ${w},${h}`
+}
+
+const trendLastY = (arr, h) => {
+  if (!arr || !arr.length) return h / 2
+  const max = Math.max(...arr, 1)
+  return h - (arr[arr.length - 1] / max) * (h - 4) - 2
+}
+
+// 把秒级时间戳转成 "刚刚 / 3分钟前 / 2小时前 / 昨天 / N 天前 / M月D日"
+const formatRelativeTime = (sec) => {
+  if (!sec) return ''
+  const t = Number(sec)
+  const now = Math.floor(Date.now() / 1000)
+  const diff = now - t
+  if (diff < 60) return '刚刚'
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
+  if (diff < 86400 * 2) return '昨天'
+  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} 天前`
+  const d = new Date(t * 1000)
+  return `${d.getMonth() + 1}月${d.getDate()}日`
+}
+
 defineExpose({
   selectAlbumById,
   findAlbumById,
   updateVideoStats,
   updatePhotoStats,
+  updateFeedsStats, // FeedsModule 调用回填统计
   videoFilters,
   photoFilters,
   menuList // 暴露分类后的相册列表给 UploadDialog 切换上传目标
@@ -3161,13 +3528,855 @@ defineExpose({
   }
 }
 
-/* 视频/照片 sidebar 通用 */
+/* 视频/照片/说说 sidebar 通用 */
 .video-side,
-.photo-side {
+.photo-side,
+.feeds-side {
   padding: 12px 10px 18px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* ===== 「好友动态」sidebar · 现代极简方案 (mn-*) =====
+   设计原则：无卡片 / 大数字 / hairline 分区 / 单色锚 / tabular-nums。
+   token: 主蓝 #60a5fa（已有），警示 #f59e0b（新增，仅 KPI 被挡 > 0 时用） */
+
+.feeds-side-min {
+  padding: 8px 6px 24px !important;
+  gap: 8px !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.fd-panel {
+  position: relative;
+  overflow: hidden;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.022)),
+    rgba(12, 15, 22, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+.fd-cover {
+  padding: 12px;
+  border-color: rgba(96, 165, 250, 0.14);
+  background:
+    radial-gradient(circle at 86% 12%, rgba(52, 211, 153, 0.14), transparent 34%),
+    linear-gradient(135deg, rgba(96, 165, 250, 0.15), rgba(167, 139, 250, 0.065) 45%, rgba(255, 255, 255, 0.025));
+}
+.fd-cover-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px;
+  align-items: center;
+  gap: 10px;
+}
+.fd-cover-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+
+  strong {
+    color: rgba(255, 255, 255, 0.96);
+    font-size: 22px;
+    font-weight: 680;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  span:last-child {
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.48);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+.fd-kicker {
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 7px;
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  border-radius: 999px;
+  color: rgba(147, 197, 253, 0.95);
+  background: rgba(96, 165, 250, 0.1);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fd-orbit {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid rgba(52, 211, 153, 0.32);
+  border-radius: 50%;
+  color: rgba(220, 252, 231, 0.96);
+  background:
+    radial-gradient(circle, rgba(52, 211, 153, 0.22), rgba(52, 211, 153, 0.06) 58%, transparent 59%),
+    rgba(255, 255, 255, 0.035);
+  font-variant-numeric: tabular-nums;
+
+  strong {
+    margin-top: 2px;
+    color: rgba(220, 252, 231, 0.96);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  span {
+    margin-top: -12px;
+    color: rgba(220, 252, 231, 0.58);
+    font-size: 9px;
+    font-weight: 650;
+    line-height: 1;
+  }
+}
+.fd-cover-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+
+  span {
+    min-width: 0;
+    padding: 4px 7px;
+    border-radius: 999px;
+    color: rgba(255, 255, 255, 0.66);
+    background: rgba(255, 255, 255, 0.055);
+    font-size: 11px;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+}
+.fd-vibe {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+  padding: 9px 10px;
+}
+.fd-vibe-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 12px;
+
+  strong {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 13px;
+    font-weight: 680;
+    font-variant-numeric: tabular-nums;
+  }
+}
+.fd-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  align-self: center;
+  background: #60a5fa;
+  box-shadow: 0 0 12px rgba(96, 165, 250, 0.45);
+}
+.fd-dot.is-video {
+  background: #a78bfa;
+  box-shadow: 0 0 12px rgba(167, 139, 250, 0.42);
+}
+.fd-dot.is-view {
+  background: #fbbf24;
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.36);
+}
+.fd-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 9px;
+
+  span {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  em {
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.38);
+    font-size: 10px;
+    font-style: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+.fd-mix-track {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+
+  span {
+    min-width: 4px;
+  }
+}
+.fd-mix-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 8px;
+
+  span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+}
+.fd-soft-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+
+  div {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 7px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  span {
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong {
+    color: rgba(255, 255, 255, 0.88);
+    font-size: 13px;
+    font-weight: 680;
+    font-variant-numeric: tabular-nums;
+  }
+}
+.fd-action-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    max-width: 100%;
+    padding: 4px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 999px;
+    color: rgba(255, 255, 255, 0.58);
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  strong {
+    color: rgba(255, 255, 255, 0.88);
+    font-weight: 680;
+    font-variant-numeric: tabular-nums;
+  }
+}
+.fd-people-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fd-person {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+
+  img {
+    display: block;
+    width: 24px;
+    height: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 50%;
+    object-fit: cover;
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  span {
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.66);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong {
+    padding: 2px 6px;
+    border-radius: 999px;
+    color: rgba(147, 197, 253, 0.95);
+    background: rgba(96, 165, 250, 0.08);
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &:hover span {
+    color: rgba(147, 197, 253, 0.96);
+  }
+}
+.fd-space-card {
+  padding-bottom: 8px;
+}
+.fd-space-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-bottom: 6px;
+
+  strong {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 16px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  span {
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 11px;
+  }
+
+  em {
+    margin-left: auto;
+    color: #34d399;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 650;
+  }
+}
+.fd-visitors {
+  padding-bottom: 12px;
+}
+
+.mn-section {
+  padding: 14px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+
+  &:first-child { border-top: none; }
+}
+
+.mn-h {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0 0 10px;
+}
+
+/* 区块标题行：左标题 + 右副标题（小数字） */
+.mn-h-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 10px;
+}
+.mn-h-row .mn-h { margin: 0; }
+.mn-h-sub {
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- KPI 区 ---- */
+.mn-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 10px;
+}
+.mn-kpis-3 { grid-template-columns: 1fr 1fr 1fr; }
+.mn-kpi {
+  position: relative;
+  padding-left: 10px;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 4px;
+    width: 3px;
+    border-radius: 2px;
+    background: linear-gradient(180deg, rgba(96, 165, 250, 0.55), rgba(96, 165, 250, 0.12));
+  }
+
+  /* 今日 KPI：左色条更亮（锚点：今天） */
+  &.mn-kpi-today::before {
+    background: linear-gradient(180deg, #60a5fa, rgba(96, 165, 250, 0.3));
+  }
+}
+.mn-kpi-lab {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+  margin-bottom: 3px;
+}
+.mn-kpi-num {
+  font-size: 22px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+/* 被挡上标（紧贴访客数后面，挂在右上） */
+.mn-kpi-blk {
+  font-size: 9px;
+  font-weight: 600;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border-radius: 3px;
+  padding: 1px 4px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ---- 30 天 sparkline ---- */
+.mn-spark {
+  display: block;
+  width: 100%;
+  height: 44px;
+  overflow: visible;
+}
+.mn-spark-area { height: 44px; }
+.mn-empty {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  padding: 6px 0;
+}
+
+/* ---- 模块浏览：堆叠条 + 列表 ---- */
+.mn-stack-bar {
+  display: flex;
+  height: 6px;
+  width: 100%;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  margin-bottom: 10px;
+}
+.mn-stack-seg {
+  height: 100%;
+  min-width: 2px;
+  transition: filter 0.18s;
+  &:hover { filter: brightness(1.25); }
+}
+.mn-mod-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mn-mod-row {
+  display: grid;
+  grid-template-columns: 8px 1fr auto auto auto;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.mn-mod-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  align-self: center;
+}
+.mn-mod-name { color: rgba(255, 255, 255, 0.78); }
+.mn-mod-pct {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  min-width: 28px;
+  text-align: right;
+}
+.mn-mod-num {
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 600;
+  min-width: 36px;
+  text-align: right;
+}
+.mn-mod-today {
+  color: #34d399;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 4px;
+  background: rgba(52, 211, 153, 0.1);
+  border-radius: 3px;
+}
+
+/* ---- 本批次概览 ---- */
+.fd-hero-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.fd-hero-sub {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 11px;
+  font-weight: 500;
+}
+.fd-metric-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.fd-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 0 8px 10px;
+  border-left: 3px solid rgba(96, 165, 250, 0.5);
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.07), rgba(96, 165, 250, 0));
+}
+.fd-metric-value {
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.fd-metric-label {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.fd-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.fd-bar-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.fd-bar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.fd-bar-name {
+  color: rgba(255, 255, 255, 0.78);
+}
+.fd-bar-num {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 600;
+}
+.fd-bar-track {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.fd-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+}
+.fd-compact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+.fd-compact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.fd-compact-label {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+}
+.fd-compact-value {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.fd-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fd-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: rgba(147, 197, 253, 0.95);
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.14);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.35;
+}
+.fd-authors {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.fd-author {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+
+  img {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  &:hover .fd-author-name {
+    color: #93c5fd;
+  }
+}
+.fd-author-name {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fd-author-count {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.fd-context-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+
+  strong {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 14px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+  em {
+    color: #34d399;
+    font-style: normal;
+    font-weight: 600;
+  }
+}
+.mn-batch-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.mn-batch-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 6px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  text-align: center;
+}
+.mn-batch-num {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.mn-batch-lab {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.42);
+  letter-spacing: 0.04em;
+}
+
+/* ---- 最近访客 6×2 ---- */
+.mn-avatars {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px 6px;
+}
+.mn-avatar {
+  position: relative;
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  transition: transform 0.18s ease;
+
+  img {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: rgba(255, 255, 255, 0.06);
+    display: block;
+    outline: 1.5px solid rgba(0, 0, 0, 0.45);
+  }
+  &:hover {
+    transform: scale(1.18);
+    z-index: 10;
+    img { outline-color: #60a5fa; }
+  }
+  &.is-friend img { outline-color: rgba(52, 211, 153, 0.7); }
+}
+.mn-avatar-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2px solid var(--ds-bg-0, #141418);
+}
+
+/* 说说额外的小统计行（评论 / 图 / 视频） */
+.feeds-extra-row {
+  display: flex;
+  justify-content: space-around;
+  padding: 6px 4px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+
+  .feeds-extra {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.55);
+
+    em {
+      font-style: normal;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.92);
+      margin-right: 2px;
+    }
+  }
+}
+
+/* 动态：活跃好友 / 旧版设备列表 通用样式 */
+.device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  .device-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    font-size: 11px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.02);
+    transition: background 0.15s;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .device-name {
+      color: rgba(255, 255, 255, 0.78);
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .device-count {
+      color: #60a5fa;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+  }
+
+  /* 好友行加头像 */
+  .friend-row {
+    .friend-avatar {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      object-fit: cover;
+      background: rgba(255, 255, 255, 0.08);
+    }
+  }
+}
+
+/* 类型 chip 的次数小数字 */
+.chip .chip-num {
+  margin-left: 4px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 10px;
+  font-style: normal;
+}
+.chip.active .chip-num {
+  color: rgba(255, 255, 255, 0.7);
 }
 
 /* 三栏小数字 */
@@ -3515,28 +4724,6 @@ defineExpose({
 
 /* 好友卡片样式 */
 .friend-card {
-  .friend-bar-back {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    flex-shrink: 0;
-    color: rgba(255, 255, 255, 0.45);
-    cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.2s ease;
-
-    &:hover {
-      color: #f87171;
-      background: rgba(248, 113, 113, 0.1);
-    }
-
-    .el-icon {
-      font-size: 14px;
-    }
-  }
-
   .friend-avatar {
     border-color: rgba(248, 113, 113, 0.3) !important;
     box-shadow: 0 2px 8px rgba(248, 113, 113, 0.2) !important;

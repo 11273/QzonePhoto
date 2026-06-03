@@ -118,20 +118,20 @@
         </div>
 
         <!-- 数据栏 -->
-        <div class="stats-grid">
-          <div class="stat-item">
+        <div v-if="hasStats" class="stats-grid">
+          <div v-if="cardInfo.intimacyScore" class="stat-item">
             <div class="stat-num intimacy">{{ formatNum(cardInfo.intimacyScore) }}</div>
             <div class="stat-label">亲密度</div>
           </div>
-          <div class="stat-item">
+          <div v-if="cardInfo.commfrd" class="stat-item">
             <div class="stat-num">{{ formatNum(cardInfo.commfrd) }}</div>
             <div class="stat-label">共同好友</div>
           </div>
-          <div class="stat-item">
+          <div v-if="albumCount != null && albumCount !== 0" class="stat-item">
             <div class="stat-num">{{ formatNum(albumCount) }}</div>
             <div class="stat-label">相册数</div>
           </div>
-          <div class="stat-item">
+          <div v-if="diskUsedMB != null && diskUsedMB !== 0" class="stat-item">
             <div class="stat-num">{{ diskUsedText }}</div>
             <div class="stat-label">空间容量</div>
           </div>
@@ -304,10 +304,10 @@ const birthdayText = computed(() => {
   if (!c) return ''
   const { birthyear, birthmonth, birthday } = c
   if (birthyear && birthmonth && birthday) {
-    return `${birthyear}-${String(birthmonth).padStart(2, '0')}-${String(birthday).padStart(2, '0')}`
+    return `${birthyear}年${birthmonth}月${birthday}日`
   }
   if (birthmonth && birthday) {
-    return `${String(birthmonth).padStart(2, '0')}-${String(birthday).padStart(2, '0')}`
+    return `${birthmonth}月${birthday}日`
   }
   return ''
 })
@@ -318,6 +318,17 @@ const ageText = computed(() => {
   const age = new Date().getFullYear() - Number(y)
   if (age < 0 || age > 120) return ''
   return `${age} 岁`
+})
+
+const hasStats = computed(() => {
+  const c = cardInfo.value
+  if (!c) return false
+  return Boolean(
+    c.intimacyScore ||
+    c.commfrd ||
+    (albumCount.value != null && albumCount.value !== 0) ||
+    (diskUsedMB.value != null && diskUsedMB.value !== 0)
+  )
 })
 
 const hasDetails = computed(() => {
@@ -565,18 +576,18 @@ const reset = () => {
 }
 
 .query-btn {
-  background: linear-gradient(135deg, #ef4444 0%, #f87171 100%) !important;
+  background: var(--ds-accent-blue, #60a5fa) !important;
   border: none !important;
   border-radius: 10px !important;
   padding: 0 22px !important;
   font-weight: 600 !important;
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+  box-shadow: var(--ds-shadow-md), 0 4px 12px rgba(96, 165, 250, 0.25);
   transition: all 0.2s ease;
 }
 
 .query-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.35);
+  filter: brightness(1.08);
+  box-shadow: var(--ds-shadow-md), 0 6px 16px rgba(96, 165, 250, 0.35);
 }
 
 .query-btn:disabled {
@@ -933,15 +944,15 @@ const reset = () => {
 }
 
 .enter-btn {
-  background: linear-gradient(135deg, #ef4444 0%, #f87171 100%) !important;
+  background: var(--ds-accent-blue, #60a5fa) !important;
   border: none !important;
   font-weight: 600 !important;
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+  box-shadow: var(--ds-shadow-md), 0 4px 12px rgba(96, 165, 250, 0.25);
 }
 
 .enter-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.35);
+  filter: brightness(1.08);
+  box-shadow: var(--ds-shadow-md), 0 6px 16px rgba(96, 165, 250, 0.35);
 }
 
 .enter-btn:disabled {

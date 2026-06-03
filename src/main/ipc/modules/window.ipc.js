@@ -1,9 +1,26 @@
-import { ipcMain, shell, BrowserWindow } from 'electron'
+import { ipcMain, shell } from 'electron'
 import windowManager from '@main/core/window'
 import { IPC_WINDOW, IPC_APP, IPC_SHELL } from '@shared/ipc-channels'
 import { app } from 'electron'
 import { APP_NAME, APP_HOMEPAGE, APP_DESCRIPTION } from '@shared/const'
-import { is } from '@electron-toolkit/utils'
+
+const isQzoneWebUrl = (value) => {
+  try {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol)) return false
+    const host = url.hostname.toLowerCase()
+    return (
+      host === 'user.qzone.qq.com' ||
+      host === 'i.qq.com' ||
+      host === 'qzone.qq.com' ||
+      host.endsWith('.qzone.qq.com') ||
+      host === 'qzs.qq.com' ||
+      host.endsWith('.qzs.qq.com')
+    )
+  } catch {
+    return false
+  }
+}
 
 // 注册窗口控制相关的IPC处理器
 export function registerWindowControl() {
@@ -50,7 +67,14 @@ export function registerWindowControl() {
       // 使用统一配置工具获取应用信息
       const result = {
         platform: process.platform,
+        arch: process.arch,
         isMac: process.platform === 'darwin',
+        isPackaged: app.isPackaged,
+        versions: {
+          electron: process.versions.electron,
+          chrome: process.versions.chrome,
+          node: process.versions.node
+        },
         name: app.getName(),
         version: app.getVersion(),
         productName: APP_NAME,
@@ -69,67 +93,49 @@ export function registerWindowControl() {
   })
 
   // 打开外部链接
-  ipcMain.handle(IPC_SHELL.OPEN_EXTERNAL, (event, url) => {
+  ipcMain.handle(IPC_SHELL.OPEN_EXTERNAL, async (event, context) => {
+    const url = typeof context === 'string' ? context : context?.payload
+    const headers = typeof context === 'string' ? null : context?.headers
+    if (headers?.uin || headers?.p_skey) {
+      windowManager.setQzoneAuth(headers)
+    }
+    if (isQzoneWebUrl(url)) {
+      await windowManager.openQzoneWeb({
+        url,
+        uin: headers?.uin,
+        p_skey: headers?.p_skey,
+        cookies: headers?.cookies
+      })
+      return
+    }
     shell.openExternal(url)
   })
 
+  ipcMain.handle(IPC_WINDOW.SET_QZONE_AUTH, async (event, auth = {}) => {
+    windowManager.setQzoneAuth(auth)
+    return { success: true }
+  })
+
   // 打开 QQ 空间官网
-  ipcMain.handle(IPC_WINDOW.OPEN_QZONE_WEB, async (event, { uin, p_skey, targetUin }) => {
+  ipcMain.handle(IPC_WINDOW.OPEN_QZONE_WEB, async (event, context = {}) => {
     try {
-      // 创建新窗口 - 显示窗口框架但隐藏菜单栏
-      const qzoneWindow = new BrowserWindow({
-        width: 1400,
-        height: 900,
-        title: 'QQ空间',
-        frame: true, // 显示窗口框架（包括关闭按钮）
-        autoHideMenuBar: true, // 隐藏菜单栏
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-          webSecurity: true,
-          allowRunningInsecureContent: false
-        }
+      const payload = context?.payload || context || {}
+      const headers = context?.headers || {}
+      const auth = {
+        uin: payload.uin || headers.uin,
+        p_skey: payload.p_skey || headers.p_skey,
+        cookies: payload.cookies || headers.cookies
+      }
+      if (auth.uin || auth.p_skey || auth.cookies) {
+        windowManager.setQzoneAuth(auth)
+      }
+      await windowManager.openQzoneWeb({
+        url: payload.url,
+        uin: auth.uin,
+        p_skey: auth.p_skey,
+        cookies: auth.cookies,
+        targetUin: payload.targetUin
       })
-
-      // 在加载页面之前设置 cookie
-      const ses = qzoneWindow.webContents.session
-
-      // 优化后的 cookies 配置
-      const cookieConfig = {
-        url: 'https://user.qzone.qq.com',
-        domain: '.qq.com',
-        path: '/',
-        secure: true,
-        httpOnly: false
-      }
-
-      const cookiesToSet = [
-        { name: 'uin', value: `${uin}` },
-        { name: 'p_uin', value: `${uin}` },
-        { name: 'p_skey', value: p_skey }
-      ]
-
-      // 设置所有 cookies
-      await Promise.all(
-        cookiesToSet.map((cookie) =>
-          ses.cookies.set({
-            ...cookieConfig,
-            ...cookie
-          })
-        )
-      )
-
-      // 加载 QQ 空间页面（支持打开好友空间）
-      const url = targetUin
-        ? `https://user.qzone.qq.com/${targetUin}`
-        : `https://user.qzone.qq.com`
-      await qzoneWindow.loadURL(url)
-
-      // 打开开发者工具（可选，用于调试）
-      if (is.dev) {
-        qzoneWindow.webContents.openDevTools()
-      }
-
       return { success: true }
     } catch (error) {
       console.error('打开 QQ 空间官网失败:', error)

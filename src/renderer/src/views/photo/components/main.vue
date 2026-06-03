@@ -57,9 +57,6 @@
                 <div class="photo-wrapper">
                   <el-image
                     :src="photo.pre"
-                    :preview-src-list="group.photos.map((p) => p.url)"
-                    :initial-index="index"
-                    preview-teleported
                     fit="cover"
                     class="photo-image"
                     lazy
@@ -154,13 +151,18 @@
       </div>
     </Transition>
 
-    <!-- 图片预览 -->
-    <el-image-viewer
-      v-if="previewVisible && !isVideoPreview"
-      :url-list="previewImages"
+    <!-- 媒体预览（图片+视频混合，沉浸式） -->
+    <MediaPreview
+      :visible="previewVisible"
+      :items="previewItems"
       :initial-index="previewIndex"
-      :hide-on-click-modal="true"
-      @close="previewVisible = false"
+      :has-more="hasMore"
+      :load-more="handlePreviewLoadMore"
+      :resolve-item="resolvePreviewItem"
+      :selectable="true"
+      :is-item-selected="isPreviewItemSelected"
+      @update:visible="previewVisible = $event"
+      @toggle-select="handlePreviewToggleSelect"
     />
 
     <!-- 相册访问验证弹窗 -->
@@ -206,57 +208,7 @@
       </div>
     </el-dialog>
 
-    <!-- 视频预览对话框 -->
-    <el-dialog
-      v-model="videoPreviewVisible"
-      :title="getVideoTitle(currentVideoInfo)"
-      width="60%"
-      :append-to-body="true"
-      :close-on-click-modal="true"
-      class="video-preview-dialog ds-dialog"
-      @close="closeVideoPreview"
-    >
-      <div class="video-preview-container">
-        <video
-          v-if="currentVideoInfo && getVideoPlayUrl(currentVideoInfo)"
-          ref="videoPlayerRef"
-          :src="getVideoPlayUrl(currentVideoInfo)"
-          :poster="currentVideoInfo.cover_url"
-          controls
-          preload="metadata"
-          class="video-player"
-          @error="handleVideoError"
-          @loadstart="handleVideoLoadStart"
-          @loadeddata="handleVideoLoaded"
-        >
-          您的浏览器不支持视频播放
-        </video>
-        <div v-else class="video-loading">
-          <el-icon class="loading-icon"><Loading /></el-icon>
-          <p>正在获取视频信息...</p>
-        </div>
-      </div>
-
-      <!-- 视频信息 -->
-      <div v-if="currentVideoInfo && hasVideoInfo(currentVideoInfo)" class="video-info">
-        <div v-if="currentVideoInfo.video_size > 0" class="info-item">
-          <span class="label">大小:</span>
-          <span class="value">{{ formatBytes(currentVideoInfo.video_size) }}</span>
-        </div>
-        <div v-if="currentVideoInfo.video_duration > 0" class="info-item">
-          <span class="label">时长:</span>
-          <span class="value">{{ formatDuration(currentVideoInfo.video_duration) }}</span>
-        </div>
-        <div v-if="currentVideoInfo.video_format" class="info-item">
-          <span class="label">格式:</span>
-          <span class="value">{{ currentVideoInfo.video_format.toUpperCase() }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">播放源:</span>
-          <span class="value">{{ getVideoPlaySource(currentVideoInfo) }}</span>
-        </div>
-      </div>
-    </el-dialog>
+    <!-- 视频预览已整合到 MediaPreview 中 -->
   </div>
 </template>
 
@@ -269,9 +221,9 @@ import { Loading, Picture, VideoPlay, Check, Hide } from '@element-plus/icons-vu
 import { ElLoading, ElMessage, ElMessageBox } from 'element-plus'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
+import MediaPreview from '@renderer/components/MediaPreview/index.vue'
 import Top from './top.vue'
 import { generateUniqueAlbumName } from '@renderer/utils'
-import { formatBytes } from '@renderer/utils/formatters'
 
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
@@ -317,34 +269,17 @@ const pageSize = ref(100)
 const total = ref(0)
 const hasMore = ref(true)
 
-// 图片预览
+// 媒体预览（图片+视频混合）
 const previewVisible = ref(false)
 const previewIndex = ref(0)
-const previewImages = ref([])
-
-// 视频预览
-const videoPreviewVisible = ref(false)
-const videoPlayerRef = ref(null)
-const currentVideoInfo = ref(null)
-const isVideoPreview = ref(false)
+const previewItems = ref([])
+// 视频 src 缓存：picKey -> 真实播放 URL（避免重复请求）
+const videoUrlCache = ref(new Map())
 
 // 取消标志 - 添加到组件顶部
 const cancelFlags = ref(new Map()) // 存储每个相册的取消标志
 
-// 公共的API调用函数
-// MD5 哈希（用于相册问题/密码验证）
-const md5Hash = async (str) => {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(str)
-  const hashBuffer = await crypto.subtle.digest('MD5', data).catch(() => null)
-  if (hashBuffer) {
-    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
-  }
-  // crypto.subtle 不支持 MD5 时，使用简单实现
-  return simpleMD5(str)
-}
-
-// 简易 MD5 实现（crypto.subtle 通常不支持 MD5）
+// 简易 MD5 实现（相册问题/密码验证使用）
 const simpleMD5 = (string) => {
   function md5cycle(x, k) {
     let a = x[0], b = x[1], c = x[2], d = x[3]
@@ -595,18 +530,22 @@ const loadMorePhotos = async () => {
 
       hasMore.value = result.hasMore
     } else {
-      hasMore.value = false
-      if (!result.success) {
-        console.error('加载失败:', result.error)
-
-        ElMessage.error(result.error || '加载照片失败')
+      console.error('加载失败:', result.error)
+      if (result.code === -10805) {
+        hasMore.value = false
+      } else {
+        // Transient network/API errors should not turn the infinite list into
+        // a permanent "no more" state. Keep the cursor unchanged so scrolling
+        // away and back to the bottom retries the same page.
+        hasMore.value = true
       }
+      ElMessage.error(result.error || '加载照片失败')
     }
   } catch (error) {
     console.error('加载更多照片失败:', error)
 
     ElMessage.error('加载照片失败')
-    hasMore.value = false
+    hasMore.value = true
   } finally {
     loadingMore.value = false
     // 简单延迟解锁
@@ -1358,15 +1297,6 @@ const formatTime = (timeStr) => {
   })
 }
 
-// 格式化视频时长
-const formatDuration = (seconds) => {
-  if (seconds === 0) return '00:00'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = Math.floor(seconds % 60)
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
-}
-
 // 设置IntersectionObserver监听加载更多
 const setupIntersectionObserver = () => {
   if (observer) {
@@ -1425,57 +1355,110 @@ const checkAndLoadMore = async () => {
   }
 }
 
-// 处理照片点击事件
-const handlePhotoClick = async (photo, event, index) => {
-  event.stopPropagation()
-
-  // 如果是视频，获取详细信息并预览
-  if (photo.is_video) {
-    try {
-      // 显示加载状态
-      currentVideoInfo.value = { ...photo, video_play_url: null }
-      isVideoPreview.value = true
-      videoPreviewVisible.value = true
-
-      // 简化参数提取逻辑 - 使用当前相册的ID作为topicId
-      const topicId = currentAlbum.value?.id
-      const picKey = photo.picKey || photo.lloc
-      const hostUin = effectiveHostUin.value
-
-      // 参数验证
-      if (!topicId || !picKey) {
-        console.error('视频预览参数不完整:', { topicId, picKey, hostUin })
-
-        ElMessage.error('视频信息不完整，无法预览')
-        closeVideoPreview()
-        return
-      }
-
-      // 获取视频详细信息
-      const videoInfo = await window.QzoneAPI.getVideoInfo({
-        hostUin,
-        topicId,
-        picKey
-      }, friendMeta.value)
-
-      if (videoInfo) {
-        currentVideoInfo.value = videoInfo
-      } else {
-        console.log('未获取到视频信息')
-
-        ElMessage.warning('无法获取视频播放地址，可能是权限限制')
-        closeVideoPreview()
-      }
-    } catch (error) {
-      console.error('获取视频信息失败:', error)
-
-      ElMessage.error('获取视频信息失败')
-      closeVideoPreview()
+// 把当前 photoList 转成 MediaPreview items（图片 + 视频混合）
+const buildPreviewItems = () =>
+  photoList.value.map((p) => {
+    const isVideo = !!p.is_video
+    return {
+      type: isVideo ? 'video' : 'image',
+      src: isVideo ? '' : p.url || p.raw, // 视频先空 src，开预览时再异步解析
+      thumb: p.pre || p.url,
+      title: p.name || '',
+      subtitle: p.modifytime ? formatTime(p.modifytime) : '',
+      needsResolve: isVideo,
+      _photo: p
     }
-  } else {
-    // 单击：预览图片
-    previewPhoto(photo, index)
+  })
+
+// 处理照片点击 —— 统一开 MediaPreview
+const handlePhotoClick = (photo, event) => {
+  event.stopPropagation()
+  previewItems.value = buildPreviewItems()
+  const idx = photoList.value.findIndex(
+    (p) =>
+      (p.lloc || `${p.id}_${p.name}_${p.modifytime}`) ===
+      (photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`)
+  )
+  previewIndex.value = idx >= 0 ? idx : 0
+  previewVisible.value = true
+}
+
+// 视频项异步解析真实播放 URL
+const resolvePreviewItem = async (item, idx) => {
+  if (item.type !== 'video' || item.src) return item
+  const photo = item._photo
+  const picKey = photo?.picKey || photo?.lloc
+  const topicId = currentAlbum.value?.id
+  const hostUin = effectiveHostUin.value
+
+  if (!picKey || !topicId) {
+    ElMessage.warning('视频信息不完整，无法预览')
+    return item
   }
+
+  const cacheKey = `${topicId}:${picKey}`
+  if (videoUrlCache.value.has(cacheKey)) {
+    const cached = videoUrlCache.value.get(cacheKey)
+    previewItems.value[idx] = { ...item, src: cached, needsResolve: false }
+    return previewItems.value[idx]
+  }
+
+  try {
+    const info = await window.QzoneAPI.getVideoInfo({ hostUin, topicId, picKey }, friendMeta.value)
+    const url = info?.video_download_url || info?.video_play_url || info?.video_info?.video_url
+    if (url) {
+      videoUrlCache.value.set(cacheKey, url)
+      previewItems.value[idx] = {
+        ...item,
+        src: url,
+        needsResolve: false,
+        _videoInfo: info
+      }
+      return previewItems.value[idx]
+    } else {
+      ElMessage.warning('无法获取视频播放地址')
+      return item
+    }
+  } catch (e) {
+    console.error('[MediaPreview] 获取视频 URL 失败:', e)
+    ElMessage.error('获取视频信息失败')
+    return item
+  }
+}
+
+// 预览中：判断 item 是否已经被外部选中
+const isPreviewItemSelected = (item) => {
+  const p = item?._photo
+  if (!p) return false
+  const key = p.lloc || `${p.id}_${p.name}_${p.modifytime}`
+  return selectedPhotos.value.has(key)
+}
+
+// 预览中点击「选中」复选框 —— 联动外面的 selectedPhotos
+const handlePreviewToggleSelect = (item) => {
+  const p = item?._photo
+  if (!p) return
+  selectPhoto(p)
+}
+
+// 预览滑到末尾时拉下一页相册照片
+const handlePreviewLoadMore = async () => {
+  if (!hasMore.value) return
+  await loadMorePhotos()
+  // 重新构建 items（保留已 resolve 的视频 src）
+  const oldByKey = new Map()
+  previewItems.value.forEach((it) => {
+    const key = it._photo?.lloc || it._photo?.id
+    if (key) oldByKey.set(key, it)
+  })
+  previewItems.value = buildPreviewItems().map((it) => {
+    const key = it._photo?.lloc || it._photo?.id
+    const old = key && oldByKey.get(key)
+    if (old && old.src && !old.needsResolve) {
+      return { ...it, src: old.src, needsResolve: false }
+    }
+    return it
+  })
 }
 
 // 选择照片
@@ -1491,148 +1474,9 @@ const selectPhoto = (photo) => {
   }
 }
 
-// 预览照片
-const previewPhoto = (photo, index) => {
-  // 使用所有已加载的照片进行预览
-  previewImages.value = photoList.value.map((p) => p.url)
+// 旧的 previewPhoto/closeVideoPreview 已整合到 MediaPreview 中
 
-  // 计算当前照片在所有照片中的位置
-  const globalIndex = photoList.value.findIndex(
-    (p) =>
-      (p.lloc || `${p.id}_${p.name}_${p.modifytime}`) ===
-      (photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`)
-  )
-
-  previewIndex.value = globalIndex >= 0 ? globalIndex : index
-  previewVisible.value = true
-}
-
-// 关闭视频预览
-const closeVideoPreview = () => {
-  isVideoPreview.value = false
-  currentVideoInfo.value = null
-  videoPreviewVisible.value = false
-}
-
-// 处理视频加载错误
-const handleVideoError = (event) => {
-  const error = event.target.error
-  console.error('视频加载失败:', error)
-
-  // 获取当前尝试播放的URL
-  const currentSrc = event.target.src
-
-  if (currentVideoInfo.value) {
-    // 如果当前使用的是 download_url，尝试回退到 play_url
-    if (
-      currentSrc === currentVideoInfo.value.video_download_url &&
-      currentVideoInfo.value.video_play_url
-    ) {
-      console.log('MP4格式播放失败，尝试回退到HLS格式')
-      event.target.src = currentVideoInfo.value.video_play_url
-      return
-    }
-  }
-
-  // 根据错误类型给出不同的提示
-  let errorMessage = '视频加载失败'
-  switch (error?.code) {
-    case 1: // MEDIA_ERR_ABORTED
-      errorMessage = '视频播放被中止'
-      break
-    case 2: // MEDIA_ERR_NETWORK
-      errorMessage = '网络错误，无法加载视频'
-      break
-    case 3: // MEDIA_ERR_DECODE
-      errorMessage = '视频解码失败'
-      break
-    case 4: // MEDIA_ERR_SRC_NOT_SUPPORTED
-      errorMessage = '不支持的视频格式或源不可用'
-      break
-    default:
-      errorMessage = `视频播放失败 (错误代码: ${error?.code || '未知'})`
-  }
-
-  ElMessage.error(errorMessage)
-  console.error('视频播放详细错误:', {
-    code: error?.code,
-    message: error?.message,
-    currentSrc,
-    videoInfo: {
-      download_url: currentVideoInfo.value?.video_download_url,
-      play_url: currentVideoInfo.value?.video_play_url
-    }
-  })
-}
-
-// 处理视频加载开始
-const handleVideoLoadStart = () => {
-  // 可以在这里显示加载提示
-}
-
-// 处理视频加载完成
-const handleVideoLoaded = () => {
-  // 可以在这里隐藏加载提示
-}
-
-// 获取视频播放URL
-const getVideoPlayUrl = (videoInfo) => {
-  if (!videoInfo) return null
-
-  // 优先使用 mp4 格式的 download_url，因为浏览器原生支持
-  if (videoInfo.video_download_url) {
-    return videoInfo.video_download_url
-  }
-
-  // 如果没有 download_url，尝试使用 play_url（可能需要 HLS.js 支持）
-  if (videoInfo.video_play_url) {
-    return videoInfo.video_play_url
-  }
-
-  return null
-}
-
-// 获取视频播放源类型
-const getVideoPlaySource = (videoInfo) => {
-  if (!videoInfo) return '未知'
-
-  const playUrl = getVideoPlayUrl(videoInfo)
-  if (!playUrl) return '无可用源'
-
-  if (videoInfo.video_download_url && playUrl === videoInfo.video_download_url) {
-    return 'MP4'
-  }
-
-  if (videoInfo.video_play_url && playUrl === videoInfo.video_play_url) {
-    return 'HLS'
-  }
-
-  return '未知格式'
-}
-
-// 检查视频信息是否有有效数据
-const hasVideoInfo = (videoInfo) => {
-  if (!videoInfo) return false
-
-  return (
-    videoInfo.video_size > 0 ||
-    videoInfo.video_duration > 0 ||
-    videoInfo.video_format ||
-    getVideoPlayUrl(videoInfo)
-  )
-}
-
-// 获取视频标题，处理过长的标题
-const getVideoTitle = (videoInfo) => {
-  if (!videoInfo || !videoInfo.name) return '视频预览'
-
-  const title = videoInfo.name.trim()
-  if (title.length > 30) {
-    return title.substring(0, 30) + '...'
-  }
-
-  return title
-}
+// 旧的视频错误处理、URL 解析等都搬到 MediaPreview / resolvePreviewItem 内部了
 
 // 清除选择
 const clearSelection = () => {
@@ -1902,11 +1746,6 @@ onUnmounted(() => {
       background: rgba(255, 255, 255, 0.9);
     }
 
-    /* 隐私模式下悬停时减少模糊 */
-    &.privacy-mode .photo-image :deep(.el-image__inner) {
-      filter: blur(8px);
-    }
-
     /* 隐私模式下确保选择控件可见 */
     &.privacy-mode {
       .selection-checkbox {
@@ -2163,7 +2002,7 @@ onUnmounted(() => {
 .photo-item.privacy-mode {
   .photo-image {
     :deep(.el-image__inner) {
-      filter: blur(15px);
+      filter: blur(var(--qz-privacy-media-blur));
       transition: filter 0.3s ease;
     }
   }

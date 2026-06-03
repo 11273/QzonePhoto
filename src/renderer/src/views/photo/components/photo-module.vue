@@ -24,6 +24,17 @@
             </template>
           </template>
           <el-button
+            v-if="downloadableMediaCount > 0"
+            text
+            class="action-btn download-page-btn"
+            :loading="downloadingPage"
+            :disabled="loading || downloadingPage"
+            @click="downloadCurrentPageFeeds"
+          >
+            <LucideDownload :size="14" />
+            <span>{{ downloadingPage ? '加入下载…' : `下载全部 ${downloadableMediaCount}` }}</span>
+          </el-button>
+          <el-button
             text
             :icon="Refresh"
             :loading="loading"
@@ -45,7 +56,7 @@
 
           <EmptyState
             v-else-if="feeds.length === 0"
-            icon="📷"
+            :icon="ImageIcon"
             :title="isFriendPhotos ? '好友照片' : '我的照片'"
             :description="isFriendPhotos ? '好友还没有发布照片~' : '还没有动态，快去发表一条吧~'"
           />
@@ -79,9 +90,9 @@
                   <el-icon><VideoPlay /></el-icon>
                 </div>
                 <!-- 隐私遮罩 -->
-                <div v-if="privacyStore.privacyMode" class="card-privacy-overlay">
-                  <el-icon class="privacy-icon"><Hide /></el-icon>
-                  <div class="privacy-text">隐私保护</div>
+                <div v-if="privacyStore.privacyMode" class="card-privacy-overlay qz-privacy-overlay">
+                  <el-icon class="privacy-icon qz-privacy-icon"><Hide /></el-icon>
+                  <span class="privacy-text qz-privacy-text">隐私保护</span>
                 </div>
               </div>
               <!-- 底部信息 -->
@@ -99,6 +110,16 @@
                   <span v-if="feed.albumName" class="card-album">{{ feed.albumName }}</span>
                   <span class="card-time">{{ formatFeedTime(feed.time) }}</span>
                 </div>
+                <button
+                  v-if="getDownloadableMedia(feed).length"
+                  class="card-download-btn"
+                  :disabled="isFeedDownloading(feed.id)"
+                  title="下载这条动态"
+                  @click.stop="downloadSingleFeed(feed)"
+                >
+                  <LucideDownload :size="13" />
+                  <span>{{ isFeedDownloading(feed.id) ? '加入中' : '下载' }}</span>
+                </button>
               </div>
             </div>
 
@@ -118,12 +139,12 @@
           </div>
 
           <!-- ========== 我的照片：时间线布局 ========== -->
-          <div v-else class="feeds-container">
+          <div v-else class="feeds-container tl-container">
             <template v-for="group in groupedFeeds" :key="group.dateKey">
               <!-- 日期分组标题 -->
-              <div class="date-group-header">
+              <div class="date-group-header tl-date-header">
                 <div class="date-line"></div>
-                <span class="date-text">{{ group.dateLabel }}</span>
+                <span class="date-text tl-date-text">{{ group.dateLabel }}</span>
                 <div class="date-line"></div>
               </div>
 
@@ -131,7 +152,7 @@
               <div
                 v-for="(feed, feedIdx) in group.feeds"
                 :key="feed.id"
-                class="feed-card"
+                class="feed-card tl-card"
                 :class="{
                   'is-first-in-group': feedIdx === 0,
                   'is-last-in-group': feedIdx === group.feeds.length - 1,
@@ -140,8 +161,8 @@
                 @click="isSelectionMode && toggleFeedSelection(feed)"
               >
                 <!-- 左侧时间线 -->
-                <div class="feed-timeline">
-                  <div class="timeline-dot"></div>
+                <div class="feed-timeline tl-dot-wrap">
+                  <div class="timeline-dot tl-dot"></div>
                   <div v-if="feedIdx < group.feeds.length - 1" class="timeline-line"></div>
                 </div>
 
@@ -157,20 +178,34 @@
                 </div>
 
                 <!-- 右侧内容 -->
-                <div class="feed-content-wrapper">
+                <div class="feed-content-wrapper tl-body">
                   <!-- 顶部：时间和删除按钮 -->
-                  <div class="feed-header">
-                    <span class="feed-time">{{ formatFeedTime(feed.time || feed.date) }}</span>
-                    <el-button
-                      v-if="!isSelectionMode && !isFriendContext"
-                      text
-                      size="small"
-                      class="delete-btn"
-                      @click="deleteFeed(feed)"
-                    >
-                      <el-icon><Delete /></el-icon>
-                      <span>删除</span>
-                    </el-button>
+                  <div class="feed-header tl-header">
+                    <span class="feed-time tl-time">{{ formatFeedTime(feed.time || feed.date) }}</span>
+                    <div v-if="!isSelectionMode" class="feed-header-actions">
+                      <el-button
+                        v-if="getDownloadableMedia(feed).length"
+                        text
+                        size="small"
+                        class="feed-download-btn tl-action-btn"
+                        :loading="isFeedDownloading(feed.id)"
+                        :disabled="isFeedDownloading(feed.id)"
+                        @click.stop="downloadSingleFeed(feed)"
+                      >
+                        <LucideDownload :size="13" />
+                        <span>下载</span>
+                      </el-button>
+                      <el-button
+                        v-if="!isFriendContext"
+                        text
+                        size="small"
+                        class="delete-btn"
+                        @click="deleteFeed(feed)"
+                      >
+                        <el-icon><Delete /></el-icon>
+                        <span>删除</span>
+                      </el-button>
+                    </div>
                   </div>
 
                   <!-- 动态内容 -->
@@ -193,11 +228,11 @@
 
                     <!-- 媒体内容 -->
                     <div v-if="feed.media && feed.media.length > 0" class="media-container">
-                      <div class="media-row">
+                      <div class="media-row tl-media">
                         <div
                           v-for="(item, idx) in feed.media.slice(0, 8)"
                           :key="idx"
-                          class="media-item"
+                          class="media-item tl-media-item"
                           :class="{
                             'is-video': item.type === 'video',
                             'privacy-mode': privacyStore.privacyMode
@@ -216,9 +251,9 @@
                             <div v-else class="media-placeholder">
                               <el-icon><VideoPlay /></el-icon>
                             </div>
-                            <div v-if="privacyStore.privacyMode" class="media-privacy-overlay">
-                              <el-icon class="privacy-icon"><Hide /></el-icon>
-                              <div class="privacy-text">隐私保护</div>
+                            <div v-if="privacyStore.privacyMode" class="media-privacy-overlay tl-privacy-overlay qz-privacy-overlay">
+                              <el-icon class="privacy-icon qz-privacy-icon"><Hide /></el-icon>
+                              <span class="privacy-text qz-privacy-text">隐私保护</span>
                             </div>
                           </div>
                           <!-- 图片 -->
@@ -230,15 +265,15 @@
                                 </div>
                               </template>
                             </el-image>
-                            <div v-if="privacyStore.privacyMode" class="media-privacy-overlay">
-                              <el-icon class="privacy-icon"><Hide /></el-icon>
-                              <div class="privacy-text">隐私保护</div>
+                            <div v-if="privacyStore.privacyMode" class="media-privacy-overlay tl-privacy-overlay qz-privacy-overlay">
+                              <el-icon class="privacy-icon qz-privacy-icon"><Hide /></el-icon>
+                              <span class="privacy-text qz-privacy-text">隐私保护</span>
                             </div>
                           </div>
                         </div>
                         <div
                           v-if="feed.photoTotal && feed.photoTotal > 8"
-                          class="media-more"
+                          class="media-more tl-media-more"
                           @click="previewMedia(feed.media, 8, feed)"
                         >
                           +{{ feed.photoTotal - 8 }}
@@ -248,72 +283,59 @@
                   </div>
 
                   <!-- 底部：互动信息 -->
-                  <div class="feed-footer">
-                    <!-- 隐藏数据标签：浏览量 + 设备 -->
-                    <div v-if="feed.visitorCount > 0 || feed.sourceName" class="feed-meta-tags">
-                      <span v-if="feed.visitorCount > 0" class="meta-tag views-tag" title="浏览量">
-                        <svg viewBox="0 0 16 16" fill="currentColor" class="meta-icon"><path d="M8 3C3.6 3 .5 8 .5 8s3.1 5 7.5 5 7.5-5 7.5-5S12.4 3 8 3zm0 8a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
-                        {{ feed.visitorCount }}
-                      </span>
-                      <span v-if="feed.sourceName" class="meta-tag device-tag" :title="feed.sourceName">
-                        <svg viewBox="0 0 16 16" fill="currentColor" class="meta-icon"><path d="M11 1H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zM8 14a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm3-3H5V3h6v8z"/></svg>
-                        {{ feed.sourceName }}
-                      </span>
-                    </div>
-
-                    <div class="feed-actions">
-                      <div class="action-item" :class="{ active: feed.isLiked }">
-                        <span class="action-icon">👍</span>
-                        <span v-if="feed.likeCount > 0" class="action-count">{{ feed.likeCount }}</span>
+                  <div class="feed-footer tl-footer">
+                    <div class="feed-footer-main">
+                      <!-- 浏览量 + 设备 chip：与动态 tab 同一套 .tl-chip 设计语言 -->
+                      <div v-if="feed.visitorCount > 0 || feed.sourceName" class="feed-meta-tags">
+                        <span v-if="feed.visitorCount > 0" class="tl-chip" title="浏览量">
+                          <Eye :size="12" class="tl-chip-icon" />{{ feed.visitorCount }}
+                        </span>
+                        <span v-if="feed.sourceName" class="tl-chip" :title="`来自 ${feed.sourceName}`">
+                          <Smartphone :size="12" class="tl-chip-icon" />{{ feed.sourceName }}
+                        </span>
                       </div>
-                      <div class="action-item">
-                        <span class="action-icon">💬</span>
-                        <span v-if="feed.commentCount > 0" class="action-count">{{ feed.commentCount }}</span>
+                      <div v-else class="feed-meta-tags-placeholder"></div>
+
+                      <div class="feed-actions">
+                        <div class="action-item tl-stat" :class="{ active: feed.isLiked }">
+                          <ThumbsUp :size="14" class="action-icon" />
+                          <span v-if="feed.likeCount > 0" class="action-count">{{ feed.likeCount }}</span>
+                        </div>
+                        <div class="action-item tl-stat">
+                          <MessageCircle :size="14" class="action-icon" />
+                          <span v-if="feed.commentCount > 0" class="action-count">{{ feed.commentCount }}</span>
+                        </div>
                       </div>
                     </div>
 
                     <div v-if="feed.likes && feed.likes.length > 0" class="feed-likes">
-                      <span class="like-icon">👍</span>
+                      <ThumbsUp :size="14" class="like-icon" />
                       <div class="likes-content">
-                        <span v-for="(like, idx) in feed.likes" :key="idx" class="like-name">{{ like.name }}</span>
+                        <template v-if="feed.likes.length <= 5 || expandedLikes.has(feed.id)">
+                          <span v-for="like in feed.likes" :key="like.uin" class="like-name">{{ like.name }}</span>
+                          <button
+                            v-if="feed.likes.length > 5"
+                            class="like-toggle"
+                            @click="expandedLikes.delete(feed.id)"
+                          >
+                            收起
+                          </button>
+                        </template>
+                        <template v-else>
+                          <span v-for="like in feed.likes.slice(0, 5)" :key="like.uin" class="like-name">{{ like.name }}</span>
+                          <button class="like-toggle" @click="expandedLikes.add(feed.id)">
+                            等 {{ feed.likes.length }} 人
+                          </button>
+                        </template>
                         <span class="like-suffix">觉得很赞</span>
                       </div>
                     </div>
 
-                    <div v-if="feed.comments && feed.comments.length > 0" class="feed-comments">
-                      <div v-for="comment in feed.comments" :key="comment.id" class="comment-item">
-                        <div class="comment-row">
-                          <el-tooltip :content="`QQ: ${comment.uin}`" placement="top">
-                            <img :src="getAvatarUrl(comment.uin)" :alt="comment.author" class="comment-avatar" @error="handleAvatarError" />
-                          </el-tooltip>
-                          <div class="comment-content">
-                            <div class="comment-header">
-                              <el-tooltip :content="`QQ: ${comment.uin}`" placement="top">
-                                <span class="comment-author">{{ comment.author }}</span>
-                              </el-tooltip>
-                              <span v-if="comment.time" class="comment-time">{{ comment.time }}</span>
-                            </div>
-                            <RichText :text="comment.text" class="comment-text-content" />
-                          </div>
-                        </div>
-                        <div v-if="comment.responses && comment.responses.length > 0" class="comment-responses">
-                          <div v-for="response in comment.responses" :key="response.id" class="response-row">
-                            <el-tooltip :content="`QQ: ${response.uin}`" placement="top">
-                              <img :src="getAvatarUrl(response.uin)" :alt="response.author" class="response-avatar" @error="handleAvatarError" />
-                            </el-tooltip>
-                            <div class="response-content">
-                              <div class="response-header">
-                                <el-tooltip :content="`QQ: ${response.uin}`" placement="top">
-                                  <span class="response-author">{{ response.author }}</span>
-                                </el-tooltip>
-                                <span v-if="response.time" class="response-time">{{ response.time }}</span>
-                              </div>
-                              <RichText :text="response.text" class="response-text-content" />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                    <FeedComment
+                      :comments="feed.comments"
+                      @author-click="onCommentAuthorClick"
+                      @mention-click="onCommentAuthorClick"
+                    />
                   </div>
                 </div>
               </div>
@@ -341,25 +363,52 @@
       </el-scrollbar>
     </div>
 
-    <!-- 图片预览 -->
-    <el-image-viewer
-      v-if="previewVisible"
-      :url-list="previewImages"
+    <!-- 媒体预览（图片+视频混合） -->
+    <MediaPreview
+      :visible="previewVisible"
+      :items="previewItems"
       :initial-index="previewIndex"
-      :hide-on-click-modal="true"
-      @close="previewVisible = false"
+      :resolve-item="resolvePreviewItem"
+      @update:visible="previewVisible = $event"
     />
 
-    <!-- 底部悬浮工具栏 -->
+    <!-- 底部悬浮工具栏：进入多选模式即出现（即便 0 选中也显示空状态，避免来回闪动） -->
     <Transition name="toolbar" appear>
-      <div v-if="isSelectionMode && selectedFeeds.size > 0 && !isFriendContext && !isFriendPhotos" class="floating-toolbar">
-        <div class="toolbar-content">
-          <span class="selected-count">已选择 {{ selectedFeeds.size }} 条动态</span>
+      <div
+        v-if="isSelectionMode && !isFriendContext && !isFriendPhotos"
+        class="floating-toolbar"
+      >
+        <div class="toolbar-pill">
+          <div class="toolbar-left">
+            <CircleCheckBig :size="18" class="check-icon" />
+            <span class="selected-count">
+              <strong>{{ selectedFeeds.size }}</strong>
+              <span class="dim"> / {{ feeds.length }}</span> 已选
+            </span>
+          </div>
           <div class="toolbar-actions">
-            <el-button size="small" @click="clearSelection">取消选择</el-button>
-            <el-button size="small" type="danger" @click="deleteSelectedFeeds">
-              删除选中
-            </el-button>
+            <button class="tb-btn" @click="toggleSelectAll">
+              <CheckSquare :size="14" />{{ isAllSelected ? '取消全选' : '全选' }}
+            </button>
+            <button
+              class="tb-btn tb-btn-primary"
+              :disabled="!selectedFeeds.size || downloadingSelected"
+              @click="downloadSelectedFeeds"
+            >
+              <LucideDownload :size="14" />
+              {{ downloadingSelected ? '加入下载…' : `下载选中${selectedFeeds.size ? ' ' + selectedFeeds.size : ''}` }}
+            </button>
+            <button
+              class="tb-btn tb-btn-danger"
+              :disabled="!selectedFeeds.size"
+              @click="deleteSelectedFeeds"
+            >
+              <Trash2 :size="14" />删除选中
+            </button>
+            <div class="tb-divider"></div>
+            <button class="tb-btn tb-btn-close" title="退出多选 (Esc)" @click="exitSelectionMode">
+              <X :size="16" />
+            </button>
           </div>
         </div>
       </div>
@@ -471,7 +520,7 @@
 </template>
 
 <script setup>
-import { ref, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, reactive, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import {
   VideoPlay,
   Picture,
@@ -484,13 +533,18 @@ import {
   Warning
 } from '@element-plus/icons-vue'
 import { Select, Close, Check } from '@element-plus/icons-vue'
+// 真 SVG 图标库（替换 emoji 用），按需 tree-shake
+import { ThumbsUp, MessageCircle, Image as ImageIcon, Eye, Smartphone, CircleCheckBig, CheckSquare, Trash2, X, Download as LucideDownload } from '@lucide/vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
-import { ElImageViewer, ElDialog, ElButton } from 'element-plus'
+import { ElDialog, ElButton } from 'element-plus'
+import MediaPreview from '@renderer/components/MediaPreview/index.vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import RichText from '@renderer/components/RichText/index.vue'
+import FeedComment from '@renderer/components/FeedComment/index.vue'
+import { copyToClipboard } from '@renderer/utils'
 import { getQQAvatarUrl } from '@renderer/utils/formatters'
 import Hls from 'hls.js'
 
@@ -526,6 +580,12 @@ const hasMore = ref(true)
 // 多选状态
 const selectedFeeds = ref(new Set())
 const isSelectionMode = ref(false)
+const downloadingSelected = ref(false)
+const downloadingPage = ref(false)
+const feedDownloadingIds = ref(new Set())
+
+// 点赞列表展开状态：点赞 > 5 个时折叠成前 5 + "等 N 人"
+const expandedLikes = reactive(new Set())
 
 // 是否全选
 const isAllSelected = computed(() => {
@@ -618,6 +678,66 @@ const groupedFeeds = computed(() => {
   })
 })
 
+const getDownloadableMedia = (feed) => {
+  return (feed?.media || [])
+    .map((media, index) => {
+      const isVideo = media.type === 'video' || media.is_video
+      const url = media.raw || media.bigUrl || media.url || media.src || ''
+      const pre = media.thumb || media.pre || media.cover || media.url || media.bigUrl || ''
+      const picKey = media.picKey || media.lloc || media.key || media.id || ''
+
+      if (!url && !pre && !picKey) return null
+
+      return {
+        id: media.id || picKey || `${feed.id}_${index}`,
+        name: media.name || `${isVideo ? 'video' : 'photo'}_${index + 1}`,
+        url,
+        raw: media.raw || media.bigUrl || '',
+        pre,
+        picKey,
+        lloc: media.lloc || picKey,
+        is_video: isVideo,
+        modifytime: media.modifytime || Number(feed.time) || 0,
+        uploadTime: media.uploadTime || '',
+        size: media.size || 0
+      }
+    })
+    .filter(Boolean)
+}
+
+const downloadableFeeds = computed(() => {
+  return filteredFeeds.value.filter((feed) => getDownloadableMedia(feed).length > 0)
+})
+
+const downloadableMediaCount = computed(() => {
+  return downloadableFeeds.value.reduce((total, feed) => total + getDownloadableMedia(feed).length, 0)
+})
+
+const buildDownloadPayload = (feedList) => {
+  return feedList
+    .map((feed) => ({
+      skey: feed.id,
+      time: feed.time,
+      desc: feed.text || feed.albumTitle || '',
+      albumId: feed.albumId || '',
+      albumName: feed.albumName || '动态',
+      photos: getDownloadableMedia(feed)
+    }))
+    .filter((feed) => feed.photos.length > 0)
+}
+
+const isFeedDownloading = (feedId) => feedDownloadingIds.value.has(feedId)
+
+const setFeedDownloading = (feedId, downloading) => {
+  const next = new Set(feedDownloadingIds.value)
+  if (downloading) {
+    next.add(feedId)
+  } else {
+    next.delete(feedId)
+  }
+  feedDownloadingIds.value = next
+}
+
 // 推送聚合统计到 sidebar
 const updateLeftPhotoStats = () => {
   if (!leftRef?.value?.updatePhotoStats || isFriendPhotos.value) return
@@ -647,7 +767,7 @@ let observer = null
 // 图片预览
 const previewVisible = ref(false)
 const previewIndex = ref(0)
-const previewImages = ref([])
+const previewItems = ref([])
 
 // 视频预览相关
 const videoPreviewVisible = ref(false)
@@ -657,32 +777,30 @@ const videoLoading = ref(false)
 const videoError = ref('')
 let hls = null
 
-// 格式化动态时间显示
+// 格式化动态时间显示（精确到秒，与 feeds 一致）
 const formatFeedTime = (timeStr) => {
   if (!timeStr) return ''
-  // time 可能是秒级时间戳（字符串或数字）或 ISO 字符串
   let date
   if (typeof timeStr === 'string' && timeStr.includes('T')) {
-    // ISO 字符串格式
     date = new Date(timeStr)
   } else {
-    // 时间戳格式（秒级，需要乘以1000）
     const timestamp = typeof timeStr === 'string' ? parseInt(timeStr) : timeStr
     date = new Date(timestamp * 1000)
   }
 
   const now = new Date()
-  const year = date.getFullYear()
-  const month = date.getMonth() + 1
-  const day = date.getDate()
-  const hour = date.getHours()
-  const minute = date.getMinutes().toString().padStart(2, '0')
+  const pad = (n) => String(n).padStart(2, '0')
+  const y = date.getFullYear()
+  const m = pad(date.getMonth() + 1)
+  const d = pad(date.getDate())
+  const hh = pad(date.getHours())
+  const mm = pad(date.getMinutes())
+  const ss = pad(date.getSeconds())
 
-  // 如果是今年，不显示年份
-  if (year === now.getFullYear()) {
-    return `${month}月${day}日 ${hour}:${minute}`
+  if (y === now.getFullYear()) {
+    return `${m}-${d} ${hh}:${mm}:${ss}`
   }
-  return `${year}年${month}月${day}日 ${hour}:${minute}`
+  return `${y}-${m}-${d} ${hh}:${mm}:${ss}`
 }
 
 // 解析点赞用户信息
@@ -742,14 +860,23 @@ const transformFeedData = (apiFeed) => {
           type: 'video',
           url: photo.videourl,
           cover: photo.picsmallurl || photo.url,
-          key: photo.videokey
+          key: photo.videokey,
+          picKey: photo.picKey || photo.lloc || photo.videokey,
+          lloc: photo.lloc || photo.picKey || photo.videokey,
+          name: photo.name || photo.desc || '',
+          modifytime: parseInt(apiFeed.time) || 0
         })
       } else if (photo.url || photo.picsmallurl) {
         // 图片
         media.push({
           type: 'image',
           url: photo.picsmallurl || photo.url,
-          bigUrl: photo.picbigurl || photo.url
+          bigUrl: photo.picbigurl || photo.url,
+          raw: photo.raw || photo.picrawurl || '',
+          picKey: photo.picKey || photo.lloc || photo.id,
+          lloc: photo.lloc || photo.picKey || photo.id,
+          name: photo.name || photo.desc || '',
+          modifytime: parseInt(apiFeed.time) || 0
         })
       }
     })
@@ -848,9 +975,91 @@ const toggleFeedSelection = (feed) => {
   selectedFeeds.value = new Set(selectedFeeds.value)
 }
 
-// 清空选择
-const clearSelection = () => {
-  selectedFeeds.value.clear()
+const addFeedDownloadTasks = async (feedList) => {
+  const groups = new Map()
+  const accountUin = userStore.userInfo?.uin || effectiveHostUin.value
+
+  feedList.forEach((feed) => {
+    const friendUin = isFriendPhotos.value
+      ? feed.owner?.uin || null
+      : isFriendContext.value
+        ? effectiveHostUin.value
+        : null
+    const key = friendUin || ''
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(feed)
+  })
+
+  const taskIds = []
+  for (const [friendUin, list] of groups.entries()) {
+    const payload = buildDownloadPayload(list)
+    if (!payload.length) continue
+    const ids = await window.QzoneAPI.download.addFeeds({
+      feeds: payload,
+      uin: accountUin,
+      friendUin: friendUin || null
+    })
+    taskIds.push(...(ids || []))
+  }
+
+  return taskIds
+}
+
+const downloadSingleFeed = async (feed) => {
+  if (!feed || isFeedDownloading(feed.id)) return
+  setFeedDownloading(feed.id, true)
+  try {
+    const ids = await addFeedDownloadTasks([feed])
+    if (!ids.length) {
+      ElMessage.warning('这条动态没有可下载的照片')
+      return
+    }
+    ElMessage.success(`已添加 ${ids.length} 个下载任务`)
+  } catch (e) {
+    console.error('[photo] 下载动态失败', e)
+    ElMessage.error(`下载失败：${e.message || e}`)
+  } finally {
+    setFeedDownloading(feed.id, false)
+  }
+}
+
+const downloadCurrentPageFeeds = async () => {
+  if (downloadingPage.value) return
+  downloadingPage.value = true
+  try {
+    const ids = await addFeedDownloadTasks(downloadableFeeds.value)
+    if (!ids.length) {
+      ElMessage.warning('当前页没有可下载的照片')
+      return
+    }
+    ElMessage.success(`已添加 ${ids.length} 个下载任务（${downloadableFeeds.value.length} 条动态）`)
+  } catch (e) {
+    console.error('[photo] 下载当前页失败', e)
+    ElMessage.error(`下载当前页失败：${e.message || e}`)
+  } finally {
+    downloadingPage.value = false
+  }
+}
+
+// 批量下载选中的动态：调 addFeeds 把每条动态的全部媒体加入下载队列
+const downloadSelectedFeeds = async () => {
+  if (selectedFeeds.value.size === 0) return
+  downloadingSelected.value = true
+  try {
+    const selected = feeds.value.filter(f => selectedFeeds.value.has(f.id))
+    const selectedWithMedia = selected.filter((feed) => getDownloadableMedia(feed).length > 0)
+    if (!selectedWithMedia.length) {
+      ElMessage.warning('选中的动态都没有可下载的媒体')
+      return
+    }
+    const ids = await addFeedDownloadTasks(selectedWithMedia)
+    ElMessage.success(`已添加 ${ids?.length || 0} 个下载任务`)
+  } catch (e) {
+    console.error('[photo] 批量下载失败', e)
+    ElMessage.error(`批量下载失败：${e.message || e}`)
+  } finally {
+    downloadingSelected.value = false
+  }
 }
 
 // 全选/取消全选
@@ -1028,70 +1237,30 @@ const deleteFeed = async (feed) => {
   }
 }
 
-// 预览媒体（图片/视频）
+// 预览媒体（图片/视频）—— 统一走 MediaPreview，图视频混合切换
 const previewMedia = async (media, index) => {
   if (!media || !Array.isArray(media) || media.length === 0) return
-
-  const targetMedia = media[index]
-  if (!targetMedia) return
-
-  // 如果是视频
-  if (targetMedia.type === 'video') {
-    await previewVideo(targetMedia)
-  } else {
-    // 如果是图片
-    previewImages.value = media.filter((m) => m.type === 'image').map((m) => m.bigUrl || m.url)
-
-    // 计算当前图片在图片列表中的索引
-    const imageIndex = media.slice(0, index + 1).filter((m) => m.type === 'image').length - 1
-
-    previewIndex.value = Math.max(0, imageIndex)
-    previewVisible.value = true
-  }
+  previewItems.value = media.map((m) => ({
+    type: m.type === 'video' ? 'video' : 'image',
+    src: m.type === 'video' ? '' : m.bigUrl || m.url,
+    thumb: m.thumb || m.url,
+    title: m.title || '',
+    needsResolve: m.type === 'video',
+    _media: m
+  }))
+  previewIndex.value = Math.max(0, index)
+  previewVisible.value = true
 }
 
-// 预览视频
-const previewVideo = async (videoMedia) => {
-  if (!videoMedia) {
-    ElMessage.error('视频地址无效')
-    return
+// 视频 src 异步解析（feeds 列表里的视频通常已经有 url，直接返回即可；好友视频需走 floatview）
+const resolvePreviewItem = async (item, idx) => {
+  if (item.type !== 'video' || item.src) return item
+  const m = item._media
+  if (m?.url) {
+    previewItems.value[idx] = { ...item, src: m.url, needsResolve: false }
+    return previewItems.value[idx]
   }
-
-  try {
-    // 显示加载状态
-    currentVideoInfo.value = { ...videoMedia, video_play_url: null }
-    videoPreviewVisible.value = true
-    videoError.value = ''
-    videoLoading.value = true
-
-    let videoUrl = videoMedia.url
-
-    // 好友照片的视频没有直接 URL，需通过 floatview 接口获取
-    if (!videoUrl && videoMedia.lloc && videoMedia.albumId && videoMedia.ownerUin) {
-      const info = await window.QzoneAPI.getVideoInfo({
-        hostUin: videoMedia.ownerUin,
-        topicId: videoMedia.albumId,
-        picKey: videoMedia.lloc
-      }, { skipAuthCheck: true })
-
-      videoUrl = info?.video_play_url || info?.video_info?.video_url || info?.video_download_url || ''
-    }
-
-    if (!videoUrl) {
-      videoError.value = '无法获取视频播放地址'
-      videoLoading.value = false
-      return
-    }
-
-    // 等待对话框渲染完成后再播放
-    nextTick(() => {
-      playVideo(videoUrl)
-    })
-  } catch (error) {
-    console.error('预览视频失败:', error)
-    ElMessage.error('预览视频失败')
-    closeVideoPreview()
-  }
+  return item
 }
 
 // 播放视频（自动选择播放方式）
@@ -1238,24 +1407,16 @@ const closeVideoPreview = () => {
   videoError.value = ''
 }
 
-// 在浏览器中打开视频
+// 打开视频地址
 const openVideoInBrowser = () => {
   if (!currentVideoInfo.value || !currentVideoInfo.value.url) {
     ElMessage.error('视频地址无效')
     return
   }
 
-  try {
-    if (window.require) {
-      const { shell } = window.require('electron')
-      shell.openExternal(currentVideoInfo.value.url)
-      ElMessage.success('正在浏览器中打开视频...')
-    } else {
-      window.open(currentVideoInfo.value.url, '_blank')
-    }
-  } catch {
-    window.open(currentVideoInfo.value.url, '_blank')
-  }
+  window.QzoneAPI?.shell?.openExternal?.(currentVideoInfo.value.url)
+    ?.then(() => ElMessage.success('正在打开视频...'))
+    ?.catch(() => ElMessage.error('打开视频失败'))
 }
 
 // 获取头像URL
@@ -1270,6 +1431,11 @@ const handleAvatarError = (event) => {
   // 使用一个纯色背景作为默认头像
   img.src =
     'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="40" height="40"%3E%3Crect width="40" height="40" fill="%2360a5fa"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="16" font-family="sans-serif"%3E?%3C/text%3E%3C/svg%3E'
+}
+
+// 点击评论作者 / @mention：复制对方 QQ 号
+const onCommentAuthorClick = (target) => {
+  if (target?.uin) copyToClipboard(target.uin, 'QQ 号')
 }
 
 // 处理相册标题点击
@@ -1304,14 +1470,28 @@ const enrichFeedsWithShuoshuo = async () => {
 
       feeds.value = feeds.value.map(feed => {
         const matched = shuoshuoMap.get(feed.time)
-        if (matched) {
-          return {
-            ...feed,
-            sourceName: matched.source_name || feed.sourceName,
-            visitorCount: feed.visitorCount || parseInt(matched.visitorCount || matched['visitorCount '] || 0)
+        if (!matched) return feed
+
+        // 用「uin + content 前 30 字」匹配同一条评论 —— 顺序可能因私密评论不一致，
+        // 不能纯按 index；这个 key 在同一作者短时间内的同一条说说里足够稳。
+        const cmtDeviceMap = new Map()
+        for (const c of matched.commentlist || []) {
+          if (c.uin && c.source_name) {
+            const key = `${c.uin}|${(c.content || '').slice(0, 30)}`
+            cmtDeviceMap.set(key, c.source_name)
           }
         }
-        return feed
+
+        return {
+          ...feed,
+          sourceName: matched.source_name || feed.sourceName,
+          visitorCount: feed.visitorCount || parseInt(matched.visitorCount || matched['visitorCount '] || 0),
+          comments: (feed.comments || []).map(cmt => {
+            const key = `${cmt.uin}|${(cmt.text || '').slice(0, 30)}`
+            const device = cmtDeviceMap.get(key)
+            return device ? { ...cmt, deviceName: device } : cmt
+          })
+        }
       })
     }
   } catch { /* silent - enrichment is optional */ }
@@ -1320,8 +1500,6 @@ const enrichFeedsWithShuoshuo = async () => {
 let currentLoadId = 0
 
 const loadFeeds = async (isLoadMore = false) => {
-  const thisLoadId = ++currentLoadId
-
   console.log('[loadFeeds] 开始加载', {
     isLoadMore,
     loading: loading.value,
@@ -1333,6 +1511,8 @@ const loadFeeds = async (isLoadMore = false) => {
     console.log('[loadFeeds] 已在加载中，跳过')
     return
   }
+
+  const thisLoadId = ++currentLoadId
 
   if (isLoadMore) {
     loadingMore.value = true
@@ -1350,6 +1530,7 @@ const loadFeeds = async (isLoadMore = false) => {
 
     let response
     let transformedFeeds
+    let responseHasMore = null
 
     if (isFriendPhotos.value) {
       // 好友照片模式：使用 feeds2_html_picfeed API
@@ -1362,10 +1543,8 @@ const loadFeeds = async (isLoadMore = false) => {
       if (response && response.code === 0 && response.data) {
         const photos = response.data.photos || []
         transformedFeeds = processFriendPhotos(photos)
-        // 好友照片用 hasmore 字段判断
-        if (!response.data.hasmore) {
-          hasMore.value = false
-        }
+        // 好友照片用 hasmore 字段判断；等过时请求校验后再落状态。
+        responseHasMore = !!response.data.hasmore
       }
     } else {
       // 我的照片模式：使用 feeds2_html_picfeed_qqtab API
@@ -1392,12 +1571,13 @@ const loadFeeds = async (isLoadMore = false) => {
 
           if (filteredFeeds.length > 0) {
             feeds.value.push(...filteredFeeds)
+            if (responseHasMore === false) hasMore.value = false
           } else {
             hasMore.value = false
           }
         } else {
           feeds.value = transformedFeeds
-          hasMore.value = true
+          hasMore.value = responseHasMore ?? true
         }
         // 异步加载说说数据来增强feeds（设备信息、浏览量等）
         enrichFeedsWithShuoshuo()
@@ -1411,21 +1591,29 @@ const loadFeeds = async (isLoadMore = false) => {
       }
     } else {
       // API 调用失败
-      hasMore.value = false
-      if (!isLoadMore) {
+      if (isLoadMore) {
+        hasMore.value = true
+        ElMessage.warning(response?.message || '加载更多失败，稍后可继续重试')
+      } else {
+        hasMore.value = false
         ElMessage.error(response?.message || '加载动态失败')
       }
     }
   } catch (error) {
     console.error('加载动态失败:', error)
-    hasMore.value = false
-    if (!isLoadMore) {
+    if (isLoadMore) {
+      hasMore.value = true
+      ElMessage.warning('加载更多失败，稍后可继续重试')
+    } else {
+      hasMore.value = false
       ElMessage.error('加载动态失败: ' + (error.message || '未知错误'))
     }
   } finally {
-    loading.value = false
-    loadingMore.value = false
-    isScrollLoading.value = false
+    if (thisLoadId === currentLoadId) {
+      loading.value = false
+      loadingMore.value = false
+      isScrollLoading.value = false
+    }
   }
 }
 
@@ -1518,6 +1706,9 @@ const processFriendPhotos = (photos) => {
         url: '', // 需要通过 floatview 接口获取
         cover: photo.small_url || photo.medium_url,
         lloc: photo.lloc,
+        picKey: photo.lloc,
+        name: photo.name || photo.desc || '',
+        modifytime: parseInt(photo.uploadtime) || 0,
         albumId: photo.album?.id,
         ownerUin: photo.owner?.uin
       })
@@ -1525,7 +1716,12 @@ const processFriendPhotos = (photos) => {
       media.push({
         type: 'image',
         url: photo.medium_url || photo.small_url,
-        bigUrl: photo.large_image?.url || photo.medium_url
+        bigUrl: photo.large_image?.url || photo.medium_url,
+        raw: photo.raw || '',
+        lloc: photo.lloc,
+        picKey: photo.lloc,
+        name: photo.name || photo.desc || '',
+        modifytime: parseInt(photo.uploadtime) || 0
       })
     }
 
@@ -1605,14 +1801,8 @@ const debouncedSetupObserver = () => {
   }, 100)
 }
 
-// 监听关键状态变化，使用防抖设置观察器
-watch([loadMoreTrigger, hasMore, loading], () => {
-  debouncedSetupObserver()
-})
-
-// 切换照片类型时重新加载
-watch(() => props.photoType, () => {
-  // 递增 loadId 使正在进行的请求结果被丢弃
+const resetFeedsAndLoad = () => {
+  // 切换照片来源或好友 host 时，旧分页结果必须作废，避免把上一个人的数据拼进来。
   currentLoadId++
   feeds.value = []
   hasMore.value = true
@@ -1622,12 +1812,28 @@ watch(() => props.photoType, () => {
   loadFeeds(false).then(() => {
     debouncedSetupObserver()
   })
+}
+
+// 监听关键状态变化，使用防抖设置观察器
+watch([loadMoreTrigger, hasMore, loading], () => {
+  debouncedSetupObserver()
 })
+
+// 切换照片类型或进入/退出好友空间时重新加载当前列表。
+watch([() => props.photoType, () => effectiveHostUin.value], resetFeedsAndLoad)
+
+// 多选模式按 Esc 退出
+const handleEscKey = (e) => {
+  if (e.key === 'Escape' && isSelectionMode.value) {
+    exitSelectionMode()
+  }
+}
 
 onMounted(() => {
   loadFeeds().then(() => {
     debouncedSetupObserver()
   })
+  window.addEventListener('keydown', handleEscKey)
 })
 
 onUnmounted(() => {
@@ -1641,6 +1847,7 @@ onUnmounted(() => {
     clearTimeout(setupObserverTimer)
     setupObserverTimer = null
   }
+  window.removeEventListener('keydown', handleEscKey)
 })
 </script>
 
@@ -1725,115 +1932,17 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0;
-  /* 一条贯穿整个 feeds 的细时间线，所有 feed 都对齐到它 */
-  position: relative;
-  &::before {
-    content: '';
-    position: absolute;
-    left: 18px;
-    top: 12px;
-    bottom: 12px;
-    width: 1px;
-    background: linear-gradient(
-      to bottom,
-      rgba(96, 165, 250, 0.18) 0%,
-      rgba(255, 255, 255, 0.04) 100%
-    );
-  }
 }
 
-/* 动态卡片：包成有边的圆角块 */
-.feed-card {
-  display: flex;
-  position: relative;
-  padding: 12px 14px 12px 12px;
-  margin: 6px 0 6px 36px;
-  border-radius: var(--ds-radius-lg);
-  background: var(--ds-bg-2);
-  border: 1px solid var(--ds-border-faint);
-  transition: var(--ds-transition-all);
-
-  &:hover {
-    background: var(--ds-bg-3);
-    border-color: var(--ds-border-light);
-    transform: translateX(1px);
-  }
-
-  &.selected {
-    background: rgba(96, 165, 250, 0.1);
-    border-color: var(--ds-accent-blue-border);
-  }
-}
-
-/* 左侧时间线指示点（绝对定位到 feeds-container 的轴上） */
-.feed-timeline {
-  position: absolute;
-  left: -24px;
-  top: 18px;
-  width: 14px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  z-index: 1;
-}
-
-.timeline-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--ds-accent-blue);
-  border: 2px solid var(--ds-bg-0);
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18);
-  transition: transform var(--ds-dur-fast) var(--ds-ease-soft);
-}
-
-.feed-card:hover .timeline-dot {
-  transform: scale(1.2);
-}
-
-/* 老的 timeline-line 不再用（feeds-container::before 替代） */
+/* 老的 timeline-line 不再用（tl-container::before 替代） */
 .timeline-line {
   display: none;
 }
 
-/* 日期分组标题：左对齐到时间线，配合轴上的"环" */
+/* 日期分组标题：保留 date-line 隐藏（视觉走 .tl-date-header） */
 .date-group-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 16px 0 8px;
-  padding-left: 12px;
-  position: relative;
-
-  &::before {
-    content: '';
-    position: absolute;
-    left: 13px;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    width: 11px;
-    height: 11px;
-    border-radius: 50%;
-    background: var(--ds-bg-0);
-    border: 2px solid var(--ds-accent-blue);
-    z-index: 2;
-  }
-
   .date-line {
     display: none;
-  }
-
-  .date-text {
-    margin-left: 24px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--ds-text-secondary);
-    letter-spacing: 0.3px;
-    white-space: nowrap;
-    padding: 2px 10px;
-    background: var(--ds-bg-2);
-    border-radius: var(--ds-radius-pill);
-    border: 1px solid var(--ds-border-light);
   }
 }
 
@@ -1878,12 +1987,6 @@ onUnmounted(() => {
   }
 }
 
-/* 右侧内容 */
-.feed-content-wrapper {
-  flex: 1;
-  min-width: 0;
-}
-
 // ========== 好友照片网格布局 ==========
 .friend-photos-grid {
   display: grid;
@@ -1913,7 +2016,7 @@ onUnmounted(() => {
   /* 隐私模式 */
   &.privacy-mode {
     .card-image :deep(.el-image__inner) {
-      filter: blur(15px);
+      filter: blur(var(--qz-privacy-media-blur));
       transition: filter 0.3s ease;
     }
 
@@ -1925,13 +2028,6 @@ onUnmounted(() => {
       }
     }
 
-    &:hover .card-image :deep(.el-image__inner) {
-      filter: blur(8px);
-    }
-
-    &:hover .card-privacy-overlay {
-      background: rgba(0, 0, 0, 0.85);
-    }
   }
 }
 
@@ -1978,27 +2074,11 @@ onUnmounted(() => {
 .card-privacy-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(2px);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   pointer-events: none;
-
-  .privacy-icon {
-    font-size: 24px;
-    color: #e6a23c;
-    margin-bottom: 4px;
-    opacity: 0.9;
-  }
-
-  .privacy-text {
-    font-size: 10px;
-    color: rgba(255, 255, 255, 0.8);
-    font-weight: 500;
-    text-align: center;
-  }
 }
 
 .card-info {
@@ -2037,6 +2117,36 @@ onUnmounted(() => {
   min-width: 0;
 }
 
+.card-download-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 28px;
+  margin-top: 8px;
+  padding: 0 10px;
+  color: rgba(96, 165, 250, 0.9);
+  background: rgba(96, 165, 250, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover:not(:disabled) {
+    color: #fff;
+    background: rgba(96, 165, 250, 0.18);
+    border-color: rgba(96, 165, 250, 0.32);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
 .card-album {
   font-size: 11px;
   color: rgba(96, 165, 250, 0.7);
@@ -2060,19 +2170,6 @@ onUnmounted(() => {
   grid-column: 1 / -1;
 }
 
-.feed-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.feed-time {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-  font-weight: 500;
-}
-
 .delete-btn {
   color: rgba(245, 108, 108, 0.8) !important;
   padding: 2px 6px !important;
@@ -2091,6 +2188,19 @@ onUnmounted(() => {
   }
 }
 
+.feed-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.feed-download-btn {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+}
+
 .feed-body {
   margin-bottom: 10px;
 }
@@ -2100,40 +2210,23 @@ onUnmounted(() => {
   margin-top: 6px;
 }
 
+/* .media-row / .media-item 基础视觉由全局 .tl-media / .tl-media-item 提供 */
 .media-row {
-  display: flex;
   align-items: center;
-  gap: 6px;
 }
 
 .media-item {
-  position: relative;
   width: 60px;
   height: 60px;
-  border-radius: 4px;
-  overflow: hidden;
-  cursor: pointer;
-  background: rgba(0, 0, 0, 0.2);
   flex-shrink: 0;
-  transition: all 0.2s ease;
 
-  &:hover {
-    opacity: 0.85;
-    transform: scale(1.05);
-  }
-
-  /* 隐私模式下禁用缩放，悬停时减少模糊 */
+  /* 隐私模式下禁用缩放 */
   &.privacy-mode:hover {
     transform: none;
     opacity: 1;
 
-    .media-thumb :deep(.el-image__inner) {
-      filter: blur(8px);
-    }
-
     .media-privacy-overlay {
       opacity: 1;
-      background: rgba(0, 0, 0, 0.85);
     }
   }
 
@@ -2158,7 +2251,7 @@ onUnmounted(() => {
     /* 隐私模式样式 - 视频 */
     &.privacy-mode {
       .media-thumb :deep(.el-image__inner) {
-        filter: blur(15px);
+        filter: blur(var(--qz-privacy-media-blur));
         transition: filter 0.3s ease;
       }
 
@@ -2175,7 +2268,7 @@ onUnmounted(() => {
   /* 隐私模式样式 - 图片 */
   &.privacy-mode {
     .media-thumb :deep(.el-image__inner) {
-      filter: blur(15px);
+      filter: blur(var(--qz-privacy-media-blur));
       transition: filter 0.3s ease;
     }
 
@@ -2189,7 +2282,6 @@ onUnmounted(() => {
 .media-privacy-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2198,21 +2290,6 @@ onUnmounted(() => {
   opacity: 0;
   transition: opacity 0.3s ease;
   pointer-events: none;
-  backdrop-filter: blur(2px);
-
-  .privacy-icon {
-    font-size: 24px;
-    color: #e6a23c;
-    margin-bottom: 4px;
-    opacity: 0.9;
-  }
-
-  .privacy-text {
-    font-size: 10px;
-    color: rgba(255, 255, 255, 0.8);
-    font-weight: 500;
-    text-align: center;
-  }
 }
 
 /* 图片包装器 - 用于包裹图片和遮罩 */
@@ -2222,26 +2299,11 @@ onUnmounted(() => {
   height: 100%;
 }
 
+/* .media-more 基础视觉由 .tl-media-more 提供，这里仅锁定尺寸 */
 .media-more {
   width: 60px;
   height: 60px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px dashed rgba(255, 255, 255, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
   flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
-
-  &:hover {
-    background: rgba(0, 0, 0, 0.4);
-    border-color: rgba(255, 255, 255, 0.3);
-  }
 }
 
 .media-thumb {
@@ -2291,8 +2353,14 @@ onUnmounted(() => {
   backdrop-filter: blur(2px);
 }
 
-/* 隐私模式样式 - 动态卡片中的媒体 */
+/* 隐私模式样式 + 多选状态 - 动态卡片 */
 .feed-card {
+  /* 多选选中态：蓝色高亮（覆盖 .tl-card 默认背景） */
+  &.selected {
+    background: rgba(96, 165, 250, 0.1);
+    border-color: var(--ds-accent-blue-border);
+  }
+
   /* 隐私模式下确保选择框可见 */
   &.privacy-mode {
     .selection-checkbox {
@@ -2357,63 +2425,71 @@ onUnmounted(() => {
   white-space: pre-wrap;
 }
 
+/* .feed-footer 基础视觉由 .tl-footer 提供 */
 .feed-footer {
-  margin-top: 8px;
+  align-items: stretch;
+  gap: 8px;
 }
 
-/* 隐藏数据标签 */
+.feed-footer-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 24px;
+}
+
+/* 浏览量 / 设备 chip 容器：chip 本身由 .tl-chip 提供视觉 */
 .feed-meta-tags {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
+  min-width: 0;
 
-  .meta-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    padding: 2px 8px;
-    font-size: 11px;
-    border-radius: 10px;
-    line-height: 1.3;
-    color: rgba(255, 255, 255, 0.5);
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+  .tl-chip {
+    height: 22px;
+    line-height: 1;
+  }
 
-    .meta-icon {
-      width: 11px;
-      height: 11px;
-      opacity: 0.5;
-    }
+  .tl-chip-icon {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 12px;
+    stroke-width: 2;
+  }
 
-    &.views-tag {
-      color: rgba(96, 165, 250, 0.7);
-    }
-
-    &.device-tag {
-      max-width: 180px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
+  /* 设备 chip 内容偶尔很长，限制宽度避免撑爆 footer */
+  .tl-chip[title^='来自'] {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
-/* 操作按钮栏 */
+.feed-meta-tags-placeholder {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 操作按钮栏：基础 chip 视觉由 .tl-stat 提供，这里只补 active 状态和图标尺寸 */
 .feed-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 16px;
-  margin-bottom: 6px;
+  min-height: 22px;
+  flex-shrink: 0;
 }
 
 .action-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 12px;
-  cursor: default;
+  height: 22px;
+  line-height: 1;
 
   &.active {
     color: rgba(255, 255, 255, 0.85);
@@ -2475,14 +2551,40 @@ onUnmounted(() => {
   margin-left: 3px;
 }
 
-/* 评论列表 */
+/* 点赞列表的「等 N 人」/「收起」按钮 */
+.like-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  margin-left: 2px;
+  height: 18px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(96, 165, 250, 0.85);
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: #93c5fd;
+    background: rgba(96, 165, 250, 0.15);
+  }
+}
+
+/* 评论列表：作为 .tl-footer 的 flex 子项需要强占满整行，否则会被推到右侧错位 */
 .feed-comments {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 8px;
-  background: rgba(0, 0, 0, 0.12);
-  border-radius: 4px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  width: 100%;
+  flex-basis: 100%;
+  margin-top: 6px;
 }
 
 .comment-item {
@@ -2543,6 +2645,19 @@ onUnmounted(() => {
   color: rgba(255, 255, 255, 0.4);
   font-size: 11px;
   flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* 评论者设备：从 shuoshuo API 富化得到，仅匹配上时才显示 */
+.comment-device {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 10px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -2716,48 +2831,133 @@ onUnmounted(() => {
   }
 }
 
-/* 底部悬浮工具栏 */
+/* 底部悬浮 pill 工具栏：玻璃 + 蓝色 ring，居中浮在底部 */
 .floating-toolbar {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: linear-gradient(135deg, rgba(30, 30, 30, 0.95) 0%, rgba(20, 20, 20, 0.95) 100%);
-  backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 16px 24px;
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 1000;
+  pointer-events: none; // 容器透传，pill 自己接事件
+
+  .toolbar-pill {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 18px;
+    padding: 8px 8px 8px 16px;
+    background: rgba(20, 22, 30, 0.78);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(96, 165, 250, 0.18);
+    border-radius: 999px;
+    box-shadow:
+      0 12px 40px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(96, 165, 250, 0.08),
+      0 0 24px rgba(96, 165, 250, 0.12);
+  }
 }
 
-.toolbar-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  display: flex;
+.toolbar-left {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
+
+  .check-icon {
+    color: #60a5fa;
+  }
 }
 
 .selected-count {
-  font-size: 15px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+
+  strong {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .dim {
+    color: rgba(255, 255, 255, 0.45);
+    font-weight: 400;
+  }
 }
 
 .toolbar-actions {
-  display: flex;
-  gap: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  height: 30px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.78);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  &.tb-btn-primary:not(:disabled) {
+    color: #60a5fa;
+    background: rgba(96, 165, 250, 0.12);
+    border-color: rgba(96, 165, 250, 0.22);
+
+    &:hover {
+      color: #93c5fd;
+      background: rgba(96, 165, 250, 0.2);
+    }
+  }
+
+  &.tb-btn-danger:not(:disabled) {
+    color: #f87171;
+
+    &:hover {
+      color: #fca5a5;
+      background: rgba(248, 113, 113, 0.12);
+    }
+  }
+
+  &.tb-btn-close {
+    padding: 6px;
+    width: 30px;
+  }
+}
+
+.tb-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 4px;
 }
 
 /* 工具栏动画 */
 .toolbar-enter-active,
 .toolbar-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .toolbar-enter-from,
 .toolbar-leave-to {
-  transform: translateY(100%);
+  transform: translate(-50%, 30px);
   opacity: 0;
 }
 

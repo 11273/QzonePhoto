@@ -139,6 +139,15 @@
             <span class="privacy-text">刷新</span>
           </el-button>
         </el-tooltip>
+
+        <el-tooltip content="反馈问题或建议" placement="bottom">
+          <el-button class="global-feedback-btn no-drag" size="small" text @click="openFeedback">
+            <el-icon class="feedback-icon">
+              <QuestionFilled />
+            </el-icon>
+            <span class="privacy-text">反馈</span>
+          </el-button>
+        </el-tooltip>
       </div>
 
       <!-- GitHub 图标 (Mac系统) -->
@@ -203,7 +212,8 @@ import {
   ArrowUpBold,
   View,
   Hide,
-  Refresh
+  Refresh,
+  QuestionFilled
 } from '@element-plus/icons-vue'
 import { isMac as isMacPlatform } from '@renderer/utils/platform'
 import { IPC_APP, IPC_SHELL, IPC_WINDOW } from '@shared/ipc-channels'
@@ -226,6 +236,7 @@ const isMac = ref(isMacPlatform())
 const appVersion = ref('')
 const appHomepage = ref('')
 const appDescription = ref('')
+const runtimeInfo = ref({})
 // 窗口状态
 const isMaximized = ref(false)
 
@@ -315,6 +326,51 @@ const openGitHub = () => {
   if (appHomepage.value) {
     window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, appHomepage.value)
   }
+}
+
+const platformNameMap = {
+  darwin: 'macOS',
+  win32: 'Windows',
+  linux: 'Linux'
+}
+
+const openFeedback = () => {
+  const homepage = (appHomepage.value || 'https://github.com/11273/QzonePhoto').replace(/\/$/, '')
+  const runtime = runtimeInfo.value || {}
+  const versions = runtime.versions || {}
+  const system = [
+    platformNameMap[runtime.platform] || runtime.platform || 'unknown',
+    runtime.arch || ''
+  ]
+    .filter(Boolean)
+    .join(' / ')
+  const runtimeText = [
+    versions.electron ? `Electron ${versions.electron}` : '',
+    versions.chrome ? `Chrome ${versions.chrome}` : '',
+    versions.node ? `Node ${versions.node}` : ''
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  const body = [
+    '### 问题或建议',
+    '',
+    '<!-- 请描述你遇到的问题，或者想要的功能 -->',
+    '',
+    '### 复现步骤',
+    '',
+    '1. ',
+    '2. ',
+    '3. ',
+    '',
+    '### 环境信息',
+    '',
+    `- 版本：${appVersion.value || 'unknown'}`,
+    `- 系统：${system}`,
+    `- 运行时：${runtimeText || 'unknown'}`,
+    `- 安装方式：${runtime.isPackaged ? '安装包' : '开发模式'}`
+  ].join('\n')
+  const url = `${homepage}/issues/new?title=${encodeURIComponent('[反馈] ')}&body=${encodeURIComponent(body)}`
+  window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, url)
 }
 
 // 系统刷新
@@ -555,6 +611,7 @@ const loadAppInfo = async () => {
     const appInfo = await window.api.invoke(IPC_APP.GET_INFO)
     console.log('appInfo', appInfo)
     if (appInfo) {
+      runtimeInfo.value = appInfo
       if (appInfo.description) {
         appDescription.value = appInfo.description
       }
@@ -688,6 +745,10 @@ onUnmounted(() => {
   font-size: 14px;
   color: #ffffff;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 下载进度条 */
@@ -726,60 +787,72 @@ onUnmounted(() => {
   margin-right: 8px;
 }
 
-.global-refresh-btn {
-  color: rgba(255, 255, 255, 0.8) !important;
-  padding: 6px !important;
-  border-radius: 6px !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  height: 28px !important;
-  min-width: 28px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
+.global-refresh-btn,
+.global-feedback-btn {
+  color: rgba(255, 255, 255, 0.8);
+  padding: 6px;
+  border-radius: 6px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  height: 28px;
+  min-width: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 
-  .refresh-icon {
+  &:deep(.refresh-icon) {
     font-size: 14px;
-    color: #67c23a;
+    color: var(--ds-accent-green, #34d399);
+    transition: all 0.3s ease;
+  }
+
+  &:deep(.feedback-icon) {
+    font-size: 14px;
+    color: #60a5fa;
     transition: all 0.3s ease;
   }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.12) !important;
-    color: rgba(255, 255, 255, 0.95) !important;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.95);
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 
-    .refresh-icon {
+    &:deep(.refresh-icon) {
       color: #85ce61;
       transform: rotate(180deg);
+    }
+
+    &:deep(.feedback-icon) {
+      color: #93c5fd;
+      transform: translateY(-1px);
     }
   }
 
   &:active {
     transform: translateY(0);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
 }
 
 .global-privacy-btn {
-  color: rgba(255, 255, 255, 0.8) !important;
-  padding: 6px 12px !important;
-  border-radius: 6px !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  height: 28px !important;
-  min-width: 68px !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 6px !important;
-  cursor: pointer !important;
+  color: rgba(255, 255, 255, 0.8);
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  height: 28px;
+  min-width: 68px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
 
-  .privacy-icon {
+  &:deep(.privacy-icon) {
     font-size: 14px;
     flex-shrink: 0;
     cursor: pointer;
   }
 
-  .privacy-text {
+  &:deep(.privacy-text) {
     font-size: 12px;
     font-weight: 500;
     line-height: 1;
@@ -787,42 +860,42 @@ onUnmounted(() => {
   }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.12) !important;
-    color: rgba(255, 255, 255, 0.95) !important;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.95);
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   }
 
   &:active {
     transform: translateY(0);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
 
   &.el-button--info {
-    .privacy-icon {
-      color: #67c23a;
+    &:deep(.privacy-icon) {
+      color: var(--ds-accent-green, #34d399);
     }
 
     &:hover {
-      background: rgba(103, 194, 58, 0.15) !important;
-      color: rgba(255, 255, 255, 0.95) !important;
+      background: rgba(52, 211, 153, 0.15);
+      color: rgba(255, 255, 255, 0.95);
 
-      .privacy-icon {
+      &:deep(.privacy-icon) {
         color: #85ce61;
       }
     }
   }
 
   &.el-button--warning {
-    .privacy-icon {
+    &:deep(.privacy-icon) {
       color: #e6a23c;
     }
 
     &:hover {
-      background: rgba(230, 162, 60, 0.15) !important;
-      color: rgba(255, 255, 255, 0.95) !important;
+      background: rgba(230, 162, 60, 0.15);
+      color: rgba(255, 255, 255, 0.95);
 
-      .privacy-icon {
+      &:deep(.privacy-icon) {
         color: #ebb563;
       }
     }
@@ -887,65 +960,6 @@ onUnmounted(() => {
 
 .title-bar-button:hover svg {
   opacity: 1;
-}
-
-/* 深色主题优化 */
-@media (prefers-color-scheme: dark) {
-  .custom-title-bar {
-    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  }
-
-  .app-title {
-    color: #f7fafc;
-  }
-
-  .version-container {
-    background: rgba(255, 255, 255, 0.02);
-  }
-
-  .version-container:hover {
-    background: rgba(255, 255, 255, 0.06);
-  }
-
-  .app-version {
-    color: rgba(247, 250, 252, 0.9);
-  }
-
-  .app-version.has-update {
-    color: #85ce61;
-    text-shadow: 0 0 8px rgba(133, 206, 97, 0.5);
-  }
-
-  .app-version.checking {
-    color: #79bbff;
-    text-shadow: 0 0 8px rgba(121, 187, 255, 0.5);
-  }
-
-  .progress-bar {
-    background: rgba(255, 255, 255, 0.1);
-  }
-
-  .progress-text {
-    color: rgba(255, 255, 255, 0.7);
-  }
-
-  .github-btn {
-    color: rgba(247, 250, 252, 0.8) !important;
-  }
-
-  .github-btn:hover {
-    background-color: rgba(255, 255, 255, 0.08) !important;
-  }
-
-  .title-bar-button {
-    color: rgba(247, 250, 252, 0.7);
-  }
-
-  .title-bar-button:hover {
-    background-color: rgba(255, 255, 255, 0.06);
-    color: #f7fafc;
-  }
 }
 
 /* 版本号更新提示样式 */

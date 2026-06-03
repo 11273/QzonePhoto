@@ -68,12 +68,15 @@ const handleEmojiError = (event) => {
 <style scoped>
 .rich-text {
   display: inline;
-  white-space: pre-wrap;
+  white-space: pre-line;
   word-break: break-word;
+  line-height: inherit;
 }
 
 .text-segment {
   color: inherit;
+  display: inline;
+  vertical-align: baseline;
 }
 
 .mention-segment {
@@ -92,10 +95,12 @@ const handleEmojiError = (event) => {
 
 .emoji-segment {
   display: inline-block;
-  width: 15px;
-  height: 15px;
-  vertical-align: middle;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.12em;
   margin: 0 1px;
+  line-height: 1;
+  object-fit: contain;
 }
 
 .emoji-fallback {

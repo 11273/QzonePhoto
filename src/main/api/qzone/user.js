@@ -1,4 +1,5 @@
-import { getGTK } from '@main/api/utils/helpers'
+import { net } from 'electron'
+import { extractJSONFromCallback, getGTK } from '@main/api/utils/helpers'
 import request from '@main/api/utils/request'
 
 // Extract raw QQ number from cookie uin (strip "o" prefix)
@@ -100,8 +101,9 @@ export async function getVisitorDetail(uin, p_skey, mask = 2, mod = 2) {
  */
 export async function getShuoshuo(uin, p_skey, targetUin, pos = 0, num = 20) {
   const url = 'https://user.qzone.qq.com/proxy/domain/taotao.qq.com/cgi-bin/emotion_cgi_msglist_v6'
+  const hostUin = rawUin(targetUin || uin)
   const params = {
-    uin: targetUin,
+    uin: hostUin,
     ftype: 0,
     sort: 0,
     pos,
@@ -112,11 +114,25 @@ export async function getShuoshuo(uin, p_skey, targetUin, pos = 0, num = 20) {
     format: 'jsonp',
     need_private_comment: 1
   }
-  const response = await request.get(url, {
-    params,
+  const requestUrl = new URL(url)
+  Object.entries(params).forEach(([key, value]) => requestUrl.searchParams.set(key, value))
+  const response = await net.fetch(requestUrl.toString(), {
     headers: {
-      Cookie: `uin=${uin};p_skey=${p_skey}`
+      Cookie: `uin=${uin}; p_uin=${uin}; p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${hostUin}`,
+      Origin: 'https://user.qzone.qq.com',
+      Accept: '*/*',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
     }
   })
-  return response.data
+  const text = await response.text()
+  if (!response.ok) {
+    return {
+      code: -response.status,
+      message: response.status === 501 ? '接口被 QQ 空间风控拦截' : `HTTP ${response.status}`,
+      raw: text
+    }
+  }
+  const parsed = extractJSONFromCallback(text)
+  return typeof parsed === 'object' ? parsed : { code: -1, message: '响应异常', raw: parsed }
 }

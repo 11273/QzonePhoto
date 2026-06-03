@@ -7,6 +7,18 @@
 
     <!-- 触发按钮 -->
     <div class="drawer-trigger" @click="toggleDrawer">
+      <div class="drawer-back-slot" :class="{ visible: activeFriend }">
+        <button
+          class="drawer-back-btn"
+          title="返回我的空间"
+          :aria-hidden="!activeFriend"
+          :tabindex="activeFriend ? 0 : -1"
+          :disabled="!activeFriend"
+          @click.stop="emit('exit-friend')"
+        >
+          <el-icon><ArrowLeft /></el-icon>
+        </button>
+      </div>
       <div class="trigger-bar" :class="{ active: isExpanded }">
         <svg class="trigger-heart" viewBox="0 0 16 16" fill="currentColor">
           <path
@@ -207,7 +219,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowUp, Search, Plus, Loading, Download } from '@element-plus/icons-vue'
+import { ArrowUp, ArrowLeft, Search, Plus, Loading, Download } from '@element-plus/icons-vue'
 import { useFriendStore, FRIEND_TAB } from '@renderer/store/friend.store'
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
@@ -218,7 +230,7 @@ defineProps({
   activeFriend: { type: Object, default: null }
 })
 
-const emit = defineEmits(['enter-friend'])
+const emit = defineEmits(['enter-friend', 'exit-friend'])
 const friendStore = useFriendStore()
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
@@ -534,16 +546,72 @@ defineExpose({ toggleDrawer })
 /* ===== 触发按钮 ===== */
 .drawer-trigger {
   padding: 6px 8px 8px;
+  display: flex;
+  align-items: center;
+}
+
+.drawer-back-slot {
+  width: 36px;
+  flex: 0 0 36px;
+  margin-right: 8px;
+  opacity: 1;
+  transform: translateX(0) scale(1);
+  overflow: hidden;
+  transition:
+    width 0.18s ease,
+    flex-basis 0.18s ease,
+    margin-right 0.18s ease,
+    opacity 0.16s ease,
+    transform 0.18s ease;
+}
+
+.drawer-back-slot:not(.visible) {
+  width: 0;
+  flex-basis: 0;
+  margin-right: 0;
+  opacity: 0;
+  transform: translateX(-6px) scale(0.96);
+}
+
+.drawer-back-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ds-radius-lg);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.08) 0%, rgba(96, 165, 250, 0.03) 100%);
+  color: rgba(255, 255, 255, 0.58);
+  cursor: pointer;
+  transition: var(--ds-transition-all);
+}
+
+.drawer-back-btn:disabled {
+  pointer-events: none;
+}
+
+.drawer-back-btn:hover {
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.5);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.16) 0%, rgba(96, 165, 250, 0.06) 100%);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.06);
+}
+
+.drawer-back-btn .el-icon {
+  font-size: 14px;
 }
 
 .trigger-bar {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
   border-radius: var(--ds-radius-lg);
-  border: 1px solid rgba(248, 113, 113, 0.28);
-  background: linear-gradient(135deg, rgba(248, 113, 113, 0.08) 0%, rgba(248, 113, 113, 0.03) 100%);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.08) 0%, rgba(96, 165, 250, 0.03) 100%);
   cursor: pointer;
   transition: var(--ds-transition-all);
   user-select: none;
@@ -551,9 +619,9 @@ defineExpose({ toggleDrawer })
 
 .trigger-bar:hover,
 .trigger-bar.active {
-  border-color: rgba(248, 113, 113, 0.5);
-  background: linear-gradient(135deg, rgba(248, 113, 113, 0.16) 0%, rgba(248, 113, 113, 0.06) 100%);
-  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.06);
+  border-color: rgba(96, 165, 250, 0.5);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.16) 0%, rgba(96, 165, 250, 0.06) 100%);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.06);
 }
 
 .trigger-heart {
@@ -580,12 +648,12 @@ defineExpose({ toggleDrawer })
 }
 
 .trigger-bar:hover .trigger-arrow {
-  color: rgba(248, 113, 113, 0.5);
+  color: rgba(96, 165, 250, 0.5);
 }
 
 .trigger-arrow.flipped {
   transform: rotate(180deg);
-  color: #f87171;
+  color: #60a5fa;
 }
 
 /* ===== 展开面板 — 绝对定位向上弹出，覆盖整个菜单区域 ===== */
@@ -669,8 +737,8 @@ defineExpose({ toggleDrawer })
   align-items: center;
   justify-content: center;
   gap: 3px;
-  padding: 5px 0;
-  font-size: 11px;
+  padding: 7px 0;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.35);
   border-radius: 4px;
   cursor: pointer;
@@ -689,8 +757,8 @@ defineExpose({ toggleDrawer })
 }
 
 .sub-tab.active {
-  background: rgba(248, 113, 113, 0.12);
-  color: #f87171;
+  background: rgba(96, 165, 250, 0.12);
+  color: #60a5fa;
   font-weight: 600;
 }
 
@@ -806,8 +874,9 @@ defineExpose({ toggleDrawer })
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.7);
-  font-size: 10px;
-  padding: 3px 8px;
+  font-size: 12px;
+  padding: 6px 12px;
+  min-height: 28px;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -957,21 +1026,33 @@ defineExpose({ toggleDrawer })
 
 /* ===== 好友项 ===== */
 .drawer-friend-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, transform 0.12s ease;
 }
 
 .drawer-friend-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateX(2px);
 }
 
 .drawer-friend-item.active {
-  background: rgba(248, 113, 113, 0.08);
+  background: rgba(248, 113, 113, 0.1);
+}
+.drawer-friend-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: #f87171;
 }
 
 .drawer-friend-item :deep(.el-avatar) {

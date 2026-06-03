@@ -1050,7 +1050,7 @@ const refreshAlbum = async () => {
     font-weight: 500;
     font-size: 13px;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--ds-shadow-sm);
     min-width: 80px;
     max-width: 120px;
 
@@ -1061,58 +1061,65 @@ const refreshAlbum = async () => {
 
     &:hover {
       transform: translateY(-1px);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      box-shadow: var(--ds-shadow-sm);
+      filter: brightness(1.08);
     }
 
     &:active {
       transform: translateY(0);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+      box-shadow: var(--ds-shadow-sm);
+      filter: none;
     }
 
     &.upload-btn {
-      background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
-      border: 1px solid #67c23a;
+      background: var(--ds-accent-green, #34d399);
+      border: 1px solid transparent;
       color: #ffffff;
 
       &:hover {
-        background: linear-gradient(135deg, #7aca52 0%, #95d373 100%);
-        border-color: #7aca52;
+        background: var(--ds-accent-green, #34d399);
+        border-color: transparent;
+        filter: brightness(1.08);
       }
     }
 
     &.download-btn {
-      background: linear-gradient(135deg, #409eff 0%, #4dabf7 100%);
-      border: 1px solid #409eff;
+      background: var(--ds-accent-blue, #60a5fa);
+      border: 1px solid transparent;
       color: #ffffff;
 
       &:hover {
-        background: linear-gradient(135deg, #5bacff 0%, #66b8f7 100%);
-        border-color: #5bacff;
+        background: var(--ds-accent-blue, #60a5fa);
+        border-color: transparent;
+        filter: brightness(1.08);
       }
     }
 
     &.cancel-btn {
-      background: linear-gradient(135deg, #e6a23c 0%, #eebe77 100%);
-      border: 1px solid #e6a23c;
+      background: var(--ds-accent-yellow, #fbbf24);
+      border: 1px solid transparent;
       color: #ffffff;
 
       &:hover {
-        background: linear-gradient(135deg, #eaae4e 0%, #f1c589 100%);
-        border-color: #eaae4e;
+        background: var(--ds-accent-yellow, #fbbf24);
+        border-color: transparent;
+        filter: brightness(1.08);
       }
     }
 
     &:disabled {
       background: #c0c4cc;
-      border-color: #c0c4cc;
+      border-color: transparent;
       color: #ffffff;
       transform: none;
       box-shadow: none;
+      filter: none;
       cursor: not-allowed;
 
       &:hover {
         transform: none;
         box-shadow: none;
+        filter: none;
       }
     }
   }

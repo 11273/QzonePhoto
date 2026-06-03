@@ -155,8 +155,8 @@
             <div v-if="updateState === 'downloaded'" class="content-downloaded">
               <div class="ready-icon">
                 <svg
-                  width="48"
-                  height="48"
+                  width="32"
+                  height="32"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -166,7 +166,7 @@
                   <polyline points="22,4 12,14.01 9,11.01"></polyline>
                 </svg>
               </div>
-              <p class="ready-text">新版本已准备就绪，是否立即安装？</p>
+              <p class="ready-text">关闭应用后将自动安装并重启，大约 5 秒</p>
             </div>
 
             <!-- 暂无更新 -->
@@ -519,9 +519,6 @@ const getFormattedSpeed = () => {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   overflow: hidden;
-  box-shadow:
-    0 20px 40px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(255, 255, 255, 0.05);
   width: 480px;
   max-width: 90vw;
   max-height: 80vh;
@@ -892,6 +889,11 @@ const getFormattedSpeed = () => {
   justify-content: center;
 }
 
+.btn:focus-visible {
+  outline: 2px solid var(--ds-accent-blue);
+  outline-offset: 2px;
+}
+
 .btn-primary {
   background: linear-gradient(135deg, #60a5fa 0%, #7eb8fc 100%);
   color: white;
@@ -899,9 +901,11 @@ const getFormattedSpeed = () => {
 }
 
 .btn-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(96, 165, 250, 0.4);
-  background: linear-gradient(135deg, #7eb8fc 0%, #60a5fa 100%);
+  filter: brightness(1.12);
+}
+
+.btn-primary:active {
+  filter: brightness(0.95);
 }
 
 .btn-secondary {

@@ -37,7 +37,21 @@ export const IPC_PHOTO = {
   /** 获取相册访客信息 */
   GET_ALBUM_VISITORS: 'photo:getAlbumVisitors',
   /** 获取好友照片动态流 */
-  GET_FRIEND_PHOTOS: 'photo:getFriendPhotos'
+  GET_FRIEND_PHOTOS: 'photo:getFriendPhotos',
+  /** 获取「好友动态」时间线（feeds3_html_more，scope=0/7 切好友/特别关心） */
+  GET_FRIEND_FEEDS: 'photo:getFriendFeeds',
+  /** 获取「我的主页 / 好友主页」时间线（feeds_html_module + feeds_html_act_all） */
+  GET_HOME_FEEDS: 'photo:getHomeFeeds',
+  /** 拉好友动态某条 feed 的评论列表（emotion_cgi_ic_getcomments） */
+  GET_FEED_COMMENTS: 'photo:getFeedComments',
+  /** 顶部 5 类动态未读计数 */
+  GET_FEEDS_COUNT: 'photo:getFeedsCount',
+  /** 「与我相关」时间线（feeds2_html_pav_all） */
+  GET_ABOUT_ME_FEEDS: 'photo:getAboutMeFeeds',
+  /** 「那年今日」时间线（feeds2_html_today_lastyear） */
+  GET_LAST_YEAR_FEEDS: 'photo:getLastYearFeeds',
+  /** 「我的收藏」列表（get_fav_list） */
+  GET_FAV_LIST: 'photo:getFavList'
 }
 
 export const IPC_USER = {
@@ -65,6 +79,8 @@ export const IPC_DOWNLOAD = {
   ADD_TASK: 'download:addTask',
   /** 添加相册下载 */
   ADD_ALBUM: 'download:addAlbum',
+  /** 添加动态/说说图片批量下载（按动态聚合） */
+  ADD_FEEDS: 'download:addFeeds',
   /** 获取任务列表（分页） */
   GET_TASKS: 'download:getTasks',
   /** 获取活跃任务 */
@@ -233,7 +249,9 @@ export const IPC_WINDOW = {
   /** 窗口最大化事件 */
   MAXIMIZED: 'window:maximized',
   /** 打开QQ空间官网 */
-  OPEN_QZONE_WEB: 'window:openQzoneWeb'
+  OPEN_QZONE_WEB: 'window:openQzoneWeb',
+  /** 同步内置 QQ 空间窗口登录态 */
+  SET_QZONE_AUTH: 'window:setQzoneAuth'
 }
 
 export const IPC_APP = {

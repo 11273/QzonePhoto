@@ -8,6 +8,17 @@
         </div>
         <div class="header-actions">
           <el-button
+            v-if="displayVideos.length > 0"
+            text
+            class="download-btn"
+            :loading="downloadingAll"
+            :disabled="loading || downloadingAll"
+            @click="downloadAllVideos"
+          >
+            <Download :size="14" />
+            <span>{{ downloadingAll ? '加入下载…' : `下载全部 ${displayVideos.length}` }}</span>
+          </el-button>
+          <el-button
             text
             :icon="Refresh"
             :loading="loading && videos.length === 0"
@@ -31,7 +42,7 @@
           <!-- 空状态 -->
           <EmptyState
             v-else-if="videos.length === 0 && !loading"
-            icon="🎬"
+            :icon="Clapperboard"
             title="暂无视频"
             description="还没有上传过视频哦~"
           />
@@ -68,14 +79,14 @@
                 </div>
 
                 <!-- 隐私模式遮罩 -->
-                <div v-if="privacyStore.privacyMode" class="privacy-overlay">
-                  <el-icon><Hide /></el-icon>
-                  <span>隐私保护</span>
+                <div v-if="privacyStore.privacyMode" class="privacy-overlay qz-privacy-overlay">
+                  <el-icon class="qz-privacy-icon"><Hide /></el-icon>
+                  <span class="qz-privacy-text">隐私保护</span>
                 </div>
 
                 <!-- 左下：评论数 -->
                 <div v-if="video.commentCount > 0" class="cover-comment">
-                  💬 {{ video.commentCount }}
+                  <MessageCircle :size="12" /> {{ video.commentCount }}
                 </div>
                 <!-- 右下：时长 -->
                 <div v-if="video.duration" class="cover-duration">
@@ -163,9 +174,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, inject, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, inject, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, VideoPlay, Loading, Warning, Hide } from '@element-plus/icons-vue'
+import { Clapperboard, Download, MessageCircle } from '@lucide/vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import { useUserStore } from '@renderer/store/user.store'
@@ -195,7 +207,9 @@ const currentVideo = ref(null)
 const videoPlayerRef = ref(null)
 const videoLoading = ref(false)
 const videoError = ref('')
+const downloadingAll = ref(false)
 let hls = null
+let currentLoadId = 0
 const leftRef = inject('leftRef', null)
 
 // 获取视频列表
@@ -209,6 +223,8 @@ const fetchVideoList = async (isLoadMore = false) => {
     loading.value = true
   }
 
+  const thisLoadId = ++currentLoadId
+
   try {
     const params = {
       hostUin: effectiveHostUin.value,
@@ -221,6 +237,7 @@ const fetchVideoList = async (isLoadMore = false) => {
     }
 
     const response = await window.QzoneAPI.getVideoList(params, friendMeta.value)
+    if (thisLoadId !== currentLoadId) return
 
     if (response.code === 0 && response.data) {
       const newVideos = response.data.Videos || []
@@ -244,10 +261,14 @@ const fetchVideoList = async (isLoadMore = false) => {
       ElMessage.error(response.message || '获取视频列表失败')
     }
   } catch {
-    ElMessage.error('获取视频列表失败，请重试')
+    if (thisLoadId === currentLoadId) {
+      ElMessage.error('获取视频列表失败，请重试')
+    }
   } finally {
-    loading.value = false
-    isLoadingMore.value = false
+    if (thisLoadId === currentLoadId) {
+      loading.value = false
+      isLoadingMore.value = false
+    }
   }
 }
 
@@ -303,6 +324,73 @@ const handleRefresh = () => {
   currentStart.value = 0
   hasMore.value = true
   fetchVideoList(false)
+}
+
+const resetVideoList = () => {
+  currentLoadId++
+  videos.value = []
+  userInfo.value = null
+  total.value = 0
+  currentStart.value = 0
+  hasMore.value = true
+  loading.value = false
+  isLoadingMore.value = false
+  handleDialogClose()
+  fetchVideoList(false).then(() => {
+    checkAndLoadMore()
+  })
+}
+
+const getVideoDownloadUrl = (video) => video?.url || video?.raw || video?.videoUrl || video?.downloadUrl || ''
+
+const rawUin = (uin) => String(uin || '').replace(/^o/, '')
+
+const downloadAllVideos = async () => {
+  if (downloadingAll.value) return
+  const list = displayVideos.value.filter((video) => getVideoDownloadUrl(video))
+  if (!list.length) {
+    ElMessage.warning('当前没有可下载的视频')
+    return
+  }
+
+  downloadingAll.value = true
+  try {
+    const hostUin = effectiveHostUin.value
+    const accountUin = userStore.userInfo?.uin || hostUin
+    const now = Math.floor(Date.now() / 1000)
+    const ids = await window.QzoneAPI.download.addFeeds({
+      feeds: [
+        {
+          skey: `video-${hostUin || accountUin || 'self'}`,
+          time: now,
+          desc: isFriendContext.value ? '好友视频' : '我的视频',
+          albumId: 'video',
+          albumName: isFriendContext.value ? '好友视频' : '我的视频',
+          sourceKey: 'video',
+          referer: `https://user.qzone.qq.com/${rawUin(hostUin || accountUin)}`,
+          photos: list.map((video, index) => ({
+            id: video.vid || video.id || `video_${index + 1}`,
+            name: video.title || video.desc || `video_${index + 1}`,
+            url: getVideoDownloadUrl(video),
+            raw: getVideoDownloadUrl(video),
+            pre: video.pre,
+            size: video.size || 0,
+            is_video: true,
+            modifytime: video.uploadTime || now,
+            sourceKey: 'video'
+          }))
+        }
+      ],
+      uin: accountUin,
+      friendUin: isFriendContext.value ? hostUin : null
+    })
+    ElMessage.success(`已添加 ${ids?.length || 0} 个视频下载任务`)
+  } catch (e) {
+    console.error('[video] 批量下载失败', e)
+    ElMessage.error(`下载失败：${e.message || e}`)
+  } finally {
+    downloadingAll.value = false
+  }
 }
 
 // 滚动加载更多
@@ -535,24 +623,16 @@ const handleDialogClose = () => {
   videoError.value = ''
 }
 
-// 在浏览器中打开视频
+// 打开视频地址
 const openVideoInBrowser = () => {
   if (!currentVideo.value?.url) {
     ElMessage.error('视频地址无效')
     return
   }
 
-  try {
-    if (window.require) {
-      const { shell } = window.require('electron')
-      shell.openExternal(currentVideo.value.url)
-      ElMessage.success('正在浏览器中打开视频...')
-    } else {
-      window.open(currentVideo.value.url, '_blank')
-    }
-  } catch {
-    window.open(currentVideo.value.url, '_blank')
-  }
+  window.QzoneAPI?.shell?.openExternal?.(currentVideo.value.url)
+    ?.then(() => ElMessage.success('正在打开视频...'))
+    ?.catch(() => ElMessage.error('打开视频失败'))
 }
 
 // 生命周期
@@ -562,6 +642,8 @@ onMounted(() => {
     checkAndLoadMore()
   })
 })
+
+watch(() => effectiveHostUin.value, resetVideoList)
 
 // 组件卸载时清理
 onUnmounted(() => {
@@ -614,7 +696,8 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-.refresh-btn {
+.refresh-btn,
+.download-btn {
   color: rgba(255, 255, 255, 0.7) !important;
   font-size: 13px !important;
   padding: 6px 12px !important;
@@ -759,34 +842,17 @@ onUnmounted(() => {
 .privacy-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.85);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   z-index: 3;
-  gap: 4px;
   pointer-events: none;
-  backdrop-filter: blur(8px);
-
-  .el-icon {
-    font-size: 22px;
-    color: #e6a23c;
-  }
-
-  span {
-    font-size: 10px;
-    color: rgba(255, 255, 255, 0.75);
-  }
 }
 
 .video-card.privacy-mode .cover-image :deep(.el-image__inner) {
-  filter: blur(15px);
+  filter: blur(var(--qz-privacy-media-blur));
   transition: filter 0.3s ease;
-}
-
-.video-card.privacy-mode:hover .cover-image :deep(.el-image__inner) {
-  filter: blur(8px);
 }
 
 /* 卡片下方一行轻文字 */

@@ -168,6 +168,9 @@
               <div class="task-info">
                 <!-- 文件缩略图 -->
                 <div class="file-thumbnail">
+                  <div v-if="privacyStore.privacyMode" class="privacy-overlay">
+                    <el-icon class="privacy-icon"><Hide /></el-icon>
+                  </div>
                   <img
                     v-if="isImageFile(task.filename) && task.previewUrl"
                     :src="task.previewUrl"
@@ -313,9 +316,13 @@ import {
   FolderDelete,
   Connection,
   Lock,
-  InfoFilled
+  InfoFilled,
+  Hide
 } from '@element-plus/icons-vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
+import { usePrivacyStore } from '@renderer/store/privacy.store'
+
+const privacyStore = usePrivacyStore()
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false }
@@ -1322,6 +1329,24 @@ onUnmounted(async () => {
               align-items: center;
               justify-content: center;
               position: relative;
+
+              .privacy-overlay {
+                position: absolute;
+                inset: 0;
+                z-index: 3;
+                background: rgba(0, 0, 0, 0.8);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                backdrop-filter: blur(2px);
+                pointer-events: none;
+                border-radius: inherit; /* 跟随父 .file-thumbnail 圆角 */
+
+                .privacy-icon {
+                  font-size: 14px;
+                  color: #e6a23c;
+                }
+              }
 
               .thumbnail-image,
               .thumbnail-video {
