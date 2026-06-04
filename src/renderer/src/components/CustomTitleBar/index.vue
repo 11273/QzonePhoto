@@ -939,6 +939,10 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.is-mac .title-bar-right > .github-icon {
+  margin-right: 12px;
+}
+
 .github-btn {
   color: rgba(255, 255, 255, 0.8) !important;
   padding: 6px !important;
