@@ -4,6 +4,8 @@ out
 .DS_Store
 .eslintcache
 *.log*
+.env.local
+.env.*.local
 src/renderer/components.d.ts
 logs/security/.security-key
 logs/security/*.key

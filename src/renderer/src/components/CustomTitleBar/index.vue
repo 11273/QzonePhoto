@@ -140,10 +140,10 @@
           </el-button>
         </el-tooltip>
 
-        <el-tooltip content="反馈问题或建议" placement="bottom">
+        <el-tooltip :content="feedbackTooltip" placement="bottom">
           <el-button class="global-feedback-btn no-drag" size="small" text @click="openFeedback">
             <el-icon class="feedback-icon">
-              <QuestionFilled />
+              <ChatDotRound />
             </el-icon>
             <span class="privacy-text">反馈</span>
           </el-button>
@@ -198,6 +198,14 @@
       @retry="handleRetryUpdate"
       @dismiss="handleDismissDialog"
     />
+
+    <FeedbackDialog
+      v-if="apiBaseUrl"
+      v-model:visible="feedbackVisible"
+      :app-version="appVersion"
+      :app-homepage="appHomepage"
+      :runtime-info="runtimeInfo"
+    />
   </div>
 </template>
 
@@ -213,11 +221,12 @@ import {
   View,
   Hide,
   Refresh,
-  QuestionFilled
+  ChatDotRound
 } from '@element-plus/icons-vue'
 import { isMac as isMacPlatform } from '@renderer/utils/platform'
 import { IPC_APP, IPC_SHELL, IPC_WINDOW } from '@shared/ipc-channels'
 import UpdateDialog from '@renderer/components/UpdateManager/UpdateDialog.vue'
+import FeedbackDialog from '@renderer/components/FeedbackDialog/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { useUserStore } from '@renderer/store/user.store'
 import Icon from '@renderer/components/Icon/index.vue'
@@ -237,6 +246,7 @@ const appVersion = ref('')
 const appHomepage = ref('')
 const appDescription = ref('')
 const runtimeInfo = ref({})
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 // 窗口状态
 const isMaximized = ref(false)
 
@@ -267,6 +277,8 @@ const dialogVisible = ref(false)
 const dialogState = ref('idle')
 const updateInfo = ref({})
 const errorInfo = ref({})
+const feedbackVisible = ref(false)
+let appHealthReported = false
 
 // 启动时检查更新
 onMounted(() => {
@@ -293,6 +305,10 @@ const progressText = computed(() => {
     return `${transferred} / ${total} (${speed}/s)`
   }
   return `${updateState.progress?.toFixed(1) || 0}%`
+})
+
+const feedbackTooltip = computed(() => {
+  return apiBaseUrl ? '快捷反馈问题或建议' : '打开 GitHub 反馈页'
 })
 
 // 版本号提示文本
@@ -328,49 +344,34 @@ const openGitHub = () => {
   }
 }
 
-const platformNameMap = {
-  darwin: 'macOS',
-  win32: 'Windows',
-  linux: 'Linux'
+const buildFallbackFeedbackIssue = () => {
+  const appInfo = runtimeInfo.value || {}
+  const homepage = (appHomepage.value || 'https://github.com/11273/QzonePhoto').replace(/\/$/, '')
+  const version = appVersion.value || formatVersion(appInfo.version) || 'unknown'
+  const platform = appInfo.platform || (isMac.value ? 'darwin' : 'unknown')
+  const title = `[反馈][${version}][${platform}] 用户反馈`
+  const body = [
+    '### 反馈内容',
+    '',
+    '请在这里描述遇到的问题，或者想建议优化的地方。',
+    '',
+    '### 附带信息',
+    '',
+    `- 版本：${version}`,
+    `- 系统：${platform}${appInfo.arch ? ` / ${appInfo.arch}` : ''}`,
+    `- 安装：${appInfo.isPackaged ? '安装包' : '开发模式'}`,
+    `- 页面：${window.location.hash || '#/index'}`
+  ].join('\n')
+
+  return `${homepage}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`
 }
 
-const openFeedback = () => {
-  const homepage = (appHomepage.value || 'https://github.com/11273/QzonePhoto').replace(/\/$/, '')
-  const runtime = runtimeInfo.value || {}
-  const versions = runtime.versions || {}
-  const system = [
-    platformNameMap[runtime.platform] || runtime.platform || 'unknown',
-    runtime.arch || ''
-  ]
-    .filter(Boolean)
-    .join(' / ')
-  const runtimeText = [
-    versions.electron ? `Electron ${versions.electron}` : '',
-    versions.chrome ? `Chrome ${versions.chrome}` : '',
-    versions.node ? `Node ${versions.node}` : ''
-  ]
-    .filter(Boolean)
-    .join(' · ')
-  const body = [
-    '### 问题或建议',
-    '',
-    '<!-- 请描述你遇到的问题，或者想要的功能 -->',
-    '',
-    '### 复现步骤',
-    '',
-    '1. ',
-    '2. ',
-    '3. ',
-    '',
-    '### 环境信息',
-    '',
-    `- 版本：${appVersion.value || 'unknown'}`,
-    `- 系统：${system}`,
-    `- 运行时：${runtimeText || 'unknown'}`,
-    `- 安装方式：${runtime.isPackaged ? '安装包' : '开发模式'}`
-  ].join('\n')
-  const url = `${homepage}/issues/new?title=${encodeURIComponent('[反馈] ')}&body=${encodeURIComponent(body)}`
-  window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, url)
+const openFeedback = async () => {
+  if (!apiBaseUrl) {
+    await window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, buildFallbackFeedbackIssue())
+    return
+  }
+  feedbackVisible.value = true
 }
 
 // 系统刷新
@@ -631,12 +632,43 @@ const loadAppInfo = async () => {
   }
 }
 
+const reportAppHealth = () => {
+  if (appHealthReported || !apiBaseUrl) return
+  appHealthReported = true
+
+  const appInfo = runtimeInfo.value || {}
+  const payload = {
+    event: 'app_start',
+    appVersion: appVersion.value || formatVersion(appInfo.version) || 'unknown',
+    system: [appInfo.platform || 'unknown', appInfo.arch || 'unknown'].join(' / '),
+    installMode: appInfo.isPackaged ? '安装包' : '开发模式',
+    page: window.location.hash || '#/index'
+  }
+
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 3500)
+
+  fetch(`${apiBaseUrl}/api/health`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: controller.signal
+  })
+    .catch((error) => {
+      console.debug('[AppHealth] report skipped:', error)
+    })
+    .finally(() => {
+      window.clearTimeout(timeout)
+    })
+}
+
 // 清理监听器
 let removeListeners = []
 
 onMounted(async () => {
   // 获取应用信息
   await loadAppInfo()
+  reportAppHealth()
   // 获取初始窗口状态
   try {
     isMaximized.value = await window.api.invoke(IPC_WINDOW.IS_MAXIMIZED)

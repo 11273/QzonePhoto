@@ -11,6 +11,8 @@ permissions:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    env:
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
