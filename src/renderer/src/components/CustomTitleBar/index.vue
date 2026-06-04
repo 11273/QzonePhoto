@@ -225,6 +225,7 @@ import {
 } from '@element-plus/icons-vue'
 import { isMac as isMacPlatform } from '@renderer/utils/platform'
 import { IPC_APP, IPC_SHELL, IPC_WINDOW } from '@shared/ipc-channels'
+import { ElNotification } from 'element-plus'
 import UpdateDialog from '@renderer/components/UpdateManager/UpdateDialog.vue'
 import FeedbackDialog from '@renderer/components/FeedbackDialog/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
@@ -279,6 +280,7 @@ const updateInfo = ref({})
 const errorInfo = ref({})
 const feedbackVisible = ref(false)
 let appHealthReported = false
+let appNoticeChecked = false
 
 // 启动时检查更新
 onMounted(() => {
@@ -662,6 +664,53 @@ const reportAppHealth = () => {
     })
 }
 
+const fetchAppNotice = () => {
+  if (appNoticeChecked || !apiBaseUrl) return
+  appNoticeChecked = true
+
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 3500)
+
+  fetch(`${apiBaseUrl}/api/notice`, {
+    method: 'GET',
+    signal: controller.signal
+  })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((payload) => {
+      const notice = payload?.data?.notice
+      if (!notice?.id || !notice.title || !notice.content) return
+
+      const storageKey = `qzone.notice.dismissed.${notice.id}.${notice.updatedAt || ''}`
+      if (notice.dismissible !== false && localStorage.getItem(storageKey)) return
+
+      ElNotification({
+        title: notice.title,
+        message: notice.actionUrl
+          ? `${notice.content}\n点击查看详情`
+          : notice.content,
+        type: ['success', 'warning', 'error'].includes(notice.level) ? notice.level : 'info',
+        duration: ['warning', 'error'].includes(notice.level) ? 0 : 9000,
+        position: 'top-right',
+        onClick: async () => {
+          if (notice.actionUrl) {
+            await window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, notice.actionUrl)
+          }
+        },
+        onClose: () => {
+          if (notice.dismissible !== false) {
+            localStorage.setItem(storageKey, '1')
+          }
+        }
+      })
+    })
+    .catch((error) => {
+      console.debug('[AppNotice] check skipped:', error)
+    })
+    .finally(() => {
+      window.clearTimeout(timeout)
+    })
+}
+
 // 清理监听器
 let removeListeners = []
 
@@ -669,6 +718,7 @@ onMounted(async () => {
   // 获取应用信息
   await loadAppInfo()
   reportAppHealth()
+  fetchAppNotice()
   // 获取初始窗口状态
   try {
     isMaximized.value = await window.api.invoke(IPC_WINDOW.IS_MAXIMIZED)

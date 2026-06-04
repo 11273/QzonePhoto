@@ -292,6 +292,7 @@ import FeedComment from '@renderer/components/FeedComment/index.vue'
 import RichText from '@renderer/components/RichText/index.vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
+import { createPaginationGuard } from '@renderer/utils/paginationGuard'
 
 const userStore = useUserStore()
 const privacyStore = usePrivacyStore()
@@ -451,6 +452,7 @@ const loadRetryAfter = ref(0)
 const scrollbarRef = ref(null)
 const requestSeq = ref(0)
 const notifiedLoadErrors = new Set()
+const pageGuard = createPaginationGuard({ cooldownMs: 3000, maxFailures: 3 })
 
 const previewVisible = ref(false)
 const previewItems = ref([])
@@ -1690,6 +1692,7 @@ const resetFeedRuntime = (source) => {
   loadError.value = ''
   loadRetryAfter.value = 0
   notifiedLoadErrors.clear()
+  pageGuard.reset()
   loading.value = false
   loadingMore.value = false
   brokenThumbs.clear()
@@ -1710,13 +1713,17 @@ const notifyLoadErrorOnce = (source, message) => {
   })
 }
 
-const handleLoadFailure = (source, message) => {
+const handleLoadFailure = (source, message, pageKey = '') => {
   const safeMessage = message || '响应异常'
   loadError.value = safeMessage
   notifyLoadErrorOnce(source, safeMessage)
   if (isPermanentLoadError(safeMessage)) {
     hasMore.value = false
     return false
+  }
+  if (pageKey) {
+    const failure = pageGuard.fail(pageKey)
+    if (failure.shouldStop) hasMore.value = false
   }
   loadRetryAfter.value = Date.now() + 3000
   return false
@@ -1732,6 +1739,8 @@ const loadPage = async ({ reset = false } = {}) => {
   if (loadRetryAfter.value && Date.now() < loadRetryAfter.value && feeds.value.length === 0) return false
   const loadId = requestSeq.value
   const loadContext = `${source.key}:${activeHostUin.value || ''}`
+  const pageKey = `${loadContext}:${JSON.stringify(pager.value)}`
+  if (!pageGuard.canLoad(pageKey)) return false
   const isCurrentLoad = () =>
     loadId === requestSeq.value &&
     loadContext === `${activeSource.value?.key || ''}:${activeHostUin.value || ''}`
@@ -1744,10 +1753,11 @@ const loadPage = async ({ reset = false } = {}) => {
     if (!isCurrentLoad()) return
     const ok = source.kind === 'shuoshuo' ? Array.isArray(res?.msglist) || res?.code === 0 : res?.code === 0
     if (!res || !ok) {
-      return handleLoadFailure(source, res?.message || '响应异常')
+      return handleLoadFailure(source, res?.message || '响应异常', pageKey)
     }
     loadError.value = ''
     loadRetryAfter.value = 0
+    pageGuard.succeed()
     if (source.kind === 'shuoshuo') {
       const msgList = Array.isArray(res.msglist) ? res.msglist : []
       const added = appendUniqueFeeds(msgList.map(normalizeShuoshuo))
@@ -1796,7 +1806,7 @@ const loadPage = async ({ reset = false } = {}) => {
   } catch (e) {
     if (isCurrentLoad()) {
       console.error('[FeedsModule] 加载失败', e)
-      return handleLoadFailure(source, e.message || String(e) || '响应异常')
+      return handleLoadFailure(source, e.message || String(e) || '响应异常', pageKey)
     }
   } finally {
     if (isCurrentLoad()) {

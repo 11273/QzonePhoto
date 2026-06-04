@@ -182,6 +182,7 @@ import EmptyState from '@renderer/components/EmptyState/index.vue'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
+import { createPaginationGuard } from '@renderer/utils/paginationGuard'
 import Hls from 'hls.js'
 
 const userStore = useUserStore()
@@ -200,6 +201,7 @@ const total = ref(0)
 const currentStart = ref(0)
 const pageSize = ref(20)
 const hasMore = ref(true)
+const pageGuard = createPaginationGuard({ cooldownMs: 1500, maxFailures: 3 })
 const scrollbarRef = ref(null)
 const isLoadingMore = ref(false)
 const videoDialogVisible = ref(false)
@@ -215,11 +217,14 @@ const leftRef = inject('leftRef', null)
 // 获取视频列表
 const fetchVideoList = async (isLoadMore = false) => {
   if (loading.value || isLoadingMore.value) return
+  const pageKey = `${effectiveHostUin.value}:${currentStart.value}:${pageSize.value}`
 
   if (isLoadMore) {
     if (!hasMore.value) return
+    if (!pageGuard.canLoad(pageKey)) return
     isLoadingMore.value = true
   } else {
+    pageGuard.reset()
     loading.value = true
   }
 
@@ -255,13 +260,22 @@ const fetchVideoList = async (isLoadMore = false) => {
       total.value = response.data.total || 0
       currentStart.value = response.data.nextPageStart || 0
       hasMore.value = response.data.isLast !== 'true' && newVideos.length > 0
+      pageGuard.succeed()
 
       updateLeftStats()
     } else {
+      if (isLoadMore) {
+        const failure = pageGuard.fail(pageKey)
+        hasMore.value = !failure.shouldStop
+      }
       ElMessage.error(response.message || '获取视频列表失败')
     }
   } catch {
     if (thisLoadId === currentLoadId) {
+      if (isLoadMore) {
+        const failure = pageGuard.fail(pageKey)
+        hasMore.value = !failure.shouldStop
+      }
       ElMessage.error('获取视频列表失败，请重试')
     }
   } finally {

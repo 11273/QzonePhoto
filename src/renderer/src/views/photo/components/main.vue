@@ -224,6 +224,7 @@ import EmptyState from '@renderer/components/EmptyState/index.vue'
 import MediaPreview from '@renderer/components/MediaPreview/index.vue'
 import Top from './top.vue'
 import { generateUniqueAlbumName } from '@renderer/utils'
+import { createPaginationGuard } from '@renderer/utils/paginationGuard'
 
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
@@ -268,6 +269,7 @@ const currentPageStart = ref(0)
 const pageSize = ref(100)
 const total = ref(0)
 const hasMore = ref(true)
+const pageGuard = createPaginationGuard({ cooldownMs: 1500, maxFailures: 3 })
 
 // 媒体预览（图片+视频混合）
 const previewVisible = ref(false)
@@ -490,16 +492,19 @@ const loadMorePhotos = async () => {
     return
   }
 
+  const requestedPageSize = pageSize.value
+  const pageStart = currentPageStart.value
+  const pageKey = `${currentAlbum.value.id}:${pageStart}:${requestedPageSize}`
+  if (!pageGuard.canLoad(pageKey)) return
+
   isScrollLoading.value = true
   loadingMore.value = true
 
   try {
-    const requestedPageSize = pageSize.value
-    const pageStart = currentPageStart.value
     const result = await fetchPhotosByTopicId(currentAlbum.value.id, pageStart, requestedPageSize)
 
     if (result.success) {
-      if (result.nextPageStart <= pageStart && result.hasMore) {
+      if (pageGuard.isStalled(pageStart, result.nextPageStart) && result.hasMore) {
         console.warn('加载更多照片游标未推进，停止继续加载', {
           albumId: currentAlbum.value.id,
           pageStart,
@@ -529,15 +534,14 @@ const loadMorePhotos = async () => {
       total.value = result.total > 0 ? result.total : total.value || currentAlbum.value?.total || 0
 
       hasMore.value = result.hasMore
+      pageGuard.succeed()
     } else {
       console.error('加载失败:', result.error)
       if (result.code === -10805) {
         hasMore.value = false
       } else {
-        // Transient network/API errors should not turn the infinite list into
-        // a permanent "no more" state. Keep the cursor unchanged so scrolling
-        // away and back to the bottom retries the same page.
-        hasMore.value = true
+        const failure = pageGuard.fail(pageKey)
+        hasMore.value = !failure.shouldStop
       }
       ElMessage.error(result.error || '加载照片失败')
     }
@@ -545,7 +549,8 @@ const loadMorePhotos = async () => {
     console.error('加载更多照片失败:', error)
 
     ElMessage.error('加载照片失败')
-    hasMore.value = true
+    const failure = pageGuard.fail(pageKey)
+    hasMore.value = !failure.shouldStop
   } finally {
     loadingMore.value = false
     // 简单延迟解锁
@@ -620,6 +625,7 @@ watch(currentAlbum, async (newAlbum) => {
     total.value = 0
     hasMore.value = true
     currentPageStart.value = 0
+    pageGuard.reset()
     return
   }
 
@@ -635,6 +641,7 @@ watch(currentAlbum, async (newAlbum) => {
   selectedPhotos.value.clear()
   hasMore.value = true
   currentPageStart.value = 0
+  pageGuard.reset()
   lastScrollTop.value = 0 // 重置滚动位置
   isCollapsing.value = false // 重置收缩状态
 
@@ -1130,6 +1137,7 @@ const selectAlbum = async (album, forceRefresh = false) => {
     total.value = 0
     currentPageStart.value = 0
     hasMore.value = true
+    pageGuard.reset()
     return
   }
 
@@ -1163,6 +1171,7 @@ const selectAlbum = async (album, forceRefresh = false) => {
   total.value = 0
   currentPageStart.value = 0
   hasMore.value = true
+  pageGuard.reset()
 
   // 相册改变时会自动触发 watch(currentAlbum) 进行加载
 }

@@ -546,6 +546,7 @@ import RichText from '@renderer/components/RichText/index.vue'
 import FeedComment from '@renderer/components/FeedComment/index.vue'
 import { copyToClipboard } from '@renderer/utils'
 import { getQQAvatarUrl } from '@renderer/utils/formatters'
+import { createPaginationGuard } from '@renderer/utils/paginationGuard'
 import Hls from 'hls.js'
 
 const privacyStore = usePrivacyStore()
@@ -576,6 +577,7 @@ const friendMeta = computed(() => (isFriendContext.value ? { skipAuthCheck: true
 // 动态数据
 const feeds = ref([])
 const hasMore = ref(true)
+const pageGuard = createPaginationGuard({ cooldownMs: 1500, maxFailures: 3 })
 
 // 多选状态
 const selectedFeeds = ref(new Set())
@@ -1499,6 +1501,12 @@ const enrichFeedsWithShuoshuo = async () => {
 
 let currentLoadId = 0
 
+const getFeedPageKey = () => {
+  const lastFeed = feeds.value[feeds.value.length - 1]
+  const begintime = lastFeed ? parseInt(lastFeed.time) || 0 : 0
+  return `${props.photoType}:${effectiveHostUin.value}:${feeds.value.length}:${begintime}`
+}
+
 const loadFeeds = async (isLoadMore = false) => {
   console.log('[loadFeeds] 开始加载', {
     isLoadMore,
@@ -1511,6 +1519,10 @@ const loadFeeds = async (isLoadMore = false) => {
     console.log('[loadFeeds] 已在加载中，跳过')
     return
   }
+
+  const pageKey = getFeedPageKey()
+  if (isLoadMore && !pageGuard.canLoad(pageKey)) return
+  if (!isLoadMore) pageGuard.reset()
 
   const thisLoadId = ++currentLoadId
 
@@ -1564,6 +1576,7 @@ const loadFeeds = async (isLoadMore = false) => {
     if (thisLoadId !== currentLoadId) return
 
     if (response && response.code === 0 && response.data && transformedFeeds) {
+      pageGuard.succeed()
       if (transformedFeeds.length > 0) {
         if (isLoadMore) {
           const existingIds = new Set(feeds.value.map((f) => f.id))
@@ -1592,7 +1605,8 @@ const loadFeeds = async (isLoadMore = false) => {
     } else {
       // API 调用失败
       if (isLoadMore) {
-        hasMore.value = true
+        const failure = pageGuard.fail(pageKey)
+        hasMore.value = !failure.shouldStop
         ElMessage.warning(response?.message || '加载更多失败，稍后可继续重试')
       } else {
         hasMore.value = false
@@ -1602,7 +1616,8 @@ const loadFeeds = async (isLoadMore = false) => {
   } catch (error) {
     console.error('加载动态失败:', error)
     if (isLoadMore) {
-      hasMore.value = true
+      const failure = pageGuard.fail(pageKey)
+      hasMore.value = !failure.shouldStop
       ElMessage.warning('加载更多失败，稍后可继续重试')
     } else {
       hasMore.value = false
@@ -1806,6 +1821,7 @@ const resetFeedsAndLoad = () => {
   currentLoadId++
   feeds.value = []
   hasMore.value = true
+  pageGuard.reset()
   loading.value = false
   loadingMore.value = false
   isScrollLoading.value = false
