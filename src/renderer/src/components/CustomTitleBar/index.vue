@@ -148,6 +148,22 @@
             <span class="privacy-text">反馈</span>
           </el-button>
         </el-tooltip>
+
+        <el-tooltip content="公告" placement="bottom">
+          <el-button
+            v-if="apiBaseUrl"
+            class="global-notice-btn no-drag"
+            size="small"
+            text
+            @click="openNoticeCenter"
+          >
+            <span class="notice-icon-wrap">
+              <Bell :size="14" class="notice-icon" />
+              <span v-if="hasUnreadNotice" class="notice-dot"></span>
+            </span>
+            <span class="privacy-text">公告</span>
+          </el-button>
+        </el-tooltip>
       </div>
 
       <!-- GitHub 图标 (Mac系统) -->
@@ -206,6 +222,14 @@
       :app-homepage="appHomepage"
       :runtime-info="runtimeInfo"
     />
+
+    <NoticeCenter
+      v-if="apiBaseUrl"
+      v-model:visible="noticeVisible"
+      :notices="notices"
+      :active-notice="activeNotice"
+      @dismiss="dismissNotice"
+    />
   </div>
 </template>
 
@@ -225,9 +249,10 @@ import {
 } from '@element-plus/icons-vue'
 import { isMac as isMacPlatform } from '@renderer/utils/platform'
 import { IPC_APP, IPC_SHELL, IPC_WINDOW } from '@shared/ipc-channels'
-import { ElNotification } from 'element-plus'
+import { Bell } from '@lucide/vue'
 import UpdateDialog from '@renderer/components/UpdateManager/UpdateDialog.vue'
 import FeedbackDialog from '@renderer/components/FeedbackDialog/index.vue'
+import NoticeCenter from '@renderer/components/NoticeCenter/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { useUserStore } from '@renderer/store/user.store'
 import Icon from '@renderer/components/Icon/index.vue'
@@ -279,6 +304,9 @@ const dialogState = ref('idle')
 const updateInfo = ref({})
 const errorInfo = ref({})
 const feedbackVisible = ref(false)
+const noticeVisible = ref(false)
+const notices = ref([])
+const activeNotice = ref(null)
 let appHealthReported = false
 let appNoticeChecked = false
 
@@ -312,6 +340,10 @@ const progressText = computed(() => {
 const feedbackTooltip = computed(() => {
   return apiBaseUrl ? '快捷反馈问题或建议' : '打开 GitHub 反馈页'
 })
+
+const hasUnreadNotice = computed(() =>
+  notices.value.some((notice) => notice.dismissible !== false && !isNoticeDismissed(notice))
+)
 
 // 版本号提示文本
 const getVersionTooltip = () => {
@@ -374,6 +406,25 @@ const openFeedback = async () => {
     return
   }
   feedbackVisible.value = true
+}
+
+const getNoticeStorageKey = (notice) =>
+  notice?.id ? `qzone.notice.dismissed.${notice.id}.${notice.updatedAt || ''}` : ''
+
+const isNoticeDismissed = (notice) => {
+  const key = getNoticeStorageKey(notice)
+  return !!key && localStorage.getItem(key) === '1'
+}
+
+const dismissNotice = (notice) => {
+  if (!notice || notice.dismissible === false) return
+  const key = getNoticeStorageKey(notice)
+  if (key) localStorage.setItem(key, '1')
+}
+
+const openNoticeCenter = async () => {
+  noticeVisible.value = true
+  await fetchAppNotice({ force: true, openWhenUnread: false })
 }
 
 // 系统刷新
@@ -664,51 +715,39 @@ const reportAppHealth = () => {
     })
 }
 
-const fetchAppNotice = () => {
-  if (appNoticeChecked || !apiBaseUrl) return
+const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => {
+  if ((appNoticeChecked && !force) || !apiBaseUrl) return
   appNoticeChecked = true
 
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), 3500)
 
-  fetch(`${apiBaseUrl}/api/notice`, {
-    method: 'GET',
-    signal: controller.signal
-  })
-    .then((res) => (res.ok ? res.json() : null))
-    .then((payload) => {
-      const notice = payload?.data?.notice
-      if (!notice?.id || !notice.title || !notice.content) return
+  try {
+    const res = await fetch(`${apiBaseUrl}/api/notice`, {
+      method: 'GET',
+      signal: controller.signal
+    })
+    const payload = res.ok ? await res.json() : null
+    const nextNotices = Array.isArray(payload?.data?.notices)
+      ? payload.data.notices.filter((notice) => notice?.id && notice.title && notice.content)
+      : []
+    const currentNotice = payload?.data?.notice
 
-      const storageKey = `qzone.notice.dismissed.${notice.id}.${notice.updatedAt || ''}`
-      if (notice.dismissible !== false && localStorage.getItem(storageKey)) return
+    notices.value = nextNotices.length
+      ? nextNotices
+      : currentNotice?.id
+        ? [currentNotice]
+        : []
+    activeNotice.value = currentNotice?.id ? currentNotice : notices.value[0] || null
 
-      ElNotification({
-        title: notice.title,
-        message: notice.actionUrl
-          ? `${notice.content}\n点击查看详情`
-          : notice.content,
-        type: ['success', 'warning', 'error'].includes(notice.level) ? notice.level : 'info',
-        duration: ['warning', 'error'].includes(notice.level) ? 0 : 9000,
-        position: 'top-right',
-        onClick: async () => {
-          if (notice.actionUrl) {
-            await window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, notice.actionUrl)
-          }
-        },
-        onClose: () => {
-          if (notice.dismissible !== false) {
-            localStorage.setItem(storageKey, '1')
-          }
-        }
-      })
-    })
-    .catch((error) => {
-      console.debug('[AppNotice] check skipped:', error)
-    })
-    .finally(() => {
-      window.clearTimeout(timeout)
-    })
+    if (openWhenUnread && activeNotice.value && !isNoticeDismissed(activeNotice.value)) {
+      noticeVisible.value = true
+    }
+  } catch (error) {
+    console.debug('[AppNotice] check skipped:', error)
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }
 
 // 清理监听器
@@ -870,7 +909,8 @@ onUnmounted(() => {
 }
 
 .global-refresh-btn,
-.global-feedback-btn {
+.global-feedback-btn,
+.global-notice-btn {
   color: rgba(255, 255, 255, 0.8);
   padding: 6px;
   border-radius: 6px;
@@ -893,6 +933,24 @@ onUnmounted(() => {
     transition: all 0.3s ease;
   }
 
+  .notice-icon-wrap {
+    position: relative;
+    display: inline-flex;
+    color: #f59e0b;
+    transition: all 0.3s ease;
+  }
+
+  .notice-dot {
+    position: absolute;
+    right: -2px;
+    top: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #fb7185;
+    box-shadow: 0 0 0 2px rgba(24, 24, 27, 0.9);
+  }
+
   &:hover {
     background: rgba(255, 255, 255, 0.12);
     color: rgba(255, 255, 255, 0.95);
@@ -906,6 +964,11 @@ onUnmounted(() => {
 
     &:deep(.feedback-icon) {
       color: #93c5fd;
+      transform: translateY(-1px);
+    }
+
+    .notice-icon-wrap {
+      color: #fbbf24;
       transform: translateY(-1px);
     }
   }
