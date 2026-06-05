@@ -15,6 +15,16 @@
         </button>
       </el-tooltip>
 
+      <div v-if="!isMac && apiBaseUrl" class="title-side-actions">
+        <el-tooltip :content="feedbackTooltip" placement="bottom">
+          <button class="title-feedback-btn no-drag" type="button" @click="openFeedback">
+            <el-icon class="feedback-icon">
+              <ChatDotRound />
+            </el-icon>
+          </button>
+        </el-tooltip>
+      </div>
+
       <button
         v-if="appVersion"
         class="version-container no-drag"
@@ -137,7 +147,7 @@
           </el-button>
         </el-tooltip>
 
-        <el-tooltip :content="feedbackTooltip" placement="bottom">
+        <el-tooltip v-if="isMac" :content="feedbackTooltip" placement="bottom">
           <el-button class="global-feedback-btn no-drag" size="small" text @click="openFeedback">
             <el-icon class="feedback-icon">
               <ChatDotRound />
@@ -184,7 +194,7 @@
           <span class="measure-icon"></span>
           <span>刷新</span>
         </span>
-        <span class="measure-action">
+        <span v-if="isMac" class="measure-action">
           <span class="measure-icon"></span>
           <span>反馈</span>
         </span>
@@ -866,11 +876,21 @@ const scheduleActionDensity = async () => {
   })
 }
 
+const clearInitialTitlebarFocus = async () => {
+  await nextTick()
+  const active = document.activeElement
+  if (!(active instanceof HTMLElement) || !titleBarRef.value?.contains(active)) return
+  if (active.matches('button, [role="button"]')) {
+    active.blur()
+  }
+}
+
 onMounted(async () => {
   // 获取应用信息
   await loadAppInfo()
   fetchAppNotice()
   scheduleActionDensity()
+  clearInitialTitlebarFocus()
   // 获取初始窗口状态
   try {
     isMaximized.value = await window.api.invoke(IPC_WINDOW.IS_MAXIMIZED)
@@ -992,6 +1012,63 @@ watch([isLoggedIn, showNoticeEntry, appVersion, appDescription, appHomepage, ver
 
 .title-github-btn:hover :deep(.github-action-icon) {
   transform: translateY(-1px);
+}
+
+.title-github-btn:focus,
+.title-feedback-btn:focus,
+.title-bar-button:focus {
+  outline: none;
+}
+
+.title-github-btn:focus-visible,
+.title-feedback-btn:focus-visible,
+.title-bar-button:focus-visible {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.42);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.24);
+}
+
+.title-side-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.title-feedback-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  color: rgba(255, 255, 255, 0.78);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 0.18s var(--ds-ease-soft),
+    border-color 0.18s var(--ds-ease-soft),
+    color 0.18s var(--ds-ease-soft);
+
+  .feedback-icon {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.68);
+    transition: color 0.18s var(--ds-ease-soft);
+  }
+}
+
+.title-feedback-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.065);
+  border-color: rgba(255, 255, 255, 0.075);
+
+  .feedback-icon {
+    color: #60a5fa;
+  }
 }
 
 .app-logo {
