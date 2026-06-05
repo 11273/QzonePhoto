@@ -84,7 +84,13 @@
                     :href="feed.userHome"
                     rel="noopener"
                     @click.prevent="openQzoneProfile(feed.uin, feed.userHome)"
-                  >{{ feed.name || feed.uin }}</a>
+                  >
+                    <RichText
+                      class="fc-name-rich"
+                      :text="feed.name || feed.uin"
+                      @mention-click="onCommentAuthorClick"
+                    />
+                  </a>
                   <div class="fc-author-meta">
                     <span v-if="feed.appType" class="fc-type-chip" :data-type="feed.appType">
                       {{ feed.appType }}
@@ -2093,7 +2099,29 @@ defineExpose({ refresh: handleRefresh })
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
   &:hover { color: #60a5fa; }
+}
+.fc-name-rich {
+  min-width: 0;
+  max-width: 220px;
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  :deep(.rich-text) {
+    white-space: nowrap;
+  }
+
+  :deep(.emoji-segment) {
+    width: 16px;
+    height: 16px;
+    vertical-align: -0.18em;
+  }
 }
 .fc-author-meta {
   display: flex;

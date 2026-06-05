@@ -1,69 +1,66 @@
 <template>
-  <div class="custom-title-bar drag-region" :class="{ 'is-mac': isMac }">
+  <div
+    ref="titleBarRef"
+    class="custom-title-bar drag-region"
+    :class="{ 'is-mac': isMac, 'is-compact-actions': compactActions }"
+  >
     <!-- 左侧工具区域 -->
-    <div class="title-bar-left">
+    <div ref="titleLeftRef" class="title-bar-left">
       <!-- Mac系统留出红绿灯按钮的空间 -->
       <div v-if="isMac" class="mac-traffic-lights-space"></div>
 
-      <!-- Windows/Linux系统：GitHub图标 -->
-      <template v-if="!isMac">
-        <div v-if="appHomepage" class="github-icon">
-          <el-button
-            text
-            size="small"
-            class="github-btn no-drag"
-            title="GitHub 项目"
-            @click="openGitHub"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"
-              />
-            </svg>
-          </el-button>
-        </div>
-      </template>
+      <el-tooltip v-if="!isMac && appHomepage" content="GitHub 项目" placement="bottom">
+        <button class="title-github-btn no-drag" type="button" @click="openGitHub">
+          <Icon icon="github" size="small" class="github-action-icon" />
+        </button>
+      </el-tooltip>
+
+      <button
+        v-if="appVersion"
+        class="version-container no-drag"
+        :class="versionStateClass"
+        type="button"
+        :title="getVersionTooltip()"
+        @click="handleVersionClick(false)"
+        @contextmenu.prevent="copyToClipboard(appVersion, '版本号')"
+      >
+        <span
+          v-if="updateState.downloading"
+          class="version-progress-fill"
+          :style="{ width: `${Math.min(100, Math.max(0, updateState.progress || 0))}%` }"
+        ></span>
+        <span
+          class="app-version"
+          :class="{
+            'has-update': showUpdateBadge,
+            checking: updateState.checking
+          }"
+        >
+          {{ versionChipText }}
+        </span>
+        <transition name="fade">
+          <span v-if="updateState.checking" class="checking-indicator" title="正在检查更新...">
+            <span class="checking-spinner"></span>
+          </span>
+        </transition>
+        <transition name="fade">
+          <span v-if="showUpdateBadge" class="update-dot" title="发现新版本，点击查看详情"></span>
+        </transition>
+      </button>
     </div>
 
     <!-- 中间标题区域 -->
-    <div class="title-bar-center">
+    <div ref="titleCenterRef" class="title-bar-center">
       <div class="title-content">
         <div class="app-logo">
           <Icon icon="qzone" size="large" color="#F15A24" />
         </div>
         <span v-if="appDescription" class="app-title">{{ appDescription }}</span>
-        <div
-          v-if="appVersion"
-          class="version-container no-drag"
-          @click="handleVersionClick(false)"
-          @contextmenu.prevent="copyToClipboard(appVersion, '版本号')"
-        >
-          <span
-            class="app-version"
-            :class="{
-              'has-update': showUpdateBadge,
-              checking: updateState.checking
-            }"
-            :title="getVersionTooltip()"
-          >
-            {{ appVersion }}
-          </span>
-          <!-- 检查更新状态指示器 -->
-          <transition name="fade">
-            <div v-if="updateState.checking" class="checking-indicator" title="正在检查更新...">
-              <div class="checking-spinner"></div>
-            </div>
-          </transition>
-          <!-- 新版本提示点 -->
-          <transition name="fade">
-            <div v-if="showUpdateBadge" class="update-dot" title="发现新版本，点击查看详情"></div>
-          </transition>
-        </div>
       </div>
     </div>
 
     <!-- 右侧区域 -->
-    <div class="title-bar-right">
+    <div ref="titleRightRef" class="title-bar-right">
       <!-- 下载进度条区域 (仅在对话框关闭时显示) -->
       <transition name="fade">
         <div v-if="updateState.downloading && !dialogVisible" class="download-progress no-drag">
@@ -106,7 +103,7 @@
       </transition>
 
       <!-- 全局控制按钮组 -->
-      <div class="global-controls">
+      <div ref="globalControlsRef" class="global-controls">
         <!-- 全局隐私模式切换 -->
         <el-tooltip
           v-if="isLoggedIn"
@@ -131,7 +128,7 @@
         </el-tooltip>
 
         <!-- 系统刷新按钮 -->
-        <el-tooltip content="刷新" placement="bottom">
+        <el-tooltip content="刷新当前页面" placement="bottom">
           <el-button class="global-refresh-btn no-drag" size="small" text @click="refreshSystem">
             <el-icon class="refresh-icon">
               <Refresh />
@@ -151,7 +148,7 @@
 
         <el-tooltip content="公告" placement="bottom">
           <el-button
-            v-if="apiBaseUrl"
+            v-if="showNoticeEntry"
             class="global-notice-btn no-drag"
             size="small"
             text
@@ -164,23 +161,44 @@
             <span class="privacy-text">公告</span>
           </el-button>
         </el-tooltip>
+
+        <el-tooltip content="GitHub 项目" placement="bottom">
+          <el-button
+            v-if="isMac && appHomepage"
+            class="global-github-btn no-drag"
+            size="small"
+            text
+            @click="openGitHub"
+          >
+            <Icon icon="github" size="small" class="github-action-icon" />
+          </el-button>
+        </el-tooltip>
       </div>
 
-      <!-- GitHub 图标 (Mac系统) -->
-      <div v-if="isMac && appHomepage" class="github-icon">
-        <el-button
-          text
-          size="small"
-          class="github-btn no-drag"
-          title="GitHub 项目"
-          @click="openGitHub"
-        >
-          <Icon icon="github" size="medium" />
-        </el-button>
+      <div ref="globalControlsMeasureRef" class="global-controls global-controls-measure" aria-hidden="true">
+        <span v-if="isLoggedIn" class="measure-action">
+          <span class="measure-icon"></span>
+          <span>{{ privacyStore.privacyMode ? '隐私' : '公开' }}</span>
+        </span>
+        <span class="measure-action">
+          <span class="measure-icon"></span>
+          <span>刷新</span>
+        </span>
+        <span class="measure-action">
+          <span class="measure-icon"></span>
+          <span>反馈</span>
+        </span>
+        <span v-if="showNoticeEntry" class="measure-action">
+          <span class="measure-icon"></span>
+          <span>公告</span>
+        </span>
+        <span v-if="isMac && appHomepage" class="measure-action">
+          <span class="measure-icon"></span>
+        </span>
       </div>
 
       <!-- Windows/Linux窗口控制按钮 -->
-      <div v-if="!isMac" class="window-controls">
+      <div v-if="!isMac" ref="windowControlsRef" class="window-controls">
         <button class="title-bar-button minimize no-drag" title="最小化" @click="minimizeWindow">
           <el-icon><SemiSelect /></el-icon>
         </button>
@@ -234,7 +252,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import {
   Close,
   CircleCheck,
@@ -273,6 +291,14 @@ const appHomepage = ref('')
 const appDescription = ref('')
 const runtimeInfo = ref({})
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const titleBarRef = ref(null)
+const titleLeftRef = ref(null)
+const titleCenterRef = ref(null)
+const titleRightRef = ref(null)
+const globalControlsRef = ref(null)
+const globalControlsMeasureRef = ref(null)
+const windowControlsRef = ref(null)
+const compactActions = ref(false)
 // 窗口状态
 const isMaximized = ref(false)
 
@@ -307,6 +333,7 @@ const feedbackVisible = ref(false)
 const noticeVisible = ref(false)
 const notices = ref([])
 const activeNotice = ref(null)
+const noticeReadVersion = ref(0)
 let appHealthReported = false
 let appNoticeChecked = false
 
@@ -319,6 +346,21 @@ onMounted(() => {
 const showUpdateBadge = computed(() => {
   return updateState.hasUpdate && !updateState.downloading && !updateState.downloaded
 })
+
+const versionChipText = computed(() => {
+  if (updateState.downloading) return `${Math.round(updateState.progress || 0)}%`
+  if (updateState.downloaded) return '已就绪'
+  if (updateState.checking) return '检查中'
+  if (showUpdateBadge.value) return '新版本'
+  return appVersion.value
+})
+
+const versionStateClass = computed(() => ({
+  checking: updateState.checking,
+  downloading: updateState.downloading,
+  downloaded: updateState.downloaded,
+  'has-update': showUpdateBadge.value
+}))
 
 const downloadProgress = computed(() => ({
   percent: updateState.progress,
@@ -344,6 +386,7 @@ const feedbackTooltip = computed(() => {
 const hasUnreadNotice = computed(() =>
   notices.value.some((notice) => notice.dismissible !== false && !isNoticeDismissed(notice))
 )
+const showNoticeEntry = computed(() => !!apiBaseUrl && notices.value.length > 0)
 
 // 版本号提示文本
 const getVersionTooltip = () => {
@@ -408,10 +451,13 @@ const openFeedback = async () => {
   feedbackVisible.value = true
 }
 
+const APP_HEALTH_SESSION_KEY = 'qzone.app-health.reported.launch'
+
 const getNoticeStorageKey = (notice) =>
   notice?.id ? `qzone.notice.dismissed.${notice.id}.${notice.updatedAt || ''}` : ''
 
 const isNoticeDismissed = (notice) => {
+  noticeReadVersion.value
   const key = getNoticeStorageKey(notice)
   return !!key && localStorage.getItem(key) === '1'
 }
@@ -420,6 +466,7 @@ const dismissNotice = (notice) => {
   if (!notice || notice.dismissible === false) return
   const key = getNoticeStorageKey(notice)
   if (key) localStorage.setItem(key, '1')
+  noticeReadVersion.value += 1
 }
 
 const openNoticeCenter = async () => {
@@ -430,6 +477,44 @@ const openNoticeCenter = async () => {
 // 系统刷新
 const refreshSystem = () => {
   window.location.reload()
+}
+
+const getHealthPageLabel = () => {
+  const hash = String(window.location.hash || '#/index')
+  return hash.split('?')[0] || '#/index'
+}
+
+const getAppLaunchId = () => {
+  const launchId = runtimeInfo.value?.launchId
+  return typeof launchId === 'string' && launchId ? launchId : ''
+}
+
+const hasSessionHealthReported = () => {
+  try {
+    const launchId = getAppLaunchId()
+    return !!launchId && sessionStorage.getItem(APP_HEALTH_SESSION_KEY) === launchId
+  } catch {
+    return false
+  }
+}
+
+const markSessionHealthReported = () => {
+  try {
+    const launchId = getAppLaunchId()
+    if (launchId) {
+      sessionStorage.setItem(APP_HEALTH_SESSION_KEY, launchId)
+    }
+  } catch {
+    // ignore storage failures
+  }
+}
+
+const clearSessionHealthReported = () => {
+  try {
+    sessionStorage.removeItem(APP_HEALTH_SESSION_KEY)
+  } catch {
+    // ignore storage failures
+  }
 }
 
 // 版本号点击事件
@@ -663,7 +748,6 @@ const handleUpdateError = (error) => {
 const loadAppInfo = async () => {
   try {
     const appInfo = await window.api.invoke(IPC_APP.GET_INFO)
-    console.log('appInfo', appInfo)
     if (appInfo) {
       runtimeInfo.value = appInfo
       if (appInfo.description) {
@@ -685,34 +769,15 @@ const loadAppInfo = async () => {
   }
 }
 
-const reportAppHealth = () => {
-  if (appHealthReported || !apiBaseUrl) return
-  appHealthReported = true
-
+const buildAppHealthPayload = () => {
   const appInfo = runtimeInfo.value || {}
-  const payload = {
+  return {
     event: 'app_start',
     appVersion: appVersion.value || formatVersion(appInfo.version) || 'unknown',
     system: [appInfo.platform || 'unknown', appInfo.arch || 'unknown'].join(' / '),
     installMode: appInfo.isPackaged ? '安装包' : '开发模式',
-    page: window.location.hash || '#/index'
+    page: getHealthPageLabel()
   }
-
-  const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 3500)
-
-  fetch(`${apiBaseUrl}/api/health`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal: controller.signal
-  })
-    .catch((error) => {
-      console.debug('[AppHealth] report skipped:', error)
-    })
-    .finally(() => {
-      window.clearTimeout(timeout)
-    })
 }
 
 const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => {
@@ -721,10 +786,19 @@ const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => 
 
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), 3500)
+  const shouldReportHealth = !appHealthReported && !hasSessionHealthReported()
+  const method = shouldReportHealth ? 'POST' : 'GET'
+  const body = shouldReportHealth ? JSON.stringify({ health: buildAppHealthPayload() }) : undefined
+  if (shouldReportHealth) {
+    appHealthReported = true
+    markSessionHealthReported()
+  }
 
   try {
     const res = await fetch(`${apiBaseUrl}/api/notice`, {
-      method: 'GET',
+      method,
+      headers: shouldReportHealth ? { 'Content-Type': 'application/json' } : undefined,
+      body,
       signal: controller.signal
     })
     const payload = res.ok ? await res.json() : null
@@ -733,11 +807,7 @@ const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => 
       : []
     const currentNotice = payload?.data?.notice
 
-    notices.value = nextNotices.length
-      ? nextNotices
-      : currentNotice?.id
-        ? [currentNotice]
-        : []
+    notices.value = nextNotices.length ? nextNotices : currentNotice?.id ? [currentNotice] : []
     activeNotice.value = currentNotice?.id ? currentNotice : notices.value[0] || null
 
     if (openWhenUnread && activeNotice.value && !isNoticeDismissed(activeNotice.value)) {
@@ -745,6 +815,10 @@ const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => 
     }
   } catch (error) {
     console.debug('[AppNotice] check skipped:', error)
+    if (shouldReportHealth) {
+      appHealthReported = false
+      clearSessionHealthReported()
+    }
   } finally {
     window.clearTimeout(timeout)
   }
@@ -752,12 +826,51 @@ const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => 
 
 // 清理监听器
 let removeListeners = []
+let resizeObserver = null
+let densityFrame = 0
+
+const measureActionDensity = () => {
+  const bar = titleBarRef.value
+  const left = titleLeftRef.value
+  const center = titleCenterRef.value
+  const right = titleRightRef.value
+  if (!bar || !left || !right) return
+
+  const sumChildrenWidth = (el) =>
+    Array.from(el.children).reduce((sum, child) => {
+      const style = window.getComputedStyle(child)
+      if (style.display === 'none') return sum
+      if (child === globalControlsMeasureRef.value) return sum
+      if (child === globalControlsRef.value && globalControlsMeasureRef.value) {
+        const rect = globalControlsMeasureRef.value.getBoundingClientRect()
+        return sum + rect.width + parseFloat(style.marginLeft || 0) + parseFloat(style.marginRight || 0)
+      }
+      const rect = child.getBoundingClientRect()
+      return sum + rect.width + parseFloat(style.marginLeft || 0) + parseFloat(style.marginRight || 0)
+    }, 0)
+
+  const barWidth = bar.clientWidth
+  const centerWidth = center?.getBoundingClientRect().width || 0
+  const leftWidth = sumChildrenWidth(left)
+  const rightWidth = sumChildrenWidth(right)
+  const sideLimit = Math.max(isMac.value ? 220 : 240, (barWidth - centerWidth - 64) / 2)
+  compactActions.value = rightWidth > sideLimit || leftWidth > sideLimit
+}
+
+const scheduleActionDensity = async () => {
+  if (densityFrame) cancelAnimationFrame(densityFrame)
+  await nextTick()
+  densityFrame = requestAnimationFrame(() => {
+    densityFrame = 0
+    measureActionDensity()
+  })
+}
 
 onMounted(async () => {
   // 获取应用信息
   await loadAppInfo()
-  reportAppHealth()
   fetchAppNotice()
+  scheduleActionDensity()
   // 获取初始窗口状态
   try {
     isMaximized.value = await window.api.invoke(IPC_WINDOW.IS_MAXIMIZED)
@@ -766,6 +879,8 @@ onMounted(async () => {
   }
   // 监听窗口状态变化
   removeListeners.push(window.api.on(IPC_WINDOW.MAXIMIZED, handleWindowMaximized))
+  resizeObserver = new ResizeObserver(() => scheduleActionDensity())
+  if (titleBarRef.value) resizeObserver.observe(titleBarRef.value)
   // 监听更新相关事件
   if (window.QzoneAPI?.update) {
     window.QzoneAPI.update.onUpdateChecking(handleUpdateChecking)
@@ -781,6 +896,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (densityFrame) cancelAnimationFrame(densityFrame)
+  resizeObserver?.disconnect?.()
   // 移除所有监听器
   removeListeners.forEach((remove) => remove && remove())
 
@@ -789,18 +906,24 @@ onUnmounted(() => {
     window.QzoneAPI.update.removeAllListeners()
   }
 })
+
+watch([isLoggedIn, showNoticeEntry, appVersion, appDescription, appHomepage, versionChipText], () => {
+  scheduleActionDensity()
+}, { flush: 'post' })
 </script>
 
 <style scoped>
 .custom-title-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  column-gap: 10px;
   align-items: center;
-  height: 36px; /* 调整为适中的高度，既美观又不影响内容显示 */
+  height: 36px;
   color: #ffffff;
   font-size: 13px;
   user-select: none;
   position: relative;
-  flex-shrink: 0; /* 防止标题栏被压缩 */
+  flex-shrink: 0;
 }
 
 .drag-region {
@@ -813,12 +936,16 @@ onUnmounted(() => {
 
 /* 左侧区域 */
 .title-bar-left {
+  grid-column: 1;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding-left: 12px;
   flex: 1;
   flex-shrink: 0;
+  min-width: 0;
+  z-index: 2;
+  overflow: hidden;
 }
 
 .is-mac .title-bar-left {
@@ -833,6 +960,40 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.title-github-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  color: rgba(255, 255, 255, 0.78);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 0.18s var(--ds-ease-soft),
+    border-color 0.18s var(--ds-ease-soft),
+    color 0.18s var(--ds-ease-soft);
+}
+
+.title-github-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.065);
+  border-color: rgba(255, 255, 255, 0.075);
+}
+
+.title-github-btn :deep(.github-action-icon) {
+  transition: transform 0.18s var(--ds-ease-soft);
+}
+
+.title-github-btn:hover :deep(.github-action-icon) {
+  transform: translateY(-1px);
+}
+
 .app-logo {
   display: flex;
   align-items: center;
@@ -841,15 +1002,15 @@ onUnmounted(() => {
   filter: drop-shadow(0 2px 4px rgba(241, 90, 36, 0.3));
 }
 
-/* 中间区域 - 完全居中 */
+/* 中间标题区域：不抢占左右命令区空间 */
 .title-bar-center {
+  grid-column: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+  min-width: 0;
+  max-width: min(360px, 34vw);
   pointer-events: none;
 }
 
@@ -858,6 +1019,8 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   justify-content: center;
+  max-width: 100%;
+  min-width: 0;
   pointer-events: auto;
 }
 
@@ -866,7 +1029,7 @@ onUnmounted(() => {
   font-size: 14px;
   color: #ffffff;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-  max-width: 320px;
+  max-width: min(320px, 28vw);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -894,56 +1057,142 @@ onUnmounted(() => {
 
 /* 右侧区域 */
 .title-bar-right {
+  grid-column: 3;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex: 1;
   flex-shrink: 0;
   justify-content: flex-end;
+  min-width: 0;
+  z-index: 2;
 }
 
 .global-controls {
   display: flex;
   align-items: center;
+  height: 32px;
+  padding: 0;
+  gap: 4px;
   margin-right: 8px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
-.global-refresh-btn,
-.global-feedback-btn,
-.global-notice-btn {
-  color: rgba(255, 255, 255, 0.8);
-  padding: 6px;
-  border-radius: 6px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  height: 28px;
-  min-width: 28px;
-  display: flex;
+.global-controls-measure {
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: -1;
+  margin: 0;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.measure-action {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.measure-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+
+.global-controls :deep(.el-button > span) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1;
+}
+
+.global-controls :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.global-privacy-btn,
+.global-refresh-btn,
+.global-feedback-btn,
+.global-notice-btn,
+.global-github-btn {
+  color: rgba(255, 255, 255, 0.8);
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  height: 28px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1;
+
+  &:deep(.el-icon) {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    flex: 0 0 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
 
   &:deep(.refresh-icon) {
     font-size: 14px;
-    color: var(--ds-accent-green, #34d399);
+    color: rgba(255, 255, 255, 0.68);
     transition: all 0.3s ease;
   }
 
   &:deep(.feedback-icon) {
     font-size: 14px;
-    color: #60a5fa;
+    color: rgba(255, 255, 255, 0.68);
+    transition: all 0.3s ease;
+  }
+
+  &:deep(.github-action-icon) {
+    color: rgba(255, 255, 255, 0.78);
     transition: all 0.3s ease;
   }
 
   .notice-icon-wrap {
     position: relative;
     display: inline-flex;
-    color: #f59e0b;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.68);
     transition: all 0.3s ease;
+  }
+
+  .notice-icon {
+    width: 14px;
+    height: 14px;
+    display: block;
   }
 
   .notice-dot {
     position: absolute;
-    right: -2px;
-    top: -2px;
+    right: -1px;
+    top: -1px;
     width: 6px;
     height: 6px;
     border-radius: 50%;
@@ -952,13 +1201,14 @@ onUnmounted(() => {
   }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.065);
+    border-color: rgba(255, 255, 255, 0.075);
     color: rgba(255, 255, 255, 0.95);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transform: none;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 
     &:deep(.refresh-icon) {
-      color: #85ce61;
+      color: #34d399;
       transform: rotate(180deg);
     }
 
@@ -971,58 +1221,39 @@ onUnmounted(() => {
       color: #fbbf24;
       transform: translateY(-1px);
     }
+
+    &:deep(.github-action-icon) {
+      color: #ffffff;
+      transform: translateY(-1px);
+    }
   }
 
   &:active {
     transform: translateY(0);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
 }
 
+.global-github-btn {
+  width: 30px;
+  padding: 0;
+}
+
 .global-privacy-btn {
-  color: rgba(255, 255, 255, 0.8);
-  padding: 6px 12px;
-  border-radius: 6px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  height: 28px;
-  min-width: 68px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
   cursor: pointer;
 
   &:deep(.privacy-icon) {
     font-size: 14px;
-    flex-shrink: 0;
     cursor: pointer;
-  }
-
-  &:deep(.privacy-text) {
-    font-size: 12px;
-    font-weight: 500;
-    line-height: 1;
-    cursor: pointer;
-  }
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.95);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  }
-
-  &:active {
-    transform: translateY(0);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
 
   &.el-button--info {
     &:deep(.privacy-icon) {
-      color: var(--ds-accent-green, #34d399);
+      color: rgba(255, 255, 255, 0.68);
     }
 
     &:hover {
-      background: rgba(52, 211, 153, 0.15);
+      background: rgba(52, 211, 153, 0.075);
+      border-color: rgba(52, 211, 153, 0.16);
       color: rgba(255, 255, 255, 0.95);
 
       &:deep(.privacy-icon) {
@@ -1032,12 +1263,17 @@ onUnmounted(() => {
   }
 
   &.el-button--warning {
+    color: #f6c56d;
+    background: transparent;
+    border-color: transparent;
+
     &:deep(.privacy-icon) {
       color: #e6a23c;
     }
 
     &:hover {
-      background: rgba(230, 162, 60, 0.15);
+      background: rgba(255, 255, 255, 0.065);
+      border-color: rgba(255, 255, 255, 0.075);
       color: rgba(255, 255, 255, 0.95);
 
       &:deep(.privacy-icon) {
@@ -1047,36 +1283,172 @@ onUnmounted(() => {
   }
 }
 
-.github-icon {
-  display: flex;
-  align-items: center;
-}
-
-.is-mac .title-bar-right > .github-icon {
-  margin-right: 12px;
-}
-
-.github-btn {
-  color: rgba(255, 255, 255, 0.8) !important;
-  padding: 6px !important;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px; /* 固定高度避免跳动 */
-  border-radius: 6px;
-  transition: all 0.2s ease;
-}
-
-.github-btn:hover {
-  background-color: rgba(255, 255, 255, 0.1) !important;
-  color: #ffffff !important;
-  transform: translateY(-1px);
+.global-controls :deep(.privacy-text) {
+  margin: 0;
+  max-width: 66px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 15px;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 1;
+  transition:
+    max-width 0.22s ease,
+    opacity 0.18s ease,
+    margin 0.22s ease;
 }
 
 .window-controls {
   display: flex;
   align-items: center;
   gap: 1px;
+  position: relative;
+  margin-left: 4px;
+  padding-left: 10px;
+}
+
+.window-controls::before {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.custom-title-bar:not(.is-mac) {
+  .title-bar-left {
+    padding-left: 8px;
+    gap: 4px;
+  }
+
+  .title-bar-right {
+    grid-column: 3;
+    gap: 6px;
+  }
+
+  .title-github-btn {
+    width: 24px;
+    height: 24px;
+    flex-basis: 24px;
+    border-radius: 8px;
+  }
+
+  .version-container {
+    width: 54px;
+    min-width: 54px;
+    flex-basis: 54px;
+    justify-content: flex-start;
+    padding: 0 4px 0 2px;
+  }
+
+  .app-version {
+    justify-content: flex-start;
+    min-width: 0;
+    font-size: 10.5px;
+  }
+
+  .checking-indicator {
+    right: 2px;
+  }
+}
+
+.custom-title-bar.is-compact-actions {
+  .global-controls {
+    margin-right: 6px;
+  }
+
+  .global-privacy-btn,
+  .global-refresh-btn,
+  .global-feedback-btn,
+  .global-notice-btn,
+  .global-github-btn {
+    width: 26px;
+    padding: 0;
+
+    &:hover {
+      transform: none;
+    }
+  }
+
+  .global-controls :deep(.privacy-text) {
+    max-width: 0;
+    margin-left: -4px;
+    opacity: 0;
+  }
+}
+
+@media (max-width: 1360px) {
+  .custom-title-bar:not(.is-mac) {
+    .title-bar-center {
+      max-width: min(320px, 30vw);
+    }
+  }
+}
+
+@media (max-width: 980px) {
+  .custom-title-bar:not(.is-mac) {
+    .global-controls {
+      margin-right: 6px;
+    }
+
+    .global-privacy-btn,
+    .global-refresh-btn,
+    .global-feedback-btn,
+    .global-notice-btn,
+    .global-github-btn {
+      width: 26px;
+      padding: 0;
+    }
+
+    .global-controls :deep(.privacy-text) {
+      max-width: 0;
+      margin-left: -4px;
+      opacity: 0;
+    }
+  }
+}
+
+@media (max-width: 1160px) {
+  .custom-title-bar.is-mac {
+    .title-bar-center {
+      max-width: min(300px, 30vw);
+    }
+  }
+}
+
+@media (max-width: 980px) {
+  .custom-title-bar.is-mac {
+    .global-controls {
+      margin-right: 6px;
+    }
+
+    .global-privacy-btn,
+    .global-refresh-btn,
+    .global-feedback-btn,
+    .global-notice-btn,
+    .global-github-btn {
+      width: 26px;
+      padding: 0;
+    }
+
+    .global-controls :deep(.privacy-text) {
+      max-width: 0;
+      margin-left: -4px;
+      opacity: 0;
+    }
+  }
+}
+
+@media (max-width: 1040px) {
+  .custom-title-bar:not(.is-mac) {
+    .title-bar-center {
+      max-width: min(260px, 28vw);
+    }
+
+  }
 }
 
 .title-bar-button {
@@ -1113,54 +1485,115 @@ onUnmounted(() => {
 
 /* 版本号更新提示样式 */
 .version-container {
+  appearance: none;
+  border: 1px solid transparent;
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 0;
+  height: 20px;
+  width: 66px;
+  min-width: 66px;
+  flex: 0 0 66px;
   position: relative;
   cursor: pointer;
-  transition: var(--ds-transition-all);
-  padding: 4px 8px;
-  border-radius: var(--ds-radius-pill);
-  background: var(--ds-bg-2);
-  backdrop-filter: blur(10px);
+  transition:
+    background-color 0.18s var(--ds-ease-soft),
+    border-color 0.18s var(--ds-ease-soft);
+  padding: 0 6px;
+  border-radius: 7px;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  color: var(--ds-text-secondary);
+  font: inherit;
+  overflow: hidden;
+  box-shadow: none;
 }
 
 .version-container:hover {
-  background: var(--ds-bg-4);
-  transform: translateY(-1px);
-  box-shadow: var(--ds-shadow-sm);
+  background: transparent;
+  border-color: transparent;
+}
+
+.version-container.checking {
+  border-color: transparent;
+  background: transparent;
+}
+
+.version-container.has-update {
+  border-color: transparent;
+  background: transparent;
+}
+
+.version-container.downloading {
+  border-color: transparent;
+  background: transparent;
+}
+
+.version-container.downloaded {
+  border-color: transparent;
+  background: transparent;
+}
+
+.version-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.26), rgba(52, 211, 153, 0.2));
+  transition: width 0.28s ease;
 }
 
 .app-version {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
   font-size: 11px;
-  color: var(--ds-text-secondary);
-  font-weight: 500;
-  transition: var(--ds-transition-all);
-  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+  transition:
+    color 0.18s var(--ds-ease-soft),
+    text-shadow 0.18s var(--ds-ease-soft),
+    opacity 0.18s var(--ds-ease-soft);
+  letter-spacing: 0;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .app-version.has-update {
   color: var(--ds-state-success);
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.4);
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.32);
 }
 
 .app-version.checking {
   color: var(--ds-state-info);
-  text-shadow: 0 0 8px rgba(96, 165, 250, 0.4);
+  text-shadow: 0 0 8px rgba(96, 165, 250, 0.32);
 }
 
 .checking-indicator {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 16px;
-  margin-left: 2px;
+  margin-left: 0;
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
 .checking-spinner {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border: 1.5px solid rgba(96, 165, 250, 0.2);
   border-top: 1.5px solid var(--ds-state-info);
   border-radius: 50%;
@@ -1168,11 +1601,16 @@ onUnmounted(() => {
 }
 
 .update-dot {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  z-index: 1;
   width: 6px;
   height: 6px;
   background: linear-gradient(135deg, var(--ds-state-success) 0%, #85ce61 100%);
   border-radius: 50%;
-  margin-left: 2px;
+  margin-left: 0;
+  transform: translateY(-50%);
   box-shadow:
     0 0 0 2px rgba(52, 211, 153, 0.3),
     0 0 6px rgba(52, 211, 153, 0.6);
@@ -1230,11 +1668,11 @@ onUnmounted(() => {
 @keyframes pulse-dot {
   0%,
   100% {
-    transform: scale(1);
+    transform: translateY(-50%) scale(1);
     opacity: 1;
   }
   50% {
-    transform: scale(1.2);
+    transform: translateY(-50%) scale(1.2);
     opacity: 0.8;
   }
 }

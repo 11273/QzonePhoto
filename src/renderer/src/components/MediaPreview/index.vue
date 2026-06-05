@@ -14,67 +14,74 @@
           <span class="mp-top-progress-bar"></span>
         </div>
 
-        <!-- 操作按钮：独立浮动在右上角，脱离 flex 流，杜绝层级 / pointer-events 干扰 -->
-        <div class="mp-floating-actions" @click.stop>
-          <!-- 选中复选框（联动外面的多选状态）—— 仅在 selectable 时显示
-               未选中：很虚的空心勾；选中：白色实勾 + 蓝底 -->
-          <div
-            v-if="selectable"
-            class="mp-fab mp-fab-check"
-            :class="{ checked: isSelected }"
-            role="checkbox"
-            :aria-checked="isSelected"
-            :title="isSelected ? '取消选中' : '选中当前项（加入下方多选）'"
-            @click="toggleSelect"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              :stroke-width="isSelected ? 3 : 2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+        <header class="mp-topbar" @click.stop>
+          <div class="mp-caption">
+            <span class="mp-cap-index">{{ currentIndex + 1 }} / {{ total }}</span>
+            <span v-if="current?.title" class="mp-cap-title" :title="current.title">
+              {{ current.title }}
+            </span>
+          </div>
+
+          <div class="mp-actions">
+            <button
+              v-if="selectable"
+              class="mp-action mp-action-check"
+              :class="{ checked: isSelected }"
+              type="button"
+              role="checkbox"
+              :aria-checked="isSelected"
+              :title="isSelected ? '取消选中' : '选中当前项'"
+              @click="toggleSelect"
             >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                :stroke-width="isSelected ? 3 : 2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </button>
+            <button
+              v-if="currentActionSrc"
+              class="mp-action"
+              type="button"
+              title="复制链接"
+              @click="copyLink"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+            </button>
+            <button
+              v-if="currentActionSrc"
+              class="mp-action"
+              type="button"
+              title="在浏览器中打开"
+              @click="openExternal"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+            </button>
+            <button
+              class="mp-action mp-action-close"
+              type="button"
+              title="关闭 (Esc)"
+              @click="close"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
           </div>
-          <div
-            v-if="currentActionSrc"
-            class="mp-fab"
-            role="button"
-            title="复制链接"
-            @click="copyLink"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-            </svg>
-          </div>
-          <div
-            v-if="currentActionSrc"
-            class="mp-fab"
-            role="button"
-            title="在浏览器中打开"
-            @click="openExternal"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
-          </div>
-          <div
-            class="mp-fab mp-fab-close"
-            role="button"
-            title="关闭 (Esc)"
-            @click="close"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </div>
-        </div>
+        </header>
 
         <!-- 主显示区 -->
         <div class="mp-stage" @click.self="close">
@@ -156,16 +163,8 @@
           </transition>
         </div>
 
-        <!-- 底部信息 + 工具栏 + 缩略图（统一在底部，居中） -->
+        <!-- 底部工具栏 + 缩略图（独立安全区，不遮挡媒体和导航） -->
         <div class="mp-bottom" @click.stop>
-          <!-- 标题 / 索引 居中显示（去掉时间副信息） -->
-          <div class="mp-caption">
-            <span class="mp-cap-index">{{ currentIndex + 1 }} / {{ total }}</span>
-            <span v-if="current?.title" class="mp-cap-title" :title="current.title">
-              {{ current.title }}
-            </span>
-          </div>
-
           <!-- 图片工具栏：只在图片项显示 -->
           <div v-if="current?.type === 'image'" class="mp-toolbar">
             <div class="mp-tool" role="button" title="缩小 (-)" @click="zoom(-0.25)">
@@ -586,8 +585,10 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(0, 0, 0, 0.92);
-  backdrop-filter: blur(6px);
+  background:
+    radial-gradient(circle at 50% 42%, rgba(31, 41, 55, 0.26), transparent 42%),
+    rgba(0, 0, 0, 0.94);
+  backdrop-filter: blur(8px);
   display: flex;
   flex-direction: column;
   user-select: none;
@@ -595,41 +596,136 @@ onUnmounted(() => {
   -webkit-app-region: no-drag;
 }
 
-.media-preview-mask:not(.is-mac) {
-  top: 38px;
+.mp-topbar {
+  flex-shrink: 0;
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 18px 10px 22px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0));
+  -webkit-app-region: no-drag;
 }
 
-/* 底部容器：caption + 工具栏 + 缩略图，居中堆叠 */
+.media-preview-mask.is-mac .mp-topbar {
+  padding-left: 88px;
+}
+
+.mp-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mp-action {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+  user-select: none;
+  -webkit-app-region: no-drag;
+
+  svg {
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+  }
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.28);
+    color: #fff;
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0) scale(0.96);
+  }
+
+  &.mp-action-close:hover {
+    background: rgba(239, 68, 68, 0.78);
+    border-color: rgba(248, 113, 113, 0.92);
+  }
+
+  &.mp-action-check {
+    color: rgba(255, 255, 255, 0.38);
+    background: rgba(255, 255, 255, 0.05);
+
+    &:hover {
+      color: rgba(255, 255, 255, 0.78);
+    }
+
+    &.checked {
+      background: rgba(96, 165, 250, 0.92);
+      border-color: rgba(96, 165, 250, 1);
+      color: #fff;
+    }
+  }
+}
+
+/* 底部容器：工具栏 + 缩略图，居中堆叠 */
 .mp-bottom {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 6px 20px 14px;
+  gap: 10px;
+  padding: 10px 20px 16px;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0));
+  -webkit-app-region: no-drag;
 }
 
 .mp-caption {
+  width: fit-content;
   display: flex;
   align-items: center;
-  gap: 10px;
-  max-width: 80%;
+  gap: 8px;
+  min-width: 0;
+  max-width: min(760px, calc(100vw - 390px));
+  padding: 5px 12px 5px 5px;
+  border-radius: 999px;
+  background: rgba(18, 18, 20, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(16px);
   color: rgba(255, 255, 255, 0.88);
   font-size: 13px;
+  -webkit-app-region: no-drag;
 
   .mp-cap-index {
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
     font-weight: 600;
-    padding: 3px 10px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.08);
+    padding: 0 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.13);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.95);
     flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
   }
   .mp-cap-title {
+    min-width: 0;
     color: rgba(255, 255, 255, 0.92);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 540px;
+    max-width: none;
+    line-height: 34px;
+    padding-right: 2px;
   }
   .mp-cap-subtitle {
     color: rgba(255, 255, 255, 0.5);
@@ -643,22 +739,24 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 18px;
+  padding: 6px 9px;
+  background: rgba(18, 18, 20, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(16px);
   -webkit-app-region: no-drag;
 }
 
 .mp-tool {
-  width: 32px;
-  height: 28px;
+  width: 34px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 999px;
   transition: background 0.15s, color 0.15s;
   font-size: 11px;
   font-weight: 600;
@@ -677,7 +775,7 @@ onUnmounted(() => {
 }
 
 .mp-tool-zoom {
-  width: 52px;
+  width: 58px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -688,71 +786,6 @@ onUnmounted(() => {
   margin: 0 4px;
 }
 
-/* 浮动操作按钮组（独立绝对定位，脱离任何 flex 流） */
-.mp-floating-actions {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  display: flex;
-  gap: 8px;
-  z-index: 10;
-}
-
-.mp-fab {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-  user-select: none;
-  -webkit-app-region: no-drag;
-
-  /* SVG 完全不拦截点击事件，鼠标在 icon 上点击直接命中 .mp-fab */
-  svg {
-    width: 18px;
-    height: 18px;
-    pointer-events: none;
-  }
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.22);
-    border-color: rgba(255, 255, 255, 0.3);
-  }
-
-  &.mp-fab-close:hover {
-    background: rgba(239, 68, 68, 0.7);
-    border-color: rgba(239, 68, 68, 0.9);
-  }
-
-  /* 选中复选框：未选中是「很虚」的空心勾；选中是白色实勾 + 蓝底实心 */
-  &.mp-fab-check {
-    color: rgba(255, 255, 255, 0.35); /* 未选中：勾形非常虚 */
-    background: rgba(255, 255, 255, 0.04);
-    border-color: rgba(255, 255, 255, 0.12);
-
-    &:hover {
-      color: rgba(255, 255, 255, 0.7);
-      background: rgba(255, 255, 255, 0.12);
-    }
-
-    &.checked {
-      background: rgba(96, 165, 250, 0.9);
-      border-color: rgba(96, 165, 250, 1);
-      color: #fff;
-
-      &:hover {
-        background: rgba(96, 165, 250, 1);
-      }
-    }
-  }
-}
-
 .mp-stage {
   flex: 1;
   min-height: 0;
@@ -760,9 +793,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   position: relative;
-  /* 上下 padding 对称 —— 这样 mp-nav (top:50% translateY(-50%)) 跟图片实际中心对齐
-     floating-actions 是 absolute，不参与 stage 流，所以不需要为它额外留空 */
-  padding: 24px 80px;
+  padding: 16px 88px 18px;
   overflow: hidden; /* 缩放/平移时不溢出到顶/底 caption 工具栏 */
 }
 
@@ -770,19 +801,22 @@ onUnmounted(() => {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 52px;
-  height: 52px;
+  width: 50px;
+  height: 50px;
   padding: 0;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(18, 18, 20, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   font-size: 20px;
-  transition: background 0.15s;
+  transition:
+    background 0.15s,
+    transform 0.15s,
+    opacity 0.15s;
   z-index: 2;
 
   *,
@@ -799,7 +833,8 @@ onUnmounted(() => {
   }
 
   &:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.18);
+    transform: translateY(-50%) scale(1.04);
   }
   &:disabled {
     opacity: 0.4;
@@ -828,9 +863,9 @@ onUnmounted(() => {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: 8px;
   background: #111;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 18px 64px rgba(0, 0, 0, 0.54);
   transform-origin: center;
   will-change: transform;
 }
@@ -898,7 +933,7 @@ onUnmounted(() => {
 
 .mp-boundary-hint {
   position: absolute;
-  bottom: 24px;
+  bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(0, 0, 0, 0.75);
@@ -912,7 +947,7 @@ onUnmounted(() => {
 
 .mp-thumbs {
   width: 100%;
-  max-width: 720px;
+  max-width: min(780px, calc(100vw - 120px));
   overflow: hidden;
 }
 
@@ -937,10 +972,10 @@ onUnmounted(() => {
 
 .mp-thumb {
   position: relative;
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  height: 56px;
   flex-shrink: 0;
-  border-radius: 4px;
+  border-radius: 8px;
   overflow: hidden;
   background: #000;
   cursor: pointer;
@@ -950,7 +985,7 @@ onUnmounted(() => {
   /* 默认浅灰 outline 描边 —— 用 outline 而不是 box-shadow inset，
      因为 inset shadow 会被隐私模式 .mp-thumb-privacy 黑底 overlay 完全盖住；
      outline 在元素外侧绘制，overlay 盖不到，每张 thumb 边界依然可辨 */
-  outline: 1px solid rgba(255, 255, 255, 0.18);
+  outline: 1px solid rgba(255, 255, 255, 0.16);
   outline-offset: 0;
 
   /* 缩略图内部所有子元素（img、icon、badge）不拦截点击 */
@@ -1007,7 +1042,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  border-radius: 4px; /* 显式数值，跟父 .mp-thumb 完全对齐 */
+  border-radius: 8px; /* 显式数值，跟父 .mp-thumb 完全对齐 */
   backdrop-filter: none;
 }
 
@@ -1037,6 +1072,57 @@ onUnmounted(() => {
   );
   border-radius: 1px;
   animation: mp-progress-indeterminate 1.4s ease-in-out infinite;
+}
+
+@media (max-width: 760px) {
+  .mp-topbar {
+    min-height: 56px;
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .media-preview-mask.is-mac .mp-topbar {
+    padding-left: 70px;
+  }
+
+  .mp-action {
+    width: 34px;
+    height: 34px;
+  }
+
+  .mp-cap-title {
+    max-width: 34vw;
+  }
+
+  .mp-stage {
+    padding: 12px 58px;
+  }
+
+  .mp-nav {
+    width: 42px;
+    height: 42px;
+
+    &.mp-nav-left {
+      left: 10px;
+    }
+
+    &.mp-nav-right {
+      right: 10px;
+    }
+  }
+
+  .mp-bottom {
+    padding: 8px 12px 12px;
+  }
+
+  .mp-thumbs {
+    max-width: calc(100vw - 28px);
+  }
+
+  .mp-thumb {
+    width: 48px;
+    height: 48px;
+  }
 }
 
 @keyframes mp-progress-indeterminate {

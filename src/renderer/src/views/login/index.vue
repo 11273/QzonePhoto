@@ -1,20 +1,22 @@
 <template>
-  <div className="login">
-    <div className="logo">
+  <div class="login">
+    <div class="logo">
       <el-image style="height: 60px" :src="QZoneLogo" />
     </div>
-    <div className="login-box">
-      <div className="content">
+    <div class="login-box">
+      <div class="content">
         <!-- 全屏登录遮罩 -->
-        <div
-          v-if="isLoggingIn"
-          class="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 rounded-lg"
-        >
-          <div class="flex flex-col items-center gap-3">
-            <el-icon :size="40" class="is-loading">
-              <Loading />
-            </el-icon>
-            <span class="text-white text-lg">{{ loginMessage }}</span>
+        <div v-if="isLoggingIn" class="login-progress-overlay">
+          <div class="login-progress-card">
+            <div class="login-progress-icon">
+              <el-icon :size="24" class="is-loading">
+                <Loading />
+              </el-icon>
+            </div>
+            <div class="login-progress-main">
+              <div class="login-progress-title">{{ loginMessage }}</div>
+              <div class="login-progress-desc">正在同步登录状态，请稍等</div>
+            </div>
           </div>
         </div>
 
@@ -113,6 +115,72 @@ const isLoggingIn = ref(false) // 专门用于头像登录的等待状态
 const loginMessage = ref('正在登录中...')
 const scanStatus = ref('waiting') // 扫码状态: waiting(待扫码), scanned(已扫码待确认), expired(已过期)
 let previousScanStatus = 'waiting' // 记录上一次的状态，用于检测取消扫码
+const LOCAL_FACE_CACHE_KEY = 'qzone.local-login.face-cache'
+const LOCAL_ACCOUNT_MISSING_LIMIT = 2
+const DEFAULT_LOCAL_FACE = 'https://ui.ptlogin2.qq.com/style/0/images/1.gif'
+
+const readFaceCache = () => {
+  try {
+    const cache = JSON.parse(localStorage.getItem(LOCAL_FACE_CACHE_KEY) || '{}')
+    return cache && typeof cache === 'object' ? cache : {}
+  } catch {
+    return {}
+  }
+}
+
+const writeFaceCache = (cache) => {
+  try {
+    localStorage.setItem(LOCAL_FACE_CACHE_KEY, JSON.stringify(cache))
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+const isStableFace = (face) => typeof face === 'string' && face && face !== DEFAULT_LOCAL_FACE
+
+const mergeLocalAccounts = (accounts = []) => {
+  const faceCache = readFaceCache()
+  const nextByUin = new Map()
+
+  localAccounts.value.forEach((account) => {
+    nextByUin.set(account.uin, {
+      ...account,
+      missingCount: (account.missingCount || 0) + 1
+    })
+  })
+
+  accounts.forEach((account) => {
+    if (!account?.uin) return
+    const previous = nextByUin.get(account.uin)
+    const cachedFace = faceCache[account.uin]
+    const nextFace = isStableFace(account.face)
+      ? account.face
+      : previous?.face && isStableFace(previous.face)
+        ? previous.face
+        : cachedFace || account.face || DEFAULT_LOCAL_FACE
+
+    if (isStableFace(account.face)) {
+      faceCache[account.uin] = account.face
+    }
+
+    nextByUin.set(account.uin, {
+      ...previous,
+      ...account,
+      face: nextFace,
+      faceStatus: isStableFace(account.face)
+        ? account.faceStatus || 'fresh'
+        : previous?.faceStatus === 'fresh' || cachedFace
+          ? 'cached'
+          : account.faceStatus || 'fallback',
+      missingCount: 0
+    })
+  })
+
+  writeFaceCache(faceCache)
+  localAccounts.value = Array.from(nextByUin.values()).filter(
+    (account) => (account.missingCount || 0) <= LOCAL_ACCOUNT_MISSING_LIMIT
+  )
+}
 
 // 获取二维码
 const getQrcode = () => {
@@ -236,7 +304,7 @@ const getLocalAccounts = async () => {
   try {
     const accounts = await window.QzoneAPI.getLocalUnis()
     console.debug('getLocalAccounts :>> ', accounts)
-    localAccounts.value = accounts || []
+    mergeLocalAccounts(accounts || [])
   } catch (err) {
     console.error('获取本地账号失败:', err)
   }
@@ -249,10 +317,14 @@ const startLocalAccountsPolling = () => {
     clearInterval(localAccountsTimer)
   }
 
-  // 每5秒刷新一次本地账号列表
+  // 本地头像接口偶发失败，轮询不用太密，避免头像和列表抖动
   localAccountsTimer = setInterval(() => {
     getLocalAccounts()
-  }, 1500)
+  }, 5000)
+}
+
+const handleWindowFocus = () => {
+  if (!isLoggingIn.value) getLocalAccounts()
 }
 
 // 点击本地头像登录
@@ -285,6 +357,7 @@ const loginWithLocalAccount = async (user) => {
     // 登录失败时重新启动二维码轮询
     setTimeout(() => {
       getQrcode()
+      startLocalAccountsPolling()
     }, 1500)
   } finally {
     loading.value = false
@@ -312,10 +385,12 @@ onBeforeMount(() => {
   getQrcode()
   getLocalAccounts()
   startLocalAccountsPolling() // 启动定时刷新本地账号列表
+  window.addEventListener('focus', handleWindowFocus)
 })
 
 onUnmounted(() => {
   clearTimers()
+  window.removeEventListener('focus', handleWindowFocus)
 })
 </script>
 
@@ -353,6 +428,62 @@ onUnmounted(() => {
         font-size: 12px;
         color: var(--ds-text-tertiary);
       }
+    }
+
+    .login-progress-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 50;
+      display: grid;
+      place-items: center;
+      border-radius: var(--ds-radius-xl);
+      background:
+        radial-gradient(circle at 50% 36%, rgba(96, 165, 250, 0.12), transparent 38%),
+        rgba(8, 10, 14, 0.58);
+      backdrop-filter: blur(10px);
+    }
+
+    .login-progress-card {
+      width: min(300px, calc(100% - 72px));
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(24, 24, 27, 0.86);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 18px 46px rgba(0, 0, 0, 0.32);
+    }
+
+    .login-progress-icon {
+      width: 38px;
+      height: 38px;
+      flex: 0 0 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      color: var(--ds-accent-blue, #60a5fa);
+      background: rgba(96, 165, 250, 0.14);
+      border: 1px solid rgba(96, 165, 250, 0.22);
+    }
+
+    .login-progress-main {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+    }
+
+    .login-progress-title {
+      color: var(--ds-text-primary);
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .login-progress-desc {
+      color: var(--ds-text-tertiary);
+      font-size: 12px;
+      line-height: 1.35;
     }
 
     // 登录标题区域

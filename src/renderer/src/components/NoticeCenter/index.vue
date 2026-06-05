@@ -10,12 +10,28 @@
   >
     <template #header>
       <div class="nc-header">
-        <div class="nc-icon">
-          <Megaphone :size="19" />
+        <div class="nc-header-main">
+          <div class="nc-icon">
+            <Megaphone :size="19" />
+          </div>
+          <div>
+            <div class="nc-title">公告中心</div>
+            <div class="nc-subtitle">功能状态、接口波动和重要提醒都会放在这里。</div>
+          </div>
         </div>
-        <div>
-          <div class="nc-title">公告中心</div>
-          <div class="nc-subtitle">功能状态、接口波动和重要提醒都会放在这里。</div>
+
+        <div v-if="notices.length > 0" class="nc-header-actions">
+          <span class="nc-unread-summary" :class="{ empty: unreadCount === 0 }">
+            {{ unreadCount > 0 ? `${unreadCount} 条未读` : '全部已读' }}
+          </span>
+          <button
+            v-if="unreadCount > 0"
+            class="nc-mark-all"
+            type="button"
+            @click="markAllRead"
+          >
+            全部已读
+          </button>
         </div>
       </div>
     </template>
@@ -38,7 +54,10 @@
         >
           <span class="nc-level-dot" :class="notice.level"></span>
           <span class="nc-list-main">
-            <span class="nc-list-title">{{ notice.title }}</span>
+            <span class="nc-list-title-row">
+              <span class="nc-list-title">{{ notice.title }}</span>
+              <span v-if="!isDismissed(notice)" class="nc-unread-pill">未读</span>
+            </span>
             <span class="nc-list-time">{{ formatTime(notice.updatedAt || notice.startsAt) }}</span>
           </span>
         </button>
@@ -47,6 +66,7 @@
       <article v-if="selectedNotice" class="nc-detail" :class="selectedNotice.level">
         <div class="nc-detail-top">
           <span class="nc-badge">{{ levelLabel(selectedNotice.level) }}</span>
+          <span v-if="selectedNoticeUnread" class="nc-status unread">未读</span>
           <span v-if="selectedNotice.active !== false" class="nc-status">进行中</span>
           <span v-else class="nc-status muted">历史</span>
         </div>
@@ -64,7 +84,7 @@
             {{ selectedNotice.actionText || '查看详情' }}
             <ExternalLink :size="18" />
           </el-button>
-          <el-button type="primary" @click="confirmCurrentNotice">知道了</el-button>
+          <el-button type="primary" @click="confirmCurrentNotice">{{ primaryActionText }}</el-button>
         </div>
       </article>
     </div>
@@ -85,10 +105,20 @@ const props = defineProps({
 const emit = defineEmits(['update:visible', 'dismiss'])
 
 const selectedId = ref('')
+const readVersion = ref(0)
 
 const selectedNotice = computed(
   () => props.notices.find((notice) => notice.id === selectedId.value) || props.notices[0] || null
 )
+const unreadNotices = computed(() => props.notices.filter((notice) => !isDismissed(notice)))
+const unreadCount = computed(() => unreadNotices.value.length)
+const selectedNoticeUnread = computed(() =>
+  selectedNotice.value ? !isDismissed(selectedNotice.value) : false
+)
+const primaryActionText = computed(() => {
+  if (!selectedNoticeUnread.value) return '关闭'
+  return unreadCount.value > 1 ? '已读并看下一条' : '标为已读'
+})
 
 watch(
   () => [props.visible, props.notices, props.activeNotice],
@@ -103,17 +133,40 @@ const noticeKey = (notice) => `${notice.id}:${notice.updatedAt || ''}`
 
 const storageKey = (notice) => `qzone.notice.dismissed.${notice.id}.${notice.updatedAt || ''}`
 
-const isDismissed = (notice) => notice.dismissible !== false && localStorage.getItem(storageKey(notice))
+const isDismissed = (notice) => {
+  readVersion.value
+  return notice.dismissible !== false && localStorage.getItem(storageKey(notice)) === '1'
+}
 
 const selectNotice = (notice) => {
   selectedId.value = notice.id
 }
 
 const confirmCurrentNotice = () => {
-  if (selectedNotice.value) {
-    emit('dismiss', selectedNotice.value)
+  if (!selectedNotice.value) {
+    emit('update:visible', false)
+    return
   }
-  emit('update:visible', false)
+
+  if (!selectedNoticeUnread.value) {
+    emit('update:visible', false)
+    return
+  }
+
+  const currentId = selectedNotice.value.id
+  emit('dismiss', selectedNotice.value)
+  readVersion.value += 1
+
+  const nextUnread = unreadNotices.value.find((notice) => notice.id !== currentId)
+  if (nextUnread) {
+    selectedId.value = nextUnread.id
+  }
+}
+
+const markAllRead = () => {
+  if (unreadNotices.value.length === 0) return
+  unreadNotices.value.forEach((notice) => emit('dismiss', notice))
+  readVersion.value += 1
 }
 
 const openNoticeLink = async () => {
@@ -143,7 +196,64 @@ const formatTime = (value) => {
 .nc-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.nc-header-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
   gap: 12px;
+}
+
+.nc-header-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nc-unread-summary {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(251, 113, 133, 0.14);
+  border: 1px solid rgba(251, 113, 133, 0.26);
+  color: #fecdd3;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.nc-unread-summary.empty {
+  background: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.22);
+  color: #a7f3d0;
+}
+
+.nc-mark-all {
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.nc-mark-all:hover:not(:disabled) {
+  background: rgba(96, 165, 250, 0.16);
+  border-color: rgba(96, 165, 250, 0.28);
+  color: #fff;
+}
+
+.nc-mark-all:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .nc-icon {
@@ -224,6 +334,14 @@ const formatTime = (value) => {
   color: rgba(255, 255, 255, 0.95);
 }
 
+.nc-list-item.unread {
+  background: rgba(251, 113, 133, 0.055);
+}
+
+.nc-list-item.unread.active {
+  background: linear-gradient(90deg, rgba(251, 113, 133, 0.14), rgba(96, 165, 250, 0.13));
+}
+
 .nc-list-item.unread .nc-list-title {
   color: rgba(255, 255, 255, 0.96);
 }
@@ -255,12 +373,32 @@ const formatTime = (value) => {
   gap: 3px;
 }
 
+.nc-list-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .nc-list-title {
+  min-width: 0;
   font-size: 13px;
   font-weight: 650;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.nc-unread-pill {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(251, 113, 133, 0.18);
+  border: 1px solid rgba(251, 113, 133, 0.25);
+  color: #fecdd3;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
 }
 
 .nc-list-time {
@@ -318,6 +456,11 @@ const formatTime = (value) => {
   color: rgba(255, 255, 255, 0.45);
 }
 
+.nc-status.unread {
+  background: rgba(251, 113, 133, 0.15);
+  color: #fecdd3;
+}
+
 .nc-detail h3 {
   margin: 14px 0 10px;
   font-size: 20px;
@@ -355,6 +498,16 @@ const formatTime = (value) => {
 }
 
 @media (max-width: 720px) {
+  .nc-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .nc-header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .nc-body {
     grid-template-columns: 1fr;
   }

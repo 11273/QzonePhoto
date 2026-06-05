@@ -21,27 +21,6 @@
     </template>
 
     <div class="fd-body">
-      <div v-if="submittedFeedback" class="fd-success">
-        <div class="fd-success-icon">
-          <el-icon><CircleCheck /></el-icon>
-        </div>
-        <div class="fd-success-title">反馈已收到</div>
-        <div class="fd-success-desc">
-          <button
-            v-if="submittedFeedback.issue"
-            class="fd-issue-link"
-            type="button"
-            @click="openSubmittedIssue"
-          >
-            GitHub #{{ submittedFeedback.issue }}
-            <el-icon><TopRight /></el-icon>
-          </button>
-          <span v-else>感谢你的提醒</span>
-        </div>
-        <div class="fd-success-note">作者会集中查看这些反馈；复杂问题也可以继续用 GitHub 反馈页补截图。</div>
-      </div>
-
-      <template v-else>
       <div class="fd-type-list" role="radiogroup" aria-label="反馈类型">
         <button
           v-for="option in typeOptions"
@@ -116,15 +95,10 @@
           <el-icon><TopRight /></el-icon>
         </button>
       </div>
-      </template>
     </div>
 
     <template #footer>
-      <div v-if="submittedFeedback" class="fd-footer">
-        <el-button text @click="resetFeedbackForm">继续反馈</el-button>
-        <el-button type="primary" @click="emit('update:visible', false)">完成</el-button>
-      </div>
-      <div v-else class="fd-footer">
+      <div class="fd-footer">
         <el-button text @click="emit('update:visible', false)">取消</el-button>
         <el-button
           type="primary"
@@ -137,6 +111,30 @@
       </div>
     </template>
   </el-dialog>
+
+  <transition name="feedback-toast">
+    <div v-if="feedbackNotice.visible" class="feedback-toast-card">
+      <div class="feedback-toast-main">
+        <div class="feedback-toast-badge" :class="`is-${feedbackNotice.state}`">
+          <span v-if="feedbackNotice.state === 'pending'" class="feedback-toast-spinner"></span>
+          <el-icon v-else-if="feedbackNotice.state === 'success'"><CircleCheck /></el-icon>
+          <el-icon v-else><WarningFilled /></el-icon>
+        </div>
+        <div class="feedback-toast-copy">
+          <div class="feedback-toast-title">{{ feedbackNotice.title }}</div>
+          <div class="feedback-toast-text">{{ feedbackNotice.message }}</div>
+          <div v-if="feedbackNotice.issue" class="feedback-toast-actions">
+            <button class="feedback-toast-link" type="button" @click="openIssueUrl(feedbackNotice.issueUrl)">
+              查看 GitHub #{{ feedbackNotice.issue }}
+            </button>
+          </div>
+        </div>
+        <button class="feedback-toast-close" type="button" @click="closeFeedbackNotice">
+          <el-icon><Close /></el-icon>
+        </button>
+      </div>
+    </div>
+  </transition>
 </template>
 
 <script setup>
@@ -146,10 +144,12 @@ import {
   ArrowDown,
   ChatDotRound,
   CircleCheck,
+  Close,
   EditPen,
   Help,
   MagicStick,
   Star,
+  WarningFilled,
   TopRight
 } from '@element-plus/icons-vue'
 import { IPC_SHELL } from '@shared/ipc-channels'
@@ -189,8 +189,17 @@ const form = reactive({
 const submitting = ref(false)
 const extraExpanded = ref(false)
 const recentErrors = ref([])
-const submittedFeedback = ref(null)
 let errorSeq = 0
+let feedbackNoticeTimer = 0
+
+const feedbackNotice = reactive({
+  visible: false,
+  state: 'pending',
+  title: '',
+  message: '',
+  issue: '',
+  issueUrl: ''
+})
 
 const runtime = computed(() => props.runtimeInfo || {})
 const systemText = computed(() =>
@@ -259,6 +268,79 @@ const buildFeedbackText = () => {
   return lines.join('\n')
 }
 
+const openIssueUrl = async (issueUrl = '') => {
+  if (!issueUrl) return
+  await window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, issueUrl)
+}
+
+const clearFeedbackNoticeTimer = () => {
+  if (feedbackNoticeTimer) {
+    window.clearTimeout(feedbackNoticeTimer)
+    feedbackNoticeTimer = 0
+  }
+}
+
+const scheduleFeedbackNoticeClose = (duration = 0) => {
+  clearFeedbackNoticeTimer()
+  if (!duration) return
+  feedbackNoticeTimer = window.setTimeout(() => {
+    closeFeedbackNotice()
+  }, duration)
+}
+
+const updateFeedbackNotice = ({ state, title, message, issue = '', issueUrl = '', duration = 0 }) => {
+  feedbackNotice.visible = true
+  feedbackNotice.state = state
+  feedbackNotice.title = title
+  feedbackNotice.message = message
+  feedbackNotice.issue = issue
+  feedbackNotice.issueUrl = issueUrl
+  scheduleFeedbackNoticeClose(duration)
+}
+
+const closeFeedbackNotice = () => {
+  clearFeedbackNoticeTimer()
+  feedbackNotice.visible = false
+}
+
+const showFeedbackPendingNotice = () => {
+  updateFeedbackNotice({
+    state: 'pending',
+    title: '已接收反馈',
+    message: '正在处理，请稍候。'
+  })
+}
+
+const showFeedbackResultNotice = (result) => {
+  if (result.issue) {
+    updateFeedbackNotice({
+      state: 'success',
+      title: '提交成功',
+      message: `已创建 GitHub Issue #${result.issue}`,
+      issue: String(result.issue),
+      issueUrl: result.issueUrl || '',
+      duration: 12000
+    })
+    return
+  }
+
+  updateFeedbackNotice({
+    state: 'success',
+    title: '提交成功',
+    message: '反馈已记录。',
+    duration: 8000
+  })
+}
+
+const showFeedbackErrorNotice = (message) => {
+  updateFeedbackNotice({
+    state: 'error',
+    title: '提交失败',
+    message,
+    duration: 12000
+  })
+}
+
 const openGitHubIssue = async () => {
   const homepage = (props.appHomepage || 'https://github.com/11273/QzonePhoto').replace(/\/$/, '')
   const version = props.appVersion && props.appVersion !== 'unknown' ? `[${props.appVersion}]` : ''
@@ -280,15 +362,22 @@ const submitQuickFeedback = async () => {
   }
 
   submitting.value = true
+  const payload = {
+    type: form.type,
+    title: contentTitle.value,
+    content: form.content,
+    contact: form.contact,
+    env: buildFeedbackEnv(),
+    createdAt: new Date().toISOString()
+  }
+
+  form.content = ''
+  form.contact = ''
+  extraExpanded.value = false
+  emit('update:visible', false)
+  showFeedbackPendingNotice()
+
   try {
-    const payload = {
-      type: form.type,
-      title: contentTitle.value,
-      content: form.content,
-      contact: form.contact,
-      env: buildFeedbackEnv(),
-      createdAt: new Date().toISOString()
-    }
     const res = await fetch(feedbackEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -296,20 +385,14 @@ const submitQuickFeedback = async () => {
     })
     const result = await parseFeedbackResponse(res)
     if (!result.ok) throw new Error(result.message)
-    submittedFeedback.value = {
-      issue: result.issue || '',
-      issueUrl: result.issueUrl || ''
-    }
-    ElMessage.success(result.issue ? `反馈已提交到 GitHub #${result.issue}` : '反馈已提交，感谢你的提醒')
-    form.content = ''
-    form.contact = ''
+    showFeedbackResultNotice(result)
   } catch (error) {
     console.error('[FeedbackDialog] submit failed:', error)
     const message =
       error?.name === 'AbortError' || error instanceof TypeError
-        ? '快捷提交暂时不可用，请使用 GitHub 反馈页'
-        : error?.message || '快捷提交失败，请使用 GitHub 反馈页'
-    ElMessage.error(message)
+        ? '本次未完成提交，请稍后重试或使用 GitHub 反馈页'
+        : error?.message || '本次未完成提交，请稍后重试或使用 GitHub 反馈页'
+    showFeedbackErrorNotice(message)
   } finally {
     submitting.value = false
   }
@@ -323,7 +406,8 @@ const parseFeedbackResponse = async (res) => {
         ok: res.ok && data.ok !== false,
         message: data.message,
         issue: data.data?.issue,
-        issueUrl: data.data?.issueUrl
+        issueUrl: data.data?.issueUrl,
+        delivery: data.data?.delivery
       }
     }
     if (typeof data?.error === 'string') {
@@ -347,18 +431,10 @@ const normalizeError = (type, message, source = '') => ({
 })
 
 const resetFeedbackForm = () => {
-  submittedFeedback.value = null
   form.type = 'bug'
   form.content = ''
   form.contact = ''
   extraExpanded.value = false
-}
-
-const openSubmittedIssue = async () => {
-  if (!submittedFeedback.value?.issue) return
-  const homepage = (props.appHomepage || 'https://github.com/11273/QzonePhoto').replace(/\/$/, '')
-  const issueUrl = submittedFeedback.value.issueUrl || `${homepage}/issues/${submittedFeedback.value.issue}`
-  await window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, issueUrl)
 }
 
 watch(
@@ -391,6 +467,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('error', handleWindowError)
   window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+  clearFeedbackNoticeTimer()
 })
 </script>
 
@@ -400,11 +477,15 @@ onUnmounted(() => {
   width: min(420px, calc(100vw - 32px));
   max-height: calc(100vh - 72px);
   overflow: hidden;
+  background: #191a20;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.5);
+  backdrop-filter: none;
 }
 
 :global(.feedback-dialog-overlay) {
-  background: rgba(0, 0, 0, 0.46);
-  backdrop-filter: blur(2px);
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: none;
 }
 
 :deep(.feedback-dialog .el-dialog__header) {
@@ -462,62 +543,6 @@ onUnmounted(() => {
   max-height: calc(100vh - 184px);
   overflow: auto;
   padding: 2px 18px 0;
-}
-
-.fd-success {
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  padding: 22px 18px 18px;
-  text-align: center;
-}
-
-.fd-success-icon {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  color: #d1fae5;
-  font-size: 22px;
-  background: rgba(52, 211, 153, 0.16);
-  border: 1px solid rgba(52, 211, 153, 0.3);
-  border-radius: 16px;
-}
-
-.fd-success-title {
-  color: var(--ds-text-primary);
-  font-size: 16px;
-  font-weight: 800;
-}
-
-.fd-success-desc {
-  color: #bfdbfe;
-  font-size: 13px;
-  font-weight: 750;
-}
-
-.fd-issue-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  color: #bfdbfe;
-  font: inherit;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  transition: var(--ds-transition-all);
-}
-
-.fd-issue-link:hover {
-  color: #fff;
-}
-
-.fd-success-note {
-  max-width: 280px;
-  color: var(--ds-text-tertiary);
-  font-size: 12px;
-  line-height: 1.55;
 }
 
 .fd-type-list {
@@ -778,6 +803,149 @@ onUnmounted(() => {
 .fd-slide-leave-to {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+.feedback-toast-card {
+  position: fixed;
+  top: 56px;
+  right: 18px;
+  z-index: 3200;
+  width: min(320px, calc(100vw - 24px));
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(24, 25, 31, 0.96);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(14px);
+}
+
+.feedback-toast-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.feedback-toast-badge {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  border-radius: 11px;
+  border: 1px solid transparent;
+  font-size: 16px;
+}
+
+.feedback-toast-badge.is-pending {
+  color: #bfdbfe;
+  background: rgba(96, 165, 250, 0.14);
+  border-color: rgba(96, 165, 250, 0.24);
+}
+
+.feedback-toast-badge.is-success {
+  color: #d1fae5;
+  background: rgba(52, 211, 153, 0.16);
+  border-color: rgba(52, 211, 153, 0.26);
+}
+
+.feedback-toast-badge.is-error {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.22);
+}
+
+.feedback-toast-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(191, 219, 254, 0.24);
+  border-top-color: #bfdbfe;
+  border-radius: 50%;
+  animation: feedback-spin 0.88s linear infinite;
+}
+
+.feedback-toast-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.feedback-toast-title {
+  color: #f3f4f6;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.feedback-toast-text {
+  margin-top: 5px;
+  color: rgba(229, 231, 235, 0.82);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.feedback-toast-actions {
+  margin-top: 10px;
+}
+
+.feedback-toast-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.14);
+  color: #dbeafe;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--ds-transition-all);
+}
+
+.feedback-toast-link:hover {
+  background: rgba(96, 165, 250, 0.22);
+  color: #ffffff;
+}
+
+.feedback-toast-close {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  color: rgba(255, 255, 255, 0.62);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: var(--ds-transition-all);
+}
+
+.feedback-toast-close:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.feedback-toast-enter-active,
+.feedback-toast-leave-active {
+  transition: all 0.22s var(--ds-ease-soft);
+}
+
+.feedback-toast-enter-from,
+.feedback-toast-leave-to {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.98);
+}
+
+@keyframes feedback-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 520px) {

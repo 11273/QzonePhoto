@@ -3,9 +3,16 @@ import { getface, jump, pt_get_st, pt_get_uins, xlogin as localXlogin } from '@m
 import request from '@main/api/utils/request'
 import { extractJson, parseSetCookie } from '@main/utils'
 
+const DEFAULT_LOCAL_FACE = 'https://ui.ptlogin2.qq.com/style/0/images/1.gif'
+
 export class QzoneAuthService {
   constructor() {
     this.token = null
+    this.localFaceCache = new Map()
+  }
+
+  isValidLocalFace(face) {
+    return typeof face === 'string' && face && face !== DEFAULT_LOCAL_FACE
   }
 
   async getLocalUnis() {
@@ -45,10 +52,16 @@ export class QzoneAuthService {
       const results = await Promise.all(
         jsonData.map(async (user) => {
           const face = await getface(user.uin, cookie.olu).catch()
+          const cachedFace = this.localFaceCache.get(user.uin)
+          const stableFace = this.isValidLocalFace(face) ? face : cachedFace || DEFAULT_LOCAL_FACE
+          if (this.isValidLocalFace(face)) {
+            this.localFaceCache.set(user.uin, face)
+          }
           return {
             ...user,
             pt_local_token,
-            face: face || 'https://ui.ptlogin2.qq.com/style/0/images/1.gif'
+            face: stableFace,
+            faceStatus: this.isValidLocalFace(face) ? 'fresh' : cachedFace ? 'cached' : 'fallback'
           }
         })
       )

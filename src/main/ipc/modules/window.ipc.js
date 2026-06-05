@@ -4,6 +4,9 @@ import { IPC_WINDOW, IPC_APP, IPC_SHELL } from '@shared/ipc-channels'
 import { app } from 'electron'
 import { APP_NAME, APP_HOMEPAGE, APP_DESCRIPTION } from '@shared/const'
 
+const APP_LAUNCH_ID = `${Date.now()}-${process.pid}`
+const APP_LAUNCHED_AT = new Date().toISOString()
+
 const isQzoneWebUrl = (value) => {
   try {
     const url = new URL(value)
@@ -79,7 +82,9 @@ export function registerWindowControl() {
         version: app.getVersion(),
         productName: APP_NAME,
         homepage: APP_HOMEPAGE,
-        description: APP_DESCRIPTION
+        description: APP_DESCRIPTION,
+        launchId: APP_LAUNCH_ID,
+        launchedAt: APP_LAUNCHED_AT
       }
 
       return result

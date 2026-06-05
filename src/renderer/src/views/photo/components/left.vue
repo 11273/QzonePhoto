@@ -152,10 +152,11 @@
               :src="`https://qlogo4.store.qq.com/qzone/${userStore.userInfo?.uin}/${userStore.userInfo?.uin}/100`"
               class="user-avatar"
             >
-              {{ userStore.userInfo?.nick?.[0] || 'Q' }}
+              {{ stripEmoji(userStore.userInfo?.nick)?.[0] || 'Q' }}
             </el-avatar>
             <div class="user-info">
-              <div class="nickname">{{ userStore.userInfo?.nick || 'QZone用户' }}</div>
+              <!-- eslint-disable-next-line vue/no-v-html -- 名称已做 HTML 转义，仅注入表情 img 标签 -->
+              <div class="nickname" v-html="renderFriendName(userStore.userInfo?.nick || 'QZone用户')"></div>
               <div class="uin-row">
                 <span
                   class="uin uin-copyable"
@@ -735,7 +736,8 @@
                 @click.prevent="openQzoneProfile(author.uin)"
               >
                 <img :src="author.avatar" :alt="author.name" referrerpolicy="no-referrer" />
-                <span>{{ author.name }}</span>
+                <!-- eslint-disable-next-line vue/no-v-html -- 名称已做 HTML 转义，仅注入表情 img 标签 -->
+                <span v-html="renderFriendName(author.name)"></span>
                 <strong>{{ author.count }}</strong>
               </a>
             </div>
@@ -2518,6 +2520,14 @@ defineExpose({
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+
+          :deep(.friend-emoji),
+          :deep(img) {
+            width: 14px;
+            height: 14px;
+            margin: 0 1px;
+            vertical-align: -0.16em;
+          }
         }
 
         .uin-row {
@@ -3834,6 +3844,14 @@ defineExpose({
     font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
+
+    :deep(.friend-emoji),
+    :deep(img) {
+      width: 14px;
+      height: 14px;
+      margin: 0 1px;
+      vertical-align: -0.18em;
+    }
   }
 
   strong {
