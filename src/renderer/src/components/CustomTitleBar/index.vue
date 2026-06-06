@@ -10,53 +10,103 @@
       <div v-if="isMac" class="mac-traffic-lights-space"></div>
 
       <el-tooltip v-if="!isMac && appHomepage" content="GitHub 项目" placement="bottom">
-        <button class="title-github-btn no-drag" type="button" @click="openGitHub">
+        <button class="title-github-btn no-drag" type="button" tabindex="-1" @click="openGitHub">
           <Icon icon="github" size="small" class="github-action-icon" />
         </button>
       </el-tooltip>
 
       <div v-if="!isMac && apiBaseUrl" class="title-side-actions">
         <el-tooltip :content="feedbackTooltip" placement="bottom">
-          <button class="title-feedback-btn no-drag" type="button" @click="openFeedback">
-            <el-icon class="feedback-icon">
-              <ChatDotRound />
-            </el-icon>
+          <button
+            class="title-feedback-btn no-drag"
+            type="button"
+            tabindex="-1"
+            @click="openFeedback"
+          >
+            <span class="feedback-text">反馈</span>
           </button>
         </el-tooltip>
       </div>
 
-      <button
-        v-if="appVersion"
-        class="version-container no-drag"
-        :class="versionStateClass"
-        type="button"
-        :title="getVersionTooltip()"
-        @click="handleVersionClick(false)"
-        @contextmenu.prevent="copyToClipboard(appVersion, '版本号')"
-      >
-        <span
-          v-if="updateState.downloading"
-          class="version-progress-fill"
-          :style="{ width: `${Math.min(100, Math.max(0, updateState.progress || 0))}%` }"
-        ></span>
-        <span
-          class="app-version"
-          :class="{
-            'has-update': showUpdateBadge,
-            checking: updateState.checking
-          }"
+      <div v-if="appVersion" class="version-download-group">
+        <button
+          class="version-container no-drag"
+          :class="versionStateClass"
+          type="button"
+          tabindex="-1"
+          :title="getVersionTooltip()"
+          @click="handleVersionClick(false)"
+          @contextmenu.prevent="copyToClipboard(appVersion, '版本号')"
         >
-          {{ versionChipText }}
-        </span>
-        <transition name="fade">
-          <span v-if="updateState.checking" class="checking-indicator" title="正在检查更新...">
-            <span class="checking-spinner"></span>
-          </span>
-        </transition>
-        <transition name="fade">
-          <span v-if="showUpdateBadge" class="update-dot" title="发现新版本，点击查看详情"></span>
-        </transition>
-      </button>
+          <template v-if="showUpdateStatusBlock">
+            <div class="version-update-block">
+              <div class="version-update-row">
+                <div class="version-update-title-wrap">
+                  <span class="version-update-title">{{ versionStatusTitle }}</span>
+                  <span
+                    v-if="updateState.checking"
+                    class="checking-indicator"
+                    title="正在检查更新..."
+                  >
+                    <span class="checking-spinner"></span>
+                  </span>
+                </div>
+                <div class="version-update-actions">
+                  <span class="version-update-detail">{{ versionStatusDetail }}</span>
+                  <button
+                    v-if="updateState.downloading && updateState.canCancel"
+                    class="version-progress-cancel"
+                    type="button"
+                    tabindex="-1"
+                    title="取消更新"
+                    @click.stop="cancelUpdate"
+                  >
+                    <el-icon><Close /></el-icon>
+                  </button>
+                </div>
+              </div>
+              <ProgressBar
+                v-if="updateState.downloading"
+                :percentage="Math.min(100, Math.max(0, updateState.progress || 0))"
+                :transferred="updateState.transferred"
+                :total="updateState.total"
+                :speed="updateState.bytesPerSecond"
+                size="small"
+                variant="compact"
+                :show-text="false"
+                class="version-progress-track"
+              />
+            </div>
+          </template>
+          <template v-else>
+            <span class="app-version-content" :class="{ checking: updateState.checking }">
+              <span
+                class="app-version"
+                :class="{
+                  'has-update': showUpdateBadge,
+                  checking: updateState.checking
+                }"
+              >
+                {{ versionChipText }}
+              </span>
+              <span
+                v-if="updateState.checking"
+                class="checking-indicator inline-checking-indicator"
+                title="正在检查更新..."
+              >
+                <span class="checking-spinner"></span>
+              </span>
+            </span>
+            <transition name="fade">
+              <span
+                v-if="showUpdateBadge"
+                class="update-dot"
+                title="发现新版本，点击查看详情"
+              ></span>
+            </transition>
+          </template>
+        </button>
+      </div>
     </div>
 
     <!-- 中间标题区域 -->
@@ -71,34 +121,9 @@
 
     <!-- 右侧区域 -->
     <div ref="titleRightRef" class="title-bar-right">
-      <!-- 下载进度条区域 (仅在对话框关闭时显示) -->
-      <transition name="fade">
-        <div v-if="updateState.downloading && !dialogVisible" class="download-progress no-drag">
-          <ProgressBar
-            :percentage="updateState.progress"
-            :transferred="updateState.transferred"
-            :total="updateState.total"
-            :speed="updateState.bytesPerSecond"
-            size="small"
-            variant="compact"
-            :show-text="false"
-          />
-          <span class="progress-text">{{ progressText }}</span>
-          <el-button
-            v-if="updateState.canCancel"
-            text
-            size="small"
-            class="cancel-btn"
-            @click="cancelUpdate"
-          >
-            <el-icon><Close /></el-icon>
-          </el-button>
-        </div>
-      </transition>
-
       <!-- 更新完成提示 -->
       <transition name="fade">
-        <div v-if="updateState.downloaded && !updateState.downloading" class="update-ready no-drag">
+        <div v-if="showUpdateReady" class="update-ready no-drag">
           <el-button
             type="success"
             size="small"
@@ -126,6 +151,7 @@
             class="global-privacy-btn no-drag"
             size="small"
             text
+            tabindex="-1"
             :type="privacyStore.privacyMode ? 'warning' : 'info'"
             @click="privacyStore.togglePrivacyMode()"
           >
@@ -139,7 +165,13 @@
 
         <!-- 系统刷新按钮 -->
         <el-tooltip content="刷新当前页面" placement="bottom">
-          <el-button class="global-refresh-btn no-drag" size="small" text @click="refreshSystem">
+          <el-button
+            class="global-refresh-btn no-drag"
+            size="small"
+            text
+            tabindex="-1"
+            @click="refreshSystem"
+          >
             <el-icon class="refresh-icon">
               <Refresh />
             </el-icon>
@@ -148,7 +180,13 @@
         </el-tooltip>
 
         <el-tooltip v-if="isMac" :content="feedbackTooltip" placement="bottom">
-          <el-button class="global-feedback-btn no-drag" size="small" text @click="openFeedback">
+          <el-button
+            class="global-feedback-btn no-drag"
+            size="small"
+            text
+            tabindex="-1"
+            @click="openFeedback"
+          >
             <el-icon class="feedback-icon">
               <ChatDotRound />
             </el-icon>
@@ -162,6 +200,7 @@
             class="global-notice-btn no-drag"
             size="small"
             text
+            tabindex="-1"
             @click="openNoticeCenter"
           >
             <span class="notice-icon-wrap">
@@ -178,6 +217,7 @@
             class="global-github-btn no-drag"
             size="small"
             text
+            tabindex="-1"
             @click="openGitHub"
           >
             <Icon icon="github" size="small" class="github-action-icon" />
@@ -185,7 +225,11 @@
         </el-tooltip>
       </div>
 
-      <div ref="globalControlsMeasureRef" class="global-controls global-controls-measure" aria-hidden="true">
+      <div
+        ref="globalControlsMeasureRef"
+        class="global-controls global-controls-measure"
+        aria-hidden="true"
+      >
         <span v-if="isLoggedIn" class="measure-action">
           <span class="measure-icon"></span>
           <span>{{ privacyStore.privacyMode ? '隐私' : '公开' }}</span>
@@ -209,20 +253,34 @@
 
       <!-- Windows/Linux窗口控制按钮 -->
       <div v-if="!isMac" ref="windowControlsRef" class="window-controls">
-        <button class="title-bar-button minimize no-drag" title="最小化" @click="minimizeWindow">
+        <button
+          class="title-bar-button minimize no-drag"
+          title="最小化"
+          type="button"
+          tabindex="-1"
+          @click="minimizeWindow"
+        >
           <el-icon><SemiSelect /></el-icon>
         </button>
 
         <button
           class="title-bar-button maximize no-drag"
           :title="isMaximized ? '还原' : '最大化'"
+          type="button"
+          tabindex="-1"
           @click="maximizeWindow"
         >
           <el-icon v-if="isMaximized"><ArrowDownBold /></el-icon>
           <el-icon v-else><ArrowUpBold /></el-icon>
         </button>
 
-        <button class="title-bar-button close no-drag" title="关闭" @click="closeWindow">
+        <button
+          class="title-bar-button close no-drag"
+          title="关闭"
+          type="button"
+          tabindex="-1"
+          @click="closeWindow"
+        >
           <el-icon><CloseBold /></el-icon>
         </button>
       </div>
@@ -346,22 +404,37 @@ const activeNotice = ref(null)
 const noticeReadVersion = ref(0)
 let appHealthReported = false
 let appNoticeChecked = false
-
-// 启动时检查更新
-onMounted(() => {
-  handleVersionClick(true)
-})
+const silentChecking = ref(false)
 
 // 计算属性
 const showUpdateBadge = computed(() => {
   return updateState.hasUpdate && !updateState.downloading && !updateState.downloaded
 })
 
+const showInlineDownloadProgress = computed(() => {
+  return updateState.downloading && !dialogVisible.value
+})
+
+const showUpdateReady = computed(() => {
+  return updateState.downloaded && !updateState.downloading
+})
+
+const showUpdateStatusBlock = computed(() => {
+  return updateState.downloading || updateState.downloaded
+})
+
 const versionChipText = computed(() => {
-  if (updateState.downloading) return `${Math.round(updateState.progress || 0)}%`
+  if (updateState.downloading) return appVersion.value || '更新'
   if (updateState.downloaded) return '已就绪'
   if (updateState.checking) return '检查中'
   if (showUpdateBadge.value) return '新版本'
+  return appVersion.value
+})
+
+const versionStatusTitle = computed(() => {
+  if (updateState.checking) return '检查更新'
+  if (updateState.downloading) return `下载 ${appVersion.value || ''}`.trim()
+  if (updateState.downloaded) return `已就绪 ${appVersion.value || ''}`.trim()
   return appVersion.value
 })
 
@@ -387,6 +460,31 @@ const progressText = computed(() => {
     return `${transferred} / ${total} (${speed}/s)`
   }
   return `${updateState.progress?.toFixed(1) || 0}%`
+})
+
+const progressDetailText = computed(() => {
+  if (updateState.total > 0 && updateState.transferred > 0) {
+    const transferredMb = updateState.transferred / 1024 / 1024
+    const totalMb = updateState.total / 1024 / 1024
+    if (totalMb >= 1) {
+      return `${transferredMb.toFixed(1)} / ${totalMb.toFixed(1)} MB`
+    }
+
+    const transferredKb = updateState.transferred / 1024
+    const totalKb = updateState.total / 1024
+    return `${transferredKb.toFixed(0)} / ${totalKb.toFixed(0)} KB`
+  }
+  if (updateState.bytesPerSecond > 0) {
+    return `${formatBytes(updateState.bytesPerSecond)}/s`
+  }
+  return `${Math.round(updateState.progress || 0)}%`
+})
+
+const versionStatusDetail = computed(() => {
+  if (updateState.checking) return '正在获取最新版本信息'
+  if (updateState.downloading) return progressDetailText.value
+  if (updateState.downloaded) return '点击查看并完成安装'
+  return appVersion.value
 })
 
 const feedbackTooltip = computed(() => {
@@ -462,6 +560,7 @@ const openFeedback = async () => {
 }
 
 const APP_HEALTH_SESSION_KEY = 'qzone.app-health.reported.launch'
+const APP_INSTALL_ID_KEY = 'qzone.analytics.install-id'
 
 const getNoticeStorageKey = (notice) =>
   notice?.id ? `qzone.notice.dismissed.${notice.id}.${notice.updatedAt || ''}` : ''
@@ -489,14 +588,26 @@ const refreshSystem = () => {
   window.location.reload()
 }
 
-const getHealthPageLabel = () => {
-  const hash = String(window.location.hash || '#/index')
-  return hash.split('?')[0] || '#/index'
-}
-
 const getAppLaunchId = () => {
   const launchId = runtimeInfo.value?.launchId
   return typeof launchId === 'string' && launchId ? launchId : ''
+}
+
+const getAppSessionId = () => getAppLaunchId() || null
+
+const getInstallId = () => {
+  try {
+    const cached = localStorage.getItem(APP_INSTALL_ID_KEY)
+    if (cached) return cached
+    const nextId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `install_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`
+    localStorage.setItem(APP_INSTALL_ID_KEY, nextId)
+    return nextId
+  } catch {
+    return 'install_unavailable'
+  }
 }
 
 const hasSessionHealthReported = () => {
@@ -538,10 +649,14 @@ const handleVersionClick = async (background = false) => {
   }
 
   if (updateState.hasUpdate) {
+    silentChecking.value = false
     if (!background) {
       showUpdateDialog()
     }
   } else if (updateState.checking) {
+    if (!background) {
+      silentChecking.value = false
+    }
     // 正在检查中，如果不是后台模式，显示对话框
     if (!background) {
       showUpdateDialog()
@@ -551,6 +666,7 @@ const handleVersionClick = async (background = false) => {
     if (window.QzoneAPI?.update) {
       try {
         console.log(background ? '后台检查更新...' : '手动检查更新...')
+        silentChecking.value = background
         updateState.checking = true
 
         // 只有非后台模式才显示对话框
@@ -566,6 +682,7 @@ const handleVersionClick = async (background = false) => {
         setTimeout(() => {
           if (updateState.checking && !updateState.hasUpdate) {
             updateState.checking = false
+            silentChecking.value = false
 
             // 只有非后台模式才更新对话框状态
             if (!background) {
@@ -584,6 +701,7 @@ const handleVersionClick = async (background = false) => {
       } catch (error) {
         console.error('检查更新失败:', error)
         updateState.checking = false
+        silentChecking.value = false
 
         // 只有非后台模式才显示错误
         if (!background) {
@@ -697,11 +815,14 @@ const handleWindowMaximized = (maximized) => {
 // 更新事件处理
 const handleUpdateChecking = () => {
   updateState.checking = true
-  dialogState.value = 'checking'
+  if (!silentChecking.value) {
+    dialogState.value = 'checking'
+  }
 }
 
 const handleUpdateAvailable = (info) => {
   updateState.checking = false
+  silentChecking.value = false
   updateState.hasUpdate = true
   updateInfo.value = info
   dialogState.value = 'available'
@@ -715,6 +836,7 @@ const handleUpdateAvailable = (info) => {
 const handleUpdateNotAvailable = (info) => {
   console.log('没有更新:', info)
   updateState.checking = false
+  silentChecking.value = false
   updateState.hasUpdate = false
 
   // 如果对话框是打开的，显示无更新状态
@@ -748,6 +870,7 @@ const handleUpdateDownloaded = () => {
 const handleUpdateError = (error) => {
   updateState.checking = false
   updateState.downloading = false
+  silentChecking.value = false
   updateState.progress = 0
   dialogState.value = 'error'
   errorInfo.value = error
@@ -779,14 +902,15 @@ const loadAppInfo = async () => {
   }
 }
 
-const buildAppHealthPayload = () => {
+const buildHealthPayload = () => {
   const appInfo = runtimeInfo.value || {}
   return {
-    event: 'app_start',
+    event: 'app_launch',
     appVersion: appVersion.value || formatVersion(appInfo.version) || 'unknown',
     system: [appInfo.platform || 'unknown', appInfo.arch || 'unknown'].join(' / '),
     installMode: appInfo.isPackaged ? '安装包' : '开发模式',
-    page: getHealthPageLabel()
+    installId: getInstallId(),
+    sessionId: getAppSessionId()
   }
 }
 
@@ -798,7 +922,7 @@ const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => 
   const timeout = window.setTimeout(() => controller.abort(), 3500)
   const shouldReportHealth = !appHealthReported && !hasSessionHealthReported()
   const method = shouldReportHealth ? 'POST' : 'GET'
-  const body = shouldReportHealth ? JSON.stringify({ health: buildAppHealthPayload() }) : undefined
+  const body = shouldReportHealth ? JSON.stringify({ health: buildHealthPayload() }) : undefined
   if (shouldReportHealth) {
     appHealthReported = true
     markSessionHealthReported()
@@ -853,10 +977,14 @@ const measureActionDensity = () => {
       if (child === globalControlsMeasureRef.value) return sum
       if (child === globalControlsRef.value && globalControlsMeasureRef.value) {
         const rect = globalControlsMeasureRef.value.getBoundingClientRect()
-        return sum + rect.width + parseFloat(style.marginLeft || 0) + parseFloat(style.marginRight || 0)
+        return (
+          sum + rect.width + parseFloat(style.marginLeft || 0) + parseFloat(style.marginRight || 0)
+        )
       }
       const rect = child.getBoundingClientRect()
-      return sum + rect.width + parseFloat(style.marginLeft || 0) + parseFloat(style.marginRight || 0)
+      return (
+        sum + rect.width + parseFloat(style.marginLeft || 0) + parseFloat(style.marginRight || 0)
+      )
     }, 0)
 
   const barWidth = bar.clientWidth
@@ -885,6 +1013,14 @@ const clearInitialTitlebarFocus = async () => {
   }
 }
 
+const handleTitlebarFocusIn = (event) => {
+  const target = event.target
+  if (!(target instanceof HTMLElement) || !titleBarRef.value?.contains(target)) return
+  if (target.matches('button, [role="button"], .el-button')) {
+    target.blur()
+  }
+}
+
 onMounted(async () => {
   // 获取应用信息
   await loadAppInfo()
@@ -901,6 +1037,7 @@ onMounted(async () => {
   removeListeners.push(window.api.on(IPC_WINDOW.MAXIMIZED, handleWindowMaximized))
   resizeObserver = new ResizeObserver(() => scheduleActionDensity())
   if (titleBarRef.value) resizeObserver.observe(titleBarRef.value)
+  titleBarRef.value?.addEventListener('focusin', handleTitlebarFocusIn)
   // 监听更新相关事件
   if (window.QzoneAPI?.update) {
     window.QzoneAPI.update.onUpdateChecking(handleUpdateChecking)
@@ -918,6 +1055,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (densityFrame) cancelAnimationFrame(densityFrame)
   resizeObserver?.disconnect?.()
+  titleBarRef.value?.removeEventListener('focusin', handleTitlebarFocusIn)
   // 移除所有监听器
   removeListeners.forEach((remove) => remove && remove())
 
@@ -927,9 +1065,22 @@ onUnmounted(() => {
   }
 })
 
-watch([isLoggedIn, showNoticeEntry, appVersion, appDescription, appHomepage, versionChipText], () => {
-  scheduleActionDensity()
-}, { flush: 'post' })
+watch(
+  [
+    isLoggedIn,
+    showNoticeEntry,
+    appVersion,
+    appDescription,
+    appHomepage,
+    versionChipText,
+    showInlineDownloadProgress,
+    progressText
+  ],
+  () => {
+    scheduleActionDensity()
+  },
+  { flush: 'post' }
+)
 </script>
 
 <style scoped>
@@ -1035,40 +1186,43 @@ watch([isLoggedIn, showNoticeEntry, appVersion, appDescription, appHomepage, ver
   flex: 0 0 auto;
 }
 
+.version-download-group {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
 .title-feedback-btn {
   appearance: none;
-  border: 1px solid transparent;
-  width: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   height: 24px;
-  padding: 0;
+  padding: 0 8px;
   border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 24px;
-  color: rgba(255, 255, 255, 0.78);
-  background: transparent;
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.028);
   cursor: pointer;
   transition:
     background-color 0.18s var(--ds-ease-soft),
     border-color 0.18s var(--ds-ease-soft),
     color 0.18s var(--ds-ease-soft);
-
-  .feedback-icon {
-    font-size: 14px;
-    color: rgba(255, 255, 255, 0.68);
-    transition: color 0.18s var(--ds-ease-soft);
-  }
 }
 
 .title-feedback-btn:hover {
   color: #ffffff;
-  background: rgba(255, 255, 255, 0.065);
-  border-color: rgba(255, 255, 255, 0.075);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
 
-  .feedback-icon {
-    color: #60a5fa;
-  }
+.feedback-text {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
 }
 
 .app-logo {
@@ -1110,26 +1264,6 @@ watch([isLoggedIn, showNoticeEntry, appVersion, appDescription, appHomepage, ver
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* 下载进度条 */
-.download-progress {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0px 6px;
-  flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  backdrop-filter: blur(10px);
-}
-
-.progress-text {
-  color: rgba(255, 255, 255, 0.8);
-  white-space: nowrap;
-  font-size: 10px;
-  font-weight: 500;
 }
 
 /* 右侧区域 */
@@ -1421,14 +1555,18 @@ watch([isLoggedIn, showNoticeEntry, appVersion, appDescription, appHomepage, ver
     padding: 0 4px 0 2px;
   }
 
+  .version-container.downloading,
+  .version-container.downloaded {
+    width: clamp(160px, 21vw, 214px);
+    min-width: clamp(160px, 21vw, 214px);
+    flex-basis: clamp(160px, 21vw, 214px);
+    padding: 3px 7px 3px 8px;
+  }
+
   .app-version {
     justify-content: flex-start;
     min-width: 0;
     font-size: 10.5px;
-  }
-
-  .checking-indicator {
-    right: 2px;
   }
 }
 
@@ -1524,7 +1662,6 @@ watch([isLoggedIn, showNoticeEntry, appVersion, appDescription, appHomepage, ver
     .title-bar-center {
       max-width: min(260px, 28vw);
     }
-
   }
 }
 
@@ -1588,14 +1725,44 @@ watch([isLoggedIn, showNoticeEntry, appVersion, appDescription, appHomepage, ver
   box-shadow: none;
 }
 
+.version-container.downloading,
+.version-container.downloaded {
+  min-width: clamp(166px, 19vw, 222px);
+  width: clamp(166px, 19vw, 222px);
+  flex-basis: clamp(166px, 19vw, 222px);
+  height: 26px;
+  justify-content: flex-start;
+  padding: 3px 8px 3px 9px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.032);
+  border-color: rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.018);
+}
+
+.app-version-content {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.app-version-content.checking {
+  gap: 5px;
+}
+
 .version-container:hover {
   background: transparent;
   border-color: transparent;
 }
 
 .version-container.checking {
-  border-color: transparent;
   background: transparent;
+  border-color: transparent;
 }
 
 .version-container.has-update {
@@ -1604,22 +1771,124 @@ watch([isLoggedIn, showNoticeEntry, appVersion, appDescription, appHomepage, ver
 }
 
 .version-container.downloading {
-  border-color: transparent;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.07);
 }
 
 .version-container.downloaded {
-  border-color: transparent;
-  background: transparent;
+  background: rgba(52, 211, 153, 0.055);
+  border-color: rgba(52, 211, 153, 0.1);
 }
 
-.version-progress-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  z-index: 0;
-  border-radius: inherit;
-  background: linear-gradient(90deg, rgba(96, 165, 250, 0.26), rgba(52, 211, 153, 0.2));
-  transition: width 0.28s ease;
+.version-update-block {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+}
+
+.version-update-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+}
+
+.version-update-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+
+.version-update-title {
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.84);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.version-update-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.version-update-detail {
+  min-width: 0;
+  max-width: 84px;
+  font-size: 9px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.52);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.version-progress-track {
+  width: 100%;
+  min-width: 0;
+}
+
+.version-progress-track:deep(.progress-container) {
+  gap: 0;
+  width: 100%;
+}
+
+.version-progress-track:deep(.progress-bar) {
+  height: 2px !important;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.version-progress-track:deep(.progress-fill) {
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.94), rgba(45, 212, 191, 0.9)) !important;
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.1);
+  transition: width 0.2s linear !important;
+}
+
+.version-progress-cancel {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.34);
+  cursor: pointer;
+  flex: 0 0 14px;
+  transition:
+    color 0.18s var(--ds-ease-soft),
+    transform 0.18s var(--ds-ease-soft);
+}
+
+.version-progress-cancel:hover {
+  color: rgba(255, 255, 255, 0.78);
+  transform: scale(1.02);
+}
+
+.version-progress-cancel :deep(svg) {
+  width: 9px;
+  height: 9px;
 }
 
 .app-version {
@@ -1654,23 +1923,24 @@ watch([isLoggedIn, showNoticeEntry, appVersion, appDescription, appHomepage, ver
 }
 
 .checking-indicator {
-  position: absolute;
-  right: 3px;
-  top: 50%;
-  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  margin-left: 0;
-  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
   pointer-events: none;
+  flex: 0 0 12px;
+}
+
+.inline-checking-indicator {
+  width: 11px;
+  height: 11px;
+  flex-basis: 11px;
 }
 
 .checking-spinner {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   border: 1.5px solid rgba(96, 165, 250, 0.2);
   border-top: 1.5px solid var(--ds-state-info);
   border-radius: 50%;
@@ -1770,6 +2040,30 @@ watch([isLoggedIn, showNoticeEntry, appVersion, appDescription, appHomepage, ver
 .fade-leave-to {
   opacity: 0;
   transform: scale(0.8);
+}
+
+.version-progress-expand-enter-active,
+.version-progress-expand-leave-active {
+  transition:
+    opacity 0.22s var(--ds-ease-soft),
+    transform 0.22s var(--ds-ease-soft),
+    max-width 0.22s var(--ds-ease-soft);
+  transform-origin: left center;
+  overflow: hidden;
+}
+
+.version-progress-expand-enter-from,
+.version-progress-expand-leave-to {
+  opacity: 0;
+  transform: translateX(-8px) scaleX(0.96);
+  max-width: 0;
+}
+
+.version-progress-expand-enter-to,
+.version-progress-expand-leave-from {
+  opacity: 1;
+  transform: translateX(0) scaleX(1);
+  max-width: 260px;
 }
 
 .fade-enter-active,

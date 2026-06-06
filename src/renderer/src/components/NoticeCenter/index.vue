@@ -24,12 +24,7 @@
           <span class="nc-unread-summary" :class="{ empty: unreadCount === 0 }">
             {{ unreadCount > 0 ? `${unreadCount} 条未读` : '全部已读' }}
           </span>
-          <button
-            v-if="unreadCount > 0"
-            class="nc-mark-all"
-            type="button"
-            @click="markAllRead"
-          >
+          <button v-if="unreadCount > 0" class="nc-mark-all" type="button" @click="markAllRead">
             全部已读
           </button>
         </div>
@@ -71,12 +66,16 @@
           <span v-else class="nc-status muted">历史</span>
         </div>
 
-        <h3>{{ selectedNotice.title }}</h3>
-        <p>{{ selectedNotice.content }}</p>
+        <div class="nc-detail-body">
+          <h3>{{ selectedNotice.title }}</h3>
+          <p>{{ selectedNotice.content }}</p>
 
-        <div class="nc-meta">
-          <span v-if="selectedNotice.startsAt">开始 {{ formatTime(selectedNotice.startsAt) }}</span>
-          <span v-if="selectedNotice.endsAt">截止 {{ formatTime(selectedNotice.endsAt) }}</span>
+          <div class="nc-meta">
+            <span v-if="selectedNotice.startsAt"
+              >开始 {{ formatTime(selectedNotice.startsAt) }}</span
+            >
+            <span v-if="selectedNotice.endsAt">截止 {{ formatTime(selectedNotice.endsAt) }}</span>
+          </div>
         </div>
 
         <div class="nc-actions">
@@ -84,7 +83,9 @@
             {{ selectedNotice.actionText || '查看详情' }}
             <ExternalLink :size="18" />
           </el-button>
-          <el-button type="primary" @click="confirmCurrentNotice">{{ primaryActionText }}</el-button>
+          <el-button type="primary" @click="confirmCurrentNotice">{{
+            primaryActionText
+          }}</el-button>
         </div>
       </article>
     </div>
@@ -408,8 +409,11 @@ const formatTime = (value) => {
 
 .nc-detail {
   min-width: 0;
+  height: 360px;
   padding: 18px;
   border-radius: 14px;
+  display: flex;
+  flex-direction: column;
   background:
     linear-gradient(135deg, rgba(96, 165, 250, 0.12), rgba(255, 255, 255, 0.035)),
     rgba(255, 255, 255, 0.035);
@@ -441,6 +445,7 @@ const formatTime = (value) => {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 0 0 auto;
 }
 
 .nc-badge,
@@ -461,8 +466,29 @@ const formatTime = (value) => {
   color: #fecdd3;
 }
 
+.nc-detail-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 14px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.nc-detail-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.nc-detail-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.nc-detail-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .nc-detail h3 {
-  margin: 14px 0 10px;
+  margin: 0 0 10px;
   font-size: 20px;
   line-height: 1.35;
   color: rgba(255, 255, 255, 0.95);
@@ -488,7 +514,10 @@ const formatTime = (value) => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 24px;
+  margin-top: 16px;
+  padding-top: 16px;
+  flex: 0 0 auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .nc-link {
