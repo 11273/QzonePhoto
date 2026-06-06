@@ -307,6 +307,7 @@
       :app-version="appVersion"
       :app-homepage="appHomepage"
       :runtime-info="runtimeInfo"
+      :api-base-url="apiBaseUrl"
     />
 
     <NoticeCenter
@@ -358,7 +359,16 @@ const appVersion = ref('')
 const appHomepage = ref('')
 const appDescription = ref('')
 const runtimeInfo = ref({})
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const apiConfig = ref({
+  apiBaseUrl: '',
+  fallbackBaseUrls: [],
+  version: '',
+  ttlSeconds: 86400,
+  fetchedAt: '',
+  remoteConfigUrl: '',
+  source: 'disabled'
+})
+const apiBaseUrl = computed(() => apiConfig.value?.apiBaseUrl || '')
 const titleBarRef = ref(null)
 const titleLeftRef = ref(null)
 const titleCenterRef = ref(null)
@@ -405,6 +415,8 @@ const noticeReadVersion = ref(0)
 let appHealthReported = false
 let appNoticeChecked = false
 const silentChecking = ref(false)
+const pendingNoticeAutoOpen = ref(false)
+const pendingUpdateDialogOpen = ref(false)
 
 // 计算属性
 const showUpdateBadge = computed(() => {
@@ -488,13 +500,13 @@ const versionStatusDetail = computed(() => {
 })
 
 const feedbackTooltip = computed(() => {
-  return apiBaseUrl ? '快捷反馈问题或建议' : '打开 GitHub 反馈页'
+  return apiBaseUrl.value ? '快捷反馈问题或建议' : '打开 GitHub 反馈页'
 })
 
 const hasUnreadNotice = computed(() =>
   notices.value.some((notice) => notice.dismissible !== false && !isNoticeDismissed(notice))
 )
-const showNoticeEntry = computed(() => !!apiBaseUrl && notices.value.length > 0)
+const showNoticeEntry = computed(() => !!apiBaseUrl.value && notices.value.length > 0)
 
 // 版本号提示文本
 const getVersionTooltip = () => {
@@ -552,7 +564,7 @@ const buildFallbackFeedbackIssue = () => {
 }
 
 const openFeedback = async () => {
-  if (!apiBaseUrl) {
+  if (!apiBaseUrl.value) {
     await window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, buildFallbackFeedbackIssue())
     return
   }
@@ -579,6 +591,7 @@ const dismissNotice = (notice) => {
 }
 
 const openNoticeCenter = async () => {
+  pendingNoticeAutoOpen.value = false
   noticeVisible.value = true
   await fetchAppNotice({ force: true, openWhenUnread: false })
 }
@@ -735,6 +748,21 @@ const showUpdateDialog = () => {
   dialogVisible.value = true
 }
 
+const tryOpenPendingOverlay = () => {
+  if (dialogVisible.value || noticeVisible.value) return
+
+  if (pendingUpdateDialogOpen.value) {
+    pendingUpdateDialogOpen.value = false
+    showUpdateDialog()
+    return
+  }
+
+  if (pendingNoticeAutoOpen.value && activeNotice.value && !isNoticeDismissed(activeNotice.value)) {
+    pendingNoticeAutoOpen.value = false
+    noticeVisible.value = true
+  }
+}
+
 const handleBackgroundDownload = async () => {
   console.log('用户点击后台下载，开始下载更新...')
   // 隐藏对话框
@@ -827,8 +855,13 @@ const handleUpdateAvailable = (info) => {
   updateInfo.value = info
   dialogState.value = 'available'
 
-  // 自动弹出更新对话框
-  dialogVisible.value = true
+  // 自动弹出更新对话框，但避免与公告叠在一起
+  if (noticeVisible.value) {
+    pendingUpdateDialogOpen.value = true
+  } else {
+    pendingUpdateDialogOpen.value = false
+    dialogVisible.value = true
+  }
 
   console.log('发现新版本:', info)
 }
@@ -902,6 +935,32 @@ const loadAppInfo = async () => {
   }
 }
 
+const loadApiConfig = async (forceRefresh = false) => {
+  try {
+    const result = await window.api.invoke(IPC_APP.GET_API_CONFIG, { forceRefresh })
+    apiConfig.value = {
+      apiBaseUrl: String(result?.apiBaseUrl || '').replace(/\/$/, ''),
+      fallbackBaseUrls: Array.isArray(result?.fallbackBaseUrls) ? result.fallbackBaseUrls : [],
+      version: result?.version || '',
+      ttlSeconds: Number(result?.ttlSeconds || 86400),
+      fetchedAt: result?.fetchedAt || '',
+      remoteConfigUrl: result?.remoteConfigUrl || '',
+      source: result?.source || 'unknown'
+    }
+  } catch (error) {
+    console.warn('获取动态 API 配置失败:', error)
+    apiConfig.value = {
+      apiBaseUrl: '',
+      fallbackBaseUrls: [],
+      version: '',
+      ttlSeconds: 86400,
+      fetchedAt: '',
+      remoteConfigUrl: '',
+      source: 'error'
+    }
+  }
+}
+
 const buildHealthPayload = () => {
   const appInfo = runtimeInfo.value || {}
   return {
@@ -915,7 +974,7 @@ const buildHealthPayload = () => {
 }
 
 const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => {
-  if ((appNoticeChecked && !force) || !apiBaseUrl) return
+  if ((appNoticeChecked && !force) || !apiBaseUrl.value) return
   appNoticeChecked = true
 
   const controller = new AbortController()
@@ -929,7 +988,7 @@ const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => 
   }
 
   try {
-    const res = await fetch(`${apiBaseUrl}/api/notice`, {
+    const res = await fetch(`${apiBaseUrl.value}/api/notice`, {
       method,
       headers: shouldReportHealth ? { 'Content-Type': 'application/json' } : undefined,
       body,
@@ -945,7 +1004,12 @@ const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => 
     activeNotice.value = currentNotice?.id ? currentNotice : notices.value[0] || null
 
     if (openWhenUnread && activeNotice.value && !isNoticeDismissed(activeNotice.value)) {
-      noticeVisible.value = true
+      if (dialogVisible.value || pendingUpdateDialogOpen.value) {
+        pendingNoticeAutoOpen.value = true
+      } else {
+        pendingNoticeAutoOpen.value = false
+        noticeVisible.value = true
+      }
     }
   } catch (error) {
     console.debug('[AppNotice] check skipped:', error)
@@ -1023,10 +1087,11 @@ const handleTitlebarFocusIn = (event) => {
 
 onMounted(async () => {
   // 获取应用信息
-  await loadAppInfo()
+  await Promise.all([loadAppInfo(), loadApiConfig()])
   fetchAppNotice()
   scheduleActionDensity()
   clearInitialTitlebarFocus()
+  handleVersionClick(true)
   // 获取初始窗口状态
   try {
     isMaximized.value = await window.api.invoke(IPC_WINDOW.IS_MAXIMIZED)
@@ -1081,6 +1146,12 @@ watch(
   },
   { flush: 'post' }
 )
+
+watch([dialogVisible, noticeVisible], () => {
+  if (!dialogVisible.value && !noticeVisible.value) {
+    tryOpenPendingOverlay()
+  }
+})
 </script>
 
 <style scoped>
@@ -1195,16 +1266,16 @@ watch(
 
 .title-feedback-btn {
   appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid transparent;
   height: 24px;
-  padding: 0 8px;
+  padding: 0 6px;
   border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  color: rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.028);
+  color: rgba(255, 255, 255, 0.66);
+  background: transparent;
   cursor: pointer;
   transition:
     background-color 0.18s var(--ds-ease-soft),
@@ -1214,8 +1285,8 @@ watch(
 
 .title-feedback-btn:hover {
   color: #ffffff;
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
 .feedback-text {

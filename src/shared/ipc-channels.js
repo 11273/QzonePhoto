@@ -256,7 +256,9 @@ export const IPC_WINDOW = {
 
 export const IPC_APP = {
   /** 获取应用信息 */
-  GET_INFO: 'app:getInfo'
+  GET_INFO: 'app:getInfo',
+  /** 获取动态 API 配置 */
+  GET_API_CONFIG: 'app:getApiConfig'
 }
 
 export const IPC_SHELL = {

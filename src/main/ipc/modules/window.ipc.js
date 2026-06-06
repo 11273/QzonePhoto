@@ -3,6 +3,7 @@ import windowManager from '@main/core/window'
 import { IPC_WINDOW, IPC_APP, IPC_SHELL } from '@shared/ipc-channels'
 import { app } from 'electron'
 import { APP_NAME, APP_HOMEPAGE, APP_DESCRIPTION } from '@shared/const'
+import { getAppApiConfig } from '@main/config/app-api'
 
 const APP_LAUNCH_ID = `${Date.now()}-${process.pid}`
 const APP_LAUNCHED_AT = new Date().toISOString()
@@ -93,6 +94,25 @@ export function registerWindowControl() {
       return {
         platform: process.platform,
         isMac: process.platform === 'darwin'
+      }
+    }
+  })
+
+  ipcMain.handle(IPC_APP.GET_API_CONFIG, async (event, context = {}) => {
+    try {
+      return await getAppApiConfig({
+        forceRefresh: Boolean(context?.forceRefresh)
+      })
+    } catch (error) {
+      console.error('获取动态 API 配置失败:', error)
+      return {
+        apiBaseUrl: '',
+        fallbackBaseUrls: [],
+        version: '',
+        ttlSeconds: 86400,
+        fetchedAt: new Date().toISOString(),
+        remoteConfigUrl: '',
+        source: 'error'
       }
     }
   })

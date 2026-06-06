@@ -124,7 +124,11 @@
           <div class="feedback-toast-title">{{ feedbackNotice.title }}</div>
           <div class="feedback-toast-text">{{ feedbackNotice.message }}</div>
           <div v-if="feedbackNotice.issue" class="feedback-toast-actions">
-            <button class="feedback-toast-link" type="button" @click="openIssueUrl(feedbackNotice.issueUrl)">
+            <button
+              class="feedback-toast-link"
+              type="button"
+              @click="openIssueUrl(feedbackNotice.issueUrl)"
+            >
               查看 GitHub #{{ feedbackNotice.issue }}
             </button>
           </div>
@@ -158,13 +162,15 @@ const props = defineProps({
   visible: { type: Boolean, default: false },
   appVersion: { type: String, default: '' },
   appHomepage: { type: String, default: '' },
-  runtimeInfo: { type: Object, default: () => ({}) }
+  runtimeInfo: { type: Object, default: () => ({}) },
+  apiBaseUrl: { type: String, default: '' }
 })
 
 const emit = defineEmits(['update:visible'])
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
-const feedbackEndpoint = apiBaseUrl ? `${apiBaseUrl}/api/feedback` : ''
+const feedbackEndpoint = computed(() =>
+  props.apiBaseUrl ? `${String(props.apiBaseUrl).replace(/\/$/, '')}/api/feedback` : ''
+)
 
 const typeOptions = [
   { label: '问题', value: 'bug', icon: Help },
@@ -203,7 +209,10 @@ const feedbackNotice = reactive({
 
 const runtime = computed(() => props.runtimeInfo || {})
 const systemText = computed(() =>
-  [platformNameMap[runtime.value.platform] || runtime.value.platform || 'unknown', runtime.value.arch || '']
+  [
+    platformNameMap[runtime.value.platform] || runtime.value.platform || 'unknown',
+    runtime.value.arch || ''
+  ]
     .filter(Boolean)
     .join(' / ')
 )
@@ -288,7 +297,14 @@ const scheduleFeedbackNoticeClose = (duration = 0) => {
   }, duration)
 }
 
-const updateFeedbackNotice = ({ state, title, message, issue = '', issueUrl = '', duration = 0 }) => {
+const updateFeedbackNotice = ({
+  state,
+  title,
+  message,
+  issue = '',
+  issueUrl = '',
+  duration = 0
+}) => {
   feedbackNotice.visible = true
   feedbackNotice.state = state
   feedbackNotice.title = title
@@ -344,8 +360,12 @@ const showFeedbackErrorNotice = (message) => {
 const openGitHubIssue = async () => {
   const homepage = (props.appHomepage || 'https://github.com/11273/QzonePhoto').replace(/\/$/, '')
   const version = props.appVersion && props.appVersion !== 'unknown' ? `[${props.appVersion}]` : ''
-  const system = systemText.value && systemText.value !== 'unknown' ? `[${systemText.value.split('/')[0].trim()}]` : ''
-  const title = `[${typeLabelMap[form.type] || '反馈'}]${version}${system} ${contentTitle.value}`.trim()
+  const system =
+    systemText.value && systemText.value !== 'unknown'
+      ? `[${systemText.value.split('/')[0].trim()}]`
+      : ''
+  const title =
+    `[${typeLabelMap[form.type] || '反馈'}]${version}${system} ${contentTitle.value}`.trim()
   const url = `${homepage}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(buildFeedbackText())}`
   await window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, url)
 }
@@ -356,7 +376,7 @@ const submitQuickFeedback = async () => {
     return
   }
 
-  if (!feedbackEndpoint) {
+  if (!feedbackEndpoint.value) {
     ElMessage.error('当前版本未配置快捷提交，请使用 GitHub 反馈页')
     return
   }
@@ -378,7 +398,7 @@ const submitQuickFeedback = async () => {
   showFeedbackPendingNotice()
 
   try {
-    const res = await fetch(feedbackEndpoint, {
+    const res = await fetch(feedbackEndpoint.value, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -425,7 +445,9 @@ const parseFeedbackResponse = async (res) => {
 const normalizeError = (type, message, source = '') => ({
   id: ++errorSeq,
   type,
-  message: String(message || '未知错误').replace(/\s+/g, ' ').slice(0, 180),
+  message: String(message || '未知错误')
+    .replace(/\s+/g, ' ')
+    .slice(0, 180),
   source: String(source || '').slice(0, 80),
   time: new Date().toISOString()
 })
@@ -592,7 +614,9 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.04);
   border-radius: 12px;
   box-shadow: 0 0 0 1px var(--ds-border-light) inset;
-  transition: box-shadow var(--ds-dur-fast) var(--ds-ease-soft), background var(--ds-dur-fast) var(--ds-ease-soft);
+  transition:
+    box-shadow var(--ds-dur-fast) var(--ds-ease-soft),
+    background var(--ds-dur-fast) var(--ds-ease-soft);
 }
 
 :deep(.fd-content .el-textarea__inner:hover),

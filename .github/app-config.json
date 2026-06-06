@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "apiBaseUrl": "https://qzone.getgit.one",
+  "fallbackBaseUrls": [],
+  "ttlSeconds": 86400
+}
