@@ -1,0 +1,9 @@
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  javascript-obfuscator: true
+  sharp: true
+  asarmor: true
+  esbuild: false
+  vue-demi: false
+  '@parcel/watcher': false
