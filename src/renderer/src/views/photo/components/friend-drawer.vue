@@ -331,7 +331,7 @@ const handleBatchDownload = async () => {
     ElMessage.warning(`已取消批量下载，已加入 ${addedAlbums} 个相册`)
   } else if (addedAlbums > 0) {
     ElMessage.success(
-      `🎉 分组「${currentGroupName.value}」批量下载完成！成功加入 ${addedAlbums} 个相册` +
+      `分组「${currentGroupName.value}」批量下载完成！成功加入 ${addedAlbums} 个相册` +
         (skippedAlbums > 0 ? `，跳过 ${skippedAlbums} 个空/无权限相册` : '') +
         (failedFriends > 0 ? `，${failedFriends} 位好友处理失败` : '')
     )

@@ -20,10 +20,8 @@
       <path :d="computedSvgPath" />
     </svg>
 
-    <!-- Emoji 或文本图标 -->
-    <span v-else :class="iconClass" :style="{ fontSize: iconSize + 'px' }">
-      {{ icon }}
-    </span>
+    <!-- 未识别的字符串不再作为文本图标渲染，避免 emoji fallback 混入 UI -->
+    <span v-else class="icon-placeholder" aria-hidden="true"></span>
   </span>
 </template>
 
@@ -129,8 +127,7 @@ const iconStyle = computed(() => ({
 
 const iconClass = computed(() => ({
   'icon-element': isComponentIcon.value,
-  'icon-svg': isInlineSvg.value,
-  'icon-text': !isComponentIcon.value && !isInlineSvg.value
+  'icon-svg': isInlineSvg.value
 }))
 
 const handleClick = (event) => {
@@ -193,14 +190,14 @@ const handleClick = (event) => {
   height: 100%;
 }
 
-.icon-text {
-  line-height: 1;
-  user-select: none;
-}
-
 .icon-svg {
   fill: currentColor;
   stroke: none;
+}
+
+.icon-placeholder {
+  width: 100%;
+  height: 100%;
 }
 
 /* 特殊图标样式 */

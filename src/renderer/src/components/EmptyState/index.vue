@@ -18,12 +18,13 @@
 
 <script setup>
 import { computed } from 'vue'
+import { Inbox } from '@lucide/vue'
 import Icon from '@renderer/components/Icon/index.vue'
 
 const props = defineProps({
   icon: {
     type: [String, Object, Function],
-    default: '📭'
+    default: Inbox
   },
   title: {
     type: String,

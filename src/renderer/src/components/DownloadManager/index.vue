@@ -367,7 +367,7 @@
         </div>
         <div v-else class="task-detail-list progress-bar-layout">
           <EmptyState
-            icon="📦"
+            :icon="Archive"
             title="暂无下载任务"
             description="在相册详情页点「下载相册」，任务会出现在这里"
             size="medium"

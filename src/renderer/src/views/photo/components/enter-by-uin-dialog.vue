@@ -100,10 +100,17 @@
             <div class="hero-info">
               <div class="hero-nickname">
                 <span class="nick-text">{{ cardInfo.nickname || 'QQ 用户' }}</span>
-                <span v-if="cardInfo.gender === 1" class="badge gender-male">♂ 男</span>
-                <span v-else-if="cardInfo.gender === 2" class="badge gender-female">♀ 女</span>
+                <span v-if="cardInfo.gender === 1" class="badge gender-male">
+                  <Mars :size="11" />
+                  男
+                </span>
+                <span v-else-if="cardInfo.gender === 2" class="badge gender-female">
+                  <Venus :size="11" />
+                  女
+                </span>
                 <span v-if="cardInfo.vipLevel > 0" class="badge vip" title="黄钻等级">
-                  ◆{{ cardInfo.vipLevel }}
+                  <Gem :size="11" />
+                  {{ cardInfo.vipLevel }}
                 </span>
               </div>
               <div class="hero-uin" @click="copyUin">
@@ -228,6 +235,7 @@ import {
   Monitor,
   Right
 } from '@element-plus/icons-vue'
+import { Gem, Mars, Venus } from '@lucide/vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { copyToClipboard } from '@renderer/utils'
 import { formatBytes } from '@renderer/utils/formatters'
@@ -711,6 +719,7 @@ const reset = () => {
 .badge {
   display: inline-flex;
   align-items: center;
+  gap: 3px;
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 11px;

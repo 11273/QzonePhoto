@@ -1,6 +1,8 @@
 <template>
   <div class="stat-card" :class="[size, { primary: isPrimary, clickable: clickable }]">
-    <div v-if="icon" class="stat-icon">{{ icon }}</div>
+    <div v-if="icon" class="stat-icon">
+      <Icon :icon="icon" :size="cardIconSize" />
+    </div>
     <div class="stat-content">
       <div class="stat-value" :class="valueType">{{ value }}</div>
       <div class="stat-label">{{ label }}</div>
@@ -9,9 +11,12 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue'
+import Icon from '@renderer/components/Icon/index.vue'
+
+const props = defineProps({
   icon: {
-    type: String,
+    type: [String, Object, Function],
     default: ''
   },
   value: {
@@ -40,6 +45,15 @@ defineProps({
     type: Boolean,
     default: false
   }
+})
+
+const cardIconSize = computed(() => {
+  const sizeMap = {
+    small: 'small',
+    medium: 'medium',
+    large: 'large'
+  }
+  return sizeMap[props.size]
 })
 </script>
 
@@ -108,7 +122,6 @@ defineProps({
 }
 
 .stat-icon {
-  font-size: 16px;
   opacity: 0.9;
   flex-shrink: 0;
 }

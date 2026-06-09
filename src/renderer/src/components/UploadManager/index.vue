@@ -143,7 +143,7 @@
         <div v-loading="loading" class="task-list-container">
           <EmptyState
             v-if="!loading && currentTasks.length === 0"
-            icon="📦"
+            :icon="Archive"
             title="暂无上传任务"
             :description="
               statusFilter !== 'all' || selectedAlbumId !== 'all'
@@ -319,6 +319,7 @@ import {
   InfoFilled,
   Hide
 } from '@element-plus/icons-vue'
+import { Archive } from '@lucide/vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 

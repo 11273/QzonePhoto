@@ -29,7 +29,7 @@ export function extractJSONFromCallback(input = '') {
 
   let str = input.trim()
 
-  // ✅ 处理 HTML 包裹的 frameElement.callback 响应
+  // 处理 HTML 包裹的 frameElement.callback 响应
   if (str.includes('frameElement.callback')) {
     const frameCallbackMatch = str.match(/frameElement\.callback\s*\(\s*({[\s\S]*?})\s*\)\s*;?/i)
     if (frameCallbackMatch) {
@@ -47,7 +47,7 @@ export function extractJSONFromCallback(input = '') {
     }
   }
 
-  // ✅ 支持任意合法函数名（包括 _Callback）
+  // 支持任意合法函数名（包括 _Callback）
   const jsonMatch = str.match(/^\s*([a-zA-Z_$][\w$]*)\s*\(\s*({[\s\S]*?})\s*\)\s*;?\s*$/)
   if (jsonMatch) {
     try {
@@ -63,7 +63,7 @@ export function extractJSONFromCallback(input = '') {
     }
   }
 
-  // ✅ 支持函数名(参数1, 参数2, ...)
+  // 支持函数名(参数1, 参数2, ...)
   const cbMatch = str.match(/^\s*([a-zA-Z_$][\w$]*)\s*\(\s*([\s\S]*?)\s*\)\s*;?\s*$/)
   if (!cbMatch) return input
 

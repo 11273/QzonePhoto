@@ -187,7 +187,7 @@
                   <line x1="12" y1="2" x2="12" y2="14"></line>
                 </svg>
               </div>
-              <p class="latest-text">您正在使用最新版本 🎉</p> -->
+              <p class="latest-text">您正在使用最新版本</p> -->
               <div v-if="updateInfo.releaseNotes" class="release-notes">
                 <Markdown :content="updateInfo.releaseNotes" />
               </div>

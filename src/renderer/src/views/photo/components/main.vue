@@ -8,14 +8,14 @@
 
       <EmptyState
         v-else-if="!currentAlbum"
-        icon="📷"
+        :icon="Picture"
         title="选择一个相册"
         description="从左侧选择一个相册来查看照片"
       />
 
       <EmptyState
         v-else-if="photoGroups.length === 0 && !hasMore && total === 0"
-        icon="📭"
+        :icon="Inbox"
         title="相册为空"
         description="这个相册还没有照片"
       />
@@ -218,6 +218,7 @@ import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { Loading, Picture, VideoPlay, Check, Hide } from '@element-plus/icons-vue'
+import { Inbox } from '@lucide/vue'
 import { ElLoading, ElMessage, ElMessageBox } from 'element-plus'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'

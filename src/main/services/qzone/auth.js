@@ -16,7 +16,7 @@ export class QzoneAuthService {
   }
 
   async getLocalUnis() {
-    // logger.info('[getLocalUnis] 🚀 开始获取本地 UIN 列表')
+    // logger.info('[getLocalUnis] 开始获取本地 UIN 列表')
 
     try {
       // Step 1: 获取 pt_local_token、olu
@@ -24,27 +24,27 @@ export class QzoneAuthService {
       const pt_local_token = xloginRes?.pt_local_token
 
       if (!pt_local_token) {
-        console.error('[getLocalUnis] ❌ 获取 pt_local_token 失败:', xloginRes)
+        console.error('[getLocalUnis] 获取 pt_local_token 失败:', xloginRes)
         return
       }
 
-      // console.log('[getLocalUnis] ✅ 获取 pt_local_token:', pt_local_token)
+      // console.log('[getLocalUnis] 获取 pt_local_token:', pt_local_token)
 
       // Step 2: 获取原始 JS 字符串
       const { data: ptGetUinsRes, cookie } = await pt_get_uins(pt_local_token, xloginRes.olu)
 
       if (!ptGetUinsRes || typeof ptGetUinsRes !== 'string') {
-        console.error('[getLocalUnis] ❌ 获取 pt_get_uins 响应失败:', ptGetUinsRes)
+        console.error('[getLocalUnis] 获取 pt_get_uins 响应失败:', ptGetUinsRes)
         return
       }
 
-      // console.log('[getLocalUnis] 📦 原始响应长度:', ptGetUinsRes.length)
+      // console.log('[getLocalUnis] 原始响应长度:', ptGetUinsRes.length)
 
       // Step 3: 提取 JSON 数据
       const jsonData = extractJson(ptGetUinsRes)
 
       // if (jsonData) {
-      //   console.log(`[getLocalUnis] ✅ 成功提取 ${jsonData.length} 条 UIN 数据`, jsonData)
+      //   console.log(`[getLocalUnis] 成功提取 ${jsonData.length} 条 UIN 数据`, jsonData)
       // }
 
       // Step 4: 获取头像
@@ -65,10 +65,10 @@ export class QzoneAuthService {
           }
         })
       )
-      // console.log(`[getLocalUnis] ✅ 接口完成`, results)
+      // console.log(`[getLocalUnis] 接口完成`, results)
       return results
     } catch (err) {
-      console.error('[getLocalUnis] ❌ 异常捕获:', err)
+      console.error('[getLocalUnis] 异常捕获:', err)
     }
   }
 

@@ -40,12 +40,12 @@ export async function pt_get_uins(pt_local_token, olu) {
       })
 
       if (response.status === 200 && response.data) {
-        // console.log(`✅ pt_get_uins 成功使用端口 ${port}`)
+        // console.log(`pt_get_uins 成功使用端口 ${port}`)
         return { data: response.data, cookie: parseSetCookie(response.headers['set-cookie']) }
       }
       // eslint-disable-next-line no-unused-vars
     } catch (e) {
-      console.warn(`⚠️ pt_get_uins 端口 ${port} 请求失败`)
+      console.warn(`pt_get_uins 端口 ${port} 请求失败`)
     }
   }
 
@@ -75,7 +75,7 @@ export async function getface(uin, olu) {
     }
     // eslint-disable-next-line no-unused-vars
   } catch (_) {
-    console.warn(`[getface] ❌ 获取头像失败`)
+    console.warn(`[getface] 获取头像失败`)
     return ''
   }
 }
@@ -98,7 +98,7 @@ export async function pt_get_st(clientuin, pt_local_tk) {
     const response = await request.get(url, { params, headers })
     return { data: response.data, cookie: parseSetCookie(response.headers['set-cookie']) }
   } catch (err) {
-    console.warn(`[getface] ❌ pt_get_st:`, err.statusText)
+    console.warn(`[getface] pt_get_st:`, err.statusText)
     throw err.statusText
   }
 }
@@ -128,7 +128,7 @@ export async function jump(clientuin, keyindex, clientkey) {
     })
     return response.data
   } catch (err) {
-    console.warn(`[getface] ❌ jump:`, err.statusText)
+    console.warn(`[getface] jump:`, err.statusText)
     return ''
   }
 }

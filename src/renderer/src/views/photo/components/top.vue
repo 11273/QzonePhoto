@@ -134,18 +134,23 @@
         <transition name="fade-slide">
           <div v-show="!isCollapsed" class="stats-container">
             <div class="stats-row">
-              <StatCard icon="📷" :value="currentAlbum.total" label="张照片" :is-primary="true" />
+              <StatCard
+                :icon="LucideImage"
+                :value="currentAlbum.total"
+                label="张照片"
+                :is-primary="true"
+              />
 
-              <StatCard icon="💬" :value="currentAlbum.comment || 0" label="评论" />
+              <StatCard :icon="MessageCircle" :value="currentAlbum.comment || 0" label="评论" />
 
               <StatCard
-                icon="📅"
+                :icon="CalendarDays"
                 :value="formatDateWithYear(currentAlbum.createtime)"
                 label="创建时间"
               />
 
               <StatCard
-                icon="🕒"
+                :icon="Clock"
                 :value="formatDateWithYear(currentAlbum.modifytime)"
                 label="最后更新"
               />
@@ -160,7 +165,9 @@
               >
                 <template #reference>
                   <div class="visitor-stat" @click.stop>
-                    <div class="stat-icon">👀</div>
+                    <div class="stat-icon">
+                      <Eye :size="16" />
+                    </div>
                     <div class="stat-content">
                       <div class="stat-value">{{ visitorTotal }}</div>
                       <div class="stat-label">
@@ -319,6 +326,13 @@ import {
   Unlock,
   ArrowDown
 } from '@element-plus/icons-vue'
+import {
+  Image as LucideImage,
+  MessageCircle,
+  CalendarDays,
+  Clock,
+  Eye
+} from '@lucide/vue'
 import StatCard from '@renderer/components/StatCard/index.vue'
 import UploadDialog from '@renderer/components/UploadDialog/index.vue'
 import { formatDateWithYear } from '@renderer/utils/formatters'

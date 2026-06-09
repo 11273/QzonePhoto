@@ -1426,7 +1426,7 @@ const startDownloadAll = async () => {
       try {
         // 检查全局取消标志 - 如果当前相册被单独取消，跳过该相册
         if (downloadStore.isGloballyCancelled(album.id)) {
-          console.log(`⚠️ 相册 ${album.name} 被用户取消，跳过处理`)
+          console.log(`[warn] 相册 ${album.name} 被用户取消，跳过处理`)
           break
         }
 
@@ -1449,7 +1449,7 @@ const startDownloadAll = async () => {
           try {
             // 检查全局取消标志 - 如果当前相册被单独取消，跳过该相册
             if (downloadStore.isGloballyCancelled(album.id)) {
-              console.log(`⚠️ 相册 ${album.name} 被用户取消，跳过处理`)
+              console.log(`[warn] 相册 ${album.name} 被用户取消，跳过处理`)
               break
             }
 
@@ -1462,7 +1462,7 @@ const startDownloadAll = async () => {
 
             // 权限不足或接口错误，跳过该相册
             if (albumDetail?.code !== undefined && albumDetail.code !== 0) {
-              console.warn(`⚠️ 相册 ${album.name} 无法访问 (code: ${albumDetail.code})`)
+              console.warn(`[warn] 相册 ${album.name} 无法访问 (code: ${albumDetail.code})`)
               break
             }
 
@@ -1483,7 +1483,7 @@ const startDownloadAll = async () => {
             const hasMore = responseHasMore
 
             if (nextPageStart <= pageStart && hasMore) {
-              console.warn(`⚠️ 相册 ${album.name} 下载游标未推进，停止处理`, {
+              console.warn(`[warn] 相册 ${album.name} 下载游标未推进，停止处理`, {
                 pageStart,
                 nextPageStart
               })
@@ -1540,7 +1540,7 @@ const startDownloadAll = async () => {
 
         // 检查是否被单独取消
         if (downloadStore.isGloballyCancelled(album.id)) {
-          console.log(`⚠️ 相册 ${album.name} 被用户单独取消`)
+          console.log(`[warn] 相册 ${album.name} 被用户单独取消`)
           downloadStore.clearGlobalCancelFlag(album.id)
           // 不计入失败，继续处理下一个相册
           continue
@@ -1550,10 +1550,10 @@ const startDownloadAll = async () => {
           // 重置状态，让任务系统接管
           downloadStore.resetAlbumState(album.id)
           successCount++
-          console.log(`✅ 成功添加相册: ${album.name} (${addedPhotosCount}张照片)`)
+          console.log(`[ok] 成功添加相册: ${album.name} (${addedPhotosCount}张照片)`)
         } else {
           // 没有照片（无权限/空相册），计入失败并继续
-          console.warn(`⚠️ 相册 ${album.name} 无照片或无权限，跳过`)
+          console.warn(`[warn] 相册 ${album.name} 无照片或无权限，跳过`)
           downloadStore.resetAlbumState(album.id)
           failCount++
         }
@@ -1565,7 +1565,7 @@ const startDownloadAll = async () => {
         await new Promise((resolve) => setTimeout(resolve, 200))
       } catch (error) {
         if (downloadCancelled.value) break
-        console.error(`❌ 下载相册 ${album.name} 失败:`, error)
+        console.error(`[error] 下载相册 ${album.name} 失败:`, error)
         downloadStore.resetAlbumState(album.id)
         downloadStore.errorAlbumDownload(album.id, error.message)
         // 清理该相册的全局取消标志
@@ -1582,7 +1582,7 @@ const startDownloadAll = async () => {
     } else {
       if (successCount > 0) {
         ElMessage.success(
-          `🎉 批量下载完成！成功添加 ${successCount} 个相册到下载队列${failCount > 0 ? `，失败 ${failCount} 个` : ''}${skipCount > 0 ? `，跳过 ${skipCount} 个正在下载的相册` : ''}`
+          `批量下载完成！成功添加 ${successCount} 个相册到下载队列${failCount > 0 ? `，失败 ${failCount} 个` : ''}${skipCount > 0 ? `，跳过 ${skipCount} 个正在下载的相册` : ''}`
         )
         // 显示下载管理器
         downloadProgressVisible.value = true

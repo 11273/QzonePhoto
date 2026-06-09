@@ -29,7 +29,7 @@ export function extractJson(rawStr) {
   }
 
   if (!match) {
-    console.warn('[extractJson] ⚠️ 未匹配到 JSON 数据')
+    console.warn('[extractJson] 未匹配到 JSON 数据')
     return
   }
 
@@ -45,6 +45,6 @@ export function extractJson(rawStr) {
     const obj = Function('"use strict";return (' + jsObjectStr + ')')()
     return obj
   } catch (error) {
-    console.error('[extractJson] ❌ JS 对象解析失败:', error)
+    console.error('[extractJson] JS 对象解析失败:', error)
   }
 }
