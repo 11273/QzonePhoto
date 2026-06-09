@@ -150,11 +150,11 @@
                   @click="openPreview(feed, idx)"
                 >
                   <img
-                    v-if="media.thumb && !brokenThumbs.has(`${feed.tid}-${idx}`)"
-                    :src="media.thumb"
+                    v-if="getMediaThumb(feed, media, idx)"
+                    :src="getMediaThumb(feed, media, idx)"
                     loading="lazy"
                     referrerpolicy="no-referrer"
-                    @error="brokenThumbs.add(`${feed.tid}-${idx}`)"
+                    @error="onMediaThumbError(feed, idx, media)"
                   />
                   <div v-else class="fc-thumb-fallback">
                     <el-icon>
@@ -465,6 +465,7 @@ const previewItems = ref([])
 const previewIndex = ref(0)
 
 const brokenThumbs = reactive(new Set())
+const thumbRetryIndexes = reactive({})
 const downloadingAll = ref(false)
 const downloadingFeedIds = ref(new Set())
 // commentsByTid[tid]: { comments: [], loading: false, expanded: false, error: '' }
@@ -539,11 +540,17 @@ const isJunk = (raw) => {
 const HTTP_RE = /^http:\/\//
 const toHttps = (u) => {
   if (typeof u !== 'string') return ''
-  return u.replace(/&amp;/g, '&').replace(HTTP_RE, 'https://')
+  return u
+    .trim()
+    .replace(/&amp;/g, '&')
+    .replace(/\^\|\|\^/g, '_')
+    .replace(/^\/\//, 'https://')
+    .replace(HTTP_RE, 'https://')
 }
 const isImageUrl = (url) => {
   if (!url || typeof url !== 'string') return false
   if (url.startsWith('data:') || url.startsWith('/') || url.startsWith('javascript:')) return false
+  if (!/^https?:\/\//i.test(url)) return false
   if (/h5\.qzone\.qq\.com\/page\/photo/i.test(url) || /[?&]init=photo\./i.test(url)) return false
   if (/user\.qzone\.qq\.com/i.test(url)) return false
   if (/qzone_v6\/img\/feed\/loading/.test(url)) return false
@@ -590,20 +597,20 @@ const toQzoneOriginalUrl = (url) => {
   // The same signed URL accepts `/b` for the original image.
   return safeUrl.replace(/!\/(?:m|c|r)(?=&|$)/i, '!/b')
 }
+const uniqueImageUrls = (urls = []) => [...new Set(urls.map(toHttps).filter(isImageUrl))]
 const pickOrigin = (urls) =>
-  [...new Set(
+  uniqueImageUrls(
     urls
       .map(toHttps)
       .filter(isImageUrl)
       .flatMap((url) => [toQzoneOriginalUrl(url), url])
-      .filter(isImageUrl)
-  )].sort((a, b) => originScore(b) - originScore(a))[0] || ''
+  ).sort((a, b) => originScore(b) - originScore(a))[0] || ''
 const collectMediaCandidates = (el) => {
   const urls = []
   const push = (value) => {
     if (!value) return
     String(value)
-      .split(/[\s,|]+/)
+      .split(/[\s,]+/)
       .forEach((part) => {
         const url = toHttps(part.replace(/^url\(["']?/, '').replace(/["']?\)$/, ''))
         if (isImageUrl(url)) urls.push(url)
@@ -635,14 +642,18 @@ const collectMediaCandidates = (el) => {
 const normalizeMediaList = (items) => {
   const map = new Map()
   items.forEach((item, index) => {
-    const urls = [
+    const itemUrls = Array.isArray(item.urls) ? item.urls : [item.urls]
+    const sourceUrls = uniqueImageUrls([
       item.thumb,
       item.pre,
-      ...(item.urls || [])
-    ].map(toHttps).filter(isImageUrl)
-    const origin = pickOrigin([item.origin, ...urls])
-    const thumb = urls[0] || origin
-    const finalThumb = thumb || origin
+      item.origin,
+      item.url,
+      item.raw,
+      ...itemUrls
+    ])
+    const origin = pickOrigin(sourceUrls)
+    const fallbackUrls = uniqueImageUrls([item.thumb, item.pre, ...sourceUrls, origin])
+    const finalThumb = fallbackUrls[0] || origin
     if (!finalThumb && !origin) return
     const key = mediaKey(origin || finalThumb) || `${origin || finalThumb}-${index}`
     const previous = map.get(key)
@@ -654,6 +665,7 @@ const normalizeMediaList = (items) => {
       url: origin || finalThumb,
       pre: finalThumb,
       raw: origin || finalThumb,
+      urls: fallbackUrls,
       type: 'image',
       is_video: false,
       modifytime: item.modifytime || 0
@@ -1292,6 +1304,28 @@ const formatDuration = (seconds) => {
   const secs = totalSeconds % 60
   return mins > 0 ? `${mins}:${String(secs).padStart(2, '0')}` : `${secs}s`
 }
+const getMediaThumbKey = (feed, media, index) =>
+  `${feed?.tid || feed?.abstime || 'feed'}-${media?.id || media?.origin || media?.thumb || index}`
+const getMediaThumbCandidates = (media) => {
+  const mediaUrls = Array.isArray(media?.urls) ? media.urls : [media?.urls]
+  return uniqueImageUrls([media?.thumb, media?.pre, ...mediaUrls, media?.origin, media?.url, media?.raw])
+}
+const getMediaThumb = (feed, media, index) => {
+  const key = getMediaThumbKey(feed, media, index)
+  if (brokenThumbs.has(key)) return ''
+  const candidates = getMediaThumbCandidates(media)
+  return candidates[thumbRetryIndexes[key] || 0] || ''
+}
+const onMediaThumbError = (feed, index, media) => {
+  const key = getMediaThumbKey(feed, media, index)
+  const candidates = getMediaThumbCandidates(media)
+  const nextIndex = (thumbRetryIndexes[key] || 0) + 1
+  if (nextIndex < candidates.length) {
+    thumbRetryIndexes[key] = nextIndex
+    return
+  }
+  brokenThumbs.add(key)
+}
 const avatarUrl = (uin) =>
   uin ? `https://qlogo4.store.qq.com/qzone/${uin}/${uin}/100` : ''
 const onAvatarError = (e) => {
@@ -1702,6 +1736,7 @@ const resetFeedRuntime = (source) => {
   loading.value = false
   loadingMore.value = false
   brokenThumbs.clear()
+  Object.keys(thumbRetryIndexes).forEach((key) => delete thumbRetryIndexes[key])
   Object.keys(commentsByTid).forEach((key) => delete commentsByTid[key])
   pushStats()
 }
@@ -1890,6 +1925,7 @@ const openPreview = (feed, startIdx) => {
     type: media.type === 'video' || media.is_video ? 'video' : 'image',
     src: media.origin || media.url || media.thumb,
     thumb: media.thumb || media.origin || media.url,
+    fallbackSrcs: getMediaThumbCandidates(media),
     key: `${feed.tid}-${i}`,
     title: feed.name,
     subtitle: feed.feedstime || formatTime(feed.abstime)

@@ -353,7 +353,13 @@ const isMac = /Mac|iPad|iPhone/i.test(navigator.platform || '') || /Mac/i.test(n
 
 const total = computed(() => props.items.length)
 const current = computed(() => props.items[currentIndex.value] || null)
-const imageDisplaySrc = computed(() => imageFallbackSrc.value || current.value?.src || current.value?.thumb || '')
+const uniqueSources = (sources = []) =>
+  [...new Set(sources.flat().filter((source) => typeof source === 'string' && source.trim()))]
+const imageSourceCandidates = computed(() => {
+  if (current.value?.type !== 'image') return []
+  return uniqueSources([current.value.src, current.value.thumb, current.value.fallbackSrcs || []])
+})
+const imageDisplaySrc = computed(() => imageFallbackSrc.value || imageSourceCandidates.value[0] || '')
 const currentActionSrc = computed(() =>
   current.value?.type === 'image' ? imageDisplaySrc.value : current.value?.src || ''
 )
@@ -469,11 +475,19 @@ const onMediaLoad = () => {
   mediaLoading.value = false
 }
 const onMediaError = () => {
-  if (
-    current.value?.type === 'image' &&
-    current.value?.thumb &&
-    imageDisplaySrc.value !== current.value.thumb
-  ) {
+  if (current.value?.type === 'image') {
+    const candidates = imageSourceCandidates.value
+    const currentCandidateIndex = Math.max(candidates.indexOf(imageDisplaySrc.value), 0)
+    const nextSrc = candidates[currentCandidateIndex + 1]
+    if (nextSrc) {
+      imageFallbackSrc.value = nextSrc
+      mediaLoading.value = true
+      mediaError.value = false
+      return
+    }
+  }
+
+  if (current.value?.type === 'image' && current.value?.thumb && imageDisplaySrc.value !== current.value.thumb) {
     imageFallbackSrc.value = current.value.thumb
     mediaLoading.value = true
     mediaError.value = false
