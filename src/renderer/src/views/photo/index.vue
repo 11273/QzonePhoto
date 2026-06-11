@@ -62,7 +62,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, provide, inject, nextTick, computed } from 'vue'
+import { ref, onMounted, onUnmounted, provide, nextTick, computed, inject } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import Left from '@renderer/views/photo/components/left.vue'
@@ -83,38 +83,38 @@ const videoModuleRef = ref()
 const feedsModuleRef = ref()
 const dialogMainRef = ref()
 
-// 注入全局过渡动画方法
-const triggerTransition = inject('triggerTransition')
-
 // 页面级模式切换：相册模式 / AI模式
 const pageMode = ref('album') // 'album' | 'ai'
+const triggerTransition = inject('triggerTransition', null)
 
 // 处理来自left.vue的模式切换事件
 const handleModeSwitch = (mode) => {
-  if (mode === 'ai') {
-    // 使用全局过渡动画切换到 AI 模式
-    if (triggerTransition) {
-      triggerTransition(() => {
-        pageMode.value = 'ai'
-      }, 'ai')
-    } else {
-      pageMode.value = 'ai'
-    }
+  const nextMode = mode === 'ai' ? 'ai' : 'album'
+  if (pageMode.value === nextMode) return
+
+  const switchMode = () => {
+    pageMode.value = nextMode
+  }
+
+  if (triggerTransition) {
+    triggerTransition(switchMode, nextMode === 'ai' ? 'ai' : 'album')
   } else {
-    // 切换回相册模式
-    pageMode.value = 'album'
+    switchMode()
   }
 }
 
 // 处理从 AI 相册返回
 const handleBackToAlbum = () => {
-  // 使用全局过渡动画切回相册模式
-  if (triggerTransition) {
-    triggerTransition(() => {
-      pageMode.value = 'album'
-    }, 'album')
-  } else {
+  if (pageMode.value === 'album') return
+
+  const switchMode = () => {
     pageMode.value = 'album'
+  }
+
+  if (triggerTransition) {
+    triggerTransition(switchMode, 'album')
+  } else {
+    switchMode()
   }
 }
 

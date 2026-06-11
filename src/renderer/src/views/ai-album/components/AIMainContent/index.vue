@@ -38,21 +38,29 @@
         <div v-if="aiStore.isReady || aiStore.isModelReady" class="performance-capsules">
           <!-- Capsule A: System Load -->
           <div class="capsule system-load">
-            <span class="cap-item">🧠 CPU {{ aiStore.performance.cpu }}%</span>
+            <span class="cap-item">
+              <span class="cap-icon">
+                <el-icon><Cpu /></el-icon>
+              </span>
+              <span>CPU {{ aiStore.performance.cpu }}%</span>
+            </span>
             <span class="cap-divider"></span>
-            <span class="cap-item">📝 RAM {{ aiStore.performance.memoryVal }}G</span>
+            <span class="cap-item">
+              <span class="cap-icon">
+                <el-icon><Monitor /></el-icon>
+              </span>
+              <span>RAM {{ aiStore.performance.memoryVal }}G</span>
+            </span>
           </div>
 
           <!-- Capsule B: AI Accelerator -->
           <div class="capsule ai-accel" :class="{ 'is-active': aiStore.isScanning }">
-            <span class="accel-icon">⚡️</span>
-            <span class="accel-text">
-              {{
-                aiStore.isScanning
-                  ? `${aiStore.gpuDisplayName} ${85 + Math.floor(Math.random() * 10)}%`
-                  : 'GPU Idle'
-              }}
+            <span class="accel-icon">
+              <span class="cap-icon">
+                <el-icon><MagicStick /></el-icon>
+              </span>
             </span>
+            <span class="accel-text">{{ acceleratorText }}</span>
           </div>
         </div>
       </div>
@@ -187,7 +195,48 @@
         </div>
       </div>
 
-      <!-- 2. 文件夹视图 (之前误删的占位) -->
+      <!-- 2. 全部照片视图 -->
+      <div v-else-if="aiStore.selectedFilter.type === 'all'" class="all-photos-view">
+        <div class="view-header-qzone px-6 pt-4 pb-2">
+          <div class="header-content flex items-start gap-3">
+            <div
+              class="back-btn-square flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 cursor-pointer transition-colors"
+              @click="handleBackToOverview"
+            >
+              <el-icon class="text-white/70"><ArrowLeft /></el-icon>
+            </div>
+            <div class="info-group flex-1">
+              <div class="flex items-center gap-3">
+                <h2 class="text-xl font-bold text-white/90">所有已分析照片</h2>
+                <el-tag
+                  effect="dark"
+                  round
+                  size="small"
+                  class="bg-blue-500/20 border-blue-500/30 text-blue-400"
+                >
+                  共 {{ allPhotos.length }} 张
+                </el-tag>
+              </div>
+              <p class="text-xs text-secondary mt-1 opacity-50">
+                展示最近已完成本地识别的照片，最多显示 1000 张。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="allPhotos.length > 0" class="photos-grid px-8 pb-12">
+          <PhotoCard
+            v-for="photo in allPhotos"
+            :key="photo.path"
+            :photo="photo"
+            :size="currentSize"
+          />
+        </div>
+        <div v-else class="empty-placeholder py-32 flex flex-col items-center justify-center">
+          <el-icon class="text-white/20 text-6xl mb-4"><Picture /></el-icon>
+          <span class="text-sm text-white/30 tracking-wider">暂无已分析照片</span>
+        </div>
+      </div>
 
       <!-- 3. 人物墙视图 -->
       <div v-else-if="aiStore.selectedFilter.type === 'people'" class="people-wall-view p-6">
@@ -367,7 +416,7 @@
           {{
             aiStore.isModelReady
               ? '您的私有 AI 助手已就绪，正在通过高性能人脸识别为您智能整理照片。'
-              : '为了保护隐私，所有识别模型将下载至本地运行。初始化后，您可以体验：人物自动聚类、面孔精选时刻等功能。'
+              : '为了保护隐私，本地 AI 引擎会在此设备上完成初始化与识别。初始化后，您可以体验人物自动聚类、面孔精选时刻等功能。'
           }}
         </p>
         <div class="privacy-badge">
@@ -398,14 +447,17 @@
               <div class="error-body">
                 <div class="error-title">{{ errorTitle }}</div>
                 <div class="error-desc">{{ errorDescription }}</div>
-                <div v-if="errorSuggestion" class="error-suggestion">💡 {{ errorSuggestion }}</div>
+                <div v-if="errorSuggestion" class="error-suggestion">
+                  <el-icon><MagicStick /></el-icon>
+                  <span>{{ errorSuggestion }}</span>
+                </div>
               </div>
             </div>
           </div>
 
           <button
             class="init-btn-base"
-            :class="[`ai-btn-style-${currentBtnStyle}`, { 'is-retry': aiStore.initError }]"
+            :class="['ai-btn-style-0', { 'is-retry': aiStore.initError }]"
             @click="handleInitAI"
           >
             <span class="btn-content">
@@ -440,26 +492,6 @@
           </div>
         </div>
 
-        <!-- 样式切换器 (开发预览用) -->
-        <div
-          v-if="!aiStore.modelStatus.downloading && !aiStore.isScanning"
-          class="style-switcher mt-12 py-4 border-t border-white/10 w-full"
-        >
-          <div class="text-xs text-white/30 text-center mb-3 font-mono">
-            STYLE SELECTOR (PREVIEW)
-          </div>
-          <div class="flex flex-wrap justify-center gap-2">
-            <div
-              v-for="i in 10"
-              :key="i - 1"
-              class="style-chip"
-              :class="{ active: currentBtnStyle === i - 1 }"
-              @click="currentBtnStyle = i - 1"
-            >
-              {{ i - 1 }}
-            </div>
-          </div>
-        </div>
         <div class="onboarding-footer">首次索引可能消耗较多电量，建议连接电源</div>
       </div>
     </div>
@@ -484,12 +516,18 @@ import {
   Camera,
   MagicStick,
   Refresh,
-  Loading
+  Loading,
+  Monitor
 } from '@element-plus/icons-vue'
 
 const aiStore = useAIStore()
 
 const emit = defineEmits(['refresh', 'pause-scan', 'scan-more', 'init-ai'])
+
+const acceleratorText = computed(() => {
+  const backend = aiStore.gpuDisplayName || 'CPU'
+  return aiStore.isScanning ? `${backend} 工作中` : `${backend} 空闲`
+})
 
 // Onboarding 状态文案
 const onboardingStatusText = computed(() => {
@@ -505,7 +543,7 @@ const onboardingProgress = computed(() => {
 })
 
 const onboardingSubText = computed(() => {
-  if (aiStore.modelStatus.downloading) return '模型文件约 152MB，旨在保护您的隐私'
+  if (aiStore.modelStatus.downloading) return '正在准备本地识别资源，旨在保护您的隐私'
   if (aiStore.isScanning) return aiStore.currentAnalysisTag || '正在进行人脸分析...'
   return ''
 })
@@ -543,7 +581,7 @@ const errorDescription = computed(() => {
 const errorSuggestion = computed(() => {
   const err = aiStore.initError || ''
   if (err.includes('not valid JSON') || err.includes('Unexpected token')) {
-    return '请尝试删除模型文件后重新下载，或检查网络连接是否稳定。'
+    return '请尝试重新初始化本地模型资源，或检查应用资源是否完整。'
   }
   if (err.includes('WebGPU')) {
     return '请更新系统和浏览器到最新版本，或尝试重启应用。'
@@ -556,7 +594,7 @@ const errorSuggestion = computed(() => {
 
 const initButtonText = computed(() => {
   if (!aiStore.initError) {
-    return '立即初始化 AI 引擎 (152MB)'
+    return '立即初始化本地 AI 引擎'
   }
   const err = aiStore.initError || ''
   if (err.includes('not valid JSON') || err.includes('Unexpected token')) {
@@ -580,6 +618,7 @@ const detectedPeople = computed(() => {
 })
 const newPeopleCount = computed(() => detectedPeople.value.length) // 暂时简单处理
 const currentPerson = ref(null)
+const allPhotos = ref([])
 const personPhotos = ref([])
 const folderPhotos = ref([])
 
@@ -587,7 +626,9 @@ const folderPhotos = ref([])
 watch(
   () => aiStore.selectedFilter,
   async (newFilter) => {
-    if (newFilter.type === 'folder' && newFilter.value) {
+    if (newFilter.type === 'all') {
+      allPhotos.value = await aiStore.fetchAllPhotos({ limit: 1000 })
+    } else if (newFilter.type === 'folder' && newFilter.value) {
       folderPhotos.value = await aiStore.fetchPhotosByFolder(newFilter.value)
     } else if (newFilter.type === 'person' && newFilter.value) {
       personPhotos.value = await aiStore.fetchPhotosByFace(newFilter.value)
@@ -688,9 +729,6 @@ const handleInitAI = () => {
   emit('init-ai')
 }
 
-// 样式选择
-const currentBtnStyle = ref(0)
-
 // 监听过滤器
 watch(
   () => aiStore.selectedFilter,
@@ -788,6 +826,42 @@ watch(
         height: 32px;
         box-sizing: border-box;
 
+        .cap-item {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          height: 16px;
+          line-height: 1;
+
+          span:not(.cap-icon) {
+            line-height: 16px;
+          }
+        }
+
+        .cap-icon {
+          width: 16px;
+          height: 16px;
+          display: inline-grid;
+          place-items: center;
+          flex: 0 0 16px;
+          line-height: 1;
+
+          :deep(.el-icon) {
+            width: 16px;
+            height: 16px;
+            display: inline-grid;
+            place-items: center;
+            font-size: 13px;
+            line-height: 1;
+
+            svg {
+              display: block;
+              width: 1em;
+              height: 1em;
+            }
+          }
+        }
+
         .cap-divider {
           width: 1px;
           height: 10px;
@@ -809,7 +883,19 @@ watch(
           }
 
           .accel-icon {
-            font-size: 10px;
+            width: 16px;
+            height: 16px;
+            display: inline-grid;
+            place-items: center;
+            flex-shrink: 0;
+            line-height: 1;
+          }
+
+          .accel-text {
+            display: inline-flex;
+            align-items: center;
+            height: 16px;
+            line-height: 16px;
           }
         }
       }
@@ -1325,33 +1411,6 @@ watch(
         &::before,
         &::after {
           display: none;
-        }
-      }
-    }
-
-    .style-switcher {
-      .style-chip {
-        width: 24px;
-        height: 24px;
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 4px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 10px;
-        cursor: pointer;
-        color: rgba(255, 255, 255, 0.5);
-        transition: all 0.2s;
-
-        &:hover {
-          background: rgba(255, 255, 255, 0.2);
-        }
-
-        &.active {
-          background: #3b82f6;
-          color: #fff;
-          border-color: #3b82f6;
         }
       }
     }

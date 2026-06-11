@@ -1,5 +1,5 @@
 <template>
-  <div class="w-72 flex flex-col border-r border-blue-500/20 h-full">
+  <div class="w-72 flex flex-col border-r border-blue-500/20 h-full ai-sidebar">
     <!-- 用户信息区 - 与 QQ 相册样式一致 -->
     <div class="user-section">
       <div class="user-card">
@@ -30,21 +30,23 @@
               }}
             </div>
             <div v-if="userStore.isLoggedIn" class="uin-row">
-              <div
-                class="uin"
-                :title="showUin ? '点击隐藏QQ号' : '点击显示QQ号'"
-                @click="toggleUinDisplay"
-              >
+              <span class="uin uin-copyable" title="点击切换 QQ 号显示" @click="toggleUinDisplay">
                 {{ displayUin }}
-              </div>
-              <div class="status-badge">
-                <span class="status-dot-breathing"></span>
-                Online
-              </div>
+              </span>
+              <el-icon
+                class="uin-toggle"
+                :title="showUin ? '隐藏' : '显示'"
+                @click.stop="toggleUinDisplay"
+              >
+                <component :is="showUin ? Hide : View" />
+              </el-icon>
             </div>
-            <div v-else class="uin status-text">
-              <span class="status-dot-breathing"></span>
-              Online • 离线核心
+            <div v-else class="uin-row guest-row">
+              <span class="uin">本地智能相册</span>
+              <span class="status-badge">
+                <span class="status-dot-breathing"></span>
+                本地
+              </span>
             </div>
           </div>
           <!-- 登出按钮移到头像右边 -->
@@ -83,52 +85,61 @@
           </div>
         </div>
 
-        <!-- AI 统计 Grid (2x2 Asset Grid) -->
-        <div class="card-stats asset-stats">
-          <div class="stat-grid asset-grid">
-            <div class="stat-item asset-item">
+        <!-- AI 统计 Grid - 对齐 QQ 相册信息卡片 -->
+        <div class="card-stats">
+          <div class="stat-grid">
+            <div class="stat-item">
               <span class="label">照片索引</span>
-              <span class="value text-blue"
+              <span class="value level"
                 >{{ formatNumber(aiStore.totalCount) }} <span class="unit">张</span></span
               >
             </div>
-            <div class="stat-item asset-item">
+            <div class="stat-item">
               <span class="label">人物聚类</span>
-              <span class="value text-green"
+              <span class="value growth"
                 >{{ formatNumber(aiStore.personCount) }} <span class="unit">人</span></span
               >
             </div>
-            <div class="stat-item asset-item">
+            <div class="stat-item">
               <span class="label">推理引擎</span>
-              <span class="value text-orange" :class="{ 'is-active': aiStore.speed > 0 }">
+              <span class="value speed" :class="{ 'is-active': aiStore.speed > 0 }">
                 {{ aiStore.speed > 0 ? aiStore.speed + ' fps' : 'Ready' }}
               </span>
             </div>
-            <el-tooltip content="AI 向量数据库本地占用空间" placement="right">
-              <div class="stat-item asset-item cursor-help">
-                <span class="label">数据体积</span>
-                <span class="value text-cyan">{{ formatStorage(aiStore.storageUsed) }}</span>
-              </div>
-            </el-tooltip>
+            <div class="stat-item" title="AI 向量数据库本地占用空间">
+              <span class="label">数据体积</span>
+              <span class="value storage">{{ formatStorage(aiStore.storageUsed) }}</span>
+            </div>
           </div>
         </div>
 
-        <!-- 卡片底部操作 - 设置和日志 -->
-        <div class="card-actions managers-layout" :class="{ 'is-disabled': !aiStore.isModelReady }">
+        <!-- 卡片底部操作 - 与 QQ 相册管理器按钮一致 -->
+        <div class="card-actions managers-layout">
           <div class="manager-item">
             <el-button
               text
-              class="action-btn manager-btn"
-              title="配置"
-              :disabled="!aiStore.isModelReady"
-              @click="handleOpenConfig"
+              class="action-btn analysis-btn manager-btn"
+              :class="{ 'has-active-tasks': aiStore.isScanning }"
+              :title="analysisBtnText"
+              :disabled="aiStore.isScanning"
+              @click="handleStartAnalysis"
             >
               <div class="manager-btn-content">
                 <div class="icon-wrapper">
-                  <el-icon><Setting /></el-icon>
+                  <el-icon :class="{ 'is-loading': aiStore.isScanning }">
+                    <component :is="aiStore.isScanning ? Loading : MagicStick" />
+                  </el-icon>
+                  <div
+                    v-if="aiStore.isScanning || aiStore.pendingCount > 0"
+                    class="active-indicator"
+                  >
+                    <div class="pulse-ring"></div>
+                    <div class="pulse-dot"></div>
+                  </div>
                 </div>
                 <div class="text-wrapper">
-                  <div class="main-text">设置</div>
+                  <div class="main-text">{{ analysisBtnText }}</div>
+                  <div v-if="analysisSubText" class="status-text">{{ analysisSubText }}</div>
                 </div>
               </div>
             </el-button>
@@ -137,16 +148,18 @@
             <el-button
               text
               class="action-btn manager-btn"
-              title="日志"
-              :disabled="!aiStore.isModelReady"
-              @click="handleOpenLogs"
+              title="目录管理"
+              @click="handleViewChange('folders')"
             >
               <div class="manager-btn-content">
                 <div class="icon-wrapper">
-                  <el-icon><Document /></el-icon>
+                  <el-icon><Folder /></el-icon>
                 </div>
                 <div class="text-wrapper">
-                  <div class="main-text">日志</div>
+                  <div class="main-text">目录管理</div>
+                  <div v-if="aiStore.allScanPaths.length" class="status-text">
+                    {{ aiStore.allScanPaths.length }} 个目录
+                  </div>
                 </div>
               </div>
             </el-button>
@@ -168,46 +181,6 @@
           {{ tab.label }}
         </div>
       </div>
-    </div>
-
-    <!-- 全局分析按钮 - 仅在智能探索视图显示 -->
-    <div v-if="aiStore.isModelReady && currentView === 'smart'" class="global-action-section">
-      <button
-        class="run-analysis-btn-fusion"
-        :class="{ 'is-running': aiStore.isScanning, 'needs-download': !modelsReady }"
-        @click="handleStartAnalysis"
-      >
-        <span class="btn-content">
-          <div class="icon-box">
-            <el-icon class="btn-icon" :class="{ spinning: aiStore.isScanning }">
-              <component
-                :is="aiStore.isScanning ? Loading : modelsReady ? MagicStick : DownloadIcon"
-              />
-            </el-icon>
-            <div class="icon-glow"></div>
-          </div>
-
-          <div class="btn-text-group">
-            <span class="btn-text">{{ analysisBtnText }}</span>
-            <span v-if="aiStore.isScanning || aiStore.pendingCount > 0" class="btn-subtext">
-              {{
-                aiStore.isScanning ? '正在进行人脸分析...' : `发现 ${aiStore.pendingCount} 张新照片`
-              }}
-            </span>
-          </div>
-        </span>
-
-        <!-- 装饰层: 流光/网格/边框 -->
-        <div class="fusion-grid"></div>
-        <div class="fusion-shine"></div>
-        <div class="fusion-border"></div>
-
-        <div
-          v-if="aiStore.isScanning"
-          class="scan-progress-bar"
-          :style="{ width: aiStore.scanProgress + '%' }"
-        ></div>
-      </button>
     </div>
 
     <!-- 分类导航 -->
@@ -322,11 +295,12 @@
 
                 <div class="hover-actions internal-actions">
                   <el-button
+                    v-if="folder.deletable"
                     text
                     circle
                     class="action-btn-mini remove-btn"
                     title="移除目录"
-                    @click.stop="handleRemoveFolder(folder.path)"
+                    @click.stop="handleRemoveFolder(folder)"
                   >
                     <el-icon><Close /></el-icon>
                   </el-button>
@@ -362,7 +336,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, markRaw, shallowRef, watch } from 'vue'
+import { ref, computed, onMounted, markRaw, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
@@ -370,8 +344,6 @@ import { useAIStore } from '@renderer/services/ai/store'
 import {
   MagicStick,
   Loading,
-  Setting,
-  Document,
   SwitchButton,
   Files,
   Folder,
@@ -379,26 +351,25 @@ import {
   ArrowDown,
   Plus,
   Close,
-  Download as DownloadIcon,
   Cpu,
-  ArrowRight
+  ArrowRight,
+  Hide,
+  View,
+  Odometer
 } from '@element-plus/icons-vue'
 
-import { useAIAlbum } from '@renderer/composables/useAIAlbum'
-
 import { useRouter } from 'vue-router'
+import QZoneIcon from '@renderer/assets/qzone_logo.png'
 
 const router = useRouter()
 const userStore = useUserStore()
 const aiStore = useAIStore()
 const downloadStore = useDownloadStore()
-const { checkModels } = useAIAlbum()
 
 const handleGoToLogin = () => {
   router.push('/login')
 }
 
-const modelsReady = ref(true)
 const collectionsExpanded = ref(true)
 const systemInfo = ref(null)
 
@@ -411,20 +382,19 @@ onMounted(async () => {
       console.error('获取系统信息失败', e)
     }
   }
-
-  const status = await checkModels()
-  if (status && typeof status.exists !== 'undefined') {
-    modelsReady.value = status.exists
-  } else {
-    modelsReady.value = false
-  }
 })
 
 const analysisBtnText = computed(() => {
-  if (aiStore.isScanning) return '正在进行智能分析...'
-  if (aiStore.systemStatus === 'MODEL_MISSING') return '下载模型以启用 AI'
-  if (aiStore.pendingCount > 0) return `启动 AI 分析 (${aiStore.pendingCount})`
-  return '启动 AI 分析'
+  if (aiStore.isScanning) return '分析中'
+  if (aiStore.systemStatus === 'MODEL_MISSING') return '初始化引擎'
+  return '启动分析'
+})
+
+const analysisSubText = computed(() => {
+  if (aiStore.isScanning) return `${aiStore.scanProgress || 0}%`
+  if (aiStore.pendingCount > 0) return `${aiStore.pendingCount} 张待处理`
+  if (aiStore.systemStatus === 'MODEL_MISSING') return '本地 AI'
+  return ''
 })
 
 const handleMergePeople = () => {
@@ -487,14 +457,16 @@ const library = computed(() => {
 })
 
 // 集合分组
-const collections = shallowRef([
-  { key: 'people', icon: markRaw(UserFilled), label: '人物与面孔', count: 0 }
-])
-
-// 过滤掉 count 为 0 的分类（当 AI 已就绪时）
 const activeCollections = computed(() => {
-  if (!aiStore.isModelReady) return [] // AI 未就绪时不显示集合
-  return collections.value.filter((item) => item.count > 0)
+  if (!aiStore.isModelReady || aiStore.personCount <= 0) return []
+  return [
+    {
+      key: 'people',
+      icon: markRaw(UserFilled),
+      label: '人物与面孔',
+      count: aiStore.personCount
+    }
+  ]
 })
 
 const handleCollectionSelect = (key) => {
@@ -512,14 +484,6 @@ const handleCollectionSelect = (key) => {
     aiStore.setSelectedFilter('people')
     aiStore.fetchFaceGroups() // 切换时顺便刷新
   }
-}
-
-const handleOpenConfig = () => {
-  console.log('打开配置')
-}
-
-const handleOpenLogs = () => {
-  console.log('打开日志')
 }
 
 const handleStartAnalysis = () => {
@@ -617,8 +581,9 @@ const handleFolderSelect = (path) => {
   aiStore.setSelectedFilter('folder', path)
 }
 
-const handleRemoveFolder = (path) => {
-  aiStore.removeCustomPath(path)
+const handleRemoveFolder = (folder) => {
+  if (!folder?.deletable) return
+  aiStore.removeCustomPath(folder.path)
 }
 
 // 监听默认下载路径变更
@@ -752,6 +717,24 @@ watch(
           gap: 6px;
         }
 
+        .uin-toggle {
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.42);
+          cursor: pointer;
+          padding: 2px;
+          border-radius: 3px;
+          transition: all 0.15s ease;
+
+          &:hover {
+            color: rgba(255, 255, 255, 0.72);
+            background: rgba(255, 255, 255, 0.06);
+          }
+        }
+
+        .guest-row {
+          gap: 8px;
+        }
+
         .status-badge {
           display: flex;
           align-items: center;
@@ -797,39 +780,39 @@ watch(
       }
     }
 
-    /* AI 统计 Grid (2x2 Asset Grid) */
-    .asset-stats {
-      padding: 12px 14px;
-      background: rgba(255, 255, 255, 0.01);
+    .card-stats {
+      padding: 8px 10px;
 
-      .asset-grid {
+      .stat-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 12px 14px;
+        gap: 6px 10px;
 
-        .asset-item {
+        .stat-item {
           display: flex;
           flex-direction: column;
           align-items: flex-start;
-          gap: 2px;
 
           .label {
-            font-size: 11px;
+            font-size: 12px;
             color: rgba(255, 255, 255, 0.4);
+            line-height: 1;
+            margin-bottom: 3px;
             font-weight: 500;
           }
 
           .value {
-            font-size: 14px;
-            font-weight: 700;
-            font-family: 'Inter', system-ui, sans-serif;
+            font-size: 10px;
+            font-weight: 600;
+            line-height: 1.1;
             display: flex;
             align-items: baseline;
             gap: 2px;
+            color: rgba(255, 255, 255, 0.9);
 
             .unit {
-              font-size: 10px;
-              font-weight: 500;
+              font-size: 9px;
+              font-weight: 600;
               opacity: 0.6;
             }
 
@@ -839,17 +822,24 @@ watch(
               animation: text-pulse 1s infinite alternate;
             }
 
-            &.text-blue {
-              color: #60a5fa;
-            }
-            &.text-green {
-              color: #10b981;
-            }
-            &.text-orange {
+            &.level {
               color: #fbbf24;
+              text-shadow: 0 0 3px rgba(251, 191, 36, 0.3);
             }
-            &.text-cyan {
-              color: #22d3ee;
+
+            &.growth {
+              color: #10b981;
+              text-shadow: 0 0 3px rgba(16, 185, 129, 0.3);
+            }
+
+            &.speed {
+              color: #fbbf24;
+              text-shadow: 0 0 3px rgba(245, 158, 11, 0.3);
+            }
+
+            &.storage {
+              color: #06b6d4;
+              text-shadow: 0 0 3px rgba(6, 182, 212, 0.3);
             }
           }
         }
@@ -882,6 +872,17 @@ watch(
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
   }
 }
 
@@ -934,6 +935,7 @@ watch(
           width: 100%;
 
           .icon-wrapper {
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -941,13 +943,69 @@ watch(
             .el-icon {
               font-size: 14px;
             }
+
+            .active-indicator {
+              position: absolute;
+              right: -4px;
+              top: -4px;
+              width: 8px;
+              height: 8px;
+
+              .pulse-ring {
+                position: absolute;
+                inset: 0;
+                border-radius: 50%;
+                border: 1px solid rgba(64, 158, 255, 0.7);
+                animation: pulse-ring 1.8s ease-out infinite;
+              }
+
+              .pulse-dot {
+                position: absolute;
+                left: 2px;
+                top: 2px;
+                width: 4px;
+                height: 4px;
+                border-radius: 50%;
+                background: #409eff;
+                box-shadow: 0 0 6px rgba(64, 158, 255, 0.6);
+              }
+            }
           }
 
           .text-wrapper {
+            min-width: 0;
+
             .main-text {
               font-size: 11px;
               line-height: 1.2;
               font-weight: 500;
+              white-space: nowrap;
+            }
+
+            .status-text {
+              margin-top: 1px;
+              font-size: 10px;
+              line-height: 1.1;
+              color: rgba(255, 255, 255, 0.45);
+              white-space: nowrap;
+            }
+          }
+        }
+
+        .analysis-btn {
+          .icon-wrapper .el-icon {
+            color: #a78bfa;
+          }
+
+          &:hover .icon-wrapper .el-icon,
+          &:hover .main-text {
+            color: #c4b5fd;
+          }
+
+          &.has-active-tasks {
+            .icon-wrapper .el-icon,
+            .main-text {
+              color: #409eff;
             }
           }
         }
@@ -1103,224 +1161,6 @@ watch(
         font-weight: 600;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
       }
-    }
-  }
-}
-
-/* 4. 全局分析按钮 - 最终融合版 (Fusion of 5, 8, 9) */
-.global-action-section {
-  padding: 10px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-
-  .run-analysis-btn-fusion {
-    position: relative;
-    width: 100%;
-    height: 54px;
-    // Style 5: Dark Tech Base
-    background: #0f172a;
-    border: none;
-    outline: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    user-select: none;
-    padding: 0;
-
-    // Style 9: Mechanical Construction (Strong Box Shadow)
-    border-radius: 12px;
-    box-shadow:
-      0 6px 0 #1e1b4b,
-      // Deep mechanical 3D shadow
-      0 12px 20px rgba(0, 0, 0, 0.5); // Soft drop shadow
-
-    margin-bottom: 6px; // Space for the 3D shadow
-    transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
-    overflow: hidden;
-
-    // --- Content Layer ---
-    .btn-content {
-      position: relative;
-      z-index: 10;
-      display: flex;
-      align-items: center;
-      width: 100%;
-      height: 100%;
-      padding: 0 16px;
-      gap: 12px;
-
-      // Style 8: Vibrant Gradient Background (Masked to content area effectively via parent)
-      // Actually applying the gradient to the button surface
-    }
-
-    // --- Background Layers ---
-
-    // Base Gradient (Style 8 Fluidity + Style 9 Blue punch)
-    &::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
-      z-index: 0;
-      opacity: 0.9; // Slightly see-through to reveal "tech" below if needed, but here we want punchy
-    }
-
-    // Style 5: Tech Grid Overlay
-    .fusion-grid {
-      position: absolute;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-      background-size: 14px 14px;
-      z-index: 1;
-    }
-
-    // Style 8: Animated Shine (The Fluid part)
-    .fusion-shine {
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 50%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-      z-index: 2;
-      transform: skewX(-20deg);
-      animation: shine-sweep 4s infinite;
-      opacity: 0.5;
-    }
-
-    @keyframes shine-sweep {
-      0% {
-        left: -100%;
-      }
-      20% {
-        left: 200%;
-      }
-      100% {
-        left: 200%;
-      }
-    }
-
-    // --- Icon & Text ---
-    .icon-box {
-      position: relative;
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0, 0, 0, 0.2);
-      border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      z-index: 11;
-
-      .btn-icon {
-        font-size: 18px;
-        color: #fff;
-        filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.5));
-
-        &.spinning {
-          animation: spin 1.5s linear infinite;
-        }
-      }
-    }
-
-    .btn-text-group {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      text-align: left;
-      line-height: 1.25;
-      flex: 1;
-      z-index: 11;
-
-      .btn-text {
-        font-size: 14px;
-        font-weight: 800; // Style 9 Boldness
-        color: #fff;
-        text-transform: uppercase; // Style 5 Tech
-        letter-spacing: 0.5px;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-      }
-
-      .btn-subtext {
-        font-size: 10px;
-        color: rgba(255, 255, 255, 0.8);
-        font-weight: 500;
-      }
-    }
-
-    .scan-progress-bar {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      height: 4px;
-      background: #10b981; // Green for active progress overlay
-      z-index: 20;
-      transition: width 0.3s;
-      box-shadow: 0 0 10px #10b981;
-    }
-
-    // --- Interactions ---
-
-    &:hover {
-      transform: translateY(-2px);
-      box-shadow:
-        0 8px 0 #1e1b4b,
-        // Extended shadow
-        0 14px 24px rgba(37, 99, 235, 0.4); // Colored glow (Style 8)
-
-      &::before {
-        background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); // Brighter
-      }
-
-      .fusion-shine {
-        animation-duration: 2s; // Faster shine
-        opacity: 0.8;
-      }
-    }
-
-    &:active {
-      transform: translateY(6px); // Compress fully (Style 9)
-      box-shadow:
-        0 0 0 #1e1b4b,
-        // No 3D shadow
-        0 2px 5px rgba(0, 0, 0, 0.4);
-
-      margin-bottom: 0; // Remove margin compensation visually if needed, but handled by transform usually.
-      // Logic: translateY(6px) moves element down 6px. Shadow was 6px. So it looks like it hits the "floor".
-    }
-
-    // --- Special States ---
-    &.is-running {
-      // Pulse effect
-      animation: pulse-border 2s infinite;
-
-      &::before {
-        background: linear-gradient(135deg, #059669 0%, #10b981 100%); // Green theme for active
-      }
-      box-shadow:
-        0 6px 0 #064e3b,
-        0 12px 20px rgba(16, 185, 129, 0.3);
-
-      &:hover {
-        transform: none; // Disable hover movement
-        cursor: default;
-      }
-
-      .btn-text-group .btn-subtext {
-        color: #d1fae5;
-      }
-    }
-
-    &.needs-download {
-      &::before {
-        background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%); // Orange
-      }
-      box-shadow:
-        0 6px 0 #78350f,
-        0 12px 20px rgba(245, 158, 11, 0.3);
     }
   }
 }

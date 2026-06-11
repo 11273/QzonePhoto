@@ -30,6 +30,16 @@
           <ArrowUp />
         </el-icon>
       </div>
+      <div class="drawer-ai-slot">
+        <button
+          class="drawer-ai-btn"
+          title="智能相册"
+          aria-label="智能相册"
+          @click.stop="handleModeSwitch"
+        >
+          <el-icon><MagicStick /></el-icon>
+        </button>
+      </div>
     </div>
 
     <!-- 展开面板 — 绝对定位向上展开，不影响布局 -->
@@ -219,7 +229,15 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowUp, ArrowLeft, Search, Plus, Loading, Download } from '@element-plus/icons-vue'
+import {
+  ArrowUp,
+  ArrowLeft,
+  Search,
+  Plus,
+  Loading,
+  Download,
+  MagicStick
+} from '@element-plus/icons-vue'
 import { useFriendStore, FRIEND_TAB } from '@renderer/store/friend.store'
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
@@ -230,7 +248,7 @@ defineProps({
   activeFriend: { type: Object, default: null }
 })
 
-const emit = defineEmits(['enter-friend', 'exit-friend'])
+const emit = defineEmits(['enter-friend', 'exit-friend', 'mode-switch'])
 const friendStore = useFriendStore()
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
@@ -241,6 +259,10 @@ const enterByUinVisible = ref(false)
 const handleEnterFromUin = (friend) => {
   emit('enter-friend', friend)
   isExpanded.value = false
+}
+
+const handleModeSwitch = () => {
+  emit('mode-switch', 'ai')
 }
 
 // ===== 批量下载分组好友相册 =====
@@ -600,6 +622,37 @@ defineExpose({ toggleDrawer })
 
 .drawer-back-btn .el-icon {
   font-size: 14px;
+}
+
+.drawer-ai-slot {
+  width: 36px;
+  flex: 0 0 36px;
+  margin-left: 8px;
+}
+
+.drawer-ai-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ds-radius-lg);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.11) 0%, rgba(96, 165, 250, 0.04) 100%);
+  color: rgba(221, 214, 254, 0.72);
+  cursor: pointer;
+  transition: var(--ds-transition-all);
+}
+
+.drawer-ai-btn:hover {
+  color: #ddd6fe;
+  border-color: rgba(167, 139, 250, 0.58);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.18) 0%, rgba(96, 165, 250, 0.08) 100%);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.07);
+}
+
+.drawer-ai-btn .el-icon {
+  font-size: 15px;
 }
 
 .trigger-bar {

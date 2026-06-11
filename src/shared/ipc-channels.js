@@ -324,6 +324,8 @@ export const IPC_AI = {
   GET_PHOTOS_BY_FACE: 'ai:getPhotosByFace',
   /** 获取指定文件夹的照片 */
   GET_PHOTOS_BY_FOLDER: 'ai:getPhotosByFolder',
+  /** 获取全部已分析照片 */
+  GET_ALL_PHOTOS: 'ai:getAllPhotos',
   /** 检查模型是否存在 */
   CHECK_MODELS: 'ai:checkModels',
   /** 初始化引擎 */

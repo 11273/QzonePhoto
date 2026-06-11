@@ -1,12 +1,7 @@
 import { ipcMain, shell } from 'electron'
 import windowManager from '@main/core/window'
 import { IPC_WINDOW, IPC_APP, IPC_SHELL } from '@shared/ipc-channels'
-import { app } from 'electron'
-import { APP_NAME, APP_HOMEPAGE, APP_DESCRIPTION } from '@shared/const'
 import { getAppApiConfig } from '@main/config/app-api'
-
-const APP_LAUNCH_ID = `${Date.now()}-${process.pid}`
-const APP_LAUNCHED_AT = new Date().toISOString()
 
 const isQzoneWebUrl = (value) => {
   try {
@@ -63,39 +58,6 @@ export function registerWindowControl() {
   ipcMain.handle(IPC_WINDOW.IS_MAXIMIZED, () => {
     const mainWindow = windowManager.getMainWindow()
     return mainWindow ? mainWindow.isMaximized() : false
-  })
-
-  // 获取应用信息
-  ipcMain.handle(IPC_APP.GET_INFO, () => {
-    try {
-      // 使用统一配置工具获取应用信息
-      const result = {
-        platform: process.platform,
-        arch: process.arch,
-        isMac: process.platform === 'darwin',
-        isPackaged: app.isPackaged,
-        versions: {
-          electron: process.versions.electron,
-          chrome: process.versions.chrome,
-          node: process.versions.node
-        },
-        name: app.getName(),
-        version: app.getVersion(),
-        productName: APP_NAME,
-        homepage: APP_HOMEPAGE,
-        description: APP_DESCRIPTION,
-        launchId: APP_LAUNCH_ID,
-        launchedAt: APP_LAUNCHED_AT
-      }
-
-      return result
-    } catch (error) {
-      console.error('获取应用信息失败:', error)
-      return {
-        platform: process.platform,
-        isMac: process.platform === 'darwin'
-      }
-    }
   })
 
   ipcMain.handle(IPC_APP.GET_API_CONFIG, async (event, context = {}) => {

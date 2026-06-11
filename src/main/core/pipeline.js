@@ -16,7 +16,15 @@ export const Pipeline = {
    * @param {Object} options 选项 { onProgress: Function }
    */
   async start(mainWindow, aiInvoker, options = {}) {
-    if (this.isRunning) return
+    if (this.isRunning) {
+      return {
+        success: false,
+        reason: 'already-running',
+        processed: 0,
+        total: 0,
+        stopped: false
+      }
+    }
     this.isRunning = true
     this.shouldStop = false
 
@@ -37,6 +45,21 @@ export const Pipeline = {
       const BATCH_SIZE = 50
 
       logger.info(`[Pipeline] 🚀 开始全局分析, 总计待处理: ${totalToProcess}`)
+
+      if (totalToProcess === 0) {
+        onProgress({
+          status: 'COMPLETE',
+          current: 0,
+          total: 0,
+          message: '没有待分析照片'
+        })
+        return {
+          success: true,
+          processed: 0,
+          total: 0,
+          stopped: false
+        }
+      }
 
       while (!this.shouldStop) {
         const pendingFiles = await table
@@ -124,6 +147,12 @@ export const Pipeline = {
           total: totalToProcess,
           message: '分析已暂停'
         })
+        return {
+          success: true,
+          processed: processedCount,
+          total: totalToProcess,
+          stopped: true
+        }
       } else {
         logger.info(`[Pipeline] 🎉 所有任务处理完成 (总计: ${processedCount})`)
         onProgress({
@@ -132,9 +161,22 @@ export const Pipeline = {
           total: totalToProcess,
           message: '分析完成'
         })
+        return {
+          success: true,
+          processed: processedCount,
+          total: totalToProcess,
+          stopped: false
+        }
       }
     } catch (err) {
       logger.error(`[Pipeline] 💥 发生严重错误: ${err.message}`)
+      return {
+        success: false,
+        reason: err.message,
+        processed: 0,
+        total: 0,
+        stopped: false
+      }
     } finally {
       this.isRunning = false
       this.shouldStop = false

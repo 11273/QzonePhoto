@@ -1,3 +1,7 @@
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+
 // import { is } from '@electron-toolkit/utils'
 // import { format } from 'date-fns'
 // import { app } from 'electron'
@@ -13,6 +17,7 @@ TODO
 // 常量定义
 const SENSITIVE_KEYS = ['password', 'token', 'creditCard']
 const REDACTED_TEXT = '​**​*REDACTED​**​*'
+const DEV_LOG_PATH = process.env.QZONE_DEV_LOG_PATH || path.join(os.tmpdir(), 'qzone-photo-dev.log')
 
 // 日志级别定义
 const LOG_LEVELS = {

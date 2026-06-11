@@ -3,10 +3,13 @@ import { app } from 'electron'
 import si from 'systeminformation'
 import { IPC_APP } from '@shared/ipc-channels'
 import windowManager from '@main/core/window'
+import { APP_NAME, APP_HOMEPAGE, APP_DESCRIPTION } from '@shared/const'
 import { fetchNotices, reportHealthEvent, submitFeedback } from '@main/services/app-telemetry'
 
 // 简单的 CPU 使用率计算
 let interval = null
+const APP_LAUNCH_ID = `${Date.now()}-${process.pid}`
+const APP_LAUNCHED_AT = new Date().toISOString()
 
 function startSystemMonitor() {
   if (interval) clearInterval(interval)
@@ -63,13 +66,34 @@ export function createAppHandlers() {
       // 获取 OS 版本
       const osRelease = os.release()
 
+      const appName = app.getName() || APP_NAME
+      const appVersion = app.getVersion()
+
       return {
         hostname: os.hostname(),
         platform: osPlatform,
         release: osRelease,
         arch: os.arch(),
         totalmem: os.totalmem(),
-        cpus: os.cpus()
+        cpus: os.cpus(),
+        isMac: process.platform === 'darwin',
+        isPackaged: app.isPackaged,
+        versions: {
+          electron: process.versions.electron,
+          chrome: process.versions.chrome,
+          node: process.versions.node
+        },
+        name: appName,
+        version: appVersion,
+        appName,
+        appVersion,
+        displayName: APP_DESCRIPTION || APP_NAME,
+        productName: APP_NAME,
+        appDescription: APP_DESCRIPTION,
+        homepage: APP_HOMEPAGE,
+        description: APP_DESCRIPTION,
+        launchId: APP_LAUNCH_ID,
+        launchedAt: APP_LAUNCHED_AT
       }
     },
     [IPC_APP.FETCH_NOTICES]: async (context = {}) => {

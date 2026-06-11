@@ -10,6 +10,7 @@ export function useAIAlbum() {
     total: 0,
     filePath: ''
   })
+  let stopScanProgressListener = null
 
   /**
    * 开始扫描
@@ -90,11 +91,14 @@ export function useAIAlbum() {
   }
 
   onMounted(async () => {
-    window.QzoneAPI.ai.onScanProgress(handleProgress)
+    stopScanProgressListener = window.QzoneAPI.ai.onScanProgress(handleProgress)
   })
 
   onUnmounted(() => {
-    window.QzoneAPI.ai.removeScanProgress()
+    if (typeof stopScanProgressListener === 'function') {
+      stopScanProgressListener()
+      stopScanProgressListener = null
+    }
   })
 
   return {

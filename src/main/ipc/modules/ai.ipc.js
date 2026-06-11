@@ -73,6 +73,9 @@ export function createAiHandlers(services) {
     },
     [IPC_AI.GET_PHOTOS_BY_FOLDER]: async (_, { payload }) => {
       return aiService.getPhotosByFolder(payload?.path)
+    },
+    [IPC_AI.GET_ALL_PHOTOS]: async (_, { payload }) => {
+      return aiService.getAllPhotos(payload)
     }
   }
 

@@ -37,7 +37,8 @@ try {
     // 获取我的相册中的照片
     getPhotoByTopicId: (data, meta) => ipcClient.call(IPC_PHOTO.PHOTO_BY_TOPIC_ID, data, meta),
     // 获取照片浮层视图列表
-    getPhotoFloatviewList: (data, meta) => ipcClient.call(IPC_PHOTO.PHOTO_FLOATVIEW_LIST, data, meta),
+    getPhotoFloatviewList: (data, meta) =>
+      ipcClient.call(IPC_PHOTO.PHOTO_FLOATVIEW_LIST, data, meta),
     // 获取照片或视频信息
     getPhotoOrVideoInfo: (data, meta) => ipcClient.call(IPC_PHOTO.PHOTO_OR_VIDEO_INFO, data, meta),
     // 获取视频信息
@@ -287,6 +288,10 @@ try {
       getFaceGroups: () => ipcClient.call(IPC_AI.GET_FACE_GROUPS),
       // 获取人脸照片
       getPhotosByFace: (faceId) => ipcClient.call(IPC_AI.GET_PHOTOS_BY_FACE, { faceId }),
+      // 获取指定文件夹内的照片
+      getPhotosByFolder: (path) => ipcClient.call(IPC_AI.GET_PHOTOS_BY_FOLDER, { path }),
+      // 获取全部已分析照片
+      getAllPhotos: (options = {}) => ipcClient.call(IPC_AI.GET_ALL_PHOTOS, options),
       // 检查模型是否存在
       checkModels: () => ipcClient.call(IPC_AI.CHECK_MODELS),
       // 检查引擎运行状态 (Ping)

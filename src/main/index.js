@@ -1,6 +1,4 @@
-import { app, protocol, session } from 'electron'
-import fs from 'fs'
-import { Readable } from 'stream'
+import { app, protocol } from 'electron'
 import { ApplicationBootstrapper } from '@main/app-bootstrapper'
 import { optimizer, electronApp, platform, is } from '@electron-toolkit/utils'
 import logger from '@main/core/logger'
@@ -58,48 +56,6 @@ const bootstrapper = new ApplicationBootstrapper()
 // 准备就绪流程
 app.whenReady().then(async () => {
   try {
-    // 注册 qzone-local:// → 本地文件，用 fs.createReadStream 流式响应，无内存占用
-    // 格式约定：qzone-local://local/<encoded-abs-path>
-    // 支持 Range 请求（HTML5 video 加载视频时会发 Range）
-    // 主窗口用 partition: 'persist:qzone'，必须在该 session 上注册（partition session 不继承 default）
-    const qzoneSession = session.fromPartition('persist:qzone')
-    const handleProtocol = async (req) => {
-      const u = new URL(req.url)
-      const filePath = decodeURIComponent(u.pathname.replace(/^\//, ''))
-      try {
-        const stat = await fs.promises.stat(filePath)
-        const range = req.headers.get('range')
-        let start = 0
-        let end = stat.size - 1
-        let status = 200
-        if (range) {
-          const m = /bytes=(\d+)-(\d*)/.exec(range)
-          if (m) {
-            start = parseInt(m[1], 10)
-            end = m[2] ? parseInt(m[2], 10) : stat.size - 1
-            status = 206
-          }
-        }
-        const stream = fs.createReadStream(filePath, { start, end })
-        const webStream = Readable.toWeb(stream)
-        const headers = {
-          'Content-Length': String(end - start + 1),
-          'Content-Type': 'video/mp4',
-          'Accept-Ranges': 'bytes'
-        }
-        if (status === 206) {
-          headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`
-        }
-        return new Response(webStream, { status, headers })
-      } catch (e) {
-        logger.error('[qzone-local] 读取失败:', e?.message || e)
-        return new Response(String(e), { status: 500 })
-      }
-    }
-    // 同时在 default session 和 主窗口 partition session 上注册
-    protocol.handle('qzone-local', handleProtocol)
-    qzoneSession.protocol.handle('qzone-local', handleProtocol)
-
     // 从配置文件读取应用标识符，与 electron-builder.yml 中的 appId 保持一致
     const bundleId = APP_ID
     electronApp.setAppUserModelId(bundleId)

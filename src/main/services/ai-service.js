@@ -22,6 +22,7 @@ export const AI_SYSTEM_STATUS = {
   STOPPED: 'STOPPED', // 未启动 / 模型缺失
   MODEL_MISSING: 'MODEL_MISSING', // 明确模型缺失
   DOWNLOADING: 'DOWNLOADING', // 正在下载模型
+  STARTING: 'STARTING', // Worker 正在启动
   INITIALIZING: 'INITIALIZING', // Worker 正在加载模型
   READY: 'READY', // 就绪，可接受任务
   SCANNING: 'SCANNING', // 正在扫描入库
@@ -47,6 +48,8 @@ export class AIService {
     this.status = 'STOPPED'
     /** @type {boolean} 是否正在初始化中 */
     this.isInitializing = false
+    /** @type {boolean} 是否正在执行人物聚类持久化 */
+    this.isClustering = false
 
     /** @type {Object | null} 向量表 */
     this.table = null
@@ -150,7 +153,7 @@ export class AIService {
 
       // 3. 状态管理
       logger.info('[AIService] initWorker: 设置状态为 STARTING...')
-      this._updateStatus('STARTING')
+      this._updateStatus(AI_SYSTEM_STATUS.STARTING)
       await this.windowManager.ensureWindow()
 
       // 4. 等待 Worker 响应并加载模型
@@ -165,7 +168,7 @@ export class AIService {
       const initResult = await this.windowManager.invoke(AiActionTypes.INIT, {})
 
       logger.info('[AIService] initWorker: 初始化指令执行成功')
-      this._updateStatus('READY')
+      this._updateStatus(AI_SYSTEM_STATUS.READY)
       this.isInitializing = false
 
       // 实时获取数据库大小
@@ -179,7 +182,7 @@ export class AIService {
       }
     } catch (err) {
       logger.error('[AIService] Worker 启动异常:', err)
-      this._updateStatus('ERROR', `AI 引擎加载失败: ${err.message}`)
+      this._updateStatus(AI_SYSTEM_STATUS.ERROR, `AI 引擎加载失败: ${err.message}`)
       this.isInitializing = false
       return { data: false, error: err.message }
     }
@@ -377,7 +380,9 @@ export class AIService {
       ignored: /(^|[/\\])\../, // 忽略隐藏文件
       persistent: true,
       ignoreInitial: true, // 初始扫描不触发事件 (由 startBackgroundScan 负责)
-      followSymlinks: true
+      followSymlinks: true,
+      // 当前 Electron/Node 组合下 fsevents 的 flags.SinceNow 导出不稳定，禁用它避免后台未处理拒绝。
+      useFsEvents: false
     })
 
     this.watcher
@@ -467,7 +472,21 @@ export class AIService {
    * 启动全局分析流程
    */
   async startGlobalAnalysis() {
-    if (this.isScanning) return
+    if (this.isScanning) {
+      logger.info('[AIService] 已有 AI 任务正在进行，跳过重复分析请求')
+      return { data: false, message: 'AI task already in progress' }
+    }
+    if (!this.table) {
+      logger.warn('[AIService] 数据库未初始化，无法开始分析')
+      return { data: false, message: 'Database is not ready' }
+    }
+
+    const pending = await this.getPendingCount()
+    if ((pending?.data || 0) <= 0) {
+      logger.info('[AIService] 没有待分析照片，跳过全局分析')
+      return { data: false, message: 'No pending photos' }
+    }
+
     logger.info('[AIService] 🚀 启动全局分析流程')
 
     this._updateStatus(AI_SYSTEM_STATUS.ANALYZING)
@@ -477,18 +496,20 @@ export class AIService {
       const aiInvoker = (action, payload) => this.windowManager.invoke(action, payload)
 
       // 使用广播机制通知进度，不再绑定单一窗口
-      await Pipeline.start(null, aiInvoker, {
+      const result = await Pipeline.start(null, aiInvoker, {
         onProgress: (data) => this.broadcastProgress(data)
       })
 
       logger.info('[AIService] 全局分析任务结束')
       this._updateStatus(AI_SYSTEM_STATUS.READY)
       this.isScanning = false
-      return { data: true }
+      await this.stopBlockSleep()
+      return { data: true, result }
     } catch (err) {
       logger.error('[AIService] 全局分析失败:', err)
       this._updateStatus(AI_SYSTEM_STATUS.READY)
       this.isScanning = false
+      await this.stopBlockSleep()
       return { data: false, error: err.message }
     }
   }
@@ -498,6 +519,7 @@ export class AIService {
     this.isScanning = false
     Pipeline.shouldStop = true // 触发流水线停止
     this._updateStatus(AI_SYSTEM_STATUS.READY)
+    await this.stopBlockSleep()
     return { data: true }
   }
 
@@ -529,11 +551,18 @@ export class AIService {
    */
   async clusterFaces() {
     if (!this.table) return { success: false, msg: '数据库未初始化' }
+    if (this.isClustering) return { success: false, msg: '人物整理正在进行中' }
 
+    this.isClustering = true
     try {
       // 1. 获取所有已分析且有人脸的照片
       const allPhotos = await this.table.query().where("status = 'done'").toArray()
       logger.info(`[AIService] 聚类开始: 总计 ${allPhotos.length} 张已处理照片`)
+
+      if (allPhotos.length === 0) {
+        this._updateStatus(AI_SYSTEM_STATUS.READY, '暂无可整理的人物数据')
+        return { success: true, count: 0 }
+      }
 
       // 2. 执行聚类 (收紧阈值以提升人物聚合精度)
       // 这里的 0.28 相当于要求 1 - 0.28 = 0.72 的相似度
@@ -573,57 +602,38 @@ export class AIService {
         }
       }
 
-      // 3. 执行持久化 (采用 Bulk Re-insertion 策略解决 LanceDB Update 缓慢问题)
+      // 3. 执行持久化。逐条更新 faces，避免“先删后插”在崩溃时造成索引丢失。
       this._updateStatus(AI_SYSTEM_STATUS.ANALYZING, '正在应用人物整理结果...')
       logger.info(`[AIService] 正在准备全量更新 ${allPhotos.length} 条记录...`)
 
-      const updatedPhotos = allPhotos.map((photo) => {
+      let updatedCount = 0
+      for (const photo of allPhotos) {
         const newFaces = updateMap.get(photo.path)
-        // 【关键修复】深度清洗数据对象，只提取 Schema 定义的字段，防止 Arrow 内部元数据（如 vector.isValid）干扰
-        return {
-          id: photo.id,
-          path: photo.path,
-          folder: photo.folder,
-          status: photo.status,
-          // 强制将 vector 转为普通数组
-          vector: Array.from(photo.vector),
-          faces: newFaces
-            ? JSON.stringify(newFaces)
-            : typeof photo.faces === 'string'
-              ? photo.faces
-              : JSON.stringify(photo.faces || []),
-          timestamp: photo.timestamp,
-          mtime: photo.mtime,
-          width: photo.width,
-          height: photo.height,
-          thumbnail: photo.thumbnail
+        if (!newFaces) continue
+
+        const escapedPath = photo.path.replace(/'/g, "\\'")
+        await this.table.update({
+          where: `path = '${escapedPath}'`,
+          values: {
+            faces: JSON.stringify(newFaces)
+          }
+        })
+        updatedCount++
+
+        if (updatedCount % 100 === 0) {
+          logger.info(`[AIService] 人物整理写入进度: ${updatedCount} / ${allPhotos.length}`)
         }
-      })
-
-      // 第一步：清空旧的已处理数据 (注意只删除已经加载到内存进行重整的这部分 status = 'done')
-      logger.info('[AIService] 正在清空旧的分析记录...')
-      await this.table.delete("status = 'done'")
-
-      // 第二步：批量插入新数据
-      logger.info(`[AIService] 正在批量插入 ${updatedPhotos.length} 条新记录...`)
-
-      // 分批插入防止单次写入压力过大
-      const BATCH_SIZE = 500
-      for (let i = 0; i < updatedPhotos.length; i += BATCH_SIZE) {
-        const chunk = updatedPhotos.slice(i, i + BATCH_SIZE)
-        await this.table.add(chunk)
-        logger.info(
-          `[AIService] 批量插入进度: ${Math.min(i + BATCH_SIZE, updatedPhotos.length)} / ${updatedPhotos.length}`
-        )
       }
 
-      logger.info('[AIService] 数据库持久化成功')
+      logger.info(`[AIService] 数据库持久化成功，已更新 ${updatedCount} 条记录`)
       this._updateStatus(AI_SYSTEM_STATUS.READY, '人物整理完成')
       return { success: true, count: clusters.length }
     } catch (err) {
       logger.error('[AIService] 人物聚类失败:', err)
       this._updateStatus(AI_SYSTEM_STATUS.READY, '人物整理失败')
       return { success: false, msg: err.message }
+    } finally {
+      this.isClustering = false
     }
   }
 
@@ -751,6 +761,40 @@ export class AIService {
       }
     } catch (err) {
       logger.error(`[AIService] 获取文件夹照片失败: ${folderPath}`, err)
+      return { data: [], error: err.message }
+    }
+  }
+
+  /**
+   * 获取全部已分析照片。
+   * @param {{ limit?: number }} options
+   */
+  async getAllPhotos(options = {}) {
+    if (!this.table) return { data: [] }
+
+    const rawLimit = Number(options?.limit || 1000)
+    const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 1000, 1), 1000)
+
+    try {
+      const results = await this.table
+        .query()
+        .where("status = 'done'")
+        .select(['path', 'status', 'thumbnail', 'width', 'height', 'timestamp'])
+        .limit(limit)
+        .toArray()
+
+      return {
+        data: results.map((r) => ({
+          path: r.path,
+          status: r.status,
+          thumbnail: r.thumbnail,
+          width: r.width,
+          height: r.height,
+          timestamp: r.timestamp
+        }))
+      }
+    } catch (err) {
+      logger.error('[AIService] 获取全部照片失败:', err)
       return { data: [], error: err.message }
     }
   }

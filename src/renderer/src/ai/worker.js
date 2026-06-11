@@ -144,6 +144,35 @@ async function initEngine() {
 }
 
 /**
+ * 将本地文件路径转换为可被 fetch 使用的 file URL。
+ * @param {string} filePath
+ * @returns {string}
+ */
+function toFileUrl(filePath) {
+  if (!filePath) return ''
+  if (/^file:/i.test(filePath)) return filePath
+
+  const normalizedPath = String(filePath).replace(/\\/g, '/')
+  const encodeSegments = (value) =>
+    value
+      .split('/')
+      .map((part, index) => {
+        if (index === 0 && /^[a-zA-Z]:$/.test(part)) return part
+        return encodeURIComponent(part)
+      })
+      .join('/')
+
+  if (/^[a-zA-Z]:\//.test(normalizedPath)) {
+    return `file:///${encodeSegments(normalizedPath)}`
+  }
+
+  return `file://${normalizedPath
+    .split('/')
+    .map((part, index) => (index === 0 ? part : encodeURIComponent(part)))
+    .join('/')}`
+}
+
+/**
  * 图片分析任务 (仅人脸检测)
  * @param {{ filePath: string }} task
  * @returns {Promise<Object>} 分析结果
@@ -153,7 +182,10 @@ async function analyzeImage(task) {
   console.log(`[AI Worker] 📥 开始分析图片 (仅人脸): ${filePath}`)
 
   // 1. 构造 Blob URL
-  const response = await fetch(`file://${filePath}`)
+  const response = await fetch(toFileUrl(filePath))
+  if (!response.ok) {
+    throw new Error(`读取图片失败: ${response.status} ${response.statusText}`)
+  }
   const blob = await response.blob()
   const blobUrl = URL.createObjectURL(blob)
 

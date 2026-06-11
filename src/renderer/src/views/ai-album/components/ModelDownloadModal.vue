@@ -28,7 +28,7 @@
         </div>
         <div class="progress-info">
           <div class="status-row">
-            <span class="status-text">正在下载必备模型资源 ({{ currentStep }}/2)...</span>
+            <span class="status-text">正在初始化本地 AI 引擎 ({{ currentStep }}/2)...</span>
             <span class="percent-text">{{ progress }}%</span>
           </div>
           <el-progress
@@ -38,7 +38,7 @@
             striped
             striped-flow
           />
-          <div class="detail-text">模型文件约 152MB，仅首次使用需要下载，请保持网络连接。</div>
+          <div class="detail-text">首次使用会准备本地识别资源，请保持应用运行。</div>
         </div>
       </div>
     </div>

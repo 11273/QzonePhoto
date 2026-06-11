@@ -4,11 +4,9 @@
       <div class="status-content">
         <!-- 核心状态图标 -->
         <div class="icon-box">
-          <el-icon v-if="status === 'STARTING' || status === 'BUSY'" class="is-loading"
-            ><Loading
-          /></el-icon>
+          <el-icon v-if="isBusyStatus" class="is-loading"><Loading /></el-icon>
           <el-icon v-else-if="status === 'READY'"><Picture /></el-icon>
-          <el-icon v-else-if="status === 'FATAL_ERROR'"><WarningFilled /></el-icon>
+          <el-icon v-else-if="isErrorStatus"><WarningFilled /></el-icon>
         </div>
 
         <!-- 文本描述 -->
@@ -18,7 +16,7 @@
         </div>
 
         <!-- 操作按钮 -->
-        <div v-if="status === 'FATAL_ERROR'" class="action-box">
+        <div v-if="isErrorStatus" class="action-box">
           <el-button type="danger" size="small" @click="handleRestart"> 重启引擎 </el-button>
         </div>
       </div>
@@ -29,7 +27,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Loading, Picture, WarningFilled } from '@element-plus/icons-vue'
-import { IPC_AI } from '@shared/ipc-channels'
 
 /**
  * AIStatus 组件: 实时显示 AI 引擎（Hidden Renderer）的运行状态
@@ -61,12 +58,18 @@ const status = ref('STOPPED')
 const msg = ref('')
 /** 控制组件显隐 @type {import('vue').Ref<boolean>} */
 const visible = ref(props.initialVisible)
+let stopStatusListener = null
 
 // 状态映射表
 const statusMap = {
   STOPPED: { text: 'AI 引擎未启动', type: 'info' },
+  MODEL_MISSING: { text: '本地 AI 引擎待初始化', type: 'info' },
+  DOWNLOADING: { text: '正在准备本地识别资源...', type: 'primary' },
   STARTING: { text: '正在初始化 WebGPU 引擎...', type: 'primary' },
+  INITIALIZING: { text: '正在加载本地 AI 引擎...', type: 'primary' },
   READY: { text: 'AI 引擎就绪 (WebGPU)', type: 'success' },
+  SCANNING: { text: '正在同步本地图库...', type: 'warning' },
+  ANALYZING: { text: '正在进行本地 AI 识别...', type: 'warning' },
   BUSY: { text: '正在全力进行 AI 识别...', type: 'warning' },
   ERROR: { text: '引擎异常，正在尝试恢复', type: 'warning' },
   FATAL_ERROR: { text: 'AI 引擎已崩溃', type: 'danger' }
@@ -74,13 +77,19 @@ const statusMap = {
 
 const statusText = computed(() => statusMap[status.value]?.text || '未知状态')
 const statusClass = computed(() => `status-${statusMap[status.value]?.type || 'info'}`)
+const isBusyStatus = computed(() =>
+  ['STARTING', 'INITIALIZING', 'DOWNLOADING', 'SCANNING', 'ANALYZING', 'BUSY'].includes(
+    status.value
+  )
+)
+const isErrorStatus = computed(() => ['ERROR', 'FATAL_ERROR'].includes(status.value))
 
 /**
  * 监听来自主进程的状态变更推送
- * @param {Object} event
  * @param {Object} payload
  */
-const onStatusUpdate = (event, payload) => {
+const onStatusUpdate = (payload) => {
+  if (!payload?.status) return
   status.value = payload.status
   msg.value = payload.msg || ''
   emit('status-change', payload.status)
@@ -108,7 +117,7 @@ const handleRestart = async () => {
 
 onMounted(async () => {
   if (window.QzoneAPI?.ai) {
-    window.QzoneAPI.ai.onStatusChange(onStatusUpdate)
+    stopStatusListener = window.QzoneAPI.ai.onStatusChange(onStatusUpdate)
 
     // 主动同步
     try {
@@ -126,8 +135,9 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if (window.QzoneAPI?.ai) {
-    window.QzoneAPI.ai.removeStatusChange()
+  if (typeof stopStatusListener === 'function') {
+    stopStatusListener()
+    stopStatusListener = null
   }
 })
 </script>

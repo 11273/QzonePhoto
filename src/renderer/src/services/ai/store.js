@@ -12,6 +12,7 @@ export const useAIStore = defineStore('ai', {
     initError: null, // 初始化错误信息
     pendingCount: 0, // 待处理任务数量
     userPaused: false, // 是否被用户手动暂停
+    listenersAttached: false, // 是否已经注册过主进程事件监听
 
     // 进度信息
     progress: {
@@ -21,6 +22,7 @@ export const useAIStore = defineStore('ai', {
       thumbnail: '',
       faces: []
     },
+    currentAnalysisTag: '',
     isLoading: false, // 是否正在加载数据 (用于 UI Loading 效果)
     selectedFilter: { type: 'overview', value: null }, // 默认选中的过滤器: { type: 'overview' | 'all' | 'folder', value: string | null }
     folderCounts: {}, // 每个扫描路径对应的照片数量: { [path: string]: number }
@@ -42,7 +44,8 @@ export const useAIStore = defineStore('ai', {
     performance: {
       cpu: 0,
       memory: 0,
-      memoryVal: '0.0'
+      memoryVal: '0.0',
+      gpu: null
     },
 
     // 模型管理
@@ -143,84 +146,7 @@ export const useAIStore = defineStore('ai', {
           await downloadStore.initDownloadPath()
         }
 
-        // 1. 监听全局状态变化
-        window.QzoneAPI.ai.onStatusChange(({ status, msg }) => {
-          console.log(
-            `[AI Store] 收到状态变更: ${this.systemStatus} -> ${status} (${msg || '无消息'})`
-          )
-          this.systemStatus = status
-
-          // 映射旧状态以保持 UI 兼容
-          if (status === 'MODEL_MISSING') {
-            this.isModelReady = false
-            this.analysisStatus = 'IDLE' // 显示 Onboarding
-          } else if (status === 'READY') {
-            this.isModelReady = true
-            this.analysisStatus = 'FINISHED'
-            this.isScanning = false // 确保 UI 知道扫描结束
-            this.refreshPendingCount()
-          } else if (status === 'ANALYZING') {
-            this.analysisStatus = 'ANALYZING'
-            this.isScanning = true // 修复：分析中也应该开启扫描状态以显示进度条
-          } else if (status === 'SCANNING') {
-            this.analysisStatus = 'INDEXING'
-            this.isScanning = true
-          } else if (status === 'DOWNLOADING') {
-            this.analysisStatus = 'DOWNLOADING'
-          }
-        })
-
-        // 2. 监听进度推送 (模型下载、静默扫描、分析)
-        window.QzoneAPI.ai.onScanProgress((progress) => {
-          if (progress.status === 'SCAN_COMPLETE' || progress.status === 'COMPLETE') {
-            this.isScanning = false
-            this.refreshPendingCount()
-            return
-          }
-
-          if (progress.status === 'STOPPED') {
-            this.isScanning = false
-            return
-          }
-
-          if (progress.isDownloading) {
-            this.modelStatus.downloading = true
-            this.modelStatus.progress = progress.percent || progress.progress || 0
-            if (progress.detail) this.modelStatus.currentFile = progress.detail
-            this.analysisStatus = 'DOWNLOADING'
-            return
-          }
-
-          // 正常同步进度
-          this.progress.current = progress.current || 0
-          this.progress.total = progress.total || 0
-          this.progress.message = progress.message || ''
-          this.progress.thumbnail = progress.thumbnail || ''
-
-          // 计算百分比以驱动 UI 进度条
-          if (this.progress.total > 0) {
-            const percent = (this.progress.current / this.progress.total) * 100
-            // 使用 Math.ceil 让 1/632 至少显示 1%，而不是 0%
-            this.scanProgress = Math.min(100, Math.max(0, percent > 0 ? Math.ceil(percent) : 0))
-          }
-
-          if (progress.filePath) {
-            const fileName = progress.filePath.split(/[/\\]/).pop()
-            this.currentAnalysisTag = `正在处理: ${fileName}`
-          }
-
-          if (progress.speed) this.speed = progress.speed
-        })
-
-        // 3. 监听硬件性能监控
-        if (window.QzoneAPI?.app?.onMonitorStats) {
-          window.QzoneAPI.app.onMonitorStats((stats) => {
-            this.performance.cpu = stats.cpu || 0
-            this.performance.memory = stats.memory || 0
-            this.performance.memoryVal = stats.memoryVal || '0.0'
-          })
-          window.QzoneAPI.app.startMonitor()
-        }
+        this.attachRuntimeListeners()
 
         // 4. 初始同步
         // 主动获取 AIService 的当前状态 (解决 UI 晚于 Ready 事件的问题)
@@ -251,6 +177,128 @@ export const useAIStore = defineStore('ai', {
       }
     },
 
+    attachRuntimeListeners() {
+      if (this.listenersAttached) return
+      this.listenersAttached = true
+
+      // 1. 监听全局状态变化
+      window.QzoneAPI.ai.onStatusChange(({ status, msg }) => {
+        console.log(
+          `[AI Store] 收到状态变更: ${this.systemStatus} -> ${status} (${msg || '无消息'})`
+        )
+        this.systemStatus = status
+
+        if (status === 'MODEL_MISSING') {
+          this.isModelReady = false
+          this.isScanning = false
+          this.modelStatus.downloading = false
+          this.analysisStatus = 'IDLE'
+        } else if (status === 'READY') {
+          this.isModelReady = true
+          this.isScanning = false
+          this.modelStatus.downloading = false
+          this.analysisStatus = 'FINISHED'
+          this.toggleSleepBlocker(false)
+          this.refreshPendingCount()
+          this.fetchFaceGroups()
+        } else if (status === 'ANALYZING') {
+          this.analysisStatus = 'ANALYZING'
+          this.isScanning = true
+          this.initError = null
+        } else if (status === 'SCANNING') {
+          this.analysisStatus = 'INDEXING'
+          this.isScanning = true
+          this.initError = null
+        } else if (status === 'DOWNLOADING') {
+          this.analysisStatus = 'DOWNLOADING'
+          this.modelStatus.downloading = true
+        } else if (status === 'STARTING' || status === 'INITIALIZING') {
+          this.analysisStatus = 'CHECKING'
+          this.initError = null
+        } else if (status === 'ERROR' || status === 'FATAL_ERROR') {
+          this.isScanning = false
+          this.modelStatus.downloading = false
+          this.analysisStatus = 'IDLE'
+          if (msg) this.initError = msg
+          this.toggleSleepBlocker(false)
+        } else if (status === 'STOPPED') {
+          this.isScanning = false
+          this.modelStatus.downloading = false
+          this.analysisStatus = 'IDLE'
+          this.toggleSleepBlocker(false)
+        }
+      })
+
+      // 2. 监听进度推送 (模型下载、静默扫描、分析)
+      window.QzoneAPI.ai.onScanProgress((progress) => {
+        if (progress.status === 'SCAN_COMPLETE' || progress.status === 'COMPLETE') {
+          this.isScanning = false
+          this.analysisStatus = 'FINISHED'
+          this.scanProgress = progress.total > 0 ? 100 : 0
+          this.progress.current = progress.current || this.progress.current
+          this.progress.total = progress.total || this.progress.total
+          this.progress.message = progress.message || '分析完成'
+          this.currentAnalysisTag = progress.message || ''
+          this.toggleSleepBlocker(false)
+          this.refreshPendingCount()
+          this.fetchFaceGroups()
+          this.refreshStorageSize()
+          return
+        }
+
+        if (progress.status === 'STOPPED') {
+          this.isScanning = false
+          this.analysisStatus = 'FINISHED'
+          this.progress.message = progress.message || '分析已暂停'
+          this.currentAnalysisTag = this.progress.message
+          this.toggleSleepBlocker(false)
+          this.refreshPendingCount()
+          return
+        }
+
+        if (progress.isDownloading) {
+          this.modelStatus.downloading = true
+          this.modelStatus.progress = progress.percent || progress.progress || 0
+          if (progress.detail) this.modelStatus.currentFile = progress.detail
+          this.analysisStatus = 'DOWNLOADING'
+          return
+        }
+
+        // 正常同步进度
+        this.progress.current = progress.current || 0
+        this.progress.total = progress.total || 0
+        this.progress.message = progress.message || ''
+        this.progress.thumbnail = progress.thumbnail || ''
+
+        // 计算百分比以驱动 UI 进度条
+        if (this.progress.total > 0) {
+          const percent = (this.progress.current / this.progress.total) * 100
+          this.scanProgress = Math.min(100, Math.max(0, percent > 0 ? Math.ceil(percent) : 0))
+        } else {
+          this.scanProgress = 0
+        }
+
+        if (progress.filePath) {
+          const fileName = progress.filePath.split(/[/\\]/).pop()
+          this.currentAnalysisTag = `正在处理: ${fileName}`
+        } else if (progress.message) {
+          this.currentAnalysisTag = progress.message
+        }
+
+        if (progress.speed) this.speed = progress.speed
+      })
+
+      // 3. 监听硬件性能监控
+      if (window.QzoneAPI?.app?.onMonitorStats) {
+        window.QzoneAPI.app.onMonitorStats((stats) => {
+          this.performance.cpu = stats.cpu || 0
+          this.performance.memory = stats.memory || 0
+          this.performance.memoryVal = stats.memoryVal || '0.0'
+        })
+        window.QzoneAPI.app.startMonitor()
+      }
+    },
+
     // 开启/关闭防止休眠
     async toggleSleepBlocker(enable) {
       try {
@@ -268,25 +316,38 @@ export const useAIStore = defineStore('ai', {
     async startGlobalAnalysis() {
       if (this.systemStatus !== 'READY') {
         console.warn('[AI Store] 引擎未就绪，无法启动分析:', this.systemStatus)
-        return false
+        return { success: false, message: 'AI 引擎尚未就绪' }
       }
 
       try {
+        const pending = await this.refreshPendingCount()
+        if (pending <= 0) {
+          return { success: false, message: '当前没有待分析照片' }
+        }
+
         await this.toggleSleepBlocker(true)
         // 重置进度状态，确保 UI 从 0% 开始
         this.scanProgress = 0
         this.progress.current = 0
         this.progress.total = 0
+        this.progress.message = '正在启动分析...'
+        this.currentAnalysisTag = '正在启动分析...'
 
         const res = await window.QzoneAPI.ai.startGlobalAnalysis()
         if (res?.data) {
           this.analysisStatus = 'ANALYZING'
-          return true
+          this.isScanning = true
+          return { success: true, result: res.result }
         }
-        return false
+        await this.toggleSleepBlocker(false)
+        return {
+          success: false,
+          message: res?.message || res?.error || '启动分析失败'
+        }
       } catch (err) {
         console.error('[AI Store] 启动分析器失败:', err)
-        return false
+        await this.toggleSleepBlocker(false)
+        return { success: false, message: err.message || '启动分析失败' }
       }
     },
 
@@ -320,8 +381,11 @@ export const useAIStore = defineStore('ai', {
     async stopScan() {
       try {
         await window.QzoneAPI.ai.stopScan()
+        await this.toggleSleepBlocker(false)
         this.isScanning = false
-        this.analysisStatus = 'READY'
+        this.analysisStatus = 'FINISHED'
+        this.progress.message = '已停止'
+        this.currentAnalysisTag = '已停止'
         return true
       } catch (err) {
         console.error('[AI Store] 停止扫描失败:', err)
@@ -365,8 +429,13 @@ export const useAIStore = defineStore('ai', {
           console.log(`[AI Store] 发现 ${res.newCount} 张新照片，等待手动启动分析`)
           this.refreshPendingCount()
         }
+        await this.updateTotalPhotoCount()
+        await this.refreshPendingCount()
+        await this.refreshStorageSize()
+        return res
       } catch (e) {
         console.error('自动同步失败', e)
+        return { data: false, error: e.message || String(e) }
       }
     },
 
@@ -497,9 +566,14 @@ export const useAIStore = defineStore('ai', {
           }
         }
 
+        if (result?.error || result?.message) {
+          throw new Error(result.error || result.message)
+        }
+
         // 如果没有返回预期格式，检查引擎状态
         console.warn('[AI Store] 初始化返回格式异常，检查引擎状态...')
         await this.checkEngineHealth()
+        this.modelStatus.downloading = false
         return this.isModelReady
       } catch (error) {
         console.error('[AI Store] 初始化 AI 引擎失败:', error)
@@ -632,7 +706,9 @@ export const useAIStore = defineStore('ai', {
     syncWatchPaths() {
       const paths = this.activeScanPathStrings
       if (window.QzoneAPI?.ai?.setWatchPaths) {
-        window.QzoneAPI.ai.setWatchPaths([...paths])
+        window.QzoneAPI.ai.setWatchPaths([...paths]).catch((error) => {
+          console.warn('[AI Store] 同步监控路径失败:', error)
+        })
       }
     },
 
@@ -699,6 +775,19 @@ export const useAIStore = defineStore('ai', {
         return res?.data || []
       } catch (err) {
         console.error('[AI Store] 获取文件夹照片失败:', err)
+        return []
+      }
+    },
+
+    /**
+     * 获取全部已分析照片
+     */
+    async fetchAllPhotos(options = {}) {
+      try {
+        const res = await window.QzoneAPI.ai.getAllPhotos(options)
+        return res?.data || []
+      } catch (err) {
+        console.error('[AI Store] 获取全部照片失败:', err)
         return []
       }
     },
