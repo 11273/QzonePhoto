@@ -168,10 +168,6 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible'])
 
-const feedbackEndpoint = computed(() =>
-  props.apiBaseUrl ? `${String(props.apiBaseUrl).replace(/\/$/, '')}/api/feedback` : ''
-)
-
 const typeOptions = [
   { label: '问题', value: 'bug', icon: Help },
   { label: '建议', value: 'feature', icon: MagicStick },
@@ -376,7 +372,7 @@ const submitQuickFeedback = async () => {
     return
   }
 
-  if (!feedbackEndpoint.value) {
+  if (!window.QzoneAPI?.app?.submitFeedback) {
     ElMessage.error('当前版本未配置快捷提交，请使用 GitHub 反馈页')
     return
   }
@@ -398,16 +394,16 @@ const submitQuickFeedback = async () => {
   showFeedbackPendingNotice()
 
   try {
-    const res = await fetch(feedbackEndpoint.value, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    const result = await parseFeedbackResponse(res)
+    const result = await window.QzoneAPI.app.submitFeedback(payload)
     if (!result.ok) throw new Error(result.message)
+    reportFeedbackEvent('feedback_submitted', { status: result.delivery || 'unknown' })
     showFeedbackResultNotice(result)
   } catch (error) {
     console.error('[FeedbackDialog] submit failed:', error)
+    reportFeedbackEvent('feedback_submit_failed', {
+      errorCode: error?.name || 'submit_failed',
+      reason: error?.message || 'unknown'
+    })
     const message =
       error?.name === 'AbortError' || error instanceof TypeError
         ? '本次未完成提交，请稍后重试或使用 GitHub 反馈页'
@@ -418,28 +414,17 @@ const submitQuickFeedback = async () => {
   }
 }
 
-const parseFeedbackResponse = async (res) => {
-  try {
-    const data = await res.clone().json()
-    if (typeof data?.message === 'string') {
-      return {
-        ok: res.ok && data.ok !== false,
-        message: data.message,
-        issue: data.data?.issue,
-        issueUrl: data.data?.issueUrl,
-        delivery: data.data?.delivery
-      }
-    }
-    if (typeof data?.error === 'string') {
-      return { ok: false, message: data.error }
-    }
-  } catch {
-    // ignore non-JSON response
-  }
-  if (res.status === 429) return { ok: false, message: '提交太频繁了，请稍后再试' }
-  if (res.status >= 500) return { ok: false, message: '反馈服务暂时不可用，请稍后再试' }
-  if (res.ok) return { ok: true, message: '反馈已提交' }
-  return { ok: false, message: '提交失败，请检查内容后再试' }
+const reportFeedbackEvent = (event, properties = {}) => {
+  if (!window.QzoneAPI?.app?.reportHealth) return
+  window.QzoneAPI.app
+    .reportHealth({
+      event,
+      page: window.location.hash || '#/feedback',
+      success: event === 'feedback_submitted',
+      errorCode: properties.errorCode,
+      properties
+    })
+    .catch(() => {})
 }
 
 const normalizeError = (type, message, source = '') => ({

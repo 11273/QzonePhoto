@@ -3,6 +3,7 @@ import { app } from 'electron'
 import si from 'systeminformation'
 import { IPC_APP } from '@shared/ipc-channels'
 import windowManager from '@main/core/window'
+import { fetchNotices, reportHealthEvent, submitFeedback } from '@main/services/app-telemetry'
 
 // 简单的 CPU 使用率计算
 let interval = null
@@ -70,6 +71,18 @@ export function createAppHandlers() {
         totalmem: os.totalmem(),
         cpus: os.cpus()
       }
+    },
+    [IPC_APP.FETCH_NOTICES]: async (context = {}) => {
+      const payload = context?.payload || context || {}
+      return await fetchNotices(payload)
+    },
+    [IPC_APP.SUBMIT_FEEDBACK]: async (context = {}) => {
+      const payload = context?.payload || context || {}
+      return await submitFeedback(payload)
+    },
+    [IPC_APP.REPORT_HEALTH]: async (context = {}) => {
+      const payload = context?.payload || context || {}
+      return await reportHealthEvent(payload)
     },
     [IPC_APP.START_MONITOR]: async () => {
       startSystemMonitor()

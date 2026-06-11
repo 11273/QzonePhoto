@@ -259,6 +259,12 @@ export const IPC_APP = {
   GET_INFO: 'app:getInfo',
   /** 获取动态 API 配置 */
   GET_API_CONFIG: 'app:getApiConfig',
+  /** 通过主进程拉取公告 */
+  FETCH_NOTICES: 'app:fetchNotices',
+  /** 通过主进程提交反馈 */
+  SUBMIT_FEEDBACK: 'app:submitFeedback',
+  /** 通过主进程上报健康事件 */
+  REPORT_HEALTH: 'app:reportHealth',
   /** 启动应用监控 */
   START_MONITOR: 'app:start-monitor',
   /** 停止应用监控 */

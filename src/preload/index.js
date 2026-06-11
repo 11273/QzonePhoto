@@ -324,6 +324,9 @@ try {
     // 应用信息
     app: {
       getInfo: () => ipcClient.call(IPC_APP.GET_INFO),
+      fetchNotices: (options = {}) => ipcClient.call(IPC_APP.FETCH_NOTICES, options),
+      submitFeedback: (payload = {}) => ipcClient.call(IPC_APP.SUBMIT_FEEDBACK, payload),
+      reportHealth: (payload = {}) => ipcClient.call(IPC_APP.REPORT_HEALTH, payload),
       startMonitor: () => ipcClient.call(IPC_APP.START_MONITOR),
       stopMonitor: () => ipcClient.call(IPC_APP.STOP_MONITOR),
       getGPUInfo: () => ipcClient.call(IPC_APP.GET_GPU_INFO),
