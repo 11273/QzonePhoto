@@ -8,6 +8,7 @@ import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import { APP_NAME } from '@shared/const'
 import { ServiceNames } from '@main/services/service-manager'
+import { reportHealthEvent, telemetryBuckets } from '@main/services/app-telemetry'
 // 直接定义必要的默认配置，避免使用外部常量系统
 const DEFAULT_CONCURRENCY = 3
 const DEFAULT_PAGE_SIZE = 50
@@ -892,6 +893,7 @@ export class DownloadService {
 
   // 执行下载 - 优化版本
   async executeDownload(task) {
+    const startedAt = Date.now()
     this.downloadingTasks.add(task.id)
     task.status = TASK_STATUS.DOWNLOADING
     task.speed = 0
@@ -964,6 +966,7 @@ export class DownloadService {
       // 更新数据库
       await this.updateTaskInDB(task)
       this.triggerUpdate([task.id])
+      reportDownloadTaskTelemetry(this, task, startedAt)
 
       // 继续处理队列
       setTimeout(() => this.processQueue(), 100)
@@ -1542,4 +1545,50 @@ export class DownloadService {
       await this.saveDatabase()
     }
   }
+}
+
+function reportDownloadTaskTelemetry(service, task, startedAt) {
+  try {
+    const success = task.status === TASK_STATUS.COMPLETED
+    if (success && Math.random() > 0.1) return
+    const durationMs = Math.max(0, Date.now() - startedAt)
+    const totalBytes = Number(task.total || task.downloaded || 0)
+    const averageSpeed = durationMs > 0 ? Math.round(totalBytes / (durationMs / 1000)) : 0
+    void reportHealthEvent({
+      event: 'download_task_result',
+      page: 'main:download',
+      success,
+      errorCode: success
+        ? undefined
+        : task.status === TASK_STATUS.ERROR
+          ? telemetryBuckets.classifyError(task.error || 'unknown')
+          : task.status,
+      properties: {
+        module: 'download',
+        status: task.status,
+        mediaType: inferMediaType([task]),
+        sizeBucket: telemetryBuckets.size(totalBytes),
+        speedBucket: telemetryBuckets.speed(averageSpeed),
+        durationBucket: telemetryBuckets.duration(durationMs),
+        concurrency: service.concurrency,
+        activeCount: service.activeTasks?.size || 0
+      }
+    }).catch(() => {})
+  } catch {
+    // telemetry is best-effort only
+  }
+}
+
+function inferMediaType(items = []) {
+  let hasImage = false
+  let hasVideo = false
+  for (const item of items) {
+    const type = String(item?.type || '').toLowerCase()
+    if (item?.is_video || type === 'video') hasVideo = true
+    else hasImage = true
+    if (hasImage && hasVideo) return 'mixed'
+  }
+  if (hasVideo) return 'video'
+  if (hasImage) return 'photo'
+  return 'unknown'
 }

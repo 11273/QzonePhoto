@@ -4,6 +4,12 @@ import { IPC_WINDOW, IPC_APP, IPC_SHELL } from '@shared/ipc-channels'
 import { app } from 'electron'
 import { APP_NAME, APP_HOMEPAGE, APP_DESCRIPTION } from '@shared/const'
 import { getAppApiConfig } from '@main/config/app-api'
+import {
+  fetchNotices,
+  reportHealthEvent,
+  submitFeedback,
+  uploadDiagnosticLogs
+} from '@main/services/app-telemetry'
 
 const APP_LAUNCH_ID = `${Date.now()}-${process.pid}`
 const APP_LAUNCHED_AT = new Date().toISOString()
@@ -117,6 +123,34 @@ export function registerWindowControl() {
     }
   })
 
+  ipcMain.handle(IPC_APP.FETCH_NOTICES, async (event, context = {}) => {
+    return withIpcData(async () => {
+      const payload = context?.payload || context || {}
+      return await fetchNotices(payload)
+    })
+  })
+
+  ipcMain.handle(IPC_APP.SUBMIT_FEEDBACK, async (event, context = {}) => {
+    return withIpcData(async () => {
+      const payload = context?.payload || context || {}
+      return await submitFeedback(payload)
+    })
+  })
+
+  ipcMain.handle(IPC_APP.UPLOAD_LOGS, async (event, context = {}) => {
+    return withIpcData(async () => {
+      const payload = context?.payload || context || {}
+      return await uploadDiagnosticLogs(payload)
+    })
+  })
+
+  ipcMain.handle(IPC_APP.REPORT_HEALTH, async (event, context = {}) => {
+    return withIpcData(async () => {
+      const payload = context?.payload || context || {}
+      return await reportHealthEvent(payload)
+    })
+  })
+
   // 打开外部链接
   ipcMain.handle(IPC_SHELL.OPEN_EXTERNAL, async (event, context) => {
     const url = typeof context === 'string' ? context : context?.payload
@@ -167,6 +201,28 @@ export function registerWindowControl() {
       return { success: false, error: error.message }
     }
   })
+}
+
+async function withIpcData(fn) {
+  try {
+    return {
+      code: 0,
+      message: 'success',
+      data: (await fn()) ?? null
+    }
+  } catch (error) {
+    const message = error?.message || '请求处理失败'
+    const code = error?.code || 500
+    return {
+      code,
+      message,
+      data: null,
+      error: {
+        code,
+        message
+      }
+    }
+  }
 }
 
 // 设置窗口事件监听器

@@ -258,7 +258,15 @@ export const IPC_APP = {
   /** 获取应用信息 */
   GET_INFO: 'app:getInfo',
   /** 获取动态 API 配置 */
-  GET_API_CONFIG: 'app:getApiConfig'
+  GET_API_CONFIG: 'app:getApiConfig',
+  /** 通过主进程拉取公告 */
+  FETCH_NOTICES: 'app:fetchNotices',
+  /** 通过主进程提交反馈 */
+  SUBMIT_FEEDBACK: 'app:submitFeedback',
+  /** 通过主进程上传脱敏诊断日志 */
+  UPLOAD_LOGS: 'app:uploadLogs',
+  /** 通过主进程上报健康事件 */
+  REPORT_HEALTH: 'app:reportHealth'
 }
 
 export const IPC_SHELL = {

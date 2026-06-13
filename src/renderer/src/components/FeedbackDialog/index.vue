@@ -50,6 +50,13 @@
       <div class="fd-hint" :class="{ warning: form.content && !hasEnoughContent }">
         至少 8 个字，最多 1200 个字。不要填写密码、验证码或登录凭证。
       </div>
+      <label class="fd-log-option">
+        <input v-model="attachLogs" type="checkbox" />
+        <span>
+          <strong>附带诊断日志</strong>
+          <small>会自动隐藏账号、路径、登录凭证和链接</small>
+        </span>
+      </label>
       <transition name="fd-slide">
         <div v-if="smartHint" class="fd-smart-hint">
           {{ smartHint }}
@@ -168,10 +175,6 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible'])
 
-const feedbackEndpoint = computed(() =>
-  props.apiBaseUrl ? `${String(props.apiBaseUrl).replace(/\/$/, '')}/api/feedback` : ''
-)
-
 const typeOptions = [
   { label: '问题', value: 'bug', icon: Help },
   { label: '建议', value: 'feature', icon: MagicStick },
@@ -193,6 +196,7 @@ const form = reactive({
 })
 
 const submitting = ref(false)
+const attachLogs = ref(false)
 const extraExpanded = ref(false)
 const recentErrors = ref([])
 let errorSeq = 0
@@ -253,6 +257,11 @@ const buildFeedbackEnv = () => ({
     source
   }))
 })
+
+const buildLogExtraLines = () =>
+  recentErrors.value.map((item) =>
+    [item.time, item.type, item.message, item.source].filter(Boolean).join(' | ')
+  )
 
 const buildFeedbackText = () => {
   const lines = [
@@ -376,38 +385,58 @@ const submitQuickFeedback = async () => {
     return
   }
 
-  if (!feedbackEndpoint.value) {
+  if (!window.QzoneAPI?.app?.submitFeedback) {
     ElMessage.error('当前版本未配置快捷提交，请使用 GitHub 反馈页')
     return
   }
 
   submitting.value = true
+  let logId = ''
+  if (attachLogs.value && window.QzoneAPI?.app?.uploadLogs) {
+    try {
+      const logResult = await window.QzoneAPI.app.uploadLogs({
+        page: window.location.hash || '#/feedback',
+        reason: 'manual_feedback',
+        extraLines: buildLogExtraLines()
+      })
+      logId = logResult?.logId || ''
+      reportFeedbackEvent('diagnostic_log_uploaded', { status: logId ? 'success' : 'empty' })
+    } catch (error) {
+      console.warn('[FeedbackDialog] diagnostic log upload failed:', error)
+      reportFeedbackEvent('diagnostic_log_upload_failed', {
+        errorCode: error?.name || 'log_upload_failed'
+      })
+    }
+  }
   const payload = {
     type: form.type,
     title: contentTitle.value,
     content: form.content,
     contact: form.contact,
-    env: buildFeedbackEnv(),
+    env: {
+      ...buildFeedbackEnv(),
+      logId: logId || undefined
+    },
     createdAt: new Date().toISOString()
   }
 
   form.content = ''
   form.contact = ''
+  attachLogs.value = false
   extraExpanded.value = false
   emit('update:visible', false)
   showFeedbackPendingNotice()
 
   try {
-    const res = await fetch(feedbackEndpoint.value, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    const result = await parseFeedbackResponse(res)
+    const result = await window.QzoneAPI.app.submitFeedback(payload)
     if (!result.ok) throw new Error(result.message)
+    reportFeedbackEvent('feedback_submitted', { status: result.delivery || 'unknown' })
     showFeedbackResultNotice(result)
   } catch (error) {
     console.error('[FeedbackDialog] submit failed:', error)
+    reportFeedbackEvent('feedback_submit_failed', {
+      errorCode: error?.name || 'submit_failed'
+    })
     const message =
       error?.name === 'AbortError' || error instanceof TypeError
         ? '本次未完成提交，请稍后重试或使用 GitHub 反馈页'
@@ -418,28 +447,18 @@ const submitQuickFeedback = async () => {
   }
 }
 
-const parseFeedbackResponse = async (res) => {
-  try {
-    const data = await res.clone().json()
-    if (typeof data?.message === 'string') {
-      return {
-        ok: res.ok && data.ok !== false,
-        message: data.message,
-        issue: data.data?.issue,
-        issueUrl: data.data?.issueUrl,
-        delivery: data.data?.delivery
-      }
-    }
-    if (typeof data?.error === 'string') {
-      return { ok: false, message: data.error }
-    }
-  } catch {
-    // ignore non-JSON response
-  }
-  if (res.status === 429) return { ok: false, message: '提交太频繁了，请稍后再试' }
-  if (res.status >= 500) return { ok: false, message: '反馈服务暂时不可用，请稍后再试' }
-  if (res.ok) return { ok: true, message: '反馈已提交' }
-  return { ok: false, message: '提交失败，请检查内容后再试' }
+const reportFeedbackEvent = (event, properties = {}) => {
+  if (!window.QzoneAPI?.app?.reportHealth) return
+  const success = event === 'feedback_submitted' || event === 'diagnostic_log_uploaded'
+  window.QzoneAPI.app
+    .reportHealth({
+      event,
+      page: window.location.hash || '#/feedback',
+      success,
+      errorCode: properties.errorCode,
+      properties
+    })
+    .catch(() => {})
 }
 
 const normalizeError = (type, message, source = '') => ({
@@ -643,6 +662,39 @@ onUnmounted(() => {
 
 .fd-hint.warning {
   color: var(--ds-accent-yellow);
+}
+
+.fd-log-option {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin: 0 0 10px;
+  padding: 9px 10px;
+  color: var(--ds-text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--ds-border-faint);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.fd-log-option input {
+  width: 14px;
+  height: 14px;
+  margin: 1px 0 0;
+  accent-color: #60a5fa;
+}
+
+.fd-log-option strong,
+.fd-log-option small {
+  display: block;
+}
+
+.fd-log-option small {
+  margin-top: 2px;
+  color: var(--ds-text-quaternary);
+  font-size: 11px;
 }
 
 .fd-smart-hint {

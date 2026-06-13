@@ -1,8 +1,9 @@
 // import { is } from '@electron-toolkit/utils'
 // import { format } from 'date-fns'
-// import { app } from 'electron'
+import fs from 'fs'
+import path from 'path'
+import { app } from 'electron'
 // import log from 'electron-log/main'
-// import path from 'path'
 
 /*
 TODO
@@ -13,6 +14,7 @@ TODO
 // 常量定义
 const SENSITIVE_KEYS = ['password', 'token', 'creditCard']
 const REDACTED_TEXT = '​**​*REDACTED​**​*'
+const DEV_LOG_PATH = path.join(app.getPath('userData'), 'qzone-helper-dev.log')
 
 // 日志级别定义
 const LOG_LEVELS = {

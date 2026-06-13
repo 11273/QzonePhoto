@@ -8,6 +8,7 @@ import {
   IPC_FRIEND,
   IPC_UPDATE,
   IPC_FILE,
+  IPC_APP,
   IPC_SHELL,
   IPC_WINDOW
 } from '@shared/ipc-channels'
@@ -257,6 +258,14 @@ try {
 
     shell: {
       openExternal: (url) => ipcClient.call(IPC_SHELL.OPEN_EXTERNAL, url)
+    },
+
+    // 应用信息和用户体验优化上报
+    app: {
+      fetchNotices: (options = {}) => ipcClient.call(IPC_APP.FETCH_NOTICES, options),
+      submitFeedback: (payload = {}) => ipcClient.call(IPC_APP.SUBMIT_FEEDBACK, payload),
+      uploadLogs: (payload = {}) => ipcClient.call(IPC_APP.UPLOAD_LOGS, payload),
+      reportHealth: (payload = {}) => ipcClient.call(IPC_APP.REPORT_HEALTH, payload)
     }
   }
 

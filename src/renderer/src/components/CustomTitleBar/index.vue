@@ -194,9 +194,8 @@
           </el-button>
         </el-tooltip>
 
-        <el-tooltip content="公告" placement="bottom">
+        <el-tooltip v-if="showNoticeEntry" content="公告" placement="bottom">
           <el-button
-            v-if="showNoticeEntry"
             class="global-notice-btn no-drag"
             size="small"
             text
@@ -211,9 +210,8 @@
           </el-button>
         </el-tooltip>
 
-        <el-tooltip content="GitHub 项目" placement="bottom">
+        <el-tooltip v-if="isMac && appHomepage" content="GitHub 项目" placement="bottom">
           <el-button
-            v-if="isMac && appHomepage"
             class="global-github-btn no-drag"
             size="small"
             text
@@ -336,6 +334,7 @@ import {
 } from '@element-plus/icons-vue'
 import { isMac as isMacPlatform } from '@renderer/utils/platform'
 import { IPC_APP, IPC_SHELL, IPC_WINDOW } from '@shared/ipc-channels'
+import { APP_DESCRIPTION, APP_HOMEPAGE } from '@shared/const'
 import { Bell } from '@lucide/vue'
 import UpdateDialog from '@renderer/components/UpdateManager/UpdateDialog.vue'
 import FeedbackDialog from '@renderer/components/FeedbackDialog/index.vue'
@@ -356,8 +355,8 @@ const formatVersion = (version) => {
 // 应用状态
 const isMac = ref(isMacPlatform())
 const appVersion = ref('')
-const appHomepage = ref('')
-const appDescription = ref('')
+const appHomepage = ref(APP_HOMEPAGE)
+const appDescription = ref(APP_DESCRIPTION)
 const runtimeInfo = ref({})
 const apiConfig = ref({
   apiBaseUrl: '',
@@ -412,7 +411,6 @@ const noticeVisible = ref(false)
 const notices = ref([])
 const activeNotice = ref(null)
 const noticeReadVersion = ref(0)
-let appHealthReported = false
 let appNoticeChecked = false
 const silentChecking = ref(false)
 const pendingNoticeAutoOpen = ref(false)
@@ -571,9 +569,6 @@ const openFeedback = async () => {
   feedbackVisible.value = true
 }
 
-const APP_HEALTH_SESSION_KEY = 'qzone.app-health.reported.launch'
-const APP_INSTALL_ID_KEY = 'qzone.analytics.install-id'
-
 const getNoticeStorageKey = (notice) =>
   notice?.id ? `qzone.notice.dismissed.${notice.id}.${notice.updatedAt || ''}` : ''
 
@@ -593,62 +588,15 @@ const dismissNotice = (notice) => {
 const openNoticeCenter = async () => {
   pendingNoticeAutoOpen.value = false
   noticeVisible.value = true
+  if (activeNotice.value) {
+    reportAppEvent('notice_shown', { source: 'manual', target: activeNotice.value.id || '' })
+  }
   await fetchAppNotice({ force: true, openWhenUnread: false })
 }
 
 // 系统刷新
 const refreshSystem = () => {
   window.location.reload()
-}
-
-const getAppLaunchId = () => {
-  const launchId = runtimeInfo.value?.launchId
-  return typeof launchId === 'string' && launchId ? launchId : ''
-}
-
-const getAppSessionId = () => getAppLaunchId() || null
-
-const getInstallId = () => {
-  try {
-    const cached = localStorage.getItem(APP_INSTALL_ID_KEY)
-    if (cached) return cached
-    const nextId =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `install_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`
-    localStorage.setItem(APP_INSTALL_ID_KEY, nextId)
-    return nextId
-  } catch {
-    return 'install_unavailable'
-  }
-}
-
-const hasSessionHealthReported = () => {
-  try {
-    const launchId = getAppLaunchId()
-    return !!launchId && sessionStorage.getItem(APP_HEALTH_SESSION_KEY) === launchId
-  } catch {
-    return false
-  }
-}
-
-const markSessionHealthReported = () => {
-  try {
-    const launchId = getAppLaunchId()
-    if (launchId) {
-      sessionStorage.setItem(APP_HEALTH_SESSION_KEY, launchId)
-    }
-  } catch {
-    // ignore storage failures
-  }
-}
-
-const clearSessionHealthReported = () => {
-  try {
-    sessionStorage.removeItem(APP_HEALTH_SESSION_KEY)
-  } catch {
-    // ignore storage failures
-  }
 }
 
 // 版本号点击事件
@@ -913,25 +861,22 @@ const handleUpdateError = (error) => {
 // 获取应用信息
 const loadAppInfo = async () => {
   try {
-    const appInfo = await window.api.invoke(IPC_APP.GET_INFO)
+    const response = await window.api.invoke(IPC_APP.GET_INFO)
+    const appInfo = response?.data || response
     if (appInfo) {
       runtimeInfo.value = appInfo
-      if (appInfo.description) {
-        appDescription.value = appInfo.description
-      }
-      if (appInfo.version) {
-        appVersion.value = formatVersion(appInfo.version)
-      }
+      appDescription.value =
+        appInfo.description || appInfo.appDescription || appInfo.displayName || APP_DESCRIPTION
+      appVersion.value = formatVersion(appInfo.version || appInfo.appVersion)
       if (typeof appInfo.isMac === 'boolean') {
         isMac.value = appInfo.isMac
       }
-      if (appInfo.homepage) {
-        appHomepage.value = appInfo.homepage
-      }
+      appHomepage.value = appInfo.homepage || APP_HOMEPAGE
     }
   } catch (error) {
     console.warn('获取应用信息失败:', error)
-    // 不设置任何默认值，让组件根据数据的存在与否决定是否显示
+    appDescription.value = APP_DESCRIPTION
+    appHomepage.value = APP_HOMEPAGE
   }
 }
 
@@ -961,49 +906,25 @@ const loadApiConfig = async (forceRefresh = false) => {
   }
 }
 
-const buildHealthPayload = () => {
-  const appInfo = runtimeInfo.value || {}
-  return {
-    event: 'app_launch',
-    appVersion: appVersion.value || formatVersion(appInfo.version) || 'unknown',
-    system: [appInfo.platform || 'unknown', appInfo.arch || 'unknown'].join(' / '),
-    installMode: appInfo.isPackaged ? '安装包' : '开发模式',
-    installId: getInstallId(),
-    sessionId: getAppSessionId()
-  }
-}
-
 const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => {
   if ((appNoticeChecked && !force) || !apiBaseUrl.value) return
   appNoticeChecked = true
 
-  const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 3500)
-  const shouldReportHealth = !appHealthReported && !hasSessionHealthReported()
-  const method = shouldReportHealth ? 'POST' : 'GET'
-  const body = shouldReportHealth ? JSON.stringify({ health: buildHealthPayload() }) : undefined
-  if (shouldReportHealth) {
-    appHealthReported = true
-    markSessionHealthReported()
-  }
-
   try {
-    const res = await fetch(`${apiBaseUrl.value}/api/notice`, {
-      method,
-      headers: shouldReportHealth ? { 'Content-Type': 'application/json' } : undefined,
-      body,
-      signal: controller.signal
+    const payload = await window.QzoneAPI.app.fetchNotices({
+      forceRefresh: force,
+      page: window.location.hash || '#/index'
     })
-    const payload = res.ok ? await res.json() : null
-    const nextNotices = Array.isArray(payload?.data?.notices)
-      ? payload.data.notices.filter((notice) => notice?.id && notice.title && notice.content)
+    const nextNotices = Array.isArray(payload?.notices)
+      ? payload.notices.filter((notice) => notice?.id && notice.title && notice.content)
       : []
-    const currentNotice = payload?.data?.notice
+    const currentNotice = payload?.notice
 
     notices.value = nextNotices.length ? nextNotices : currentNotice?.id ? [currentNotice] : []
     activeNotice.value = currentNotice?.id ? currentNotice : notices.value[0] || null
 
     if (openWhenUnread && activeNotice.value && !isNoticeDismissed(activeNotice.value)) {
+      reportAppEvent('notice_shown', { source: 'auto', target: activeNotice.value.id || '' })
       if (dialogVisible.value || pendingUpdateDialogOpen.value) {
         pendingNoticeAutoOpen.value = true
       } else {
@@ -1013,13 +934,19 @@ const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => 
     }
   } catch (error) {
     console.debug('[AppNotice] check skipped:', error)
-    if (shouldReportHealth) {
-      appHealthReported = false
-      clearSessionHealthReported()
-    }
-  } finally {
-    window.clearTimeout(timeout)
   }
+}
+
+const reportAppEvent = (event, properties = {}) => {
+  if (!window.QzoneAPI?.app?.reportHealth) return
+  window.QzoneAPI.app
+    .reportHealth({
+      event,
+      page: window.location.hash || '#/index',
+      success: true,
+      properties
+    })
+    .catch(() => {})
 }
 
 // 清理监听器
