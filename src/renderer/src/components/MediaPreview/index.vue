@@ -363,6 +363,26 @@ const imageDisplaySrc = computed(() => imageFallbackSrc.value || imageSourceCand
 const currentActionSrc = computed(() =>
   current.value?.type === 'image' ? imageDisplaySrc.value : current.value?.src || ''
 )
+const nextImageCandidate = () => {
+  const candidates = imageSourceCandidates.value
+  const currentCandidateIndex = Math.max(candidates.indexOf(imageDisplaySrc.value), 0)
+  return candidates[currentCandidateIndex + 1] || ''
+}
+const showNextImageCandidate = () => {
+  const nextSrc = nextImageCandidate()
+  if (!nextSrc) return false
+  imageFallbackSrc.value = nextSrc
+  mediaLoading.value = true
+  mediaError.value = false
+  return true
+}
+const isQzoneUnavailableImage = (img) => {
+  if (!img || current.value?.type !== 'image') return false
+  const src = img.currentSrc || img.src || ''
+  if (!/photo\.store\.qq\.com\/psc\?/i.test(src)) return false
+  if (!/[/?&](?:b|r|raw)(?:[&=]|$)/i.test(src)) return false
+  return img.naturalWidth === 340 && img.naturalHeight === 320
+}
 
 const showBoundary = (text) => {
   boundaryHint.value = text
@@ -471,18 +491,15 @@ const scrollThumbIntoView = (i) => {
   })
 }
 
-const onMediaLoad = () => {
+const onMediaLoad = (event) => {
+  if (isQzoneUnavailableImage(event?.target) && showNextImageCandidate()) {
+    return
+  }
   mediaLoading.value = false
 }
 const onMediaError = () => {
   if (current.value?.type === 'image') {
-    const candidates = imageSourceCandidates.value
-    const currentCandidateIndex = Math.max(candidates.indexOf(imageDisplaySrc.value), 0)
-    const nextSrc = candidates[currentCandidateIndex + 1]
-    if (nextSrc) {
-      imageFallbackSrc.value = nextSrc
-      mediaLoading.value = true
-      mediaError.value = false
+    if (showNextImageCandidate()) {
       return
     }
   }
@@ -517,9 +534,15 @@ const copyLink = async () => {
     showBoundary('复制失败')
   }
 }
-const openExternal = () => {
+const openExternal = async () => {
   if (!currentActionSrc.value) return
-  window.QzoneAPI?.shell?.openExternal?.(currentActionSrc.value)
+  try {
+    await window.QzoneAPI?.shell?.openExternal?.(currentActionSrc.value)
+    showBoundary('正在打开浏览器')
+  } catch (e) {
+    console.error('[MediaPreview] open external failed:', e)
+    showBoundary('打开浏览器失败')
+  }
 }
 
 let wheelLock = 0
