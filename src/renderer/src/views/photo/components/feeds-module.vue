@@ -94,18 +94,47 @@
                     <span class="mb-time">{{ message.feedstime }}</span>
                   </div>
                 </header>
-                <RichText
-                  v-if="message.contentText"
-                  class="mb-content"
-                  :text="message.contentText"
-                  @mention-click="onCommentAuthorClick"
-                />
+                <div v-if="message.contentParts.length" class="mb-content-flow">
+                  <template v-for="(part, index) in message.contentParts" :key="`${message.tid}-part-${index}`">
+                    <RichText
+                      v-if="part.type === 'text'"
+                      class="mb-content"
+                      :text="part.text"
+                      @mention-click="onCommentAuthorClick"
+                    />
+                    <button
+                      v-else-if="part.type === 'image'"
+                      class="mb-image"
+                      type="button"
+                      :style="messageImageStyle(part)"
+                      @click="openPreview(message, part.mediaIndex || 0)"
+                    >
+                      <img
+                        :src="part.thumb"
+                        :alt="part.alt"
+                        loading="lazy"
+                        referrerpolicy="no-referrer"
+                        @error="onMessageImageError"
+                      />
+                    </button>
+                  </template>
+                </div>
                 <div v-if="message.signature" class="mb-signature">
                   {{ message.signature }}
                 </div>
                 <div v-if="message.replies.length" class="mb-replies">
+                  <div class="mb-replies-head">
+                    <span>{{ message.replies.length }} 条回复</span>
+                    <button
+                      v-if="messageReplyOverflow(message)"
+                      type="button"
+                      @click="toggleMessageReplies(message.tid)"
+                    >
+                      {{ isMessageRepliesExpanded(message.tid) ? '收起' : '展开全部' }}
+                    </button>
+                  </div>
                   <div
-                    v-for="reply in message.replies"
+                    v-for="reply in visibleMessageReplies(message)"
                     :key="reply.id"
                     class="mb-reply"
                   >
@@ -390,6 +419,7 @@ const activeHostUin = computed(() => normalizeQzoneUin(hostUinOverride?.value ||
 
 const PAGE_SIZE = 10
 const LAST_YEAR_MIN = 2010
+const MESSAGE_REPLY_PREVIEW_COUNT = 4
 
 // ============= 数据源配置 =============
 //   key:     内部标识
@@ -571,6 +601,7 @@ const downloadingFeedIds = ref(new Set())
 //   expanded=false 时只显示 inlineComments（列表 HTML 内嵌的前几条）
 //   expanded=true  时显示二次拉到的完整评论列表
 const commentsByTid = reactive({})
+const messageRepliesExpanded = reactive({})
 
 // ============= 访客 =============
 const MOD_NAME = { 0: '空间', 2: '相册', 8: '动态', 10: '日志', 43: '个人档' }
@@ -1391,6 +1422,83 @@ const decodeHtmlText = (value) => {
   return normalizePlainText(doc.body?.textContent || source)
 }
 
+const messageImageName = (url, index) => {
+  try {
+    const parsed = new URL(toHttps(url))
+    const filename = parsed.pathname.split('/').filter(Boolean).pop() || ''
+    return filename || `message_image_${index + 1}`
+  } catch {
+    return `message_image_${index + 1}`
+  }
+}
+
+const normalizeMessageImageUrl = (url) => {
+  const safeUrl = toHttps(String(url || '').trim())
+  if (!safeUrl || !isImageUrl(safeUrl)) return ''
+  return safeUrl
+}
+
+const parseMessageContent = (value, seed = {}) => {
+  const source = String(value || '')
+  if (!source) return { text: '', parts: [], media: [] }
+
+  const parts = []
+  const media = []
+  const imageRe = /\[img(?:,(\d{1,5}),(\d{1,5}))?\]([\s\S]*?)\[\/img\]/gi
+  let lastIndex = 0
+  let match
+
+  const pushText = (text) => {
+    const cleanText = decodeHtmlText(text)
+    if (cleanText) parts.push({ type: 'text', text: cleanText })
+  }
+
+  while ((match = imageRe.exec(source))) {
+    if (match.index > lastIndex) pushText(source.slice(lastIndex, match.index))
+
+    const url = normalizeMessageImageUrl(match[3])
+    if (url) {
+      const width = Number(match[1]) || 0
+      const height = Number(match[2]) || 0
+      const mediaIndex = media.length
+      const origin = toQzoneOriginalUrl(url)
+      const imageMedia = {
+        id: `${seed.id || 'msgb'}_image_${mediaIndex}`,
+        name: messageImageName(origin || url, mediaIndex),
+        type: 'image',
+        thumb: url,
+        origin: origin || url,
+        url: origin || url,
+        pre: url,
+        raw: origin || url,
+        urls: [origin || url, url].filter(Boolean),
+        width,
+        height,
+        is_video: false,
+        modifytime: seed.time || 0
+      }
+      media.push(imageMedia)
+      parts.push({
+        type: 'image',
+        mediaIndex,
+        thumb: imageMedia.thumb,
+        alt: imageMedia.name,
+        width,
+        height
+      })
+    }
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < source.length) pushText(source.slice(lastIndex))
+
+  return {
+    text: parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n').trim(),
+    parts,
+    media
+  }
+}
+
 const parseQzoneDateTime = (value) => {
   if (!value) return 0
   if (typeof value === 'number') return value > 100000000000 ? Math.floor(value / 1000) : value
@@ -1411,11 +1519,15 @@ const parseQzoneDateTime = (value) => {
 
 const normalizeMessageReply = (reply, parentId) => {
   const time = parseQzoneDateTime(reply?.pubtime || reply?.time || reply?.replytime || 0)
+  const content = parseMessageContent(reply?.ubbContent || reply?.content || reply?.htmlContent || '', {
+    id: parentId,
+    time
+  })
   return {
     id: reply?.id || `${parentId}-${reply?.uin || ''}-${reply?.time || reply?.pubtime || ''}`,
     uin: String(reply?.uin || reply?.owner_uin || ''),
     author: decodeHtmlText(reply?.nickname || reply?.nick || reply?.name || ''),
-    text: decodeHtmlText(reply?.ubbContent || reply?.content || reply?.htmlContent || ''),
+    text: content.text,
     time: time ? formatTime(time) : ''
   }
 }
@@ -1423,7 +1535,10 @@ const normalizeMessageReply = (reply, parentId) => {
 const normalizeMessageBoard = (raw, meta = {}) => {
   const time = parseQzoneDateTime(raw.pubtime)
   const uin = String(raw.uin || '')
-  const contentText = decodeHtmlText(raw.ubbContent || raw.htmlContent || '')
+  const content = parseMessageContent(raw.ubbContent || raw.htmlContent || '', {
+    id: raw.id || `${uin}-${raw.pubtime || ''}`,
+    time
+  })
   const index = Number(meta.index) || 0
   const total = Number(meta.total) || 0
   const start = Number(meta.start) || 0
@@ -1445,10 +1560,11 @@ const normalizeMessageBoard = (raw, meta = {}) => {
     actionVerb: '',
     actionTarget: '',
     actionIcon: null,
-    contentText,
+    contentText: content.text,
+    contentParts: content.parts,
     contentHtml: '',
-    media: [],
-    images: [],
+    media: content.media,
+    images: content.media.map((item) => item.origin || item.thumb),
     likeCount: 0,
     isLiked: false,
     likers: [],
@@ -1507,6 +1623,28 @@ const onMediaThumbError = (feed, index, media) => {
     return
   }
   brokenThumbs.add(key)
+}
+const isMessageRepliesExpanded = (tid) => !!messageRepliesExpanded[tid]
+const messageReplyOverflow = (message) => (message?.replies?.length || 0) > MESSAGE_REPLY_PREVIEW_COUNT
+const visibleMessageReplies = (message) => {
+  const replies = message?.replies || []
+  if (!messageReplyOverflow(message) || isMessageRepliesExpanded(message.tid)) return replies
+  return replies.slice(0, MESSAGE_REPLY_PREVIEW_COUNT)
+}
+const toggleMessageReplies = (tid) => {
+  messageRepliesExpanded[tid] = !messageRepliesExpanded[tid]
+}
+const messageImageStyle = (part) => {
+  const width = Number(part?.width) || 0
+  const height = Number(part?.height) || 0
+  if (!width || !height) return { aspectRatio: '16 / 9' }
+  const ratio = Math.max(0.4, Math.min(2.6, width / height))
+  return { aspectRatio: String(ratio) }
+}
+const onMessageImageError = (event) => {
+  const img = event.target
+  const wrap = img?.closest?.('.mb-image')
+  if (wrap) wrap.classList.add('is-broken')
 }
 const avatarUrl = (uin) =>
   uin ? `https://qlogo4.store.qq.com/qzone/${uin}/${uin}/100` : ''
@@ -1927,6 +2065,7 @@ const resetFeedRuntime = (source) => {
   brokenThumbs.clear()
   Object.keys(thumbRetryIndexes).forEach((key) => delete thumbRetryIndexes[key])
   Object.keys(commentsByTid).forEach((key) => delete commentsByTid[key])
+  Object.keys(messageRepliesExpanded).forEach((key) => delete messageRepliesExpanded[key])
   pushStats()
 }
 
@@ -2318,16 +2457,22 @@ defineExpose({ refresh: handleRefresh })
 .mb-card {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);
-  gap: 12px;
-  padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.025);
+  gap: 14px;
+  padding: 16px 18px;
+  background:
+    linear-gradient(135deg, rgba(96, 165, 250, 0.055), rgba(255, 255, 255, 0.018) 38%),
+    rgba(255, 255, 255, 0.024);
   border: 1px solid rgba(255, 255, 255, 0.055);
   border-radius: 12px;
-  transition: background 0.18s, border-color 0.18s;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition: background 0.18s, border-color 0.18s, transform 0.18s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background:
+      linear-gradient(135deg, rgba(96, 165, 250, 0.075), rgba(255, 255, 255, 0.025) 38%),
+      rgba(255, 255, 255, 0.032);
     border-color: rgba(96, 165, 250, 0.14);
+    transform: translateY(-1px);
   }
 }
 
@@ -2350,6 +2495,7 @@ defineExpose({ refresh: handleRefresh })
   object-fit: cover;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .mb-body {
@@ -2422,6 +2568,13 @@ defineExpose({ refresh: handleRefresh })
   white-space: nowrap;
 }
 
+.mb-content-flow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
 .mb-content {
   color: rgba(255, 255, 255, 0.88);
   font-size: 13.5px;
@@ -2437,6 +2590,61 @@ defineExpose({ refresh: handleRefresh })
     width: 1em;
     height: 1em;
     vertical-align: -0.12em;
+  }
+}
+
+.mb-image {
+  position: relative;
+  width: min(420px, 100%);
+  max-height: 260px;
+  padding: 0;
+  display: block;
+  overflow: hidden;
+  border: 1px solid rgba(96, 165, 250, 0.16);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(96, 165, 250, 0.12), rgba(34, 211, 238, 0.04)),
+    rgba(255, 255, 255, 0.035);
+  cursor: zoom-in;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+
+  img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    transition: transform 0.22s ease;
+  }
+
+  &:hover {
+    transform: translateY(-1px);
+    border-color: rgba(96, 165, 250, 0.32);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+
+    img {
+      transform: scale(1.025);
+    }
+  }
+
+  &.is-broken {
+    min-height: 76px;
+    cursor: default;
+
+    &::after {
+      content: '图片加载失败';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.46);
+      font-size: 12px;
+    }
+
+    img {
+      opacity: 0;
+    }
   }
 }
 
@@ -2457,18 +2665,64 @@ defineExpose({ refresh: handleRefresh })
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 9px 10px;
-  background: rgba(96, 165, 250, 0.045);
-  border: 1px solid rgba(96, 165, 250, 0.08);
-  border-radius: 8px;
+  max-height: 270px;
+  overflow: auto;
+  padding: 10px 12px;
+  background:
+    linear-gradient(180deg, rgba(96, 165, 250, 0.065), rgba(96, 165, 250, 0.025)),
+    rgba(10, 18, 34, 0.52);
+  border: 1px solid rgba(96, 165, 250, 0.1);
+  border-radius: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96, 165, 250, 0.45) rgba(255, 255, 255, 0.04);
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 999px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(96, 165, 250, 0.45);
+    border-radius: 999px;
+  }
+}
+
+.mb-replies-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 2px;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 12px;
+
+  button {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    color: rgba(96, 165, 250, 0.95);
+    background: rgba(96, 165, 250, 0.08);
+    border: 1px solid rgba(96, 165, 250, 0.16);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+
+    &:hover {
+      background: rgba(96, 165, 250, 0.14);
+      border-color: rgba(96, 165, 250, 0.26);
+    }
+  }
 }
 
 .mb-reply {
   min-width: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(54px, auto) minmax(0, 1fr) auto;
   align-items: baseline;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 8px;
   color: rgba(255, 255, 255, 0.76);
   font-size: 12.5px;
   line-height: 1.55;
@@ -2482,7 +2736,6 @@ defineExpose({ refresh: handleRefresh })
 
 .mb-reply-text {
   min-width: 0;
-  flex: 1 1 180px;
   word-break: break-word;
 }
 
