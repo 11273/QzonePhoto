@@ -66,6 +66,9 @@ export function createPhotoHandlers(service) {
     },
     [IPC_PHOTO.GET_FAV_LIST]: async (_, { payload, headers }) => {
       return photoService.getFavList(payload, headers)
+    },
+    [IPC_PHOTO.GET_MESSAGE_BOARD]: async (_, { payload, headers }) => {
+      return photoService.getMessageBoard(payload, headers)
     }
   }
 }

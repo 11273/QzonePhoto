@@ -69,6 +69,8 @@ try {
     getLastYearFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_LAST_YEAR_FEEDS, data, meta),
     // 「我的收藏」列表（get_fav_list）
     getFavList: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FAV_LIST, data, meta),
+    // 获取「留言板」列表
+    getMessageBoard: (data, meta) => ipcClient.call(IPC_PHOTO.GET_MESSAGE_BOARD, data, meta),
     // 获取好友亲密度列表
     getFriendList: (data, meta) => ipcClient.call(IPC_FRIEND.GET_FRIEND_LIST, data, meta),
     // 获取 QQ 好友及分组

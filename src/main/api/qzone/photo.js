@@ -944,3 +944,55 @@ export async function feeds2_html_today_lastyear(uin, p_skey, opts = {}) {
     feeds: list
   }
 }
+
+/**
+ * 「留言板」列表（m.qzone.qq.com/cgi-bin/new/get_msgb）
+ *   - 官方 PC 页每页 10 条，分页用 start / num
+ *   - 楼层号由 total - start - index 反推
+ *   - 只读接口，不包含发表 / 回复 / 删除能力
+ */
+export async function get_msgb(uin, p_skey, hostUin, opts = {}) {
+  const start = Math.max(0, Number(opts.start) || 0)
+  const num = Math.min(50, Math.max(1, Number(opts.num) || 10))
+  const targetUin = rawUin(hostUin || uin)
+  const url = 'https://user.qzone.qq.com/proxy/domain/m.qzone.qq.com/cgi-bin/new/get_msgb'
+  const params = {
+    uin: rawUin(uin),
+    hostUin: targetUin,
+    num,
+    start,
+    hostword: 0,
+    essence: 1,
+    r: Math.random(),
+    iNotice: 0,
+    inCharset: 'utf-8',
+    outCharset: 'utf-8',
+    format: 'jsonp',
+    ref: 'qzone',
+    g_tk: getGTK(p_skey)
+  }
+
+  const response = await request.get(url, {
+    params,
+    telemetry: false,
+    headers: {
+      Cookie: `uin=${uin};p_uin=${uin};p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${targetUin}`
+    }
+  })
+  const body = response.data || {}
+  const data = body.data || {}
+  const comments = Array.isArray(data.commentList) ? data.commentList : []
+  return {
+    code: Number(body.code ?? 0),
+    message: body.message || '',
+    total: Number(data.total) || 0,
+    auditNum: Number(data.auditNum) || 0,
+    auditON: !!data.auditON,
+    authorInfo: data.authorInfo || {},
+    start,
+    num,
+    hasMore: start + comments.length < (Number(data.total) || 0),
+    comments
+  }
+}

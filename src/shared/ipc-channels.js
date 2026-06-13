@@ -51,7 +51,9 @@ export const IPC_PHOTO = {
   /** 「那年今日」时间线（feeds2_html_today_lastyear） */
   GET_LAST_YEAR_FEEDS: 'photo:getLastYearFeeds',
   /** 「我的收藏」列表（get_fav_list） */
-  GET_FAV_LIST: 'photo:getFavList'
+  GET_FAV_LIST: 'photo:getFavList',
+  /** 「留言板」列表（get_msgb） */
+  GET_MESSAGE_BOARD: 'photo:getMessageBoard'
 }
 
 export const IPC_USER = {
