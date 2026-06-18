@@ -9,6 +9,8 @@ import { JSONFile } from 'lowdb/node'
 import { APP_NAME } from '@shared/const'
 import { ServiceNames } from '@main/services/service-manager'
 import { reportHealthEvent, telemetryBuckets } from '@main/services/app-telemetry'
+import { getPhotoFileTime } from '@main/utils/download-file-time.mjs'
+import { isVideoPhoto, mergeEnrichedImagesInOriginalOrder } from '@main/utils/photo-order.mjs'
 // 直接定义必要的默认配置，避免使用外部常量系统
 const DEFAULT_CONCURRENCY = 3
 const DEFAULT_PAGE_SIZE = 50
@@ -351,7 +353,8 @@ export class DownloadService {
       album_id: options.albumId,
       album_name: options.albumName,
       source_key: options.sourceKey || '',
-      referer: options.referer || ''
+      referer: options.referer || '',
+      file_time: options.fileTime ? options.fileTime.getTime() : null
     }
     if (options.requestHeaders) {
       Object.defineProperty(task, 'request_headers', {
@@ -519,9 +522,8 @@ export class DownloadService {
     const taskIds = []
     const requestHeaders = this.buildQzoneImageRequestHeaders(album, userInfo, headers)
 
-    // 分离视频和图片
-    const videos = photos.filter((photo) => photo.is_video)
-    let images = photos.filter((photo) => !photo.is_video)
+    const images = photos.filter((photo) => !isVideoPhoto(photo))
+    let enrichedImages = images
 
     // 好友相册：通过 floatview API 获取 raw 原图 URL
     if (
@@ -531,38 +533,83 @@ export class DownloadService {
       images.some((photo) => !photo.raw) &&
       images.length > 0
     ) {
-      images = await this.enrichPhotosWithRaw(images, album, userInfo, headers)
+      enrichedImages = await this.enrichPhotosWithRaw(images, album, userInfo, headers)
     }
 
-    // 处理图片
-    for (let i = 0; i < images.length; i++) {
-      const photo = images[i]
-      const filename = this.generatePhotoFilename(photo)
-      const task = this.createTask({
-        url: photo.raw || photo.url || photo.pre,
-        filename,
-        directory: albumDir,
-        total: photo.size || 0,
-        type: 'image',
-        thumbnailUrl: photo.pre || photo.url,
-        albumId: album.id || album.name,
-        albumName: album.name,
-        sourceKey: photo.sourceKey || album.sourceKey || '',
-        referer: album.referer || '',
-        requestHeaders,
-        priority: PRIORITY.NORMAL
-      })
-      tasks.push(task)
-      taskIds.push(task.id)
-    }
+    const orderedPhotos = mergeEnrichedImagesInOriginalOrder(photos, enrichedImages)
 
-    // 处理视频（需要获取详细信息）
-    if (videos.length > 0) {
+    for (const photo of orderedPhotos) {
+      if (!isVideoPhoto(photo)) {
+        const filename = this.generatePhotoFilename(photo)
+        const task = this.createTask({
+          url: photo.raw || photo.url || photo.pre,
+          filename,
+          directory: albumDir,
+          total: photo.size || 0,
+          type: 'image',
+          thumbnailUrl: photo.pre || photo.url,
+          albumId: album.id || album.name,
+          albumName: album.name,
+          sourceKey: photo.sourceKey || album.sourceKey || '',
+          referer: album.referer || '',
+          requestHeaders,
+          fileTime: getPhotoFileTime(photo),
+          priority: PRIORITY.NORMAL
+        })
+        tasks.push(task)
+        taskIds.push(task.id)
+        continue
+      }
+
+      const video = photo
       try {
         if (!userInfo?.uin || !userInfo?.p_skey) {
           console.error('无法获取用户信息，跳过视频处理', userInfo)
-          // 如果没有用户信息，使用原始信息处理视频
-          for (const video of videos) {
+          const filename = this.generatePhotoFilename(video)
+          const task = this.createTask({
+            url: video.raw || video.url || video.pre,
+            filename,
+            directory: albumDir,
+            total: video.size || 0,
+            type: 'video',
+            thumbnailUrl: video.pre || video.url,
+            albumId: album.id || album.name,
+            albumName: album.name,
+            sourceKey: video.sourceKey || album.sourceKey || '',
+            referer: album.referer || '',
+            requestHeaders,
+            fileTime: getPhotoFileTime(video),
+            priority: PRIORITY.NORMAL
+          })
+          tasks.push(task)
+          taskIds.push(task.id)
+        } else {
+          const videoInfo = await this.getVideoDetailInfo(video, userInfo, album, headers)
+          if (videoInfo) {
+            const filename = this.generatePhotoFilename(videoInfo)
+            const task = this.createTask({
+              url:
+                videoInfo.video_download_url ||
+                videoInfo.video_play_url ||
+                videoInfo?.video_info?.video_url ||
+                videoInfo.pre,
+              filename,
+              directory: albumDir,
+              total: videoInfo.video_size || videoInfo.size || 0,
+              type: 'video',
+              thumbnailUrl: videoInfo.cover_url || videoInfo.pre || videoInfo.url,
+              albumId: album.id || album.name,
+              albumName: album.name,
+              sourceKey: video.sourceKey || album.sourceKey || '',
+              referer: album.referer || '',
+              requestHeaders,
+              fileTime: getPhotoFileTime(videoInfo) || getPhotoFileTime(video),
+              priority: PRIORITY.NORMAL
+            })
+            tasks.push(task)
+            taskIds.push(task.id)
+          } else {
+            console.warn(`获取视频详细信息失败，使用原始信息: ${video.name}`)
             const filename = this.generatePhotoFilename(video)
             const task = this.createTask({
               url: video.raw || video.url || video.pre,
@@ -576,84 +623,33 @@ export class DownloadService {
               sourceKey: video.sourceKey || album.sourceKey || '',
               referer: album.referer || '',
               requestHeaders,
+              fileTime: getPhotoFileTime(video),
               priority: PRIORITY.NORMAL
             })
             tasks.push(task)
             taskIds.push(task.id)
           }
-        } else {
-          // 逐个获取视频详细信息
-          for (const video of videos) {
-            try {
-              const videoInfo = await this.getVideoDetailInfo(video, userInfo, album, headers)
-              if (videoInfo) {
-                const filename = this.generatePhotoFilename(videoInfo)
-                const task = this.createTask({
-                  url:
-                    videoInfo.video_download_url ||
-                    videoInfo.video_play_url ||
-                    videoInfo?.video_info?.video_url ||
-                    videoInfo.pre,
-                  filename,
-                  directory: albumDir,
-                  total: videoInfo.video_size || videoInfo.size || 0,
-                  type: 'video',
-                  thumbnailUrl: videoInfo.cover_url || videoInfo.pre || videoInfo.url,
-                  albumId: album.id || album.name,
-                  albumName: album.name,
-                  sourceKey: video.sourceKey || album.sourceKey || '',
-                  referer: album.referer || '',
-                  requestHeaders,
-                  priority: PRIORITY.NORMAL
-                })
-                tasks.push(task)
-                taskIds.push(task.id)
-              } else {
-                // 如果获取视频详细信息失败，使用原始信息
-                console.warn(`获取视频详细信息失败，使用原始信息: ${video.name}`)
-                const filename = this.generatePhotoFilename(video)
-                const task = this.createTask({
-                  url: video.raw || video.url || video.pre,
-                  filename,
-                  directory: albumDir,
-                  total: video.size || 0,
-                  type: 'video',
-                  thumbnailUrl: video.pre || video.url,
-                  albumId: album.id || album.name,
-                  albumName: album.name,
-                  sourceKey: video.sourceKey || album.sourceKey || '',
-                  referer: album.referer || '',
-                  requestHeaders,
-                  priority: PRIORITY.NORMAL
-                })
-                tasks.push(task)
-                taskIds.push(task.id)
-              }
-            } catch (error) {
-              console.error(`处理视频 ${video.name} 失败:`, error)
-              // 出错时使用原始信息
-              const filename = this.generatePhotoFilename(video)
-              const task = this.createTask({
-                url: video.raw || video.url || video.pre,
-                filename,
-                directory: albumDir,
-                total: video.size || 0,
-                type: 'video',
-                thumbnailUrl: video.pre || video.url,
-                albumId: album.id || album.name,
-                albumName: album.name,
-                sourceKey: video.sourceKey || album.sourceKey || '',
-                referer: album.referer || '',
-                requestHeaders,
-                priority: PRIORITY.NORMAL
-              })
-              tasks.push(task)
-              taskIds.push(task.id)
-            }
-          }
         }
       } catch (error) {
-        console.error('处理视频批次失败:', error)
+        console.error(`处理视频 ${video.name} 失败:`, error)
+        const filename = this.generatePhotoFilename(video)
+        const task = this.createTask({
+          url: video.raw || video.url || video.pre,
+          filename,
+          directory: albumDir,
+          total: video.size || 0,
+          type: 'video',
+          thumbnailUrl: video.pre || video.url,
+          albumId: album.id || album.name,
+          albumName: album.name,
+          sourceKey: video.sourceKey || album.sourceKey || '',
+          referer: album.referer || '',
+          requestHeaders,
+          fileTime: getPhotoFileTime(video),
+          priority: PRIORITY.NORMAL
+        })
+        tasks.push(task)
+        taskIds.push(task.id)
       }
     }
 
@@ -924,6 +920,8 @@ export class DownloadService {
           //   console.debug(`[DownloadService] 文件已存在，跳过下载: ${task.filename}`)
           // }
 
+          await this.applyTaskFileTime(filePath, task)
+
           // 完成的任务从内存中移除
           this.activeTasks.delete(task.id)
           await this.updateTaskInDB(task)
@@ -944,6 +942,7 @@ export class DownloadService {
       await this.downloadFile(task, filePath, cancelToken)
 
       if (task.status !== TASK_STATUS.CANCELLED) {
+        await this.applyTaskFileTime(filePath, task)
         task.status = TASK_STATUS.COMPLETED
         task.progress = 100
         task.speed = 0
@@ -1086,6 +1085,20 @@ export class DownloadService {
     } catch (error) {
       await fs.promises.unlink(filePath).catch(() => {})
       throw error
+    }
+  }
+
+  async applyTaskFileTime(filePath, task) {
+    const fileTime = Number(task.file_time || 0)
+    if (!Number.isFinite(fileTime) || fileTime <= 0) return
+
+    const date = new Date(fileTime)
+    if (Number.isNaN(date.getTime())) return
+
+    try {
+      await fs.promises.utimes(filePath, date, date)
+    } catch (error) {
+      logger.warn(`设置文件时间失败 ${task.filename}:`, error?.message || error)
     }
   }
 
