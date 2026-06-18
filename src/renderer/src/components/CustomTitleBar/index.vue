@@ -121,22 +121,6 @@
 
     <!-- 右侧区域 -->
     <div ref="titleRightRef" class="title-bar-right">
-      <!-- 更新完成提示 -->
-      <transition name="fade">
-        <div v-if="showUpdateReady" class="update-ready no-drag">
-          <el-button
-            type="success"
-            size="small"
-            class="ready-btn"
-            title="更新已下载完成，点击重启安装"
-            @click="showUpdateDialog"
-          >
-            <el-icon><CircleCheck /></el-icon>
-            <span>重启安装</span>
-          </el-button>
-        </div>
-      </transition>
-
       <!-- 全局控制按钮组 -->
       <div ref="globalControlsRef" class="global-controls">
         <!-- 全局隐私模式切换 -->
@@ -322,7 +306,6 @@
 import { ref, reactive, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import {
   Close,
-  CircleCheck,
   CloseBold,
   SemiSelect,
   ArrowDownBold,
@@ -423,10 +406,6 @@ const showUpdateBadge = computed(() => {
 
 const showInlineDownloadProgress = computed(() => {
   return updateState.downloading && !dialogVisible.value
-})
-
-const showUpdateReady = computed(() => {
-  return updateState.downloaded && !updateState.downloading
 })
 
 const showUpdateStatusBlock = computed(() => {
@@ -1962,30 +1941,6 @@ watch([dialogVisible, noticeVisible], () => {
     0 0 0 2px rgba(52, 211, 153, 0.3),
     0 0 6px rgba(52, 211, 153, 0.6);
   animation: pulse-dot 2s ease-in-out infinite;
-}
-
-/* 更新完成按钮样式 */
-.update-ready {
-  display: flex;
-  align-items: center;
-  margin-right: 8px;
-}
-
-.ready-btn {
-  background: linear-gradient(90deg, #67c23a, #85ce61) !important;
-  border-color: #67c23a !important;
-  color: white !important;
-  padding: 4px 12px !important;
-  border-radius: 12px !important;
-  font-size: 11px !important;
-  height: 24px !important;
-  animation: glow 2s ease-in-out infinite alternate;
-}
-
-.ready-btn:hover {
-  background: linear-gradient(90deg, #85ce61, #67c23a) !important;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(103, 194, 58, 0.4) !important;
 }
 
 /* 动画效果 */

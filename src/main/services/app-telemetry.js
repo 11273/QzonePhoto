@@ -1,16 +1,29 @@
 import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
+import crypto from 'crypto'
 import axios from 'axios'
 import { app } from 'electron'
 import { getAppApiConfig } from '@main/config/app-api'
 import logger from '@main/core/logger'
+import {
+  classifyTelemetryError,
+  sanitizeDiagnosticLog,
+  sanitizeTelemetryProperties,
+  toCountBucket,
+  toDurationBucket,
+  toSizeBucket,
+  toSpeedBucket
+} from './telemetry-safety.mjs'
 
 const INSTALL_ID_FILENAME = 'analytics-install-id'
 const REQUEST_TIMEOUT_MS = 4500
+const LOG_UPLOAD_REUSE_WINDOW_MS = 5 * 60 * 1000
 const SESSION_ID = `${Date.now()}-${process.pid}`
 let installIdCache = ''
 let launchReported = false
+let pendingLogUpload = null
+let recentLogUpload = null
 
 export async function submitFeedback(payload = {}) {
   const config = await getAppApiConfig()
@@ -21,7 +34,9 @@ export async function submitFeedback(payload = {}) {
     ...payload,
     env: {
       ...buildRuntimeEnv(payload.env?.page),
-      ...(payload.env || {})
+      ...(payload.env || {}),
+      installId: await ensureInstallId(),
+      sessionId: SESSION_ID
     },
     createdAt: payload.createdAt || new Date().toISOString()
   }
@@ -31,6 +46,58 @@ export async function submitFeedback(payload = {}) {
     data: body
   })
   return parseFeedbackResponse(response)
+}
+
+export async function uploadDiagnosticLogs(options = {}) {
+  const config = await getAppApiConfig()
+  const baseUrls = getBaseUrls(config)
+  if (!baseUrls.length) throw new Error('日志上传服务未配置')
+
+  const logContent = await readLocalDiagnosticLog(options)
+  const sanitized = sanitizeDiagnosticLog(logContent)
+  if (!sanitized.trim()) throw new Error('没有可上传的诊断日志')
+
+  const installId = await ensureInstallId()
+  const body = {
+    ...buildRuntimeEnv(options.page),
+    installId,
+    sessionId: SESSION_ID,
+    reason: options.reason || 'manual_feedback',
+    content: sanitized
+  }
+
+  const fingerprint = createLogUploadFingerprint({
+    content: sanitized,
+    installId,
+    reason: body.reason
+  })
+  const now = Date.now()
+  if (
+    recentLogUpload?.fingerprint === fingerprint &&
+    now - recentLogUpload.createdAt < LOG_UPLOAD_REUSE_WINDOW_MS
+  ) {
+    return { ...recentLogUpload.result, reused: true }
+  }
+  if (pendingLogUpload?.fingerprint === fingerprint) {
+    return await pendingLogUpload.promise
+  }
+
+  const promise = sendDiagnosticLogUpload(baseUrls, body).then((result) => {
+    recentLogUpload = {
+      fingerprint,
+      createdAt: Date.now(),
+      result
+    }
+    return result
+  })
+  pendingLogUpload = { fingerprint, promise }
+  try {
+    return await promise
+  } finally {
+    if (pendingLogUpload?.fingerprint === fingerprint) {
+      pendingLogUpload = null
+    }
+  }
 }
 
 export async function fetchNotices(options = {}) {
@@ -94,15 +161,16 @@ async function requestWithFallback(baseUrls, endpoint, options) {
   let lastError = null
   for (const baseUrl of baseUrls) {
     try {
+      const headers = {
+        ...buildTelemetryHeaders(),
+        ...(options?.headers || {})
+      }
       return await axios({
+        ...options,
         url: `${baseUrl}${endpoint}`,
         timeout: REQUEST_TIMEOUT_MS,
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json'
-        },
-        validateStatus: () => true,
-        ...options
+        headers,
+        validateStatus: () => true
       })
     } catch (error) {
       lastError = error
@@ -112,11 +180,43 @@ async function requestWithFallback(baseUrls, endpoint, options) {
   throw lastError || new Error('遥测服务不可用')
 }
 
+function buildTelemetryHeaders() {
+  const userAgent = buildTelemetryUserAgent()
+  return {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    'User-Agent': userAgent,
+    'X-Qzone-Client': userAgent
+  }
+}
+
+function buildTelemetryUserAgent() {
+  const version = normalizeHeaderToken(app.getVersion() || 'unknown', 40)
+  const platform = normalizeHeaderToken(platformName(), 32)
+  const arch = normalizeHeaderToken(os.arch(), 24)
+  const mode = app.isPackaged ? 'packaged' : 'dev'
+  return `QzonePhoto/${version} (${platform}; ${arch}; ${mode})`
+}
+
+async function sendDiagnosticLogUpload(baseUrls, body) {
+  const response = await requestWithFallback(baseUrls, '/api/logs', {
+    method: 'post',
+    data: body
+  })
+  const data = response?.data || {}
+  if (response.status >= 400 || data?.ok === false) {
+    throw new Error(data?.message || '日志上传失败')
+  }
+  return data.data || data
+}
+
 function parseFeedbackResponse(response) {
   const data = response?.data || {}
   if (response.status === 429) return { ok: false, message: '提交太频繁了，请稍后再试' }
   if (response.status >= 500) return { ok: false, message: '反馈服务暂时不可用，请稍后再试' }
-  if (data?.ok === false) return { ok: false, message: data.message || '提交失败，请检查内容后再试' }
+  if (data?.ok === false) {
+    return { ok: false, message: data.message || '提交失败，请检查内容后再试' }
+  }
   return {
     ok: response.status >= 200 && response.status < 300,
     message: data.message || '反馈已提交',
@@ -189,35 +289,61 @@ function normalizeDuration(value) {
 }
 
 function normalizeText(value, maxLength = 120) {
-  return String(value || '')
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+  return stripControlChars(String(value || ''))
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, maxLength)
 }
 
 function normalizeProperties(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const allowed = [
-    'countBucket',
-    'latencyBucket',
-    'durationBucket',
-    'reason',
-    'source',
-    'target',
-    'mode',
-    'scope',
-    'status',
-    'errorCode',
-    'api'
-  ]
-  const result = {}
-  for (const key of allowed) {
-    if (!(key in value)) continue
-    const raw = value[key]
-    if (typeof raw === 'string') result[key] = normalizeText(raw, 120)
-    else if (typeof raw === 'number' && Number.isFinite(raw)) result[key] = Math.round(raw * 100) / 100
-    else if (typeof raw === 'boolean') result[key] = raw
+  return sanitizeTelemetryProperties(value)
+}
+
+function normalizeHeaderToken(value, maxLength = 80) {
+  return (
+    String(value || 'unknown')
+      .replace(/[\r\n;()]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, maxLength) || 'unknown'
+  )
+}
+
+function createLogUploadFingerprint(value) {
+  return crypto
+    .createHash('sha256')
+    .update([value.installId || '', value.reason || '', value.content || ''].join('\n'))
+    .digest('hex')
+}
+
+async function readLocalDiagnosticLog(options = {}) {
+  const logPath =
+    process.env.QZONE_DEV_LOG_PATH || path.join(app.getPath('userData'), 'qzone-helper-dev.log')
+  const extraLines = Array.isArray(options.extraLines) ? options.extraLines : []
+  let content = ''
+  try {
+    content = await fs.readFile(logPath, 'utf8')
+  } catch (error) {
+    logger.debug(`[Telemetry] 本地日志读取失败: ${error?.message || error}`)
   }
-  return Object.keys(result).length ? result : undefined
+  const extra = extraLines
+    .map((line) => (typeof line === 'string' ? line : JSON.stringify(line)))
+    .filter(Boolean)
+    .join('\n')
+  return [content, extra].filter(Boolean).join('\n')
+}
+
+function stripControlChars(value) {
+  return Array.from(value, (char) => {
+    const code = char.charCodeAt(0)
+    return code < 32 || code === 127 ? ' ' : char
+  }).join('')
+}
+
+export const telemetryBuckets = {
+  classifyError: classifyTelemetryError,
+  count: toCountBucket,
+  duration: toDurationBucket,
+  size: toSizeBucket,
+  speed: toSpeedBucket
 }

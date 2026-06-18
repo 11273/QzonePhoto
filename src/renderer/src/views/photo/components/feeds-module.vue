@@ -4,11 +4,11 @@
     <header class="fm-top">
       <div class="fm-top-left">
         <h2 class="fm-title">{{ activeSource.label }}</h2>
-        <span class="fm-sub">{{ filteredFeeds.length }} 条</span>
+        <span class="fm-sub">{{ headerCountText }}</span>
       </div>
       <div class="fm-top-right">
         <button
-          v-if="totalMediaCount"
+          v-if="totalMediaCount && activeSource.kind !== 'messageBoard'"
           class="fm-tool-btn"
           :disabled="downloadingAll"
           @click="downloadAll"
@@ -54,6 +54,113 @@
           :title="emptyStateTitle"
           :description="emptyStateDesc"
         />
+
+        <template v-else-if="activeSource.kind === 'messageBoard'">
+          <div class="fm-message-list">
+            <article
+              v-for="message in filteredFeeds"
+              :key="message.tid"
+              class="mb-card"
+            >
+              <a
+                class="mb-avatar-link"
+                :href="message.userHome"
+                rel="noopener"
+                @click.prevent="openQzoneProfile(message.uin, message.userHome)"
+              >
+                <img
+                  :src="message.avatar || avatarUrl(message.uin)"
+                  :alt="message.name"
+                  class="mb-avatar"
+                  referrerpolicy="no-referrer"
+                  @error="onAvatarError"
+                />
+              </a>
+              <div class="mb-body">
+                <header class="mb-head">
+                  <div class="mb-author">
+                    <a
+                      class="mb-name"
+                      :href="message.userHome"
+                      rel="noopener"
+                      @click.prevent="openQzoneProfile(message.uin, message.userHome)"
+                    >
+                      {{ message.name || message.uin }}
+                    </a>
+                    <span v-if="message.secret" class="mb-privacy">仅彼此可见</span>
+                  </div>
+                  <div class="mb-meta">
+                    <span v-if="message.floor" class="mb-floor">第 {{ message.floor }} 楼</span>
+                    <span class="mb-time">{{ message.feedstime }}</span>
+                  </div>
+                </header>
+                <div v-if="message.contentParts.length" class="mb-content-flow">
+                  <template v-for="(part, index) in message.contentParts" :key="`${message.tid}-part-${index}`">
+                    <RichText
+                      v-if="part.type === 'text'"
+                      class="mb-content"
+                      :text="part.text"
+                      @mention-click="onCommentAuthorClick"
+                    />
+                    <button
+                      v-else-if="part.type === 'image'"
+                      class="mb-image"
+                      type="button"
+                      :style="messageImageStyle(part)"
+                      @click="openPreview(message, part.mediaIndex || 0)"
+                    >
+                      <img
+                        :src="part.thumb"
+                        :alt="part.alt"
+                        loading="lazy"
+                        referrerpolicy="no-referrer"
+                        @error="onMessageImageError"
+                      />
+                    </button>
+                  </template>
+                </div>
+                <div v-if="message.signature" class="mb-signature">
+                  {{ message.signature }}
+                </div>
+                <div v-if="message.replies.length" class="mb-replies">
+                  <div class="mb-replies-head">
+                    <span>{{ message.replies.length }} 条回复</span>
+                    <button
+                      v-if="messageReplyOverflow(message)"
+                      type="button"
+                      @click="toggleMessageReplies(message.tid)"
+                    >
+                      {{ isMessageRepliesExpanded(message.tid) ? '收起' : '展开全部' }}
+                    </button>
+                  </div>
+                  <div
+                    v-for="reply in visibleMessageReplies(message)"
+                    :key="reply.id"
+                    class="mb-reply"
+                  >
+                    <a
+                      class="mb-reply-author"
+                      href="javascript:;"
+                      @click.prevent="openQzoneProfile(reply.uin)"
+                    >{{ reply.author || reply.uin }}</a>
+                    <RichText
+                      class="mb-reply-text"
+                      :text="reply.text"
+                      @mention-click="onCommentAuthorClick"
+                    />
+                    <span v-if="reply.time" class="mb-reply-time">{{ reply.time }}</span>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div v-if="loadingMore" class="fm-loading">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            加载更多留言…
+          </div>
+          <div v-else-if="!hasMore" class="fm-end">没有更多留言了</div>
+        </template>
 
         <template v-else>
           <!-- 瀑布流（column-count），卡片自适应高度，最大化空间利用 -->
@@ -292,6 +399,7 @@ import {
   History,
   Bookmark,
   Home,
+  MessagesSquare,
   Play
 } from '@lucide/vue'
 import FeedComment from '@renderer/components/FeedComment/index.vue'
@@ -311,6 +419,7 @@ const activeHostUin = computed(() => normalizeQzoneUin(hostUinOverride?.value ||
 
 const PAGE_SIZE = 10
 const LAST_YEAR_MIN = 2010
+const MESSAGE_REPLY_PREVIEW_COUNT = 4
 
 // ============= 数据源配置 =============
 //   key:     内部标识
@@ -428,10 +537,29 @@ const sources = computed(() => [
         },
         { skipAuthCheck: true }
       )
+  },
+  {
+    key: 'messageBoard',
+    label: '留言板',
+    icon: MessagesSquare,
+    countKey: null,
+    emptyTitle: '留言板还没有内容',
+    emptyDesc: '公开或仅彼此可见的留言会在这里按楼层展示',
+    kind: 'messageBoard',
+    initialPager: () => ({ start: 0, num: PAGE_SIZE, total: 0 }),
+    load: (p) =>
+      window.QzoneAPI.getMessageBoard(
+        {
+          hostUin: activeHostUin.value,
+          start: p.start ?? 0,
+          num: p.num ?? PAGE_SIZE
+        },
+        isFriendContext.value ? { skipAuthCheck: true } : undefined
+      )
   }
 ].filter((source) => {
   if (!isFriendContext.value) return true
-  return source.key === 'home'
+  return source.key === 'home' || source.key === 'messageBoard'
 }))
 const activeKey = ref('home')
 const activeSource = computed(() => sources.value.find((s) => s.key === activeKey.value) || sources.value[0])
@@ -443,6 +571,7 @@ const emptyStateDesc = computed(() =>
 )
 
 const feeds = ref([])
+const messageBoardTotal = ref(0)
 const pager = ref(activeSource.value.initialPager())
 const feedsCounts = reactive({})  // { friendFeeds_new_cnt, specialCareFeeds_new_cnt, ... }
 const badgeCount = (key) => {
@@ -472,6 +601,7 @@ const downloadingFeedIds = ref(new Set())
 //   expanded=false 时只显示 inlineComments（列表 HTML 内嵌的前几条）
 //   expanded=true  时显示二次拉到的完整评论列表
 const commentsByTid = reactive({})
+const messageRepliesExpanded = reactive({})
 
 // ============= 访客 =============
 const MOD_NAME = { 0: '空间', 2: '相册', 8: '动态', 10: '日志', 43: '个人档' }
@@ -1284,6 +1414,174 @@ const normalizeShuoshuo = (raw) => {
     fwdCount: Number(raw.fwdnum || raw.forwardnum || 0)
   }
 }
+
+const decodeHtmlText = (value) => {
+  const source = String(value || '')
+  if (!source) return ''
+  const doc = parser.parseFromString(source.replace(/<br\s*\/?>/gi, '\n'), 'text/html')
+  return normalizePlainText(doc.body?.textContent || source)
+}
+
+const messageImageName = (url, index) => {
+  try {
+    const parsed = new URL(toHttps(url))
+    const filename = parsed.pathname.split('/').filter(Boolean).pop() || ''
+    return filename || `message_image_${index + 1}`
+  } catch {
+    return `message_image_${index + 1}`
+  }
+}
+
+const normalizeMessageImageUrl = (url) => {
+  const safeUrl = toHttps(String(url || '').trim())
+  if (!safeUrl || !isImageUrl(safeUrl)) return ''
+  return safeUrl
+}
+
+const parseMessageContent = (value, seed = {}) => {
+  const source = String(value || '')
+  if (!source) return { text: '', parts: [], media: [] }
+
+  const parts = []
+  const media = []
+  const imageRe = /\[img(?:,(\d{1,5}),(\d{1,5}))?\]([\s\S]*?)\[\/img\]/gi
+  let lastIndex = 0
+  let match
+
+  const pushText = (text) => {
+    const cleanText = decodeHtmlText(text)
+    if (cleanText) parts.push({ type: 'text', text: cleanText })
+  }
+
+  while ((match = imageRe.exec(source))) {
+    if (match.index > lastIndex) pushText(source.slice(lastIndex, match.index))
+
+    const url = normalizeMessageImageUrl(match[3])
+    if (url) {
+      const width = Number(match[1]) || 0
+      const height = Number(match[2]) || 0
+      const mediaIndex = media.length
+      const origin = toQzoneOriginalUrl(url)
+      const imageMedia = {
+        id: `${seed.id || 'msgb'}_image_${mediaIndex}`,
+        name: messageImageName(origin || url, mediaIndex),
+        type: 'image',
+        thumb: url,
+        origin: origin || url,
+        url: origin || url,
+        pre: url,
+        raw: origin || url,
+        urls: [origin || url, url].filter(Boolean),
+        width,
+        height,
+        is_video: false,
+        modifytime: seed.time || 0
+      }
+      media.push(imageMedia)
+      parts.push({
+        type: 'image',
+        mediaIndex,
+        thumb: imageMedia.thumb,
+        alt: imageMedia.name,
+        width,
+        height
+      })
+    }
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < source.length) pushText(source.slice(lastIndex))
+
+  return {
+    text: parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n').trim(),
+    parts,
+    media
+  }
+}
+
+const parseQzoneDateTime = (value) => {
+  if (!value) return 0
+  if (typeof value === 'number') return value > 100000000000 ? Math.floor(value / 1000) : value
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?/)
+  if (!match) return 0
+  const [, year, month, day, hour, minute, second = '0'] = match
+  return Math.floor(
+    new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second)
+    ).getTime() / 1000
+  )
+}
+
+const normalizeMessageReply = (reply, parentId) => {
+  const time = parseQzoneDateTime(reply?.pubtime || reply?.time || reply?.replytime || 0)
+  const content = parseMessageContent(reply?.ubbContent || reply?.content || reply?.htmlContent || '', {
+    id: parentId,
+    time
+  })
+  return {
+    id: reply?.id || `${parentId}-${reply?.uin || ''}-${reply?.time || reply?.pubtime || ''}`,
+    uin: String(reply?.uin || reply?.owner_uin || ''),
+    author: decodeHtmlText(reply?.nickname || reply?.nick || reply?.name || ''),
+    text: content.text,
+    time: time ? formatTime(time) : ''
+  }
+}
+
+const normalizeMessageBoard = (raw, meta = {}) => {
+  const time = parseQzoneDateTime(raw.pubtime)
+  const uin = String(raw.uin || '')
+  const content = parseMessageContent(raw.ubbContent || raw.htmlContent || '', {
+    id: raw.id || `${uin}-${raw.pubtime || ''}`,
+    time
+  })
+  const index = Number(meta.index) || 0
+  const total = Number(meta.total) || 0
+  const start = Number(meta.start) || 0
+  return {
+    tid: raw.id || `msgb-${uin}-${raw.pubtime || start}-${index}`,
+    topicId: '',
+    inlineComments: [],
+    uin,
+    name: decodeHtmlText(raw.nickname || ''),
+    avatar: avatarUrl(uin),
+    userHome: uin ? `https://user.qzone.qq.com/${uin}` : '',
+    abstime: time,
+    feedstime: time ? formatTime(time) : decodeHtmlText(raw.pubtime || ''),
+    appid: 0,
+    typeid: Number(raw.type) || 0,
+    appType: '留言',
+    yearLabel: '',
+    actionText: '',
+    actionVerb: '',
+    actionTarget: '',
+    actionIcon: null,
+    contentText: content.text,
+    contentParts: content.parts,
+    contentHtml: '',
+    media: content.media,
+    images: content.media.map((item) => item.origin || item.thumb),
+    likeCount: 0,
+    isLiked: false,
+    likers: [],
+    viewCount: 0,
+    deviceName: '',
+    cmtCount: Array.isArray(raw.replyList) ? raw.replyList.length : 0,
+    fwdCount: 0,
+    floor: total ? Math.max(1, total - start - index) : 0,
+    secret: Number(raw.secret) === 1,
+    signature: decodeHtmlText(raw.signature || ''),
+    capacity: Number(raw.capacity) || 0,
+    effect: Number(raw.effect) || 0,
+    pasterId: raw.pasterid || '',
+    bmp: String(raw.bmp || '').trim(),
+    replies: (Array.isArray(raw.replyList) ? raw.replyList : []).map((reply) => normalizeMessageReply(reply, raw.id))
+  }
+}
 // ============= 时间 / 数字 =============
 const pad = (n) => String(n).padStart(2, '0')
 const formatTime = (sec) => {
@@ -1326,6 +1624,28 @@ const onMediaThumbError = (feed, index, media) => {
   }
   brokenThumbs.add(key)
 }
+const isMessageRepliesExpanded = (tid) => !!messageRepliesExpanded[tid]
+const messageReplyOverflow = (message) => (message?.replies?.length || 0) > MESSAGE_REPLY_PREVIEW_COUNT
+const visibleMessageReplies = (message) => {
+  const replies = message?.replies || []
+  if (!messageReplyOverflow(message) || isMessageRepliesExpanded(message.tid)) return replies
+  return replies.slice(0, MESSAGE_REPLY_PREVIEW_COUNT)
+}
+const toggleMessageReplies = (tid) => {
+  messageRepliesExpanded[tid] = !messageRepliesExpanded[tid]
+}
+const messageImageStyle = (part) => {
+  const width = Number(part?.width) || 0
+  const height = Number(part?.height) || 0
+  if (!width || !height) return { aspectRatio: '16 / 9' }
+  const ratio = Math.max(0.4, Math.min(2.6, width / height))
+  return { aspectRatio: String(ratio) }
+}
+const onMessageImageError = (event) => {
+  const img = event.target
+  const wrap = img?.closest?.('.mb-image')
+  if (wrap) wrap.classList.add('is-broken')
+}
 const avatarUrl = (uin) =>
   uin ? `https://qlogo4.store.qq.com/qzone/${uin}/${uin}/100` : ''
 const onAvatarError = (e) => {
@@ -1359,6 +1679,12 @@ const openQzoneProfile = async (uin, fallbackUrl = '') => {
 // ============= 统计 =============
 // sub-tab 已经是分类切换主入口，二级 appType 过滤已移除
 const filteredFeeds = computed(() => feeds.value)
+const headerCountText = computed(() => {
+  if (activeSource.value?.kind === 'messageBoard' && messageBoardTotal.value) {
+    return `${feeds.value.length} / ${messageBoardTotal.value} 条留言`
+  }
+  return `${filteredFeeds.value.length} 条`
+})
 const totalMediaCount = computed(() =>
   filteredFeeds.value.reduce((s, f) => s + (f.media?.length || 0), 0)
 )
@@ -1727,6 +2053,7 @@ const downloadFeed = async (feed) => {
 const resetFeedRuntime = (source) => {
   requestSeq.value += 1
   feeds.value = []
+  messageBoardTotal.value = 0
   pager.value = source.initialPager()
   hasMore.value = true
   loadError.value = ''
@@ -1738,6 +2065,7 @@ const resetFeedRuntime = (source) => {
   brokenThumbs.clear()
   Object.keys(thumbRetryIndexes).forEach((key) => delete thumbRetryIndexes[key])
   Object.keys(commentsByTid).forEach((key) => delete commentsByTid[key])
+  Object.keys(messageRepliesExpanded).forEach((key) => delete messageRepliesExpanded[key])
   pushStats()
 }
 
@@ -1807,6 +2135,25 @@ const loadPage = async ({ reset = false } = {}) => {
         pos: (pager.value.pos || 0) + msgList.length
       }
       hasMore.value = msgList.length === PAGE_SIZE && added > 0
+    } else if (source.kind === 'messageBoard') {
+      const comments = Array.isArray(res.comments) ? res.comments : []
+      const start = Number(res.start ?? pager.value.start ?? 0)
+      messageBoardTotal.value = Number(res.total) || messageBoardTotal.value || comments.length
+      const added = appendUniqueFeeds(
+        comments.map((item, index) =>
+          normalizeMessageBoard(item, {
+            index,
+            start,
+            total: messageBoardTotal.value
+          })
+        )
+      )
+      pager.value = {
+        ...pager.value,
+        start: start + comments.length,
+        total: messageBoardTotal.value
+      }
+      hasMore.value = !!res.hasMore && comments.length > 0 && added > 0
     } else if (source.key === 'fav') {
       // 收藏：fav_list 结构不同，单独 normalize
       const favList = res.favList || []
@@ -2097,6 +2444,305 @@ defineExpose({ refresh: handleRefresh })
     background: rgba(255, 255, 255, 0.04);
     border-color: rgba(96, 165, 250, 0.12);
   }
+}
+
+.fm-message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+.mb-card {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px 18px;
+  background:
+    linear-gradient(135deg, rgba(96, 165, 250, 0.055), rgba(255, 255, 255, 0.018) 38%),
+    rgba(255, 255, 255, 0.024);
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition: background 0.18s, border-color 0.18s, transform 0.18s;
+
+  &:hover {
+    background:
+      linear-gradient(135deg, rgba(96, 165, 250, 0.075), rgba(255, 255, 255, 0.025) 38%),
+      rgba(255, 255, 255, 0.032);
+    border-color: rgba(96, 165, 250, 0.14);
+    transform: translateY(-1px);
+  }
+}
+
+.mb-avatar-link {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  transition: transform 0.15s;
+
+  &:hover {
+    transform: scale(1.04);
+  }
+}
+
+.mb-avatar {
+  width: 40px;
+  height: 40px;
+  display: block;
+  object-fit: cover;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mb-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mb-head {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mb-author,
+.mb-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mb-name {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+
+  &:hover {
+    color: #60a5fa;
+  }
+}
+
+.mb-privacy,
+.mb-floor {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.mb-privacy {
+  color: rgba(251, 191, 36, 0.95);
+  background: rgba(251, 191, 36, 0.09);
+  border: 1px solid rgba(251, 191, 36, 0.18);
+}
+
+.mb-floor {
+  color: rgba(96, 165, 250, 0.94);
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.16);
+}
+
+.mb-time {
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.mb-content-flow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.mb-content {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13.5px;
+  line-height: 1.7;
+  white-space: pre-line;
+  word-break: break-word;
+
+  :deep(.rich-text) {
+    white-space: pre-line;
+  }
+
+  :deep(.emoji-segment) {
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.12em;
+  }
+}
+
+.mb-image {
+  position: relative;
+  width: min(420px, 100%);
+  max-height: 260px;
+  padding: 0;
+  display: block;
+  overflow: hidden;
+  border: 1px solid rgba(96, 165, 250, 0.16);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(96, 165, 250, 0.12), rgba(34, 211, 238, 0.04)),
+    rgba(255, 255, 255, 0.035);
+  cursor: zoom-in;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+
+  img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    transition: transform 0.22s ease;
+  }
+
+  &:hover {
+    transform: translateY(-1px);
+    border-color: rgba(96, 165, 250, 0.32);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+
+    img {
+      transform: scale(1.025);
+    }
+  }
+
+  &.is-broken {
+    min-height: 76px;
+    cursor: default;
+
+    &::after {
+      content: '图片加载失败';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.46);
+      font-size: 12px;
+    }
+
+    img {
+      opacity: 0;
+    }
+  }
+}
+
+.mb-signature {
+  width: fit-content;
+  max-width: 100%;
+  padding: 6px 9px;
+  color: rgba(255, 255, 255, 0.52);
+  background: rgba(255, 255, 255, 0.035);
+  border-left: 2px solid rgba(96, 165, 250, 0.35);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.mb-replies {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 270px;
+  overflow: auto;
+  padding: 10px 12px;
+  background:
+    linear-gradient(180deg, rgba(96, 165, 250, 0.065), rgba(96, 165, 250, 0.025)),
+    rgba(10, 18, 34, 0.52);
+  border: 1px solid rgba(96, 165, 250, 0.1);
+  border-radius: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96, 165, 250, 0.45) rgba(255, 255, 255, 0.04);
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 999px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(96, 165, 250, 0.45);
+    border-radius: 999px;
+  }
+}
+
+.mb-replies-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 2px;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 12px;
+
+  button {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    color: rgba(96, 165, 250, 0.95);
+    background: rgba(96, 165, 250, 0.08);
+    border: 1px solid rgba(96, 165, 250, 0.16);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+
+    &:hover {
+      background: rgba(96, 165, 250, 0.14);
+      border-color: rgba(96, 165, 250, 0.26);
+    }
+  }
+}
+
+.mb-reply {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(54px, auto) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.mb-reply-author {
+  color: rgba(96, 165, 250, 0.92);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.mb-reply-text {
+  min-width: 0;
+  word-break: break-word;
+}
+
+.mb-reply-time {
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .fc-header {

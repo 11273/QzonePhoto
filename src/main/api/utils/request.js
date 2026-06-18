@@ -1,4 +1,6 @@
 import { extractJSONFromCallback } from '@main/api/utils/helpers'
+import { reportHealthEvent } from '@main/services/app-telemetry'
+import { classifyTelemetryError, toTelemetryApiName } from '@main/services/telemetry-safety.mjs'
 import axios from 'axios'
 import http from 'http'
 import https from 'https'
@@ -23,22 +25,13 @@ const request = axios.create({
   withCredentials: true,
   httpAgent,
   httpsAgent,
+  timeout: 15000,
   headers: {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     Connection: 'keep-alive'
   }
 })
-
-// 请求拦截器
-request.interceptors.request.use(
-  (config) => {
-    return config
-  },
-  (error) => {
-    return Promise.reject(error)
-  }
-)
 
 // 响应拦截器
 request.interceptors.response.use(
@@ -47,10 +40,12 @@ request.interceptors.response.use(
       response.data = extractJSONFromCallback(response.data)
     }
 
+    reportQzoneApiTelemetry(response)
     return response
   },
   (error) => {
     if (error.response) {
+      reportQzoneApiTelemetry(error.response, error)
       const { config, status, data, headers } = error.response
       if (status >= 300 && status < 400) {
         console.log(
@@ -65,12 +60,69 @@ request.interceptors.response.use(
         return Promise.reject(error.response)
       }
     } else if (error.request) {
+      reportQzoneApiTelemetry({ config: error.config, status: 0 }, error)
       console.log('No response received:', error.message)
     } else {
+      reportQzoneApiTelemetry({ config: error.config, status: 0 }, error)
       console.log('Request setup error:', error.message)
     }
     return Promise.reject(error)
   }
 )
+
+function reportQzoneApiTelemetry(response, error = null) {
+  try {
+    const config = response?.config || error?.config || {}
+    if (config.telemetry === false) return
+    const status = Number(response?.status || 0)
+    const apiCode = extractQzoneApiCode(response?.data)
+    const success = !error && status >= 200 && status < 400 && (apiCode === null || apiCode === 0)
+    if (success) return
+
+    const errorGroup = success
+      ? 'none'
+      : apiCode !== null && apiCode !== 0
+        ? 'api_error'
+        : classifyTelemetryError(error || response?.data || '')
+
+    void reportHealthEvent({
+      event: 'qzone_api_result',
+      page: 'main:qzone_api',
+      success,
+      errorCode: success ? undefined : apiCode !== null ? `api_${apiCode}` : errorGroup,
+      properties: {
+        module: 'qzone_api',
+        api: toTelemetryApiName(config.url),
+        method: String(config.method || 'get').toLowerCase(),
+        status: success ? 'success' : status ? `${Math.floor(status / 100)}xx` : 'network',
+        errorGroup,
+        target: qzoneHostCategory(config.url)
+      }
+    }).catch(() => {})
+  } catch {
+    // Telemetry must never affect Qzone API behavior.
+  }
+}
+
+function extractQzoneApiCode(data) {
+  const value = data?.code ?? data?.ret ?? data?.result?.code
+  if (value === '' || value === undefined || value === null) return null
+  const code = Number(value)
+  return Number.isFinite(code) ? code : null
+}
+
+function qzoneHostCategory(input) {
+  try {
+    const host = new URL(String(input || ''), 'https://local.invalid').hostname
+    if (/ptlogin/i.test(host)) return 'ptlogin'
+    if (/photo\.qzone/i.test(host)) return 'photo_qzone'
+    if (/user\.qzone/i.test(host)) return 'user_qzone'
+    if (/h5\.qzone/i.test(host)) return 'h5_qzone'
+    if (/qzone/i.test(host)) return 'qzone'
+  } catch {
+    // fall through
+  }
+  return 'other'
+}
 
 export default request

@@ -18,6 +18,7 @@ import {
 import { getVideoMetadata } from '@main/services/video-metadata'
 import windowManager from '@main/core/window'
 import { IPC_UPLOAD } from '@shared/ipc-channels'
+import { reportHealthEvent, telemetryBuckets } from '@main/services/app-telemetry'
 
 // 上传任务状态常量
 export const UPLOAD_TASK_STATUS = {
@@ -1029,6 +1030,7 @@ export class UploadService {
 
   // 执行上传
   async executeUpload(task) {
+    const startedAt = Date.now()
     this.uploadingTasks.add(task.id)
     task.status = UPLOAD_TASK_STATUS.UPLOADING
     task.speed = 0
@@ -1087,6 +1089,7 @@ export class UploadService {
 
       // 同时触发事件推送器（用于统计信息等）
       this.triggerUpdate([task.id])
+      reportUploadTaskTelemetry(this, task, startedAt)
 
       // 最后才从 activeTasks 中移除完成或取消的任务
       // 注意：暂停的任务(PAUSED)需要保留在内存中，以便用户恢复上传
@@ -1972,4 +1975,50 @@ export class UploadService {
       await this.saveDatabase()
     }
   }
+}
+
+function reportUploadTaskTelemetry(service, task, startedAt) {
+  try {
+    const success = task.status === UPLOAD_TASK_STATUS.COMPLETED
+    if (success && Math.random() > 0.1) return
+    const durationMs = Math.max(0, Date.now() - startedAt)
+    const totalBytes = Number(task.total || 0)
+    const averageSpeed = durationMs > 0 ? Math.round(totalBytes / (durationMs / 1000)) : 0
+    void reportHealthEvent({
+      event: 'upload_task_result',
+      page: 'main:upload',
+      success,
+      errorCode: success
+        ? undefined
+        : task.status === UPLOAD_TASK_STATUS.ERROR
+          ? telemetryBuckets.classifyError(task.error || 'unknown')
+          : task.status,
+      properties: {
+        module: 'upload',
+        status: task.status,
+        mediaType: inferUploadMediaType([task]),
+        sizeBucket: telemetryBuckets.size(totalBytes),
+        speedBucket: telemetryBuckets.speed(averageSpeed),
+        durationBucket: telemetryBuckets.duration(durationMs),
+        concurrency: service.concurrency,
+        activeCount: service.activeTasks?.size || 0
+      }
+    }).catch(() => {})
+  } catch {
+    // telemetry is best-effort only
+  }
+}
+
+function inferUploadMediaType(items = []) {
+  let hasImage = false
+  let hasVideo = false
+  for (const item of items) {
+    const filename = String(item?.filename || item?.name || item?.path || '').toLowerCase()
+    if (item?.videoDuration || /\.(mp4|mov|avi|m4v|mkv|webm)$/.test(filename)) hasVideo = true
+    else hasImage = true
+    if (hasImage && hasVideo) return 'mixed'
+  }
+  if (hasVideo) return 'video'
+  if (hasImage) return 'photo'
+  return 'unknown'
 }

@@ -1,6 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { getLocalUserInfo, removeLocalUserInfo, setLocalUserInfo } from '@shared/utils/auth'
+import { withTimeout } from '@shared/utils/async-timeout.mjs'
+
+const USER_INFO_TIMEOUT_MS = 15000
 
 export const useUserStore = defineStore('user', () => {
   const userInfo = ref({})
@@ -42,7 +45,11 @@ export const useUserStore = defineStore('user', () => {
     if (uin && p_skey) {
       try {
         // 先获取用户详细信息
-        const res = await window.QzoneAPI.fetchUserInfo(p_skey, uin)
+        const res = await withTimeout(
+          window.QzoneAPI.fetchUserInfo(p_skey, uin),
+          USER_INFO_TIMEOUT_MS,
+          '恢复登录态超时，请重新登录'
+        )
         if (res.code === 0) {
           userInfo.value = res.data
 
@@ -88,7 +95,11 @@ export const useUserStore = defineStore('user', () => {
 
   const getUserInfo = async () => {
     try {
-      const res = await window.QzoneAPI.fetchUserInfo(qzPSkey.value, qzUin.value)
+      const res = await withTimeout(
+        window.QzoneAPI.fetchUserInfo(qzPSkey.value, qzUin.value),
+        USER_INFO_TIMEOUT_MS,
+        '获取用户信息超时，请重新登录'
+      )
       if (res.code === 0) {
         userInfo.value = res.data
 

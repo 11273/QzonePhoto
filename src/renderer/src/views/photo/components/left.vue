@@ -655,7 +655,7 @@
             <div class="fd-cover-top">
               <div class="fd-cover-copy">
                 <span class="fd-kicker">{{ feedsStats.activeSourceLabel || '动态' }}</span>
-                <strong>{{ feedsStats.loaded || 0 }} 条动态</strong>
+                <strong>{{ feedsStats.loaded || 0 }} 条{{ feedsItemUnit }}</strong>
                 <span>{{ feedsPulseText }}</span>
               </div>
               <div class="fd-orbit" title="当前页媒体数">
@@ -733,7 +733,7 @@
                 class="fd-person"
                 :href="author.uin ? `https://user.qzone.qq.com/${author.uin}` : undefined"
                 rel="noopener"
-                :title="`${author.name} · ${author.count} 条动态`"
+                :title="`${author.name} · ${author.count} 条${feedsItemUnit}`"
                 @click.prevent="openQzoneProfile(author.uin)"
               >
                 <img :src="author.avatar" :alt="author.name" referrerpolicy="no-referrer" />
@@ -2364,6 +2364,10 @@ const feedsDynamicMod = computed(() =>
 
 const feedsEngagementTotal = computed(() =>
   (feedsStats.likeCount || 0) + (feedsStats.cmtCount || 0) + (feedsStats.fwdCount || 0)
+)
+
+const feedsItemUnit = computed(() =>
+  feedsStats.activeSourceKey === 'messageBoard' ? '留言' : '动态'
 )
 
 const feedsUniqueAuthorCount = computed(() => feedsStats.topAuthors?.length

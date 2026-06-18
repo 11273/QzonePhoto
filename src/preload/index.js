@@ -8,11 +8,11 @@ import {
   IPC_FRIEND,
   IPC_UPDATE,
   IPC_FILE,
+  IPC_APP,
   IPC_SHELL,
   IPC_WINDOW,
   IPC_AI_CONTROL,
   IPC_AI,
-  IPC_APP,
   IPC_CLIPBOARD
 } from '@shared/ipc-channels'
 import { ipcClient } from '@preload/lib/ipc-client'
@@ -73,6 +73,8 @@ try {
     getLastYearFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_LAST_YEAR_FEEDS, data, meta),
     // 「我的收藏」列表（get_fav_list）
     getFavList: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FAV_LIST, data, meta),
+    // 获取「留言板」列表
+    getMessageBoard: (data, meta) => ipcClient.call(IPC_PHOTO.GET_MESSAGE_BOARD, data, meta),
     // 获取好友亲密度列表
     getFriendList: (data, meta) => ipcClient.call(IPC_FRIEND.GET_FRIEND_LIST, data, meta),
     // 获取 QQ 好友及分组
@@ -331,6 +333,7 @@ try {
       getInfo: () => ipcClient.call(IPC_APP.GET_INFO),
       fetchNotices: (options = {}) => ipcClient.call(IPC_APP.FETCH_NOTICES, options),
       submitFeedback: (payload = {}) => ipcClient.call(IPC_APP.SUBMIT_FEEDBACK, payload),
+      uploadLogs: (payload = {}) => ipcClient.call(IPC_APP.UPLOAD_LOGS, payload),
       reportHealth: (payload = {}) => ipcClient.call(IPC_APP.REPORT_HEALTH, payload),
       startMonitor: () => ipcClient.call(IPC_APP.START_MONITOR),
       stopMonitor: () => ipcClient.call(IPC_APP.STOP_MONITOR),

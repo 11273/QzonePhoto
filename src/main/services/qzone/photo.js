@@ -15,7 +15,8 @@ import {
   cgi_get_feeds_count,
   feeds2_html_pav_all,
   feeds2_html_today_lastyear,
-  get_fav_list
+  get_fav_list,
+  get_msgb
 } from '@main/api'
 import { fetchPhotosTolerantly } from './photoTolerance'
 
@@ -197,6 +198,11 @@ export class QzonePhotoService {
   // 「我的收藏」列表
   async getFavList({ type, start, num }, { uin, p_skey }) {
     return await get_fav_list(uin, p_skey, { type, start, num })
+  }
+
+  // 「留言板」列表
+  async getMessageBoard({ hostUin, start, num }, { uin, p_skey }) {
+    return await get_msgb(uin, p_skey, hostUin, { start, num })
   }
 
   // 删除动态

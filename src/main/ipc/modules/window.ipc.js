@@ -81,21 +81,30 @@ export function registerWindowControl() {
 
   // 打开外部链接
   ipcMain.handle(IPC_SHELL.OPEN_EXTERNAL, async (event, context) => {
-    const url = typeof context === 'string' ? context : context?.payload
-    const headers = typeof context === 'string' ? null : context?.headers
-    if (headers?.uin || headers?.p_skey) {
-      windowManager.setQzoneAuth(headers)
+    const openUrl = async () => {
+      const url = typeof context === 'string' ? context : context?.payload
+      const headers = typeof context === 'string' ? null : context?.headers
+      if (headers?.uin || headers?.p_skey) {
+        windowManager.setQzoneAuth(headers)
+      }
+      if (isQzoneWebUrl(url)) {
+        await windowManager.openQzoneWeb({
+          url,
+          uin: headers?.uin,
+          p_skey: headers?.p_skey,
+          cookies: headers?.cookies
+        })
+        return { success: true, target: 'qzone' }
+      }
+      await shell.openExternal(url)
+      return { success: true, target: 'external' }
     }
-    if (isQzoneWebUrl(url)) {
-      await windowManager.openQzoneWeb({
-        url,
-        uin: headers?.uin,
-        p_skey: headers?.p_skey,
-        cookies: headers?.cookies
-      })
-      return
+
+    if (typeof context === 'string') {
+      return openUrl()
     }
-    shell.openExternal(url)
+
+    return withIpcData(openUrl)
   })
 
   ipcMain.handle(IPC_WINDOW.SET_QZONE_AUTH, async (event, auth = {}) => {
@@ -129,6 +138,28 @@ export function registerWindowControl() {
       return { success: false, error: error.message }
     }
   })
+}
+
+async function withIpcData(fn) {
+  try {
+    return {
+      code: 0,
+      message: 'success',
+      data: (await fn()) ?? null
+    }
+  } catch (error) {
+    const message = error?.message || '请求处理失败'
+    const code = error?.code || 500
+    return {
+      code,
+      message,
+      data: null,
+      error: {
+        code,
+        message
+      }
+    }
+  }
 }
 
 // 设置窗口事件监听器

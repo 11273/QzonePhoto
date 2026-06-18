@@ -4,7 +4,12 @@ import si from 'systeminformation'
 import { IPC_APP } from '@shared/ipc-channels'
 import windowManager from '@main/core/window'
 import { APP_NAME, APP_HOMEPAGE, APP_DESCRIPTION } from '@shared/const'
-import { fetchNotices, reportHealthEvent, submitFeedback } from '@main/services/app-telemetry'
+import {
+  fetchNotices,
+  reportHealthEvent,
+  submitFeedback,
+  uploadDiagnosticLogs
+} from '@main/services/app-telemetry'
 
 // 简单的 CPU 使用率计算
 let interval = null
@@ -103,6 +108,10 @@ export function createAppHandlers() {
     [IPC_APP.SUBMIT_FEEDBACK]: async (context = {}) => {
       const payload = context?.payload || context || {}
       return await submitFeedback(payload)
+    },
+    [IPC_APP.UPLOAD_LOGS]: async (context = {}) => {
+      const payload = context?.payload || context || {}
+      return await uploadDiagnosticLogs(payload)
     },
     [IPC_APP.REPORT_HEALTH]: async (context = {}) => {
       const payload = context?.payload || context || {}
