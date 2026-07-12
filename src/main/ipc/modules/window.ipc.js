@@ -2,7 +2,7 @@ import { ipcMain, shell } from 'electron'
 import windowManager from '@main/core/window'
 import { IPC_WINDOW, IPC_APP, IPC_SHELL } from '@shared/ipc-channels'
 import { app } from 'electron'
-import { APP_NAME, APP_HOMEPAGE, APP_DESCRIPTION } from '@shared/const'
+import { APP_DISPLAY_NAME, APP_HOMEPAGE, APP_DESCRIPTION } from '@shared/const'
 import { getAppApiConfig } from '@main/config/app-api'
 import {
   fetchNotices,
@@ -27,6 +27,15 @@ const isQzoneWebUrl = (value) => {
       host === 'qzs.qq.com' ||
       host.endsWith('.qzs.qq.com')
     )
+  } catch {
+    return false
+  }
+}
+
+const isSafeExternalUrl = (value) => {
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:'].includes(url.protocol)
   } catch {
     return false
   }
@@ -87,7 +96,7 @@ export function registerWindowControl() {
         },
         name: app.getName(),
         version: app.getVersion(),
-        productName: APP_NAME,
+        productName: APP_DISPLAY_NAME,
         homepage: APP_HOMEPAGE,
         description: APP_DESCRIPTION,
         launchId: APP_LAUNCH_ID,
@@ -167,6 +176,9 @@ export function registerWindowControl() {
           cookies: headers?.cookies
         })
         return { success: true, target: 'qzone' }
+      }
+      if (!isSafeExternalUrl(url)) {
+        throw new Error('只允许打开 HTTP 或 HTTPS 链接')
       }
       await shell.openExternal(url)
       return { success: true, target: 'external' }

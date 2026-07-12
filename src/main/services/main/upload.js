@@ -465,6 +465,7 @@ export class UploadService {
 
     // 触发更新
     this.triggerUpdate([task.id])
+    reportUploadUsageTelemetry(this, [task], 'single_task')
 
     // 处理队列
     this.processQueue()
@@ -550,6 +551,7 @@ export class UploadService {
 
     // 触发更新
     this.triggerUpdate(taskIds)
+    reportUploadUsageTelemetry(this, tasks, 'batch_task')
 
     // 处理队列
     this.processQueue()
@@ -1030,7 +1032,6 @@ export class UploadService {
 
   // 执行上传
   async executeUpload(task) {
-    const startedAt = Date.now()
     this.uploadingTasks.add(task.id)
     task.status = UPLOAD_TASK_STATUS.UPLOADING
     task.speed = 0
@@ -1089,7 +1090,6 @@ export class UploadService {
 
       // 同时触发事件推送器（用于统计信息等）
       this.triggerUpdate([task.id])
-      reportUploadTaskTelemetry(this, task, startedAt)
 
       // 最后才从 activeTasks 中移除完成或取消的任务
       // 注意：暂停的任务(PAUSED)需要保留在内存中，以便用户恢复上传
@@ -1977,29 +1977,20 @@ export class UploadService {
   }
 }
 
-function reportUploadTaskTelemetry(service, task, startedAt) {
+function reportUploadUsageTelemetry(service, tasks = [], source = 'unknown') {
   try {
-    const success = task.status === UPLOAD_TASK_STATUS.COMPLETED
-    if (success && Math.random() > 0.1) return
-    const durationMs = Math.max(0, Date.now() - startedAt)
-    const totalBytes = Number(task.total || 0)
-    const averageSpeed = durationMs > 0 ? Math.round(totalBytes / (durationMs / 1000)) : 0
+    const validTasks = tasks.filter(Boolean)
+    if (!validTasks.length) return
+    const totalBytes = validTasks.reduce((sum, task) => sum + Number(task.total || 0), 0)
     void reportHealthEvent({
-      event: 'upload_task_result',
+      event: 'upload_used',
       page: 'main:upload',
-      success,
-      errorCode: success
-        ? undefined
-        : task.status === UPLOAD_TASK_STATUS.ERROR
-          ? telemetryBuckets.classifyError(task.error || 'unknown')
-          : task.status,
       properties: {
         module: 'upload',
-        status: task.status,
-        mediaType: inferUploadMediaType([task]),
+        source,
+        mediaType: inferUploadMediaType(validTasks),
+        countBucket: telemetryBuckets.count(validTasks.length),
         sizeBucket: telemetryBuckets.size(totalBytes),
-        speedBucket: telemetryBuckets.speed(averageSpeed),
-        durationBucket: telemetryBuckets.duration(durationMs),
         concurrency: service.concurrency,
         activeCount: service.activeTasks?.size || 0
       }

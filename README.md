@@ -1,13 +1,15 @@
 <div align="center">
 
-<img src="resources/icon.png" alt="Qzone Photo" width="96" />
+<img src="resources/icon.png" alt="企鹅相册 - QzonePhoto" width="96" />
 
-<h1>Qzone Photo</h1>
+<h1>企鹅相册 - QzonePhoto</h1>
 
 <p>把 QQ 空间的相册、照片、视频、动态和好友空间带回本地，并按你想要的方式管理。</p>
 
 <p>
-  <a href="https://github.com/11273/QzonePhoto/releases/latest"><strong>📥 下载安装</strong></a>
+  <a href="https://qzonephoto.getgit.one/#download"><strong>📥 下载安装</strong></a>
+  ·
+  <a href="https://qzonephoto.getgit.one/"><strong>官方网站</strong></a>
   ·
   <a href="#-使用指南">使用指南</a>
   ·
@@ -21,22 +23,27 @@
   <img src="https://img.shields.io/github/downloads/11273/QzonePhoto/total?style=flat-square&logo=github" alt="downloads" />
   <img src="https://img.shields.io/github/stars/11273/QzonePhoto?style=flat-square&logo=github" alt="stars" />
   <img src="https://img.shields.io/badge/platform-Win%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="platform" />
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT" />
+  <img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="GPL-3.0" />
 </p>
 
 </div>
 
 ---
 
+> [!IMPORTANT]
+> 官方网站：[qzonephoto.getgit.one](https://qzonephoto.getgit.one/)。本项目开源免费使用，请仅从官网或项目主页下载。
+>
+> 企鹅相册 - QzonePhoto 是非官方第三方工具，与腾讯、QQ 或 QQ 空间不存在隶属或授权关系。
+
 ## 简介
 
-Qzone Photo 是一个跨平台的 QQ 空间桌面客户端，复用 QQ 空间网页端官方接口完成登录与数据获取，所有数据仅在本地处理。它现在不只看相册，也能在「照片 / 视频 / 动态」里查看自己和好友的空间内容，下载原图、视频和整条说说媒体，并把官方空间页放进应用内窗口打开。
+企鹅相册 - QzonePhoto 是一个跨平台的 QQ 空间桌面客户端，复用 QQ 空间网页端官方接口完成登录与数据获取，所有数据仅在本地处理。它现在不只看相册，也能在「照片 / 视频 / 动态」里查看自己和好友的空间内容，下载原图、视频和整条说说媒体，并把官方空间页放进应用内窗口打开。
 
 ## 截图
 
 <table>
   <tr>
-    <td><img src="screenshots/photo.png" alt="相册视图" /></td>
+    <td><img src="screenshots/album.png" alt="相册视图" /></td>
     <td><img src="screenshots/feeds.png" alt="动态时间线" /></td>
   </tr>
   <tr>
@@ -44,32 +51,24 @@ Qzone Photo 是一个跨平台的 QQ 空间桌面客户端，复用 QQ 空间网
     <td align="center">动态：我的主页、好友动态、与我相关、那年今日、收藏统一展示</td>
   </tr>
   <tr>
-    <td><img src="screenshots/photo-view.png" alt="照片时间线" /></td>
-    <td><img src="screenshots/video-view.png" alt="视频网格" /></td>
+    <td><img src="screenshots/photos.png" alt="照片时间线" /></td>
+    <td><img src="screenshots/videos.png" alt="视频网格" /></td>
   </tr>
   <tr>
     <td align="center">照片时间线：按来源 / 媒体 / 年份筛选，单条或全页下载</td>
     <td align="center">视频网格：统一播放态、时长 / 年份 / 排序筛选和下载全部</td>
   </tr>
   <tr>
-    <td><img src="screenshots/friend.png" alt="好友查找" /></td>
     <td><img src="screenshots/download.png" alt="下载管理" /></td>
-  </tr>
-  <tr>
-    <td align="center">好友抽屉：分组搜索、QQ 号查找，进入好友后保留当前 tab 并刷新数据</td>
-    <td align="center">下载管理：并发数、跳过重复、任务状态分类筛选</td>
-  </tr>
-  <tr>
     <td><img src="screenshots/upload.png" alt="上传管理" /></td>
-    <td><img src="screenshots/login.png" alt="登录页" /></td>
   </tr>
   <tr>
+    <td align="center">下载管理：并发数、跳过重复、任务状态分类筛选</td>
     <td align="center">上传管理：相册筛选、状态筛选、整体进度和实时速度</td>
-    <td align="center">登录页：扫码或本地 QQ 登录，登录态会同步给内置官方页</td>
   </tr>
 </table>
 
-> 截图来自真实运行界面，已开启隐私模式并做局部脱敏处理。头像、昵称、QQ 号、好友列表、相册名、动态正文、评论和媒体内容均不可识别，仅保留界面结构与交互状态。
+> 截图来自真实运行界面，账号、相册、动态、任务和媒体均为本地生成的演示数据，不包含任何真实用户信息。
 
 ## ✨ 主要功能
 
@@ -111,14 +110,14 @@ Qzone Photo 是一个跨平台的 QQ 空间桌面客户端，复用 QQ 空间网
 
 ### 直接下载（推荐）
 
-| 平台 | 下载文件 | 备注 |
-|---|---|---|
-| Windows | `*-win-x64-setup.exe` | 64 位（主流）|
-| Windows | `*-win-ia32-setup.exe` | 32 位老电脑 |
-| macOS | `*-mac-arm64.dmg` | M 系列 Apple Silicon |
-| macOS | `*-mac-x64.dmg` | Intel 芯片 |
-| Linux | `*-linux-x86_64.AppImage` | 通用版（`chmod +x` 后双击）|
-| Linux | `*-linux-amd64.deb` | Ubuntu / Debian 系 |
+| 平台    | 下载文件                  | 备注                        |
+| ------- | ------------------------- | --------------------------- |
+| Windows | `*-win-x64-setup.exe`     | 64 位（主流）               |
+| Windows | `*-win-ia32-setup.exe`    | 32 位老电脑                 |
+| macOS   | `*-mac-arm64.dmg`         | M 系列 Apple Silicon        |
+| macOS   | `*-mac-x64.dmg`           | Intel 芯片                  |
+| Linux   | `*-linux-x86_64.AppImage` | 通用版（`chmod +x` 后双击） |
+| Linux   | `*-linux-amd64.deb`       | Ubuntu / Debian 系          |
 
 **[👉 前往最新版本](https://github.com/11273/QzonePhoto/releases/latest)**
 
@@ -159,11 +158,11 @@ pnpm build:mac    # / build:win / build:linux 打包
 │           └── ...
 ```
 
-| 平台 | 默认路径 |
-|---|---|
+| 平台    | 默认路径                               |
+| ------- | -------------------------------------- |
 | Windows | `C:\Users\<用户>\Pictures\QzonePhoto\` |
-| macOS | `~/Pictures/QzonePhoto/` |
-| Linux | `~/Pictures/QzonePhoto/` |
+| macOS   | `~/Pictures/QzonePhoto/`               |
+| Linux   | `~/Pictures/QzonePhoto/`               |
 
 > 可在「下载管理 → 更改位置」自定义。
 
@@ -180,6 +179,7 @@ pnpm build:mac    # / build:win / build:linux 打包
 <summary><strong>能下载好友的相册吗？</strong></summary>
 
 可以。支持下载好友的公开相册以及你有权限查看的（QQ 好友可见、已通过的回答问题相册等）。仅自己可见、密码相册等会自动跳过。
+
 </details>
 
 <details>
@@ -209,6 +209,7 @@ pnpm build:mac    # / build:win / build:linux 打包
 <summary><strong>我自己电脑上的 QQ 头像没显示？</strong></summary>
 
 第一次登录时有可能 cookie 还没建立。退出重登一次，或者刷新页面（Ctrl/Cmd + R）。
+
 </details>
 
 ## 🤝 反馈与贡献
@@ -222,7 +223,7 @@ pnpm build:mac    # / build:win / build:linux 打包
 
 ## 📄 许可证
 
-[MIT License](LICENSE) — 自由使用、修改、分发，无商业限制。
+本项目采用 [GPL-3.0-only](LICENSE) 许可证。
 
 ---
 

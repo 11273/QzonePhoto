@@ -1,6 +1,18 @@
 {
   "version": 1,
   "apiBaseUrl": "https://qzone.getgit.one",
+  "websiteUrl": "https://qzonephoto.getgit.one",
+  "downloadPageUrl": "https://qzonephoto.getgit.one/#download",
   "fallbackBaseUrls": [],
+  "update": {
+    "primaryFeedUrl": "https://dl.qzonephoto.getgit.one/releases/latest",
+    "downloadManifestUrl": "https://dl.qzonephoto.getgit.one/manifests/latest.json",
+    "releaseChannel": "stable",
+    "githubFallback": {
+      "owner": "11273",
+      "repo": "QzonePhoto",
+      "releaseType": "release"
+    }
+  },
   "ttlSeconds": 86400
 }

@@ -2,7 +2,7 @@
 appId: com.qzonephoto.app
 
 # 产品名称 (显示在界面/安装包中的名称)
-productName: Qzone Photo
+productName: 企鹅相册 - QzonePhoto
 
 # 构建资源配置
 directories:
@@ -28,6 +28,11 @@ files:
   - '!.idea'
   - '!.vscode'
   - '!.github'
+
+# 随安装包提供 GPL-3.0 正文，避免它仅存在于源码仓库中
+extraResources:
+  - from: LICENSE
+    to: LICENSE
 
 # ASAR解压配置（指定不需要压缩的文件）
 asarUnpack:
@@ -71,8 +76,8 @@ linux:
       arch: [x64]
   maintainer: github.com/11273
   category: Utility
-  synopsis: QzonePhoto - 相册管理工具
-  description: 一个简单易用的相册管理工具
+  synopsis: 企鹅相册 - QzonePhoto
+  description: 一个简单易用的 QQ 空间相册本地管理与备份工具
 
 # macOS平台配置
 mac:
@@ -104,7 +109,7 @@ dmg:
 # AppImage配置
 appImage:
   artifactName: QzonePhoto-${version}-${os}-${arch}.${ext} # 命名格式
-  synopsis: QzonePhoto
+  synopsis: 企鹅相册 - QzonePhoto
   category: Utility
 
 # DEB包配置

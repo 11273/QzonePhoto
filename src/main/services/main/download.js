@@ -380,6 +380,7 @@ export class DownloadService {
 
     // 触发更新
     this.triggerUpdate([task.id])
+    reportDownloadUsageTelemetry(this, [task], 'single_task')
 
     // 处理队列
     this.processQueue()
@@ -436,6 +437,11 @@ export class DownloadService {
 
     // 保存数据库
     await this.db.write()
+    reportDownloadUsageTelemetry(
+      this,
+      taskIds.map((id) => this.activeTasks.get(id)).filter(Boolean),
+      'album_task'
+    )
 
     // 处理队列
     this.processQueue()
@@ -461,11 +467,7 @@ export class DownloadService {
           this.sanitizeFilename(String(friendUin)),
           '说说'
         )
-      : path.join(
-          this.downloadPath,
-          this.sanitizeFilename(userInfo.uin || 'unknown'),
-          '说说'
-        )
+      : path.join(this.downloadPath, this.sanitizeFilename(userInfo.uin || 'unknown'), '说说')
 
     const allTaskIds = []
     const batchSize = 500
@@ -511,6 +513,11 @@ export class DownloadService {
     }
 
     await this.db.write()
+    reportDownloadUsageTelemetry(
+      this,
+      allTaskIds.map((id) => this.activeTasks.get(id)).filter(Boolean),
+      'feed_task'
+    )
     this.processQueue()
 
     return allTaskIds
@@ -889,7 +896,6 @@ export class DownloadService {
 
   // 执行下载 - 优化版本
   async executeDownload(task) {
-    const startedAt = Date.now()
     this.downloadingTasks.add(task.id)
     task.status = TASK_STATUS.DOWNLOADING
     task.speed = 0
@@ -965,7 +971,6 @@ export class DownloadService {
       // 更新数据库
       await this.updateTaskInDB(task)
       this.triggerUpdate([task.id])
-      reportDownloadTaskTelemetry(this, task, startedAt)
 
       // 继续处理队列
       setTimeout(() => this.processQueue(), 100)
@@ -1560,29 +1565,23 @@ export class DownloadService {
   }
 }
 
-function reportDownloadTaskTelemetry(service, task, startedAt) {
+function reportDownloadUsageTelemetry(service, tasks = [], source = 'unknown') {
   try {
-    const success = task.status === TASK_STATUS.COMPLETED
-    if (success && Math.random() > 0.1) return
-    const durationMs = Math.max(0, Date.now() - startedAt)
-    const totalBytes = Number(task.total || task.downloaded || 0)
-    const averageSpeed = durationMs > 0 ? Math.round(totalBytes / (durationMs / 1000)) : 0
+    const validTasks = tasks.filter(Boolean)
+    if (!validTasks.length) return
+    const totalBytes = validTasks.reduce(
+      (sum, task) => sum + Number(task.total || task.downloaded || 0),
+      0
+    )
     void reportHealthEvent({
-      event: 'download_task_result',
+      event: 'download_used',
       page: 'main:download',
-      success,
-      errorCode: success
-        ? undefined
-        : task.status === TASK_STATUS.ERROR
-          ? telemetryBuckets.classifyError(task.error || 'unknown')
-          : task.status,
       properties: {
         module: 'download',
-        status: task.status,
-        mediaType: inferMediaType([task]),
+        source,
+        mediaType: inferMediaType(validTasks),
+        countBucket: telemetryBuckets.count(validTasks.length),
         sizeBucket: telemetryBuckets.size(totalBytes),
-        speedBucket: telemetryBuckets.speed(averageSpeed),
-        durationBucket: telemetryBuckets.duration(durationMs),
         concurrency: service.concurrency,
         activeCount: service.activeTasks?.size || 0
       }

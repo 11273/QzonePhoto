@@ -1,0 +1,62 @@
+{
+  "version": "2.6.0",
+  "tag": "v2.6.0",
+  "generatedAt": "2026-06-23T00:00:00.000Z",
+  "githubReleaseUrl": "https://github.com/11273/QzonePhoto/releases/latest",
+  "assets": [
+    {
+      "id": "windows-x64-setup",
+      "os": "windows",
+      "arch": "x64",
+      "type": "setup",
+      "filename": "",
+      "r2Url": "",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/latest"
+    },
+    {
+      "id": "windows-ia32-setup",
+      "os": "windows",
+      "arch": "ia32",
+      "type": "setup",
+      "filename": "",
+      "r2Url": "",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/latest"
+    },
+    {
+      "id": "macos-arm64-dmg",
+      "os": "macos",
+      "arch": "arm64",
+      "type": "dmg",
+      "filename": "",
+      "r2Url": "",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/latest"
+    },
+    {
+      "id": "macos-x64-dmg",
+      "os": "macos",
+      "arch": "x64",
+      "type": "dmg",
+      "filename": "",
+      "r2Url": "",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/latest"
+    },
+    {
+      "id": "linux-x64-appimage",
+      "os": "linux",
+      "arch": "x64",
+      "type": "appimage",
+      "filename": "",
+      "r2Url": "",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/latest"
+    },
+    {
+      "id": "linux-x64-deb",
+      "os": "linux",
+      "arch": "x64",
+      "type": "deb",
+      "filename": "",
+      "r2Url": "",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/latest"
+    }
+  ]
+}

@@ -36,17 +36,19 @@
       >
         <component :is="src.icon" :size="13" class="fm-source-icon" />
         <span class="fm-source-label">{{ src.label }}</span>
-        <span
-          v-if="badgeCount(src.key) > 0"
-          class="fm-source-badge"
-        >{{ badgeCount(src.key) > 99 ? '99+' : badgeCount(src.key) }}</span>
+        <span v-if="badgeCount(src.key) > 0" class="fm-source-badge">{{
+          badgeCount(src.key) > 99 ? '99+' : badgeCount(src.key)
+        }}</span>
       </button>
     </nav>
 
     <!-- 主体：瀑布流卡片 -->
     <el-scrollbar ref="scrollbarRef" class="fm-scroll" @scroll="handleScroll">
       <div class="fm-wrap">
-        <LoadingState v-if="loading && feeds.length === 0" :text="`正在加载${activeSource.label}...`" />
+        <LoadingState
+          v-if="loading && feeds.length === 0"
+          :text="`正在加载${activeSource.label}...`"
+        />
 
         <EmptyState
           v-else-if="filteredFeeds.length === 0 && !loading"
@@ -57,11 +59,7 @@
 
         <template v-else-if="activeSource.kind === 'messageBoard'">
           <div class="fm-message-list">
-            <article
-              v-for="message in filteredFeeds"
-              :key="message.tid"
-              class="mb-card"
-            >
+            <article v-for="message in filteredFeeds" :key="message.tid" class="mb-card">
               <a
                 class="mb-avatar-link"
                 :href="message.userHome"
@@ -95,7 +93,10 @@
                   </div>
                 </header>
                 <div v-if="message.contentParts.length" class="mb-content-flow">
-                  <template v-for="(part, index) in message.contentParts" :key="`${message.tid}-part-${index}`">
+                  <template
+                    v-for="(part, index) in message.contentParts"
+                    :key="`${message.tid}-part-${index}`"
+                  >
                     <RichText
                       v-if="part.type === 'text'"
                       class="mb-content"
@@ -142,7 +143,8 @@
                       class="mb-reply-author"
                       href="javascript:;"
                       @click.prevent="openQzoneProfile(reply.uin)"
-                    >{{ reply.author || reply.uin }}</a>
+                      >{{ reply.author || reply.uin }}</a
+                    >
                     <RichText
                       class="mb-reply-text"
                       :text="reply.text"
@@ -165,11 +167,7 @@
         <template v-else>
           <!-- 瀑布流（column-count），卡片自适应高度，最大化空间利用 -->
           <div class="fm-masonry">
-            <article
-              v-for="feed in filteredFeeds"
-              :key="feed.tid"
-              class="fc-card"
-            >
+            <article v-for="feed in filteredFeeds" :key="feed.tid" class="fc-card">
               <header class="fc-header">
                 <a
                   class="fc-avatar-link"
@@ -235,20 +233,14 @@
               </div>
 
               <div v-if="feed.contentText" class="fc-content fc-content-rich">
-                <RichText
-                  :text="feed.contentText"
-                  @mention-click="onCommentAuthorClick"
-                />
+                <RichText :text="feed.contentText" @mention-click="onCommentAuthorClick" />
               </div>
 
               <div
-                v-else-if="feed.contentHtml"
-                class="fc-content"
-                @click="onContentClick"
-                v-html="feed.contentHtml"
-              ></div>
-
-              <div v-if="feed.media.length" class="fc-media" :class="`fc-media-n${Math.min(feed.media.length, 9)}`">
+                v-if="feed.media.length"
+                class="fc-media"
+                :class="`fc-media-n${Math.min(feed.media.length, 9)}`"
+              >
                 <div
                   v-for="(media, idx) in feed.media.slice(0, 9)"
                   :key="idx"
@@ -303,7 +295,12 @@
                       rel="noopener"
                       @click.prevent="openQzoneProfile(liker.uin)"
                     >
-                      <img :src="avatarUrl(liker.uin)" :alt="liker.name" referrerpolicy="no-referrer" @error="onAvatarError" />
+                      <img
+                        :src="avatarUrl(liker.uin)"
+                        :alt="liker.name"
+                        referrerpolicy="no-referrer"
+                        @error="onAvatarError"
+                      />
                     </a>
                   </el-tooltip>
                 </div>
@@ -323,7 +320,11 @@
                   <span v-if="feed.fwdCount > 0" class="fc-stat">
                     <Repeat2 :size="13" /> {{ feed.fwdCount }}
                   </span>
-                  <span v-if="feed.viewCount > 0" class="fc-stat" :title="`${feed.viewCount} 次浏览`">
+                  <span
+                    v-if="feed.viewCount > 0"
+                    class="fc-stat"
+                    :title="`${feed.viewCount} 次浏览`"
+                  >
                     <Eye :size="13" /> {{ formatBigNum(feed.viewCount) }}
                   </span>
                   <span v-if="feed.deviceName" class="fc-stat" :title="`来自 ${feed.deviceName}`">
@@ -333,7 +334,10 @@
               </footer>
 
               <!-- 评论区：默认展示内嵌评论；剩余评论按需展开 -->
-              <div v-if="visibleComments(feed).length || canExpandMore(feed)" class="fc-comments-wrap">
+              <div
+                v-if="visibleComments(feed).length || canExpandMore(feed)"
+                class="fc-comments-wrap"
+              >
                 <FeedComment
                   v-if="visibleComments(feed).length"
                   :comments="visibleComments(feed)"
@@ -346,11 +350,15 @@
                   :disabled="commentsByTid[feed.tid]?.loading"
                   @click="expandMoreComments(feed)"
                 >
-                  <el-icon v-if="commentsByTid[feed.tid]?.loading" class="is-loading"><Loading /></el-icon>
+                  <el-icon v-if="commentsByTid[feed.tid]?.loading" class="is-loading"
+                    ><Loading
+                  /></el-icon>
                   <ChevronDown v-else :size="13" />
-                  {{ commentsByTid[feed.tid]?.loading
+                  {{
+                    commentsByTid[feed.tid]?.loading
                       ? '加载评论…'
-                      : `展开剩余 ${remainingCmtCount(feed)} 条评论` }}
+                      : `展开剩余 ${remainingCmtCount(feed)} 条评论`
+                  }}
                 </button>
                 <div v-if="commentsByTid[feed.tid]?.error" class="fc-cmt-error">
                   {{ commentsByTid[feed.tid].error }}
@@ -427,142 +435,153 @@ const MESSAGE_REPLY_PREVIEW_COUNT = 4
 //   icon:    lucide 图标
 //   countKey: 对应 cgi_get_feeds_count 的字段（用于角标）
 //   loader:  调用哪个 API，传入 (pager, reset) 返回 { code, hasMore, pager, feeds, emptyHint }
-const sources = computed(() => [
-  {
-    key: 'home',
-    label: isFriendContext.value ? '好友主页' : '我的主页',
-    icon: Home,
-    countKey: 'myFeeds_new_cnt',
-    emptyTitle: isFriendContext.value ? '暂时看不到好友主页动态' : '我的主页还没有动态',
-    emptyDesc: isFriendContext.value ? '可能是权限限制，或 TA 最近没有公开说说' : '发表说说后会在这里展示',
-    kind: 'html',
-    initialPager: () => ({ start: 0, count: PAGE_SIZE }),
-    load: (p) =>
-      window.QzoneAPI.getHomeFeeds(
-        {
-          hostUin: activeHostUin.value,
-          start: p.start,
+const sources = computed(() =>
+  [
+    {
+      key: 'home',
+      label: isFriendContext.value ? '好友主页' : '我的主页',
+      icon: Home,
+      countKey: 'myFeeds_new_cnt',
+      emptyTitle: isFriendContext.value ? '暂时看不到好友主页动态' : '我的主页还没有动态',
+      emptyDesc: isFriendContext.value
+        ? '可能是权限限制，或 TA 最近没有公开说说'
+        : '发表说说后会在这里展示',
+      kind: 'html',
+      initialPager: () => ({ start: 0, count: PAGE_SIZE }),
+      load: (p) =>
+        window.QzoneAPI.getHomeFeeds(
+          {
+            hostUin: activeHostUin.value,
+            start: p.start,
+            count: PAGE_SIZE
+          },
+          isFriendContext.value ? { skipAuthCheck: true } : undefined
+        )
+    },
+    {
+      key: 'friend',
+      label: '好友动态',
+      icon: Users,
+      countKey: 'friendFeeds_new_cnt',
+      emptyTitle: '还没有好友动态',
+      emptyDesc: '好友的说说 / 相册 / 日志会在这里展示',
+      initialPager: () => ({ pagenum: 1, begintime: 0, externparam: 'undefined', dayspac: 0 }),
+      load: (p) =>
+        window.QzoneAPI.getFriendFeeds({
+          scope: 0,
+          pagenum: p.pagenum,
+          begintime: p.begintime,
+          externparam: p.externparam,
+          dayspac: p.dayspac,
           count: PAGE_SIZE
-        },
-        isFriendContext.value ? { skipAuthCheck: true } : undefined
-      )
-  },
-  {
-    key: 'friend',
-    label: '好友动态',
-    icon: Users,
-    countKey: 'friendFeeds_new_cnt',
-    emptyTitle: '还没有好友动态',
-    emptyDesc: '好友的说说 / 相册 / 日志会在这里展示',
-    initialPager: () => ({ pagenum: 1, begintime: 0, externparam: 'undefined', dayspac: 0 }),
-    load: (p) =>
-      window.QzoneAPI.getFriendFeeds({
-        scope: 0,
-        pagenum: p.pagenum,
-        begintime: p.begintime,
-        externparam: p.externparam,
-        dayspac: p.dayspac,
-        count: PAGE_SIZE
-      })
-  },
-  {
-    key: 'special',
-    label: '特别关心',
-    icon: Star,
-    countKey: 'specialCareFeeds_new_cnt',
-    emptyTitle: '没有特别关心的动态',
-    emptyDesc: '在 QQ 空间网页端把好友加入「特别关心」即可在此查看',
-    initialPager: () => ({ pagenum: 1, begintime: 0, externparam: 'undefined', dayspac: 0 }),
-    load: (p) =>
-      window.QzoneAPI.getFriendFeeds({
-        scope: 7,
-        pagenum: p.pagenum,
-        begintime: p.begintime,
-        externparam: p.externparam,
-        dayspac: p.dayspac,
-        count: PAGE_SIZE
-      })
-  },
-  {
-    key: 'aboutMe',
-    label: '与我相关',
-    icon: AtSign,
-    countKey: 'aboutHostFeeds_new_cnt',
-    emptyTitle: '近期没有人提到你',
-    emptyDesc: '别人评论、点赞、@ 你的动态会在这里聚合',
-    initialPager: () => ({ offset: 0 }),
-    load: (p) =>
-      window.QzoneAPI.getAboutMeFeeds({
-        offset: p.offset,
-        count: PAGE_SIZE
-      })
-  },
-  {
-    key: 'lastYear',
-    label: '那年今日',
-    icon: History,
-    countKey: null,
-    emptyTitle: '那年今日还没有内容',
-    emptyDesc: '去年的今天，你和朋友们都很安静呢',
-    initialPager: () => ({ done: false, year: new Date().getFullYear() - 1, count: PAGE_SIZE, mode: 1 }),
-    load: async (p) => {
-      let year = p.year || new Date().getFullYear() - 1
-      const mode = p.mode || 1
-      const count = p.count || PAGE_SIZE
-      while (year >= LAST_YEAR_MIN) {
-        const res = await window.QzoneAPI.getLastYearFeeds({ year, count, mode })
-        if (res?.feeds?.length || year === LAST_YEAR_MIN) {
-          return { ...res, pager: { year, count, mode } }
+        })
+    },
+    {
+      key: 'special',
+      label: '特别关心',
+      icon: Star,
+      countKey: 'specialCareFeeds_new_cnt',
+      emptyTitle: '没有特别关心的动态',
+      emptyDesc: '在 QQ 空间网页端把好友加入「特别关心」即可在此查看',
+      initialPager: () => ({ pagenum: 1, begintime: 0, externparam: 'undefined', dayspac: 0 }),
+      load: (p) =>
+        window.QzoneAPI.getFriendFeeds({
+          scope: 7,
+          pagenum: p.pagenum,
+          begintime: p.begintime,
+          externparam: p.externparam,
+          dayspac: p.dayspac,
+          count: PAGE_SIZE
+        })
+    },
+    {
+      key: 'aboutMe',
+      label: '与我相关',
+      icon: AtSign,
+      countKey: 'aboutHostFeeds_new_cnt',
+      emptyTitle: '近期没有人提到你',
+      emptyDesc: '别人评论、点赞、@ 你的动态会在这里聚合',
+      initialPager: () => ({ offset: 0 }),
+      load: (p) =>
+        window.QzoneAPI.getAboutMeFeeds({
+          offset: p.offset,
+          count: PAGE_SIZE
+        })
+    },
+    {
+      key: 'lastYear',
+      label: '那年今日',
+      icon: History,
+      countKey: null,
+      emptyTitle: '那年今日还没有内容',
+      emptyDesc: '去年的今天，你和朋友们都很安静呢',
+      initialPager: () => ({
+        done: false,
+        year: new Date().getFullYear() - 1,
+        count: PAGE_SIZE,
+        mode: 1
+      }),
+      load: async (p) => {
+        let year = p.year || new Date().getFullYear() - 1
+        const mode = p.mode || 1
+        const count = p.count || PAGE_SIZE
+        while (year >= LAST_YEAR_MIN) {
+          const res = await window.QzoneAPI.getLastYearFeeds({ year, count, mode })
+          if (res?.feeds?.length || year === LAST_YEAR_MIN) {
+            return { ...res, pager: { year, count, mode } }
+          }
+          year -= 1
         }
-        year -= 1
+        return { code: 0, feeds: [], hasMore: false, pager: { year, count, mode } }
       }
-      return { code: 0, feeds: [], hasMore: false, pager: { year, count, mode } }
+    },
+    {
+      key: 'fav',
+      label: '我的收藏',
+      icon: Bookmark,
+      countKey: null,
+      emptyTitle: '收藏夹还是空的',
+      emptyDesc: '在 QQ 空间网页端把好玩的说说 / 日志 / 分享加入收藏，会出现在这里',
+      // 官方收藏 type：0=全部 1=网页 2=本地图片 3=日志 4=相册/照片 5=说说 6=文字 7=分享
+      initialPager: () => ({ start: 0, type: 0 }),
+      load: (p) =>
+        window.QzoneAPI.getFavList(
+          {
+            type: p.type ?? 0,
+            start: p.start ?? 0,
+            num: PAGE_SIZE
+          },
+          { skipAuthCheck: true }
+        )
+    },
+    {
+      key: 'messageBoard',
+      label: '留言板',
+      icon: MessagesSquare,
+      countKey: null,
+      emptyTitle: '留言板还没有内容',
+      emptyDesc: '公开或仅彼此可见的留言会在这里按楼层展示',
+      kind: 'messageBoard',
+      initialPager: () => ({ start: 0, num: PAGE_SIZE, total: 0 }),
+      load: (p) =>
+        window.QzoneAPI.getMessageBoard(
+          {
+            hostUin: activeHostUin.value,
+            start: p.start ?? 0,
+            num: p.num ?? PAGE_SIZE
+          },
+          isFriendContext.value ? { skipAuthCheck: true } : undefined
+        )
     }
-  },
-  {
-    key: 'fav',
-    label: '我的收藏',
-    icon: Bookmark,
-    countKey: null,
-    emptyTitle: '收藏夹还是空的',
-    emptyDesc: '在 QQ 空间网页端把好玩的说说 / 日志 / 分享加入收藏，会出现在这里',
-    // 官方收藏 type：0=全部 1=网页 2=本地图片 3=日志 4=相册/照片 5=说说 6=文字 7=分享
-    initialPager: () => ({ start: 0, type: 0 }),
-    load: (p) =>
-      window.QzoneAPI.getFavList(
-        {
-          type: p.type ?? 0,
-          start: p.start ?? 0,
-          num: PAGE_SIZE
-        },
-        { skipAuthCheck: true }
-      )
-  },
-  {
-    key: 'messageBoard',
-    label: '留言板',
-    icon: MessagesSquare,
-    countKey: null,
-    emptyTitle: '留言板还没有内容',
-    emptyDesc: '公开或仅彼此可见的留言会在这里按楼层展示',
-    kind: 'messageBoard',
-    initialPager: () => ({ start: 0, num: PAGE_SIZE, total: 0 }),
-    load: (p) =>
-      window.QzoneAPI.getMessageBoard(
-        {
-          hostUin: activeHostUin.value,
-          start: p.start ?? 0,
-          num: p.num ?? PAGE_SIZE
-        },
-        isFriendContext.value ? { skipAuthCheck: true } : undefined
-      )
-  }
-].filter((source) => {
-  if (!isFriendContext.value) return true
-  return source.key === 'home' || source.key === 'messageBoard'
-}))
+  ].filter((source) => {
+    if (!isFriendContext.value) return true
+    return source.key === 'home' || source.key === 'messageBoard'
+  })
+)
 const activeKey = ref('home')
-const activeSource = computed(() => sources.value.find((s) => s.key === activeKey.value) || sources.value[0])
+const activeSource = computed(
+  () => sources.value.find((s) => s.key === activeKey.value) || sources.value[0]
+)
 const emptyStateTitle = computed(() =>
   loadError.value ? `${activeSource.value.label}加载失败` : activeSource.value.emptyTitle
 )
@@ -573,7 +592,7 @@ const emptyStateDesc = computed(() =>
 const feeds = ref([])
 const messageBoardTotal = ref(0)
 const pager = ref(activeSource.value.initialPager())
-const feedsCounts = reactive({})  // { friendFeeds_new_cnt, specialCareFeeds_new_cnt, ... }
+const feedsCounts = reactive({}) // { friendFeeds_new_cnt, specialCareFeeds_new_cnt, ... }
 const badgeCount = (key) => {
   const src = sources.value.find((s) => s.key === key)
   if (!src?.countKey) return 0
@@ -608,8 +627,14 @@ const MOD_NAME = { 0: '空间', 2: '相册', 8: '动态', 10: '日志', 43: '个
 
 const visitor = reactive({
   loaded: false,
-  count: 0, recent: [], blockedCount: 0, maxShow: 0,
-  mods: [], totalViews: 0, todayViews: 0, trend: []
+  count: 0,
+  recent: [],
+  blockedCount: 0,
+  maxShow: 0,
+  mods: [],
+  totalViews: 0,
+  todayViews: 0,
+  trend: []
 })
 
 const fetchVisitor = async () => {
@@ -653,8 +678,14 @@ const fetchVisitor = async () => {
 
 // ============= appid 映射 =============
 const APP_TYPE_MAP = {
-  311: '说说', 4: '相册', 2: '日志', 202: '分享',
-  334: '转发', 537: '视频', 349: '游戏', 35: '日志'
+  311: '说说',
+  4: '相册',
+  2: '日志',
+  202: '分享',
+  334: '转发',
+  537: '视频',
+  349: '游戏',
+  35: '日志'
 }
 
 const AD_APP_IDS = new Set(['6600'])
@@ -670,6 +701,11 @@ const isJunk = (raw) => {
 const HTTP_RE = /^http:\/\//
 const toHttps = (u) => {
   if (typeof u !== 'string') return ''
+  const normalized = u
+    .trim()
+    .replace(/&amp;/g, '&')
+    .replace(/\^\|\|\^/g, '_')
+  if (/^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//i.test(normalized)) return normalized
   return u
     .trim()
     .replace(/&amp;/g, '&')
@@ -687,7 +723,10 @@ const isImageUrl = (url) => {
   if (/\/ac\/b\.gif(?:[?#]|$)/i.test(url)) return false
   if (/qzonestyle\.gtimg\.cn\/qzone\/em\//.test(url)) return false
   if (/qlogo\d?\.store\.qq\.com/.test(url)) return false
-  return /(?:qpic\.cn|photo\.store\.qq\.com|gtimg\.cn)/i.test(url) || /\.(?:jpe?g|png|webp|gif)(?:[?#]|$)/i.test(url)
+  return (
+    /(?:qpic\.cn|photo\.store\.qq\.com|gtimg\.cn)/i.test(url) ||
+    /\.(?:jpe?g|png|webp|gif)(?:[?#]|$)/i.test(url)
+  )
 }
 const mediaKey = (url) =>
   String(url || '')
@@ -816,11 +855,15 @@ const collectHtmlMedia = (doc) => {
       toHttps(anchor.closest('.f-video-wrap')?.getAttribute('url3')) ||
       toHttps(anchor.querySelector('video')?.getAttribute('src'))
     const img = anchor.querySelector('img')
-    const cover = toHttps(anchor.getAttribute('data-v_picinfo_url')) || toHttps(img?.getAttribute('src'))
+    const cover =
+      toHttps(anchor.getAttribute('data-v_picinfo_url')) || toHttps(img?.getAttribute('src'))
 
     if (videoUrl) {
       media.push({
-        id: anchor.getAttribute('data-v_itemid') || anchor.getAttribute('data-param') || `video_${index + 1}`,
+        id:
+          anchor.getAttribute('data-v_itemid') ||
+          anchor.getAttribute('data-param') ||
+          `video_${index + 1}`,
         name: `video_${index + 1}`,
         type: 'video',
         thumb: cover,
@@ -866,7 +909,12 @@ const collectHtmlMedia = (doc) => {
 
   const fallbackItems = []
   mediaRoot.querySelectorAll('.pic-content img, .f-ct img').forEach((img) => {
-    if (img.classList?.contains('user-avatar') || img.classList?.contains('feedemoji') || img.classList?.contains('load_img')) return
+    if (
+      img.classList?.contains('user-avatar') ||
+      img.classList?.contains('feedemoji') ||
+      img.classList?.contains('load_img')
+    )
+      return
     const url = toHttps(img.getAttribute('src'))
     if (isImageUrl(url)) fallbackItems.push({ urls: [url], thumb: url })
   })
@@ -916,10 +964,7 @@ const getMentionTokenFromAnchor = (anchor) => {
   const uin = normalizeQzoneUin(dataUin || hrefUin)
   if (!uin) return ''
 
-  const nick = text
-    .replace(/^@+/, '')
-    .replace(/[{},]/g, '')
-    .trim() || uin
+  const nick = text.replace(/^@+/, '').replace(/[{},]/g, '').trim() || uin
 
   return `@{uin:${uin},nick:${nick},who:1}`
 }
@@ -980,13 +1025,37 @@ const escapeRegExp = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/
 
 const ABOUT_ACTION_RULES = [
   { verb: '访问了', icon: Eye, targets: ['主页', '空间', '个人档'] },
-  { verb: '赞了', icon: ThumbsUp, targets: ['说说', '照片', '相册', '日志', '分享', '视频', '动态'] },
-  { verb: '评论了', icon: MessageCircle, targets: ['说说', '照片', '相册', '日志', '分享', '视频', '动态'] },
-  { verb: '回复了', icon: MessageCircle, targets: ['评论', '说说', '照片', '相册', '日志', '分享', '视频', '动态'] },
+  {
+    verb: '赞了',
+    icon: ThumbsUp,
+    targets: ['说说', '照片', '相册', '日志', '分享', '视频', '动态']
+  },
+  {
+    verb: '评论了',
+    icon: MessageCircle,
+    targets: ['说说', '照片', '相册', '日志', '分享', '视频', '动态']
+  },
+  {
+    verb: '回复了',
+    icon: MessageCircle,
+    targets: ['评论', '说说', '照片', '相册', '日志', '分享', '视频', '动态']
+  },
   { verb: '留言了', icon: MessageCircle, targets: ['留言板', '主页', '空间'] },
-  { verb: '转发了', icon: Repeat2, targets: ['说说', '照片', '相册', '日志', '分享', '视频', '动态'] },
-  { verb: '收藏了', icon: Bookmark, targets: ['说说', '照片', '相册', '日志', '分享', '视频', '动态'] },
-  { verb: '提到了', icon: AtSign, targets: ['说说', '照片', '相册', '日志', '分享', '视频', '动态'] },
+  {
+    verb: '转发了',
+    icon: Repeat2,
+    targets: ['说说', '照片', '相册', '日志', '分享', '视频', '动态']
+  },
+  {
+    verb: '收藏了',
+    icon: Bookmark,
+    targets: ['说说', '照片', '相册', '日志', '分享', '视频', '动态']
+  },
+  {
+    verb: '提到了',
+    icon: AtSign,
+    targets: ['说说', '照片', '相册', '日志', '分享', '视频', '动态']
+  },
   { verb: '@了', icon: AtSign, targets: ['说说', '照片', '相册', '日志', '分享', '视频', '动态'] }
 ]
 
@@ -1032,12 +1101,15 @@ const extractAboutMeAction = (doc, raw) => {
 const normalize = (raw) => {
   const doc = parser.parseFromString(raw.html || '', 'text/html')
   const userLink = doc.querySelector('a[href*="user.qzone.qq.com/"]')
-  const parsedUin = (userLink?.getAttribute('href') || '').match(/user\.qzone\.qq\.com\/(\d+)/)?.[1] || ''
+  const parsedUin =
+    (userLink?.getAttribute('href') || '').match(/user\.qzone\.qq\.com\/(\d+)/)?.[1] || ''
   const parsedAvatar = userLink?.querySelector('img')?.getAttribute('src') || ''
 
   const contentNode = doc.querySelector('.qz_info_cut, .f-info')?.cloneNode(true)
   if (contentNode) {
-    contentNode.querySelectorAll('a[data-cmd="qz_toggle"], img.load_img').forEach((el) => el.remove())
+    contentNode
+      .querySelectorAll('a[data-cmd="qz_toggle"], img.load_img')
+      .forEach((el) => el.remove())
     contentNode.querySelectorAll('img').forEach((img) => {
       const orig = img.getAttribute('src') || ''
       if (!orig || orig.startsWith('/') || orig.startsWith('data:')) {
@@ -1079,8 +1151,10 @@ const normalize = (raw) => {
 
   const replyBtn = doc.querySelector('.qz_btn_reply em')
   const retweetBtn = doc.querySelector('.qz_retweet_btn em')
-  const cmtCount = parseInt(replyBtn?.textContent || '0', 10) || parseInt(raw.commentcnt || '0', 10) || 0
-  const fwdCount = parseInt(retweetBtn?.textContent || '0', 10) || parseInt(raw.relycnt || '0', 10) || 0
+  const cmtCount =
+    parseInt(replyBtn?.textContent || '0', 10) || parseInt(raw.commentcnt || '0', 10) || 0
+  const fwdCount =
+    parseInt(retweetBtn?.textContent || '0', 10) || parseInt(raw.relycnt || '0', 10) || 0
 
   const appid = Number(raw.appid) || 0
   const typeid = Number(raw.typeid) || 0
@@ -1117,8 +1191,10 @@ const normalize = (raw) => {
     actionVerb: actionMeta?.verb || '',
     actionTarget: actionMeta?.target || '',
     actionIcon: actionMeta?.icon || null,
-    contentText: richText,
-    contentHtml: richText ? '' : contentNode?.innerHTML?.trim() || '',
+    // QQ 空间返回的 HTML 只能用于本地解析，不能直接注入 Electron 渲染器。
+    // 富文本标记由 RichText 组件按受限规则渲染，其他内容降级为纯文本。
+    contentText: richText || plainContent,
+    contentHtml: '',
     media,
     images: media.map((item) => item.origin || item.thumb),
     likeCount,
@@ -1134,9 +1210,19 @@ const normalize = (raw) => {
 // 收藏列表 normalize：fav_list 返回的字段跟 feed 不一样，直接读 JSON
 //  - 收藏没有点赞 / 评论 / 转发等互动数（仅是用户的私人收藏）
 //  - shuoshuo_info / share_info / blog_info / 等子对象拿原作者
-const FAV_TYPE_LABEL = { 0: '收藏', 1: '网页', 2: '照片', 3: '日志', 4: '照片', 5: '说说', 6: '文字', 7: '分享' }
+const FAV_TYPE_LABEL = {
+  0: '收藏',
+  1: '网页',
+  2: '照片',
+  3: '日志',
+  4: '照片',
+  5: '说说',
+  6: '文字',
+  7: '分享'
+}
 const firstStringField = (item, fields) =>
-  fields.map((field) => item?.[field]).find((value) => typeof value === 'string' && value.trim()) || ''
+  fields.map((field) => item?.[field]).find((value) => typeof value === 'string' && value.trim()) ||
+  ''
 
 const objectImageStrings = (item) =>
   Object.values(item || {})
@@ -1145,13 +1231,37 @@ const objectImageStrings = (item) =>
     .filter(isImageUrl)
 
 const ORIGIN_IMAGE_FIELDS = [
-  'picrawurl', 'rawurl', 'raw_url', 'originurl', 'origin_url', 'origin',
-  'picoriginurl', 'picOriginUrl', 'url4', 'url3', 'picbigurl', 'bigurl',
-  'big_url', 'largeurl', 'large_url', 'hdurl', 'hd_url', 'raw'
+  'picrawurl',
+  'rawurl',
+  'raw_url',
+  'originurl',
+  'origin_url',
+  'origin',
+  'picoriginurl',
+  'picOriginUrl',
+  'url4',
+  'url3',
+  'picbigurl',
+  'bigurl',
+  'big_url',
+  'largeurl',
+  'large_url',
+  'hdurl',
+  'hd_url',
+  'raw'
 ]
 const THUMB_IMAGE_FIELDS = [
-  'smallurl', 'small_url', 'thumb', 'thumburl', 'thumb_url', 'picsmall',
-  'url1', 'url2', 'url', 'pre', 'preview'
+  'smallurl',
+  'small_url',
+  'thumb',
+  'thumburl',
+  'thumb_url',
+  'picsmall',
+  'url1',
+  'url2',
+  'url',
+  'pre',
+  'preview'
 ]
 const mediaFromUnknownList = (list = [], time = 0) => {
   const values = Array.isArray(list) ? list : Object.values(list || {})
@@ -1162,7 +1272,9 @@ const mediaFromUnknownList = (list = [], time = 0) => {
         if (!item || typeof item !== 'object') return null
         const origin = firstStringField(item, ORIGIN_IMAGE_FIELDS)
         const thumb = firstStringField(item, THUMB_IMAGE_FIELDS)
-        const urls = [...new Set([origin, thumb, ...objectImageStrings(item)].map(toHttps).filter(isImageUrl))]
+        const urls = [
+          ...new Set([origin, thumb, ...objectImageStrings(item)].map(toHttps).filter(isImageUrl))
+        ]
         return {
           id: item.pic_id || item.lloc || item.id || item.key || '',
           name: item.name || item.desc || `photo_${index + 1}`,
@@ -1254,24 +1366,29 @@ const normalizeFav = (raw) => {
   const favTypeKey = Number(raw.type) || 0
   const photoInfo = raw.photo_info || raw.album_info || raw.photo_list?.[0] || {}
   const info =
-    favTypeKey === 5 ? raw.shuoshuo_info || {} :
-    favTypeKey === 7 ? raw.share_info || {} :
-    favTypeKey === 3 ? raw.blog_info || {} :
-    favTypeKey === 4 ? photoInfo :
-    raw.shuoshuo_info || raw.share_info || raw.blog_info || photoInfo || {}
+    favTypeKey === 5
+      ? raw.shuoshuo_info || {}
+      : favTypeKey === 7
+        ? raw.share_info || {}
+        : favTypeKey === 3
+          ? raw.blog_info || {}
+          : favTypeKey === 4
+            ? photoInfo
+            : raw.shuoshuo_info || raw.share_info || raw.blog_info || photoInfo || {}
   const ownerUin = info.owner_uin || info.uin || raw.custom_uin || ''
-  const ownerName = info.owner_nam || info.owner_name || info.nickname || raw.custom_name || raw.title || ''
+  const ownerName =
+    info.owner_nam || info.owner_name || info.nickname || raw.custom_name || raw.title || ''
   const media = mediaFromFavoriteImages(raw, Number(raw.create_time) || 0)
   const text = normalizePlainText(
     raw.abstract ||
-    raw.desp ||
-    raw.text ||
-    raw.shuoshuo_info?.reason ||
-    raw.shuoshuo_info?.detail_shuoshuo_info?.content ||
-    raw.share_info?.reason ||
-    raw.blog_info?.title ||
-    raw.title ||
-    ''
+      raw.desp ||
+      raw.text ||
+      raw.shuoshuo_info?.reason ||
+      raw.shuoshuo_info?.detail_shuoshuo_info?.content ||
+      raw.share_info?.reason ||
+      raw.blog_info?.title ||
+      raw.title ||
+      ''
   )
   // 给 fav type 一个中文标签，复用 fc-type-chip 视觉
   const appType = FAV_TYPE_LABEL[favTypeKey] || '收藏'
@@ -1297,8 +1414,13 @@ const normalizeFav = (raw) => {
     contentHtml: '',
     media,
     images: media.map((item) => item.origin || item.thumb),
-    likeCount: 0, isLiked: false, likers: [],
-    viewCount: 0, deviceName: '', cmtCount: 0, fwdCount: 0,
+    likeCount: 0,
+    isLiked: false,
+    likers: [],
+    viewCount: 0,
+    deviceName: '',
+    cmtCount: 0,
+    fwdCount: 0,
     isFav: true
   }
 }
@@ -1309,18 +1431,26 @@ const toArray = (value) => {
   return []
 }
 
-const getReplyItems = (item) => [
-  ...toArray(item?.replylist),
-  ...toArray(item?.reply_list),
-  ...toArray(item?.list_3),
-  ...toArray(item?.children),
-  ...toArray(item?.subcomments),
-  ...toArray(item?.sub_comment),
-  ...toArray(item?.commentlist).filter((reply) => reply !== item)
-].filter((reply) => reply && typeof reply === 'object')
+const getReplyItems = (item) =>
+  [
+    ...toArray(item?.replylist),
+    ...toArray(item?.reply_list),
+    ...toArray(item?.list_3),
+    ...toArray(item?.children),
+    ...toArray(item?.subcomments),
+    ...toArray(item?.sub_comment),
+    ...toArray(item?.commentlist).filter((reply) => reply !== item)
+  ].filter((reply) => reply && typeof reply === 'object')
 
 const normalizeCommentAuthor = (item) =>
-  cleanMentionNick(item?.name || item?.nick || item?.nickname || item?.user?.nickname || item?.userinfo?.nickname || '')
+  cleanMentionNick(
+    item?.name ||
+      item?.nick ||
+      item?.nickname ||
+      item?.user?.nickname ||
+      item?.userinfo?.nickname ||
+      ''
+  )
 
 const cleanMentionNick = (nick) =>
   String(nick || '')
@@ -1341,14 +1471,27 @@ const takeLeadingMention = (text) => {
 const normalizeShuoshuoReply = (item, parent) => {
   const leading = takeLeadingMention(item.content || item.reply_content || item.text || '')
   return {
-    id: item.tid || item.id || item.commentid || item.replyid || `${item.uin || ''}-${item.create_time || ''}-${item.content || ''}`,
+    id:
+      item.tid ||
+      item.id ||
+      item.commentid ||
+      item.replyid ||
+      `${item.uin || ''}-${item.create_time || ''}-${item.content || ''}`,
     uin: String(item.uin || item.owner_uin || item.user?.uin || ''),
     author: normalizeCommentAuthor(item),
     text: leading.text,
     time: item.create_time ? formatTime(item.create_time) : '',
     deviceName: item.source_name || item.source || '',
-    targetUin: String(item.touin || item.targetuin || item.target_uin || leading.targetUin || parent?.uin || ''),
-    targetNick: item.toname || item.targetnick || item.target_nick || leading.targetNick || parent?.author || '',
+    targetUin: String(
+      item.touin || item.targetuin || item.target_uin || leading.targetUin || parent?.uin || ''
+    ),
+    targetNick:
+      item.toname ||
+      item.targetnick ||
+      item.target_nick ||
+      leading.targetNick ||
+      parent?.author ||
+      '',
     responses: []
   }
 }
@@ -1493,7 +1636,11 @@ const parseMessageContent = (value, seed = {}) => {
   if (lastIndex < source.length) pushText(source.slice(lastIndex))
 
   return {
-    text: parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n').trim(),
+    text: parts
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n')
+      .trim(),
     parts,
     media
   }
@@ -1519,10 +1666,13 @@ const parseQzoneDateTime = (value) => {
 
 const normalizeMessageReply = (reply, parentId) => {
   const time = parseQzoneDateTime(reply?.pubtime || reply?.time || reply?.replytime || 0)
-  const content = parseMessageContent(reply?.ubbContent || reply?.content || reply?.htmlContent || '', {
-    id: parentId,
-    time
-  })
+  const content = parseMessageContent(
+    reply?.ubbContent || reply?.content || reply?.htmlContent || '',
+    {
+      id: parentId,
+      time
+    }
+  )
   return {
     id: reply?.id || `${parentId}-${reply?.uin || ''}-${reply?.time || reply?.pubtime || ''}`,
     uin: String(reply?.uin || reply?.owner_uin || ''),
@@ -1579,7 +1729,9 @@ const normalizeMessageBoard = (raw, meta = {}) => {
     effect: Number(raw.effect) || 0,
     pasterId: raw.pasterid || '',
     bmp: String(raw.bmp || '').trim(),
-    replies: (Array.isArray(raw.replyList) ? raw.replyList : []).map((reply) => normalizeMessageReply(reply, raw.id))
+    replies: (Array.isArray(raw.replyList) ? raw.replyList : []).map((reply) =>
+      normalizeMessageReply(reply, raw.id)
+    )
   }
 }
 // ============= 时间 / 数字 =============
@@ -1606,7 +1758,14 @@ const getMediaThumbKey = (feed, media, index) =>
   `${feed?.tid || feed?.abstime || 'feed'}-${media?.id || media?.origin || media?.thumb || index}`
 const getMediaThumbCandidates = (media) => {
   const mediaUrls = Array.isArray(media?.urls) ? media.urls : [media?.urls]
-  return uniqueImageUrls([media?.thumb, media?.pre, ...mediaUrls, media?.origin, media?.url, media?.raw])
+  return uniqueImageUrls([
+    media?.thumb,
+    media?.pre,
+    ...mediaUrls,
+    media?.origin,
+    media?.url,
+    media?.raw
+  ])
 }
 const getMediaThumb = (feed, media, index) => {
   const key = getMediaThumbKey(feed, media, index)
@@ -1625,7 +1784,8 @@ const onMediaThumbError = (feed, index, media) => {
   brokenThumbs.add(key)
 }
 const isMessageRepliesExpanded = (tid) => !!messageRepliesExpanded[tid]
-const messageReplyOverflow = (message) => (message?.replies?.length || 0) > MESSAGE_REPLY_PREVIEW_COUNT
+const messageReplyOverflow = (message) =>
+  (message?.replies?.length || 0) > MESSAGE_REPLY_PREVIEW_COUNT
 const visibleMessageReplies = (message) => {
   const replies = message?.replies || []
   if (!messageReplyOverflow(message) || isMessageRepliesExpanded(message.tid)) return replies
@@ -1646,8 +1806,7 @@ const onMessageImageError = (event) => {
   const wrap = img?.closest?.('.mb-image')
   if (wrap) wrap.classList.add('is-broken')
 }
-const avatarUrl = (uin) =>
-  uin ? `https://qlogo4.store.qq.com/qzone/${uin}/${uin}/100` : ''
+const avatarUrl = (uin) => (uin ? `https://qlogo4.store.qq.com/qzone/${uin}/${uin}/100` : '')
 const onAvatarError = (e) => {
   e.target.src = 'https://qzonestyle.gtimg.cn/qzone/em/u120.gif'
 }
@@ -1698,7 +1857,10 @@ const sourceBadgeRows = computed(() =>
     .filter((source) => source.count > 0)
 )
 const getFeedKey = (feed) =>
-  String(feed?.tid || `${feed?.uin || ''}-${feed?.abstime || ''}-${feed?.contentText || feed?.contentHtml || ''}`)
+  String(
+    feed?.tid ||
+      `${feed?.uin || ''}-${feed?.abstime || ''}-${feed?.contentText || feed?.contentHtml || ''}`
+  )
 const appendUniqueFeeds = (nextFeeds) => {
   const seen = new Set(feeds.value.map(getFeedKey))
   const unique = nextFeeds.filter((feed) => {
@@ -1714,8 +1876,18 @@ const appendUniqueFeeds = (nextFeeds) => {
 // 当前 sub-tab 已加载内容的聚合（推到 sidebar 显示）
 const pushStats = () => {
   if (!leftRef.value?.updateFeedsStats) return
-  let mediaCount = 0, imageCount = 0, videoCount = 0, cmtCount = 0, likeCount = 0, fwdCount = 0, viewCount = 0
-  let mediaFeedCount = 0, commentedFeedCount = 0, likedFeedCount = 0, viewedFeedCount = 0, downloadableFeedCount = 0
+  let mediaCount = 0,
+    imageCount = 0,
+    videoCount = 0,
+    cmtCount = 0,
+    likeCount = 0,
+    fwdCount = 0,
+    viewCount = 0
+  let mediaFeedCount = 0,
+    commentedFeedCount = 0,
+    likedFeedCount = 0,
+    viewedFeedCount = 0,
+    downloadableFeedCount = 0
   const typeCounts = {}
   const actionCounts = {}
   const authorMap = new Map()
@@ -1759,8 +1931,18 @@ const pushStats = () => {
     loaded: feeds.value.length,
     activeSourceKey: activeSource.value.key,
     activeSourceLabel: activeSource.value.label,
-    mediaCount, imageCount, videoCount, cmtCount, likeCount, fwdCount, viewCount,
-    mediaFeedCount, commentedFeedCount, likedFeedCount, viewedFeedCount, downloadableFeedCount,
+    mediaCount,
+    imageCount,
+    videoCount,
+    cmtCount,
+    likeCount,
+    fwdCount,
+    viewCount,
+    mediaFeedCount,
+    commentedFeedCount,
+    likedFeedCount,
+    viewedFeedCount,
+    downloadableFeedCount,
     typeCounts,
     actionCounts,
     topAuthors: [...authorMap.values()]
@@ -1810,18 +1992,30 @@ const parseCommentsHtml = (html) => {
     cloned.querySelectorAll('a.nickname, .comments-op, .comments-user').forEach((el) => el.remove())
     return htmlToPlainText(cloned).replace(/^[:：\s]+/, '')
   }
-  const flat = items.map((li) => {
-    const type = li.getAttribute('data-type')
-    const tid = li.getAttribute('data-tid')
-    const uin = li.getAttribute('data-uin') || ''
-    const nick = li.getAttribute('data-nick') || ''
-    const targetUin = li.getAttribute('data-targetuin') || ''
-    const targetNick = li.getAttribute('data-targetnick') || ''
-    const contentEl = li.querySelector('.comments-content') || li
-    const text = extractCommentText(contentEl)
-    const timeText = li.querySelector('.comments-op .state, .state')?.textContent?.trim() || ''
-    return { type, id: tid, uin, author: nick, text, time: timeText, targetUin, targetNick, responses: [] }
-  }).filter((comment) => comment.text || comment.author || comment.uin)
+  const flat = items
+    .map((li) => {
+      const type = li.getAttribute('data-type')
+      const tid = li.getAttribute('data-tid')
+      const uin = li.getAttribute('data-uin') || ''
+      const nick = li.getAttribute('data-nick') || ''
+      const targetUin = li.getAttribute('data-targetuin') || ''
+      const targetNick = li.getAttribute('data-targetnick') || ''
+      const contentEl = li.querySelector('.comments-content') || li
+      const text = extractCommentText(contentEl)
+      const timeText = li.querySelector('.comments-op .state, .state')?.textContent?.trim() || ''
+      return {
+        type,
+        id: tid,
+        uin,
+        author: nick,
+        text,
+        time: timeText,
+        targetUin,
+        targetNick,
+        responses: []
+      }
+    })
+    .filter((comment) => comment.text || comment.author || comment.uin)
   const roots = []
   const byId = new Map()
   const rootById = new Map()
@@ -1838,8 +2032,7 @@ const parseCommentsHtml = (html) => {
       if (!byId.has(c.id)) roots.push(c)
       byId.set(c.id, c)
       rootById.set(c.id, c)
-    }
-    else if (c.type === 'replyroot') {
+    } else if (c.type === 'replyroot') {
       const parent = findParent(c)
       const root = rootById.get(parent?.id) || parent
       if (parent && parent !== root && !c.targetNick) {
@@ -1869,7 +2062,12 @@ const flattenCommentIds = (comments = [], seen = new Set()) => {
 
 const mergeCommentRoots = (base = [], incoming = []) => {
   const roots = [...base]
-  const rootMap = new Map(roots.map((comment) => [comment.id || `${comment.uin}-${comment.time}-${comment.text}`, comment]))
+  const rootMap = new Map(
+    roots.map((comment) => [
+      comment.id || `${comment.uin}-${comment.time}-${comment.text}`,
+      comment
+    ])
+  )
   for (const comment of incoming) {
     const key = comment.id || `${comment.uin}-${comment.time}-${comment.text}`
     const existing = rootMap.get(key)
@@ -1907,8 +2105,8 @@ const remainingCmtCount = (feed) => {
 
 const canExpandMore = (feed) => {
   const slot = commentsByTid[feed.tid]
-  if (slot?.expanded) return false        // 已经展开过全部
-  return remainingCmtCount(feed) > 0      // 内嵌之外还有评论
+  if (slot?.expanded) return false // 已经展开过全部
+  return remainingCmtCount(feed) > 0 // 内嵌之外还有评论
 }
 
 const expandMoreComments = async (feed) => {
@@ -1923,23 +2121,27 @@ const expandMoreComments = async (feed) => {
     // hostUin = feed 作者 uin；topicId = feeds3 返回的 data-topicid（<uin>_<tid>__1）
     // feedsType=8 固定（PC 实测也接受 100，但 8 是 PC 网页默认值）
     const topicId = feed.topicId || `${feed.uin}_${feed.tid}__1`
-    const authOption = feed.uin && normalizeQzoneUin(feed.uin) !== selfUin.value
-      ? { skipAuthCheck: true }
-      : undefined
+    const authOption =
+      feed.uin && normalizeQzoneUin(feed.uin) !== selfUin.value
+        ? { skipAuthCheck: true }
+        : undefined
     const pageSize = Math.max(30, Math.min(100, feed.cmtCount || 50))
     const maxPages = Math.max(1, Math.min(8, Math.ceil((feed.cmtCount || pageSize) / pageSize) + 1))
     let comments = []
     let previousCount = 0
 
     for (let page = 0; page < maxPages; page += 1) {
-      const res = await window.QzoneAPI.getFeedComments({
-        topicId,
-        hostUin: feed.uin,
-        feedsType: 8,
-        start: page * pageSize,
-        num: pageSize,
-        sort: 1
-      }, authOption)
+      const res = await window.QzoneAPI.getFeedComments(
+        {
+          topicId,
+          hostUin: feed.uin,
+          feedsType: 8,
+          start: page * pageSize,
+          num: pageSize,
+          sort: 1
+        },
+        authOption
+      )
       if (res?.code !== 0) {
         if (!comments.length) slot.error = res?.message || '加载评论失败'
         break
@@ -1947,12 +2149,17 @@ const expandMoreComments = async (feed) => {
       const parsed = parseCommentsHtml(res.feedsHtml)
       comments = mergeCommentRoots(comments, parsed)
       const nextCount = countCommentTree(comments)
-      if (!parsed.length || nextCount === previousCount || nextCount >= (feed.cmtCount || nextCount)) break
+      if (
+        !parsed.length ||
+        nextCount === previousCount ||
+        nextCount >= (feed.cmtCount || nextCount)
+      )
+        break
       previousCount = nextCount
     }
 
     // 接口返回的 feeds HTML 是整条 feed 的 HTML（含评论 li）；如果意外为空就保留内嵌评论
-    slot.comments = comments.length ? comments : (feed.inlineComments || [])
+    slot.comments = comments.length ? comments : feed.inlineComments || []
     slot.expanded = true
   } catch (e) {
     slot.error = e.message || String(e)
@@ -2070,7 +2277,9 @@ const resetFeedRuntime = (source) => {
 }
 
 const isPermanentLoadError = (message) =>
-  /保密|权限|没有权限|无权|主人设置|访问受限|仅主人|登录|请先登录|未登录/.test(String(message || ''))
+  /保密|权限|没有权限|无权|主人设置|访问受限|仅主人|登录|请先登录|未登录/.test(
+    String(message || '')
+  )
 
 const notifyLoadErrorOnce = (source, message) => {
   const key = `${source.key}:${activeHostUin.value || ''}:${message}`
@@ -2105,7 +2314,8 @@ const loadPage = async ({ reset = false } = {}) => {
   }
   if (loading.value || loadingMore.value) return
   if (!hasMore.value) return
-  if (loadRetryAfter.value && Date.now() < loadRetryAfter.value && feeds.value.length === 0) return false
+  if (loadRetryAfter.value && Date.now() < loadRetryAfter.value && feeds.value.length === 0)
+    return false
   const loadId = requestSeq.value
   const loadContext = `${source.key}:${activeHostUin.value || ''}`
   const pageKey = `${loadContext}:${JSON.stringify(pager.value)}`
@@ -2120,7 +2330,8 @@ const loadPage = async ({ reset = false } = {}) => {
   try {
     const res = await source.load(pager.value)
     if (!isCurrentLoad()) return
-    const ok = source.kind === 'shuoshuo' ? Array.isArray(res?.msglist) || res?.code === 0 : res?.code === 0
+    const ok =
+      source.kind === 'shuoshuo' ? Array.isArray(res?.msglist) || res?.code === 0 : res?.code === 0
     if (!res || !ok) {
       return handleLoadFailure(source, res?.message || '响应异常', pageKey)
     }
@@ -2162,7 +2373,8 @@ const loadPage = async ({ reset = false } = {}) => {
         ...pager.value,
         start: (pager.value.start || 0) + favList.length
       }
-      hasMore.value = favList.length === PAGE_SIZE && added > 0 && pager.value.start < (res.total || Infinity)
+      hasMore.value =
+        favList.length === PAGE_SIZE && added > 0 && pager.value.start < (res.total || Infinity)
     } else {
       const previousPager = { ...pager.value }
       const rawList = res.feeds || []
@@ -2177,7 +2389,9 @@ const loadPage = async ({ reset = false } = {}) => {
       const added = appendUniqueFeeds(realFeeds.map(normalize))
       if (res.pager) pager.value = { ...pager.value, ...res.pager }
       if (source.key === 'lastYear') {
-        const currentYear = Number(res.pager?.year || previousPager.year || new Date().getFullYear() - 1)
+        const currentYear = Number(
+          res.pager?.year || previousPager.year || new Date().getFullYear() - 1
+        )
         pager.value = {
           ...pager.value,
           year: res.hasMore ? currentYear : currentYear - 1,
@@ -2187,9 +2401,10 @@ const loadPage = async ({ reset = false } = {}) => {
       const pagerMoved =
         source.key !== 'aboutMe' ||
         Number(pager.value.offset || 0) > Number(previousPager.offset || 0)
-      hasMore.value = source.key === 'lastYear'
-        ? added > 0 && (!!res.hasMore || Number(pager.value.year) >= LAST_YEAR_MIN)
-        : !!res.hasMore && rawList.length > 0 && added > 0 && pagerMoved
+      hasMore.value =
+        source.key === 'lastYear'
+          ? added > 0 && (!!res.hasMore || Number(pager.value.year) >= LAST_YEAR_MIN)
+          : !!res.hasMore && rawList.length > 0 && added > 0 && pagerMoved
     }
   } catch (e) {
     if (isCurrentLoad()) {
@@ -2281,15 +2496,6 @@ const openPreview = (feed, startIdx) => {
   previewVisible.value = true
 }
 
-const onContentClick = (e) => {
-  const a = e.target?.closest?.('a')
-  if (!a) return
-  const href = a.getAttribute('href')
-  if (!href || href === 'javascript:;' || href.startsWith('javascript:')) {
-    e.preventDefault()
-  }
-}
-
 onMounted(async () => {
   await loadPage({ reset: true })
   await ensureScrollable()
@@ -2358,7 +2564,10 @@ defineExpose({ refresh: handleRefresh })
     color: #fff;
     background: rgba(255, 255, 255, 0.06);
   }
-  &:disabled { opacity: 0.45; cursor: not-allowed; }
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 }
 
 /* ========== 分类切换（sub-tab） ========== */
@@ -2384,7 +2593,9 @@ defineExpose({ refresh: handleRefresh })
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.18s;
+  transition:
+    color 0.15s,
+    border-color 0.18s;
 
   &:hover:not(:disabled):not(.active) {
     color: rgba(255, 255, 255, 0.85);
@@ -2393,7 +2604,10 @@ defineExpose({ refresh: handleRefresh })
     color: #fff;
     border-bottom-color: #60a5fa;
   }
-  &:disabled { cursor: not-allowed; opacity: 0.55; }
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
 
   .fm-source-icon {
     opacity: 0.85;
@@ -2416,7 +2630,10 @@ defineExpose({ refresh: handleRefresh })
   line-height: 1;
 }
 
-.fm-scroll { flex: 1; min-height: 0; }
+.fm-scroll {
+  flex: 1;
+  min-height: 0;
+}
 .fm-wrap {
   padding: 16px 24px 32px;
 }
@@ -2438,7 +2655,9 @@ defineExpose({ refresh: handleRefresh })
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 12px;
-  transition: background 0.18s, border-color 0.18s;
+  transition:
+    background 0.18s,
+    border-color 0.18s;
 
   &:hover {
     background: rgba(255, 255, 255, 0.04);
@@ -2465,7 +2684,10 @@ defineExpose({ refresh: handleRefresh })
   border: 1px solid rgba(255, 255, 255, 0.055);
   border-radius: 12px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
-  transition: background 0.18s, border-color 0.18s, transform 0.18s;
+  transition:
+    background 0.18s,
+    border-color 0.18s,
+    transform 0.18s;
 
   &:hover {
     background:
@@ -2607,7 +2829,10 @@ defineExpose({ refresh: handleRefresh })
     rgba(255, 255, 255, 0.035);
   cursor: zoom-in;
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
-  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
 
   img {
     width: 100%;
@@ -2708,7 +2933,9 @@ defineExpose({ refresh: handleRefresh })
     border: 1px solid rgba(96, 165, 250, 0.16);
     border-radius: 999px;
     cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
+    transition:
+      background 0.15s,
+      border-color 0.15s;
 
     &:hover {
       background: rgba(96, 165, 250, 0.14);
@@ -2759,7 +2986,9 @@ defineExpose({ refresh: handleRefresh })
   border-radius: 50%;
   overflow: hidden;
   transition: transform 0.15s;
-  &:hover { transform: scale(1.06); }
+  &:hover {
+    transform: scale(1.06);
+  }
 }
 .fc-avatar {
   display: block;
@@ -2785,7 +3014,9 @@ defineExpose({ refresh: handleRefresh })
   display: inline-flex;
   align-items: center;
   max-width: 100%;
-  &:hover { color: #60a5fa; }
+  &:hover {
+    color: #60a5fa;
+  }
 }
 .fc-name-rich {
   min-width: 0;
@@ -2823,9 +3054,21 @@ defineExpose({ refresh: handleRefresh })
   background: rgba(96, 165, 250, 0.1);
   border: 1px solid rgba(96, 165, 250, 0.18);
 
-  &[data-type='相册'] { color: #34d399; background: rgba(52,211,153,0.08); border-color: rgba(52,211,153,0.2); }
-  &[data-type='日志'] { color: #f59e0b; background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.22); }
-  &[data-type='视频'] { color: #a78bfa; background: rgba(167,139,250,0.08); border-color: rgba(167,139,250,0.22); }
+  &[data-type='相册'] {
+    color: #34d399;
+    background: rgba(52, 211, 153, 0.08);
+    border-color: rgba(52, 211, 153, 0.2);
+  }
+  &[data-type='日志'] {
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.22);
+  }
+  &[data-type='视频'] {
+    color: #a78bfa;
+    background: rgba(167, 139, 250, 0.08);
+    border-color: rgba(167, 139, 250, 0.22);
+  }
 }
 .fc-year-chip {
   display: inline-flex;
@@ -2838,7 +3081,9 @@ defineExpose({ refresh: handleRefresh })
   background: rgba(52, 211, 153, 0.08);
   border: 1px solid rgba(52, 211, 153, 0.18);
 }
-.fc-time { white-space: nowrap; }
+.fc-time {
+  white-space: nowrap;
+}
 .fc-card-actions {
   display: inline-flex;
   align-items: center;
@@ -2873,20 +3118,25 @@ defineExpose({ refresh: handleRefresh })
   :deep(a) {
     color: #60a5fa;
     text-decoration: none;
-    &:hover { text-decoration: underline; }
+    &:hover {
+      text-decoration: underline;
+    }
   }
   :deep(img) {
     max-width: 100%;
     border-radius: 4px;
     vertical-align: middle;
   }
-  :deep(img[src*="qzonestyle.gtimg.cn/qzone/em"]) {
-    width: 16px; height: 16px;
+  :deep(img[src*='qzonestyle.gtimg.cn/qzone/em']) {
+    width: 16px;
+    height: 16px;
     vertical-align: text-bottom;
     margin: 0 1px;
     border-radius: 0;
   }
-  :deep(br + br) { display: none; }
+  :deep(br + br) {
+    display: none;
+  }
 }
 
 .fc-content-rich {
@@ -2910,7 +3160,10 @@ defineExpose({ refresh: handleRefresh })
   gap: 4px;
   margin: 4px 0 8px;
 
-  .fc-media-item { width: 100px; height: 100px; }
+  .fc-media-item {
+    width: 100px;
+    height: 100px;
+  }
 
   /* 单图：300px 大图，避免一张图占满 */
   &.fc-media-n1 {
@@ -2935,7 +3188,9 @@ defineExpose({ refresh: handleRefresh })
     object-fit: cover;
     transition: transform 0.3s;
   }
-  &:hover img { transform: scale(1.04); }
+  &:hover img {
+    transform: scale(1.04);
+  }
 
   &.is-video {
     cursor: pointer;
@@ -2947,7 +3202,12 @@ defineExpose({ refresh: handleRefresh })
     position: absolute;
     inset: 0;
     background:
-      linear-gradient(180deg, rgba(0, 0, 0, 0.02) 0%, rgba(0, 0, 0, 0.08) 48%, rgba(0, 0, 0, 0.55) 100%),
+      linear-gradient(
+        180deg,
+        rgba(0, 0, 0, 0.02) 0%,
+        rgba(0, 0, 0, 0.08) 48%,
+        rgba(0, 0, 0, 0.55) 100%
+      ),
       radial-gradient(circle at center, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0) 42%);
     pointer-events: none;
   }
@@ -2959,7 +3219,8 @@ defineExpose({ refresh: handleRefresh })
   }
 }
 .fc-thumb-fallback {
-  width: 100%; height: 100%;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3018,7 +3279,8 @@ defineExpose({ refresh: handleRefresh })
   justify-content: center;
 }
 .fc-more-overlay {
-  position: absolute; inset: 0;
+  position: absolute;
+  inset: 0;
   z-index: 5;
   display: flex;
   align-items: center;
@@ -3045,20 +3307,35 @@ defineExpose({ refresh: handleRefresh })
   font-size: 11px;
   color: rgba(255, 255, 255, 0.55);
 }
-.fc-likers-icon { color: #60a5fa; flex-shrink: 0; }
-.fc-likers-avatars { display: flex; align-items: center; }
+.fc-likers-icon {
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+.fc-likers-avatars {
+  display: flex;
+  align-items: center;
+}
 .fc-liker-avatar {
   display: block;
   width: 18px;
   height: 18px;
   border-radius: 50%;
   margin-left: -3px;
-  transition: transform 0.15s, z-index 0s linear 0.15s;
+  transition:
+    transform 0.15s,
+    z-index 0s linear 0.15s;
   z-index: 1;
-  &:first-child { margin-left: 0; }
-  &:hover { transform: translateY(-1px) scale(1.15); z-index: 10; transition-delay: 0s; }
+  &:first-child {
+    margin-left: 0;
+  }
+  &:hover {
+    transform: translateY(-1px) scale(1.15);
+    z-index: 10;
+    transition-delay: 0s;
+  }
   img {
-    width: 18px; height: 18px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     border: 1.5px solid rgba(20, 22, 30, 0.95);
     background: rgba(255, 255, 255, 0.06);
@@ -3066,7 +3343,9 @@ defineExpose({ refresh: handleRefresh })
     display: block;
   }
 }
-.fc-likers-rest { color: rgba(255, 255, 255, 0.5); }
+.fc-likers-rest {
+  color: rgba(255, 255, 255, 0.5);
+}
 
 /* ========== 底部 footer ========== */
 .fc-footer {
@@ -3091,7 +3370,9 @@ defineExpose({ refresh: handleRefresh })
   align-items: center;
   gap: 4px;
 }
-.fc-stat.liked { color: #f59e0b; }
+.fc-stat.liked {
+  color: #f59e0b;
+}
 .fc-dl-btn {
   display: inline-flex;
   align-items: center;
@@ -3139,12 +3420,17 @@ defineExpose({ refresh: handleRefresh })
   border: none;
   border-radius: 999px;
   cursor: pointer;
-  transition: color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
   &:hover:not(:disabled) {
     color: #93c5fd;
     background: rgba(96, 165, 250, 0.08);
   }
-  &:disabled { cursor: progress; opacity: 0.7; }
+  &:disabled {
+    cursor: progress;
+    opacity: 0.7;
+  }
 }
 .fc-cmt-error {
   margin-top: 6px;
@@ -3166,5 +3452,4 @@ defineExpose({ refresh: handleRefresh })
   color: rgba(255, 255, 255, 0.4);
   font-size: 12px;
 }
-
 </style>
