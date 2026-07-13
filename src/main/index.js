@@ -4,6 +4,7 @@ import { Readable } from 'stream'
 import { ApplicationBootstrapper } from '@main/app-bootstrapper'
 import { optimizer, electronApp, platform, is } from '@electron-toolkit/utils'
 import logger from '@main/core/logger'
+import { resolveLocalMedia } from '@main/utils/local-media-registry'
 import { APP_ID } from '@shared/const'
 
 // 开发环境远程调试端口
@@ -34,13 +35,17 @@ const bootstrapper = new ApplicationBootstrapper()
 app.whenReady().then(async () => {
   try {
     // 注册 qzone-local:// → 本地文件，用 fs.createReadStream 流式响应，无内存占用
-    // 格式约定：qzone-local://local/<encoded-abs-path>
+    // 格式约定：qzone-local://local/<token>
     // 支持 Range 请求（HTML5 video 加载视频时会发 Range）
     // 主窗口用 partition: 'persist:qzone'，必须在该 session 上注册（partition session 不继承 default）
     const qzoneSession = session.fromPartition('persist:qzone')
     const handleProtocol = async (req) => {
       const u = new URL(req.url)
-      const filePath = decodeURIComponent(u.pathname.replace(/^\//, ''))
+      const token = u.pathname.replace(/^\//, '')
+      const filePath = resolveLocalMedia(token)
+      if (!filePath) {
+        return new Response('Not found', { status: 404 })
+      }
       try {
         const stat = await fs.promises.stat(filePath)
         const range = req.headers.get('range')
