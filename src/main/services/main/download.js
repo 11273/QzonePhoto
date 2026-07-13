@@ -10,11 +10,13 @@ import { APP_NAME } from '@shared/const'
 import { ServiceNames } from '@main/services/service-manager'
 import { reportHealthEvent, telemetryBuckets } from '@main/services/app-telemetry'
 import { getPhotoFileTime } from '@main/utils/download-file-time.mjs'
+import { writeImageDescription } from '@main/utils/image-description-writer.mjs'
 import { isVideoPhoto, mergeEnrichedImagesInOriginalOrder } from '@main/utils/photo-order.mjs'
 // 直接定义必要的默认配置，避免使用外部常量系统
 const DEFAULT_CONCURRENCY = 3
 const DEFAULT_PAGE_SIZE = 50
 const DEFAULT_REPLACE_EXISTING = false
+const DEFAULT_WRITE_FEED_DESCRIPTION = true
 const MAX_ACTIVE_TASKS_IN_MEMORY = 1000
 const DEFAULT_DOWNLOAD_FOLDER = APP_NAME
 
@@ -324,6 +326,17 @@ export class DownloadService {
     return boolValue
   }
 
+  getWriteFeedDescriptionSetting() {
+    const setting = this.getSetting('writeFeedDescription')
+    return setting !== null ? Boolean(setting) : DEFAULT_WRITE_FEED_DESCRIPTION
+  }
+
+  async setWriteFeedDescriptionSetting(enabled) {
+    const boolValue = Boolean(enabled)
+    await this.setSetting('writeFeedDescription', boolValue)
+    return boolValue
+  }
+
   // 生成任务ID
   generateTaskId() {
     return `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -354,7 +367,8 @@ export class DownloadService {
       album_name: options.albumName,
       source_key: options.sourceKey || '',
       referer: options.referer || '',
-      file_time: options.fileTime ? options.fileTime.getTime() : null
+      file_time: options.fileTime ? options.fileTime.getTime() : null,
+      metadata_description: options.metadataDescription || ''
     }
     if (options.requestHeaders) {
       Object.defineProperty(task, 'request_headers', {
@@ -497,7 +511,8 @@ export class DownloadService {
         id: feed.skey || feed.albumId || dirName,
         name: feed.albumName || '说说',
         sourceKey: feed.sourceKey || '',
-        referer: feed.referer || ''
+        referer: feed.referer || '',
+        feedDescription: this.getWriteFeedDescriptionSetting() ? feed.desc || '' : ''
       }
 
       // 大动态分批
@@ -561,6 +576,7 @@ export class DownloadService {
           referer: album.referer || '',
           requestHeaders,
           fileTime: getPhotoFileTime(photo),
+          metadataDescription: photo.metadataDescription || album.feedDescription || '',
           priority: PRIORITY.NORMAL
         })
         tasks.push(task)
@@ -948,6 +964,7 @@ export class DownloadService {
       await this.downloadFile(task, filePath, cancelToken)
 
       if (task.status !== TASK_STATUS.CANCELLED) {
+        await this.applyTaskImageDescription(filePath, task)
         await this.applyTaskFileTime(filePath, task)
         task.status = TASK_STATUS.COMPLETED
         task.progress = 100
@@ -1104,6 +1121,20 @@ export class DownloadService {
       await fs.promises.utimes(filePath, date, date)
     } catch (error) {
       logger.warn(`设置文件时间失败 ${task.filename}:`, error?.message || error)
+    }
+  }
+
+  async applyTaskImageDescription(filePath, task) {
+    if (task.type !== 'image' || !task.metadata_description) return
+
+    try {
+      const result = await writeImageDescription(filePath, task.metadata_description)
+      if (!result.written && result.reason !== 'empty-description') {
+        logger.warn(`未写入图片说明 ${task.filename}: ${result.reason}`)
+      }
+    } catch (error) {
+      // 元数据是下载的附加能力，失败不应让已经成功的原图下载变成失败任务。
+      logger.warn(`写入图片说明失败 ${task.filename}:`, error?.message || error)
     }
   }
 

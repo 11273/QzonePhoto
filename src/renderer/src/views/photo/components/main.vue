@@ -238,6 +238,7 @@ import MediaPreview from '@renderer/components/MediaPreview/index.vue'
 import Top from './top.vue'
 import { generateUniqueAlbumName } from '@renderer/utils'
 import { createPaginationGuard } from '@renderer/utils/paginationGuard'
+import { findCachedFeedDescription } from '@renderer/utils/feed-description-cache'
 
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
@@ -479,6 +480,7 @@ const cleanPhotoData = (photos) => {
     modifytime: photo.modifytime,
     is_video: photo.is_video,
     size: photo.size || 0,
+    metadataDescription: findCachedFeedDescription(effectiveHostUin.value, photo),
     // 保留关键字段
     picKey: photo.picKey
   }))

@@ -119,6 +119,10 @@ export const IPC_DOWNLOAD = {
   GET_REPLACE_EXISTING: 'download:getReplaceExisting',
   /** 设置文件替换选项 */
   SET_REPLACE_EXISTING: 'download:setReplaceExisting',
+  /** 获取动态图片说明写入设置 */
+  GET_WRITE_FEED_DESCRIPTION: 'download:getWriteFeedDescription',
+  /** 设置动态图片说明写入选项 */
+  SET_WRITE_FEED_DESCRIPTION: 'download:setWriteFeedDescription',
   /** 设置下载管理器打开状态 */
   SET_MANAGER_OPEN: 'download:setManagerOpen',
   /** 请求分页任务列表 */

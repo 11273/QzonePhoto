@@ -147,6 +147,9 @@ try {
       getReplaceExistingSetting: () => ipcClient.call(IPC_DOWNLOAD.GET_REPLACE_EXISTING),
       setReplaceExistingSetting: (replaceExisting) =>
         ipcClient.call(IPC_DOWNLOAD.SET_REPLACE_EXISTING, replaceExisting),
+      getWriteFeedDescriptionSetting: () => ipcClient.call(IPC_DOWNLOAD.GET_WRITE_FEED_DESCRIPTION),
+      setWriteFeedDescriptionSetting: (enabled) =>
+        ipcClient.call(IPC_DOWNLOAD.SET_WRITE_FEED_DESCRIPTION, enabled),
 
       // 用户管理
       setCurrentUser: (uin) => ipcClient.call(IPC_DOWNLOAD.SET_CURRENT_USER, { uin }),

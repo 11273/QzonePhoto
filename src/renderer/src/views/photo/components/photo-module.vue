@@ -547,6 +547,7 @@ import FeedComment from '@renderer/components/FeedComment/index.vue'
 import { copyToClipboard } from '@renderer/utils'
 import { getQQAvatarUrl } from '@renderer/utils/formatters'
 import { createPaginationGuard } from '@renderer/utils/paginationGuard'
+import { cacheFeedDescriptions } from '@renderer/utils/feed-description-cache'
 import Hls from 'hls.js'
 
 const privacyStore = usePrivacyStore()
@@ -1592,6 +1593,7 @@ const loadFeeds = async (isLoadMore = false) => {
           feeds.value = transformedFeeds
           hasMore.value = responseHasMore ?? true
         }
+        cacheFeedDescriptions(effectiveHostUin.value, feeds.value)
         // 异步加载说说数据来增强feeds（设备信息、浏览量等）
         enrichFeedsWithShuoshuo()
       } else {

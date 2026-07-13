@@ -53,6 +53,26 @@
             }}</span>
           </div>
         </div>
+
+        <el-tooltip
+          content="仅对从动态下载的图片生效：JPEG 写入图片说明与备注，其他格式会生成同名说明文件。"
+          placement="bottom"
+        >
+          <div class="setting-group compact">
+            <div class="setting-control">
+              <el-switch
+                v-model="writeFeedDescription"
+                size="small"
+                active-text=""
+                inactive-text=""
+                active-color="#60a5fa"
+                inactive-color="#DCDFE6"
+                @change="handleWriteFeedDescriptionChange"
+              />
+              <span class="setting-hint compact">保留动态文案</span>
+            </div>
+          </div>
+        </el-tooltip>
       </div>
 
       <div class="actions-right">
@@ -393,7 +413,15 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Folder, VideoPlay, VideoPause, Refresh, Delete, Loading, Hide } from '@element-plus/icons-vue'
+import {
+  Folder,
+  VideoPlay,
+  VideoPause,
+  Refresh,
+  Delete,
+  Loading,
+  Hide
+} from '@element-plus/icons-vue'
 import { Image as LucideImage, Archive, Clapperboard, FileText } from '@lucide/vue'
 import Pagination from '@renderer/components/Pagination/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
@@ -428,6 +456,7 @@ const downloadPath = ref('')
 const concurrency = ref(3)
 const tempConcurrency = ref(3)
 const replaceExisting = ref(false)
+const writeFeedDescription = ref(false)
 
 // 任务数据
 const currentPageTasks = ref([]) // 当前页的任务
@@ -507,6 +536,17 @@ const initReplaceExistingSetting = async () => {
     // 降级到localStorage
     const savedSetting = localStorage.getItem('download-replace-existing')
     replaceExisting.value = savedSetting ? JSON.parse(savedSetting) : false
+  }
+}
+
+const initWriteFeedDescriptionSetting = async () => {
+  try {
+    writeFeedDescription.value = Boolean(
+      await window.QzoneAPI.download.getWriteFeedDescriptionSetting()
+    )
+  } catch (error) {
+    console.error('获取动态文案设置失败:', error)
+    writeFeedDescription.value = false
   }
 }
 
@@ -688,6 +728,7 @@ watch(visible, async (newVisible) => {
     initDownloadPath()
     initConcurrency()
     initReplaceExistingSetting()
+    initWriteFeedDescriptionSetting()
     loadStats()
     loadTasksPage()
     setupEventListeners()
@@ -709,6 +750,7 @@ onMounted(async () => {
     initDownloadPath()
     initConcurrency()
     initReplaceExistingSetting()
+    initWriteFeedDescriptionSetting()
     loadStats()
     loadTasksPage()
     setupEventListeners()
@@ -1072,6 +1114,18 @@ const handleReplaceSettingChange = async (newValue) => {
       // 回滚设置
       replaceExisting.value = !newValue
     }
+  }
+}
+
+const handleWriteFeedDescriptionChange = async (enabled) => {
+  try {
+    const updatedValue = await window.QzoneAPI.download.setWriteFeedDescriptionSetting(enabled)
+    writeFeedDescription.value = updatedValue
+    ElMessage.success(updatedValue ? '后续动态下载会保留文案说明' : '后续动态下载不再写入文案说明')
+  } catch (error) {
+    console.error('保存动态文案设置失败:', error)
+    writeFeedDescription.value = !enabled
+    ElMessage.error('保存动态文案设置失败')
   }
 }
 </script>
