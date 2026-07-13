@@ -4,7 +4,9 @@
     <div class="module-header">
       <div class="header-content">
         <div class="title-section">
-          <h2 class="module-title">{{ isFriendPhotos || isFriendContext ? '好友照片' : '我的照片' }}</h2>
+          <h2 class="module-title">
+            {{ isFriendPhotos || isFriendContext ? '好友照片' : '我的照片' }}
+          </h2>
         </div>
         <div class="header-actions">
           <template v-if="!isFriendContext && !isFriendPhotos">
@@ -90,7 +92,10 @@
                   <el-icon><VideoPlay /></el-icon>
                 </div>
                 <!-- 隐私遮罩 -->
-                <div v-if="privacyStore.privacyMode" class="card-privacy-overlay qz-privacy-overlay">
+                <div
+                  v-if="privacyStore.privacyMode"
+                  class="card-privacy-overlay qz-privacy-overlay"
+                >
                   <el-icon class="privacy-icon qz-privacy-icon"><Hide /></el-icon>
                   <span class="privacy-text qz-privacy-text">隐私保护</span>
                 </div>
@@ -181,7 +186,9 @@
                 <div class="feed-content-wrapper tl-body">
                   <!-- 顶部：时间和删除按钮 -->
                   <div class="feed-header tl-header">
-                    <span class="feed-time tl-time">{{ formatFeedTime(feed.time || feed.date) }}</span>
+                    <span class="feed-time tl-time">{{
+                      formatFeedTime(feed.time || feed.date)
+                    }}</span>
                     <div v-if="!isSelectionMode" class="feed-header-actions">
                       <el-button
                         v-if="getDownloadableMedia(feed).length"
@@ -251,7 +258,10 @@
                             <div v-else class="media-placeholder">
                               <el-icon><VideoPlay /></el-icon>
                             </div>
-                            <div v-if="privacyStore.privacyMode" class="media-privacy-overlay tl-privacy-overlay qz-privacy-overlay">
+                            <div
+                              v-if="privacyStore.privacyMode"
+                              class="media-privacy-overlay tl-privacy-overlay qz-privacy-overlay"
+                            >
                               <el-icon class="privacy-icon qz-privacy-icon"><Hide /></el-icon>
                               <span class="privacy-text qz-privacy-text">隐私保护</span>
                             </div>
@@ -265,7 +275,10 @@
                                 </div>
                               </template>
                             </el-image>
-                            <div v-if="privacyStore.privacyMode" class="media-privacy-overlay tl-privacy-overlay qz-privacy-overlay">
+                            <div
+                              v-if="privacyStore.privacyMode"
+                              class="media-privacy-overlay tl-privacy-overlay qz-privacy-overlay"
+                            >
                               <el-icon class="privacy-icon qz-privacy-icon"><Hide /></el-icon>
                               <span class="privacy-text qz-privacy-text">隐私保护</span>
                             </div>
@@ -290,7 +303,11 @@
                         <span v-if="feed.visitorCount > 0" class="tl-chip" title="浏览量">
                           <Eye :size="12" class="tl-chip-icon" />{{ feed.visitorCount }}
                         </span>
-                        <span v-if="feed.sourceName" class="tl-chip" :title="`来自 ${feed.sourceName}`">
+                        <span
+                          v-if="feed.sourceName"
+                          class="tl-chip"
+                          :title="`来自 ${feed.sourceName}`"
+                        >
                           <Smartphone :size="12" class="tl-chip-icon" />{{ feed.sourceName }}
                         </span>
                       </div>
@@ -299,11 +316,15 @@
                       <div class="feed-actions">
                         <div class="action-item tl-stat" :class="{ active: feed.isLiked }">
                           <ThumbsUp :size="14" class="action-icon" />
-                          <span v-if="feed.likeCount > 0" class="action-count">{{ feed.likeCount }}</span>
+                          <span v-if="feed.likeCount > 0" class="action-count">{{
+                            feed.likeCount
+                          }}</span>
                         </div>
                         <div class="action-item tl-stat">
                           <MessageCircle :size="14" class="action-icon" />
-                          <span v-if="feed.commentCount > 0" class="action-count">{{ feed.commentCount }}</span>
+                          <span v-if="feed.commentCount > 0" class="action-count">{{
+                            feed.commentCount
+                          }}</span>
                         </div>
                       </div>
                     </div>
@@ -312,7 +333,9 @@
                       <ThumbsUp :size="14" class="like-icon" />
                       <div class="likes-content">
                         <template v-if="feed.likes.length <= 5 || expandedLikes.has(feed.id)">
-                          <span v-for="like in feed.likes" :key="like.uin" class="like-name">{{ like.name }}</span>
+                          <span v-for="like in feed.likes" :key="like.uin" class="like-name">{{
+                            like.name
+                          }}</span>
                           <button
                             v-if="feed.likes.length > 5"
                             class="like-toggle"
@@ -322,7 +345,12 @@
                           </button>
                         </template>
                         <template v-else>
-                          <span v-for="like in feed.likes.slice(0, 5)" :key="like.uin" class="like-name">{{ like.name }}</span>
+                          <span
+                            v-for="like in feed.likes.slice(0, 5)"
+                            :key="like.uin"
+                            class="like-name"
+                            >{{ like.name }}</span
+                          >
                           <button class="like-toggle" @click="expandedLikes.add(feed.id)">
                             等 {{ feed.likes.length }} 人
                           </button>
@@ -374,10 +402,7 @@
 
     <!-- 底部悬浮工具栏：进入多选模式即出现（即便 0 选中也显示空状态，避免来回闪动） -->
     <Transition name="toolbar" appear>
-      <div
-        v-if="isSelectionMode && !isFriendContext && !isFriendPhotos"
-        class="floating-toolbar"
-      >
+      <div v-if="isSelectionMode && !isFriendContext && !isFriendPhotos" class="floating-toolbar">
         <div class="toolbar-pill">
           <div class="toolbar-left">
             <CircleCheckBig :size="18" class="check-icon" />
@@ -396,8 +421,27 @@
               @click="downloadSelectedFeeds"
             >
               <LucideDownload :size="14" />
-              {{ downloadingSelected ? '加入下载…' : `下载选中${selectedFeeds.size ? ' ' + selectedFeeds.size : ''}` }}
+              {{
+                downloadingSelected
+                  ? '加入下载…'
+                  : `下载选中${selectedFeeds.size ? ' ' + selectedFeeds.size : ''}`
+              }}
             </button>
+            <el-tooltip
+              content="仅复制图片链接，不会下载图片。链接是否可在网页中打开取决于 QQ 空间权限和链接有效期。"
+              placement="top"
+            >
+              <button
+                class="tb-btn"
+                :disabled="selectedImageLinks.length === 0"
+                :aria-label="`复制 ${selectedImageLinks.length} 条图片链接`"
+                @click="copySelectedImageLinks"
+              >
+                <Link2 :size="14" />复制图片链接{{
+                  selectedImageLinks.length ? ` ${selectedImageLinks.length}` : ''
+                }}
+              </button>
+            </el-tooltip>
             <button
               class="tb-btn tb-btn-danger"
               :disabled="!selectedFeeds.size"
@@ -534,7 +578,19 @@ import {
 } from '@element-plus/icons-vue'
 import { Select, Close, Check } from '@element-plus/icons-vue'
 // 真 SVG 图标库（替换 emoji 用），按需 tree-shake
-import { ThumbsUp, MessageCircle, Image as ImageIcon, Eye, Smartphone, CircleCheckBig, CheckSquare, Trash2, X, Download as LucideDownload } from '@lucide/vue'
+import {
+  ThumbsUp,
+  MessageCircle,
+  Image as ImageIcon,
+  Eye,
+  Smartphone,
+  CircleCheckBig,
+  CheckSquare,
+  Trash2,
+  X,
+  Download as LucideDownload,
+  Link2
+} from '@lucide/vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { ElDialog, ElButton } from 'element-plus'
 import MediaPreview from '@renderer/components/MediaPreview/index.vue'
@@ -713,7 +769,33 @@ const downloadableFeeds = computed(() => {
 })
 
 const downloadableMediaCount = computed(() => {
-  return downloadableFeeds.value.reduce((total, feed) => total + getDownloadableMedia(feed).length, 0)
+  return downloadableFeeds.value.reduce(
+    (total, feed) => total + getDownloadableMedia(feed).length,
+    0
+  )
+})
+
+const isCopyableImageUrl = (value) => {
+  if (typeof value !== 'string' || !value.trim()) return false
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' || url.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
+const selectedImageLinks = computed(() => {
+  const links = new Set()
+  feeds.value
+    .filter((feed) => selectedFeeds.value.has(feed.id))
+    .forEach((feed) => {
+      getDownloadableMedia(feed).forEach((media) => {
+        if (media.is_video || !isCopyableImageUrl(media.url)) return
+        links.add(media.url)
+      })
+    })
+  return [...links]
 })
 
 const buildDownloadPayload = (feedList) => {
@@ -1052,7 +1134,7 @@ const downloadSelectedFeeds = async () => {
   if (selectedFeeds.value.size === 0) return
   downloadingSelected.value = true
   try {
-    const selected = feeds.value.filter(f => selectedFeeds.value.has(f.id))
+    const selected = feeds.value.filter((f) => selectedFeeds.value.has(f.id))
     const selectedWithMedia = selected.filter((feed) => getDownloadableMedia(feed).length > 0)
     if (!selectedWithMedia.length) {
       ElMessage.warning('选中的动态都没有可下载的媒体')
@@ -1065,6 +1147,22 @@ const downloadSelectedFeeds = async () => {
     ElMessage.error(`批量下载失败：${e.message || e}`)
   } finally {
     downloadingSelected.value = false
+  }
+}
+
+const copySelectedImageLinks = async () => {
+  const links = selectedImageLinks.value
+  if (!links.length) {
+    ElMessage.warning('选中的动态没有可复制的图片链接')
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(links.join('\n'))
+    ElMessage.success(`已复制 ${links.length} 条图片链接`)
+  } catch (error) {
+    console.error('[photo] 批量复制图片链接失败', error)
+    ElMessage.error('复制失败，请检查系统剪贴板权限')
   }
 }
 
@@ -1127,13 +1225,16 @@ const deleteSelectedFeeds = async () => {
       deleteProgress.value.currentItem = feed.text || feed.albumTitle || `动态 ${i + 1}`
 
       try {
-        await window.QzoneAPI.deleteFeed({
-          hostUin,
-          skey: feed.id,
-          time: feed.time,
-          typeid: feed.typeid || 0,
-          flag: 0
-        }, friendMeta.value)
+        await window.QzoneAPI.deleteFeed(
+          {
+            hostUin,
+            skey: feed.id,
+            time: feed.time,
+            typeid: feed.typeid || 0,
+            flag: 0
+          },
+          friendMeta.value
+        )
         successCount++
       } catch (error) {
         console.error(`删除动态失败 (${feed.id}):`, error)
@@ -1212,13 +1313,16 @@ const deleteFeed = async (feed) => {
     try {
       // 调用删除接口
       const hostUin = effectiveHostUin.value
-      await window.QzoneAPI.deleteFeed({
-        hostUin,
-        skey: feed.id, // 使用 feed.id (即 skey)
-        time: feed.time, // 使用 feed.time
-        typeid: feed.typeid || 0, // 使用 feed.typeid
-        flag: 0
-      }, friendMeta.value)
+      await window.QzoneAPI.deleteFeed(
+        {
+          hostUin,
+          skey: feed.id, // 使用 feed.id (即 skey)
+          time: feed.time, // 使用 feed.time
+          typeid: feed.typeid || 0, // 使用 feed.typeid
+          flag: 0
+        },
+        friendMeta.value
+      )
 
       // 删除后重新拉取最新数据以确保数据一致性
       // 因为接口可能不准确，所以通过重新加载来验证删除结果
@@ -1420,7 +1524,8 @@ const openVideoInBrowser = () => {
     return
   }
 
-  window.QzoneAPI?.shell?.openExternal?.(currentVideoInfo.value.url)
+  window.QzoneAPI?.shell
+    ?.openExternal?.(currentVideoInfo.value.url)
     ?.then(() => ElMessage.success('正在打开视频...'))
     ?.catch(() => ElMessage.error('打开视频失败'))
 }
@@ -1459,11 +1564,14 @@ const handleAlbumClick = (feed) => {
 const enrichFeedsWithShuoshuo = async () => {
   try {
     const hostUin = effectiveHostUin.value
-    const res = await window.QzoneAPI.getShuoshuo({
-      targetUin: hostUin,
-      pos: 0,
-      num: 20
-    }, { skipAuthCheck: true })
+    const res = await window.QzoneAPI.getShuoshuo(
+      {
+        targetUin: hostUin,
+        pos: 0,
+        num: 20
+      },
+      { skipAuthCheck: true }
+    )
 
     if (res?.msglist) {
       // 用时间戳匹配feeds和说说
@@ -1474,7 +1582,7 @@ const enrichFeedsWithShuoshuo = async () => {
         }
       }
 
-      feeds.value = feeds.value.map(feed => {
+      feeds.value = feeds.value.map((feed) => {
         const matched = shuoshuoMap.get(feed.time)
         if (!matched) return feed
 
@@ -1491,8 +1599,9 @@ const enrichFeedsWithShuoshuo = async () => {
         return {
           ...feed,
           sourceName: matched.source_name || feed.sourceName,
-          visitorCount: feed.visitorCount || parseInt(matched.visitorCount || matched['visitorCount '] || 0),
-          comments: (feed.comments || []).map(cmt => {
+          visitorCount:
+            feed.visitorCount || parseInt(matched.visitorCount || matched['visitorCount '] || 0),
+          comments: (feed.comments || []).map((cmt) => {
             const key = `${cmt.uin}|${(cmt.text || '').slice(0, 30)}`
             const device = cmtDeviceMap.get(key)
             return device ? { ...cmt, deviceName: device } : cmt
@@ -1500,7 +1609,9 @@ const enrichFeedsWithShuoshuo = async () => {
         }
       })
     }
-  } catch { /* silent - enrichment is optional */ }
+  } catch {
+    /* silent - enrichment is optional */
+  }
 }
 
 let currentLoadId = 0
@@ -1550,11 +1661,14 @@ const loadFeeds = async (isLoadMore = false) => {
 
     if (isFriendPhotos.value) {
       // 好友照片模式：使用 feeds2_html_picfeed API
-      response = await window.QzoneAPI.getFriendPhotos({
-        start: isLoadMore ? feeds.value.length : 0,
-        count: 20,
-        begintime: currentBegintime
-      }, { skipAuthCheck: true })
+      response = await window.QzoneAPI.getFriendPhotos(
+        {
+          start: isLoadMore ? feeds.value.length : 0,
+          count: 20,
+          begintime: currentBegintime
+        },
+        { skipAuthCheck: true }
+      )
 
       if (response && response.code === 0 && response.data) {
         const photos = response.data.photos || []
@@ -1565,10 +1679,13 @@ const loadFeeds = async (isLoadMore = false) => {
     } else {
       // 我的照片模式：使用 feeds2_html_picfeed_qqtab API
       const hostUin = effectiveHostUin.value
-      response = await window.QzoneAPI.getFeeds({
-        hostUin,
-        begintime: currentBegintime
-      }, friendMeta.value)
+      response = await window.QzoneAPI.getFeeds(
+        {
+          hostUin,
+          begintime: currentBegintime
+        },
+        friendMeta.value
+      )
 
       if (response && response.code === 0 && response.data) {
         const apiFeeds = response.data.feeds || []
@@ -1718,58 +1835,62 @@ const processApiFeeds = (apiFeeds) => {
 // 处理好友照片 API 返回的数据
 const processFriendPhotos = (photos) => {
   if (!photos || !Array.isArray(photos)) return []
-  return photos.filter((p) => p).map((photo) => {
-    const media = []
-    if (photo.is_video === '1' || photo.is_video === 1) {
-      media.push({
-        type: 'video',
-        url: '', // 需要通过 floatview 接口获取
-        cover: photo.small_url || photo.medium_url,
-        lloc: photo.lloc,
-        picKey: photo.lloc,
-        name: photo.name || photo.desc || '',
-        modifytime: parseInt(photo.uploadtime) || 0,
-        albumId: photo.album?.id,
-        ownerUin: photo.owner?.uin
-      })
-    } else {
-      media.push({
-        type: 'image',
-        url: photo.medium_url || photo.small_url,
-        bigUrl: photo.large_image?.url || photo.medium_url,
-        raw: photo.raw || '',
-        lloc: photo.lloc,
-        picKey: photo.lloc,
-        name: photo.name || photo.desc || '',
-        modifytime: parseInt(photo.uploadtime) || 0
-      })
-    }
+  return photos
+    .filter((p) => p)
+    .map((photo) => {
+      const media = []
+      if (photo.is_video === '1' || photo.is_video === 1) {
+        media.push({
+          type: 'video',
+          url: '', // 需要通过 floatview 接口获取
+          cover: photo.small_url || photo.medium_url,
+          lloc: photo.lloc,
+          picKey: photo.lloc,
+          name: photo.name || photo.desc || '',
+          modifytime: parseInt(photo.uploadtime) || 0,
+          albumId: photo.album?.id,
+          ownerUin: photo.owner?.uin
+        })
+      } else {
+        media.push({
+          type: 'image',
+          url: photo.medium_url || photo.small_url,
+          bigUrl: photo.large_image?.url || photo.medium_url,
+          raw: photo.raw || '',
+          lloc: photo.lloc,
+          picKey: photo.lloc,
+          name: photo.name || photo.desc || '',
+          modifytime: parseInt(photo.uploadtime) || 0
+        })
+      }
 
-    const timestamp = parseInt(photo.uploadtime) || 0
-    const feedDate = new Date(timestamp * 1000)
+      const timestamp = parseInt(photo.uploadtime) || 0
+      const feedDate = new Date(timestamp * 1000)
 
-    return {
-      id: photo.lloc || `${photo.owner?.uin}_${timestamp}_${photo.number}`,
-      date: feedDate.toISOString().split('T')[0],
-      time: timestamp.toString(),
-      text: photo.desc || '',
-      media,
-      photoTotal: 1,
-      albumTitle: photo.album?.title ? `${photo.album.title}` : null,
-      albumId: photo.album?.id || null,
-      albumName: photo.album?.title || null,
-      owner: photo.owner ? {
-        uin: photo.owner.uin,
-        nick: photo.owner.nick,
-        face: photo.owner.face
-      } : null,
-      isLiked: false,
-      likeCount: parseInt(photo.praiseNum || 0),
-      commentCount: parseInt(photo.comment_total || 0),
-      likes: [],
-      comments: []
-    }
-  })
+      return {
+        id: photo.lloc || `${photo.owner?.uin}_${timestamp}_${photo.number}`,
+        date: feedDate.toISOString().split('T')[0],
+        time: timestamp.toString(),
+        text: photo.desc || '',
+        media,
+        photoTotal: 1,
+        albumTitle: photo.album?.title ? `${photo.album.title}` : null,
+        albumId: photo.album?.id || null,
+        albumName: photo.album?.title || null,
+        owner: photo.owner
+          ? {
+              uin: photo.owner.uin,
+              nick: photo.owner.nick,
+              face: photo.owner.face
+            }
+          : null,
+        isLiked: false,
+        likeCount: parseInt(photo.praiseNum || 0),
+        commentCount: parseInt(photo.comment_total || 0),
+        likes: [],
+        comments: []
+      }
+    })
 }
 
 // 导出供外部使用
@@ -2048,7 +2169,6 @@ onUnmounted(() => {
         transform: none;
       }
     }
-
   }
 }
 
