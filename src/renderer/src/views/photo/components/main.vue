@@ -144,6 +144,18 @@
           <span class="selected-count">已选择 {{ selectedPhotos.size }} 张照片</span>
           <div class="toolbar-actions">
             <el-button size="small" @click="clearSelection">取消选择</el-button>
+            <el-tooltip
+              content="仅复制图片链接，不会下载图片。链接是否可在网页中打开取决于 QQ 空间权限和链接有效期。"
+              placement="top"
+            >
+              <el-button
+                size="small"
+                :disabled="selectedImageLinks.length === 0"
+                @click="copySelectedImageLinks"
+              >
+                复制链接
+              </el-button>
+            </el-tooltip>
             <el-button v-if="!isFriendContext" size="small" type="danger" @click="deleteSelected">删除选中</el-button>
             <el-button size="small" type="primary" @click="downloadSelected">下载选中</el-button>
           </div>
@@ -261,6 +273,29 @@ const photoList = ref([])
 
 // 选择状态
 const selectedPhotos = ref(new Set())
+
+const isCopyableImageUrl = (value) => {
+  if (typeof value !== 'string' || !value.trim()) return false
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' || url.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
+const selectedImageLinks = computed(() => {
+  const links = new Set()
+  photoList.value.forEach((photo) => {
+    const photoKey = photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+    const isVideo = photo.is_video === true || photo.is_video === 1 || photo.is_video === '1'
+    const url = photo.raw || photo.url || ''
+    if (selectedPhotos.value.has(photoKey) && !isVideo && isCopyableImageUrl(url)) {
+      links.add(url)
+    }
+  })
+  return [...links]
+})
 
 // 照片尺寸配置
 const photoSize = ref('mini')
@@ -1114,6 +1149,22 @@ const downloadSelected = async () => {
     console.error('下载选中照片失败:', error)
 
     ElMessage.error('下载选中照片失败')
+  }
+}
+
+const copySelectedImageLinks = async () => {
+  const links = selectedImageLinks.value
+  if (!links.length) {
+    ElMessage.warning('选中的照片没有可复制的图片链接')
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(links.join('\n'))
+    ElMessage.success(`已复制 ${links.length} 条图片链接`)
+  } catch (error) {
+    console.error('批量复制图片链接失败:', error)
+    ElMessage.error('复制失败，请检查系统剪贴板权限')
   }
 }
 
