@@ -4,8 +4,13 @@ out
 .DS_Store
 .eslintcache
 *.log*
-.env.local
-.env.*.local
+
+# 本机环境变量可能包含调试开关、令牌或服务地址，不纳入开源仓库。
+# 如需共享示例，只提交 .env.example 或 .env.<环境>.example。
+.env
+.env.*
+!.env.example
+!.env.*.example
 src/renderer/components.d.ts
 logs/security/.security-key
 logs/security/*.key
