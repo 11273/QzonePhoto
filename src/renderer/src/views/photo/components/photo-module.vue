@@ -722,8 +722,11 @@ const buildDownloadPayload = (feedList) => {
       skey: feed.id,
       time: feed.time,
       desc: feed.text || feed.albumTitle || '',
+      authorName: feed.owner?.nick || userStore.userInfo?.nickname || '',
+      authorUin: feed.owner?.uin || effectiveHostUin.value || '',
       albumId: feed.albumId || '',
       albumName: feed.albumName || '动态',
+      referer: `https://user.qzone.qq.com/${feed.owner?.uin || effectiveHostUin.value || ''}`,
       photos: getDownloadableMedia(feed)
     }))
     .filter((feed) => feed.photos.length > 0)

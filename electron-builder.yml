@@ -38,6 +38,7 @@ extraResources:
 asarUnpack:
   - resources/** # 保持resources目录未压缩
   - out/preload/** # 保持preload脚本未压缩，确保IPC通信正常
+  - node_modules/ffmpeg-static/** # 视频元数据写入工具必须在 ASAR 外执行
 
 # 签名后钩子（用于苹果公证等操作，脚本内部会检查平台）
 afterSign: build/afterSign.js

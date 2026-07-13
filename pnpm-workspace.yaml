@@ -4,6 +4,7 @@ allowBuilds:
   javascript-obfuscator: true
   sharp: true
   asarmor: true
+  ffmpeg-static: true
   esbuild: false
   vue-demi: false
   '@parcel/watcher': false

@@ -10,7 +10,7 @@ import { APP_NAME } from '@shared/const'
 import { ServiceNames } from '@main/services/service-manager'
 import { reportHealthEvent, telemetryBuckets } from '@main/services/app-telemetry'
 import { getPhotoFileTime } from '@main/utils/download-file-time.mjs'
-import { writeImageDescription } from '@main/utils/image-description-writer.mjs'
+import { writeTaskMediaMetadata } from '@main/utils/media-metadata-writer.mjs'
 import { isVideoPhoto, mergeEnrichedImagesInOriginalOrder } from '@main/utils/photo-order.mjs'
 // 直接定义必要的默认配置，避免使用外部常量系统
 const DEFAULT_CONCURRENCY = 3
@@ -345,6 +345,7 @@ export class DownloadService {
   // 创建任务对象
   createTask(options) {
     const now = Date.now()
+    const fileTime = options.fileTime ? new Date(options.fileTime) : null
     const task = {
       id: this.generateTaskId(),
       name: options.filename || path.basename(options.url),
@@ -367,8 +368,9 @@ export class DownloadService {
       album_name: options.albumName,
       source_key: options.sourceKey || '',
       referer: options.referer || '',
-      file_time: options.fileTime ? options.fileTime.getTime() : null,
-      metadata_description: options.metadataDescription || ''
+      file_time: fileTime && !Number.isNaN(fileTime.getTime()) ? fileTime.getTime() : null,
+      metadata_description: options.metadataDescription || '',
+      media_metadata: options.mediaMetadata || null
     }
     if (options.requestHeaders) {
       Object.defineProperty(task, 'request_headers', {
@@ -431,13 +433,29 @@ export class DownloadService {
       )
     }
 
+    const metadataAlbum = {
+      ...album,
+      feedMetadata: this.getWriteFeedDescriptionSetting()
+        ? {
+            description: '',
+            authorName: album.ownerName || album.owner?.nick || album.creatorName || '',
+            authorUin: userInfo.hostUin || '',
+            publishedAt: 0,
+            albumName: album.name || '未命名相册',
+            sourceUrl: userInfo.hostUin
+              ? `https://user.qzone.qq.com/${String(userInfo.hostUin).replace(/^o/, '')}`
+              : ''
+          }
+        : null
+    }
+
     const taskIds = []
     const batchSize = 1000 // 分批处理，避免内存占用过大
 
     // 分批处理照片
     for (let i = 0; i < photos.length; i += batchSize) {
       const batch = photos.slice(i, i + batchSize)
-      const batchIds = await this.processBatch(batch, albumDir, album, userInfo, headers)
+      const batchIds = await this.processBatch(batch, albumDir, metadataAlbum, userInfo, headers)
       taskIds.push(...batchIds)
 
       // 触发批量更新
@@ -507,12 +525,23 @@ export class DownloadService {
       const feedDir = path.join(rootDir, this.sanitizeFilename(dirName))
 
       // 复用 processBatch：用虚拟相册装载（albumId = skey）以便和真正相册任务区分
+      const authorUin = String(feed.authorUin || '').replace(/^o/, '')
       const virtualAlbum = {
         id: feed.skey || feed.albumId || dirName,
         name: feed.albumName || '说说',
         sourceKey: feed.sourceKey || '',
         referer: feed.referer || '',
-        feedDescription: this.getWriteFeedDescriptionSetting() ? feed.desc || '' : ''
+        feedDescription: this.getWriteFeedDescriptionSetting() ? feed.desc || '' : '',
+        feedMetadata: this.getWriteFeedDescriptionSetting()
+          ? {
+              description: feed.desc || '',
+              authorName: feed.authorName || '',
+              authorUin,
+              publishedAt: feed.time || 0,
+              albumName: feed.albumName || '说说',
+              sourceUrl: authorUin ? `https://user.qzone.qq.com/${authorUin}` : feed.referer || ''
+            }
+          : null
       }
 
       // 大动态分批
@@ -577,6 +606,7 @@ export class DownloadService {
           requestHeaders,
           fileTime: getPhotoFileTime(photo),
           metadataDescription: photo.metadataDescription || album.feedDescription || '',
+          mediaMetadata: photo.mediaMetadata || album.feedMetadata || null,
           priority: PRIORITY.NORMAL
         })
         tasks.push(task)
@@ -602,6 +632,8 @@ export class DownloadService {
             referer: album.referer || '',
             requestHeaders,
             fileTime: getPhotoFileTime(video),
+            metadataDescription: video.metadataDescription || album.feedDescription || '',
+            mediaMetadata: video.mediaMetadata || album.feedMetadata || null,
             priority: PRIORITY.NORMAL
           })
           tasks.push(task)
@@ -627,6 +659,8 @@ export class DownloadService {
               referer: album.referer || '',
               requestHeaders,
               fileTime: getPhotoFileTime(videoInfo) || getPhotoFileTime(video),
+              metadataDescription: video.metadataDescription || album.feedDescription || '',
+              mediaMetadata: video.mediaMetadata || album.feedMetadata || null,
               priority: PRIORITY.NORMAL
             })
             tasks.push(task)
@@ -647,6 +681,8 @@ export class DownloadService {
               referer: album.referer || '',
               requestHeaders,
               fileTime: getPhotoFileTime(video),
+              metadataDescription: video.metadataDescription || album.feedDescription || '',
+              mediaMetadata: video.mediaMetadata || album.feedMetadata || null,
               priority: PRIORITY.NORMAL
             })
             tasks.push(task)
@@ -669,6 +705,8 @@ export class DownloadService {
           referer: album.referer || '',
           requestHeaders,
           fileTime: getPhotoFileTime(video),
+          metadataDescription: video.metadataDescription || album.feedDescription || '',
+          mediaMetadata: video.mediaMetadata || album.feedMetadata || null,
           priority: PRIORITY.NORMAL
         })
         tasks.push(task)
@@ -942,6 +980,7 @@ export class DownloadService {
           //   console.debug(`[DownloadService] 文件已存在，跳过下载: ${task.filename}`)
           // }
 
+          await this.applyTaskMediaMetadata(filePath, task)
           await this.applyTaskFileTime(filePath, task)
 
           // 完成的任务从内存中移除
@@ -964,7 +1003,7 @@ export class DownloadService {
       await this.downloadFile(task, filePath, cancelToken)
 
       if (task.status !== TASK_STATUS.CANCELLED) {
-        await this.applyTaskImageDescription(filePath, task)
+        await this.applyTaskMediaMetadata(filePath, task)
         await this.applyTaskFileTime(filePath, task)
         task.status = TASK_STATUS.COMPLETED
         task.progress = 100
@@ -1124,17 +1163,25 @@ export class DownloadService {
     }
   }
 
-  async applyTaskImageDescription(filePath, task) {
-    if (task.type !== 'image' || !task.metadata_description) return
+  async applyTaskMediaMetadata(filePath, task) {
+    if (
+      !['image', 'video'].includes(task.type) ||
+      (!task.metadata_description && !task.media_metadata)
+    )
+      return
 
     try {
-      const result = await writeImageDescription(filePath, task.metadata_description)
+      const result = await writeTaskMediaMetadata(filePath, task)
       if (!result.written && result.reason !== 'empty-description') {
-        logger.warn(`未写入图片说明 ${task.filename}: ${result.reason}`)
+        logger.warn(`未写入媒体信息 ${task.filename}: ${result.reason}`)
+      } else if (result.fallback) {
+        logger.warn(
+          `媒体信息已使用兼容说明文件保存 ${task.filename}: ${result.reason || 'fallback'}`
+        )
       }
     } catch (error) {
       // 元数据是下载的附加能力，失败不应让已经成功的原图下载变成失败任务。
-      logger.warn(`写入图片说明失败 ${task.filename}:`, error?.message || error)
+      logger.warn(`写入媒体信息失败 ${task.filename}:`, error?.message || error)
     }
   }
 

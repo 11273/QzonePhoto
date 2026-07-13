@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'qzone-feed-description-cache-v1'
+const STORAGE_KEY = 'qzone-feed-description-cache-v2'
 const MAX_ENTRIES = 2000
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 
@@ -28,7 +28,7 @@ const readCache = () => {
     const cache = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
     const cutoff = Date.now() - MAX_AGE_MS
     return Object.fromEntries(
-      Object.entries(cache).filter(([, value]) => value?.updatedAt >= cutoff && value?.description)
+      Object.entries(cache).filter(([, value]) => value?.updatedAt >= cutoff && value?.metadata)
     )
   } catch {
     return {}
@@ -53,10 +53,18 @@ export const cacheFeedDescriptions = (hostUin, feeds) => {
 
   feeds.forEach((feed) => {
     const description = String(feed?.text || feed?.albumTitle || '').trim()
-    if (!description) return
+    const authorUin = String(feed?.owner?.uin || hostUin || '').replace(/^o/, '')
+    const metadata = {
+      description,
+      authorName: String(feed?.owner?.nick || feed?.owner?.name || '').trim(),
+      authorUin,
+      publishedAt: Number(feed?.time || 0),
+      albumName: String(feed?.albumName || feed?.albumTitle || '').trim(),
+      sourceUrl: authorUin ? `https://user.qzone.qq.com/${authorUin}` : ''
+    }
     ;(feed.media || []).forEach((media) => {
       getPhotoKeys(media).forEach((key) => {
-        cache[`${hostUin}:${key}`] = { description, updatedAt }
+        cache[`${hostUin}:${key}`] = { metadata, updatedAt }
       })
     })
   })
@@ -64,12 +72,15 @@ export const cacheFeedDescriptions = (hostUin, feeds) => {
   saveCache(cache)
 }
 
-export const findCachedFeedDescription = (hostUin, photo) => {
-  if (!hostUin || !photo) return ''
+export const findCachedFeedMetadata = (hostUin, photo) => {
+  if (!hostUin || !photo) return null
   const cache = readCache()
   for (const key of getPhotoKeys(photo)) {
-    const description = cache[`${hostUin}:${key}`]?.description
-    if (description) return description
+    const metadata = cache[`${hostUin}:${key}`]?.metadata
+    if (metadata) return metadata
   }
-  return ''
+  return null
 }
+
+export const findCachedFeedDescription = (hostUin, photo) =>
+  findCachedFeedMetadata(hostUin, photo)?.description || ''

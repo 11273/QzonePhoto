@@ -2183,7 +2183,9 @@ const setFeedDownloading = (tid, downloading) => {
 const buildFeedDownloadPayload = (feed) => ({
   skey: feed.tid,
   time: feed.abstime,
-  desc: (feed.contentText || feed.contentHtml || '').replace(/<[^>]+>/g, '').slice(0, 40),
+  desc: normalizePlainText(feed.contentText || feed.contentHtml || ''),
+  authorName: feed.name || '',
+  authorUin: normalizeQzoneUin(feed.uin),
   albumId: '',
   albumName: `${activeSource.value.label}/${feed.name || feed.uin || '动态'}`,
   sourceKey: feed.isFav ? 'fav' : activeKey.value,

@@ -25,9 +25,30 @@ jobs:
     timeout-minutes: 45
     env:
       VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+      npm_config_arch: ${{ matrix.arch }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-2022]
+        include:
+          - os: ubuntu-latest
+            command: pnpm run build:linux -p never
+            artifact: linux
+            arch: x64
+          - os: macos-15-intel
+            command: pnpm build && pnpm exec electron-builder --mac --x64 -p never
+            artifact: macos-x64
+            arch: x64
+          - os: macos-14
+            command: pnpm build && pnpm exec electron-builder --mac --arm64 -p never
+            artifact: macos-arm64
+            arch: arm64
+          - os: windows-2022
+            command: pnpm build && pnpm exec electron-builder --win --x64 -p never
+            artifact: windows-x64
+            arch: x64
+          - os: windows-2022
+            command: pnpm build && pnpm exec electron-builder --win --ia32 -p never
+            artifact: windows-ia32
+            arch: ia32
 
     steps:
       - name: Check out Git repository
@@ -48,22 +69,13 @@ jobs:
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: build-linux
-        if: matrix.os == 'ubuntu-latest'
-        run: pnpm run build:linux -p never
-
-      - name: build-mac
-        if: matrix.os == 'macos-latest'
-        run: pnpm run build:mac -p never
-
-      - name: build-win
-        if: matrix.os == 'windows-2022'
-        run: pnpm run build:win -p never
+      - name: Build application
+        run: ${{ matrix.command }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.os }}
+          name: dist-${{ matrix.artifact }}
           path: dist/
           retention-days: 1
 

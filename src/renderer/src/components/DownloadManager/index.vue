@@ -55,7 +55,7 @@
         </div>
 
         <el-tooltip
-          content="仅对从动态下载的图片生效：JPEG 写入图片说明与备注，其他格式会生成同名说明文件。"
+          content="将文案、发布者、QQ 号、发布时间和相册信息保存在下载的图片与视频中，方便在本地查看和搜索。"
           placement="bottom"
         >
           <div class="setting-group compact">
@@ -69,7 +69,7 @@
                 inactive-color="#DCDFE6"
                 @change="handleWriteFeedDescriptionChange"
               />
-              <span class="setting-hint compact">保留动态文案</span>
+              <span class="setting-hint compact">保留动态信息</span>
             </div>
           </div>
         </el-tooltip>
@@ -456,7 +456,7 @@ const downloadPath = ref('')
 const concurrency = ref(3)
 const tempConcurrency = ref(3)
 const replaceExisting = ref(false)
-const writeFeedDescription = ref(false)
+const writeFeedDescription = ref(true)
 
 // 任务数据
 const currentPageTasks = ref([]) // 当前页的任务
@@ -545,8 +545,8 @@ const initWriteFeedDescriptionSetting = async () => {
       await window.QzoneAPI.download.getWriteFeedDescriptionSetting()
     )
   } catch (error) {
-    console.error('获取动态文案设置失败:', error)
-    writeFeedDescription.value = false
+    console.error('获取动态信息设置失败:', error)
+    writeFeedDescription.value = true
   }
 }
 
@@ -1121,11 +1121,11 @@ const handleWriteFeedDescriptionChange = async (enabled) => {
   try {
     const updatedValue = await window.QzoneAPI.download.setWriteFeedDescriptionSetting(enabled)
     writeFeedDescription.value = updatedValue
-    ElMessage.success(updatedValue ? '后续动态下载会保留文案说明' : '后续动态下载不再写入文案说明')
+    ElMessage.success(updatedValue ? '后续下载会保留动态信息' : '后续下载不再写入动态信息')
   } catch (error) {
-    console.error('保存动态文案设置失败:', error)
+    console.error('保存动态信息设置失败:', error)
     writeFeedDescription.value = !enabled
-    ElMessage.error('保存动态文案设置失败')
+    ElMessage.error('保存动态信息设置失败')
   }
 }
 </script>

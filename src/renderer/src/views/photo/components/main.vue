@@ -238,7 +238,7 @@ import MediaPreview from '@renderer/components/MediaPreview/index.vue'
 import Top from './top.vue'
 import { generateUniqueAlbumName } from '@renderer/utils'
 import { createPaginationGuard } from '@renderer/utils/paginationGuard'
-import { findCachedFeedDescription } from '@renderer/utils/feed-description-cache'
+import { findCachedFeedMetadata } from '@renderer/utils/feed-description-cache'
 
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
@@ -470,20 +470,24 @@ const fetchPhotosByTopicId = async (topicId, pageStart = 0, pageNum = 100) => {
 
 // 清理照片数据的公共函数
 const cleanPhotoData = (photos) => {
-  return photos.map((photo) => ({
-    id: photo.id,
-    name: photo.name,
-    url: photo.url,
-    pre: photo.pre,
-    raw: photo.raw,
-    lloc: photo.lloc,
-    modifytime: photo.modifytime,
-    is_video: photo.is_video,
-    size: photo.size || 0,
-    metadataDescription: findCachedFeedDescription(effectiveHostUin.value, photo),
-    // 保留关键字段
-    picKey: photo.picKey
-  }))
+  return photos.map((photo) => {
+    const mediaMetadata = findCachedFeedMetadata(effectiveHostUin.value, photo)
+    return {
+      id: photo.id,
+      name: photo.name,
+      url: photo.url,
+      pre: photo.pre,
+      raw: photo.raw,
+      lloc: photo.lloc,
+      modifytime: photo.modifytime,
+      is_video: photo.is_video,
+      size: photo.size || 0,
+      metadataDescription: mediaMetadata?.description || '',
+      mediaMetadata,
+      // 保留关键字段
+      picKey: photo.picKey
+    }
+  })
 }
 
 // 添加下载任务的公共函数 - 优化批量添加体验
