@@ -591,6 +591,7 @@ const acceptFileTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'mp4', 'mov
 
 // 本地文件列表（待上传）
 const localFiles = ref([])
+const videoPreviewRetryUrls = new WeakMap()
 
 // 上传统计信息（来自主进程，仅全局模式使用）
 const globalUploadStats = ref({
@@ -882,9 +883,30 @@ const handleImageError = (event, file) => {
 }
 
 // 视频加载错误处理
-const handleVideoError = (event, file) => {
-  console.warn('视频预览加载失败:', file.name, event.target.src)
-  if (file) {
+const handleVideoError = async (event, file) => {
+  const video = event?.target
+  const failedUrl = video?.currentSrc || video?.src || file?.preview
+  if (!file?.path || !failedUrl || videoPreviewRetryUrls.get(file) === failedUrl) {
+    console.warn('视频预览加载失败:', file?.name, failedUrl)
+    if (file) file.previewError = true
+    return
+  }
+
+  videoPreviewRetryUrls.set(file, failedUrl)
+  try {
+    const previewResponse = await window.QzoneAPI.getVideoPreview({ filePath: file.path })
+    const previewUrl = previewResponse?.dataUrl
+    if (!previewUrl) throw new Error('未获取到视频预览地址')
+
+    file.preview = previewUrl
+    file.previewError = false
+    file.previewLoading = false
+    if (video) {
+      video.src = previewUrl
+      video.load()
+    }
+  } catch (error) {
+    console.warn('刷新视频预览地址失败:', file.name, error)
     file.previewError = true
   }
 }

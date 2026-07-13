@@ -3,7 +3,9 @@ import path from 'path'
 
 const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const MAX_ENTRIES = 2048
-const TOKEN_TTL_MS = 30 * 60 * 1000
+// 令牌按最近一次媒体读取续期。两小时足够覆盖暂停后继续播放，
+// 同时仍避免本地文件地址被长期复用。
+const TOKEN_TTL_MS = 2 * 60 * 60 * 1000
 
 const tokenToMedia = new Map()
 const pathToToken = new Map()
