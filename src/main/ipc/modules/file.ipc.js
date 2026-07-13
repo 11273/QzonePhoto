@@ -90,8 +90,9 @@ export function createFileHandlers() {
           throw new Error('文件不存在')
         }
         // 不再 readFileSync 整文件转 base64（GB 级视频会让主进程 V8 ExternalMemoryAccounter 崩溃）
-        // 返回 qzone-local:// 协议 URL，让 renderer <video> 标签流式加载
+        // 只签发短时 token，避免把本地绝对路径暴露给 renderer。
         const token = registerLocalMedia(filePath)
+        if (!token) throw new Error('无法创建视频预览')
         const dataUrl = `qzone-local://local/${token}`
         return { dataUrl }
       } catch (error) {

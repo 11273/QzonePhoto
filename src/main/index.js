@@ -4,8 +4,9 @@ import { Readable } from 'stream'
 import { ApplicationBootstrapper } from '@main/app-bootstrapper'
 import { optimizer, electronApp, platform, is } from '@electron-toolkit/utils'
 import logger from '@main/core/logger'
-import { resolveLocalMedia } from '@main/utils/local-media-registry'
 import { APP_ID } from '@shared/const'
+import { resolveLocalMedia } from '@main/utils/local-media-registry'
+import path from 'path'
 
 // 开发环境远程调试端口
 if (is.dev) {
@@ -17,7 +18,13 @@ if (is.dev) {
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'qzone-local',
-    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true }
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      bypassCSP: true
+    }
   }
 ])
 
@@ -34,20 +41,19 @@ const bootstrapper = new ApplicationBootstrapper()
 // 准备就绪流程
 app.whenReady().then(async () => {
   try {
-    // 注册 qzone-local:// → 本地文件，用 fs.createReadStream 流式响应，无内存占用
-    // 格式约定：qzone-local://local/<token>
+    // 注册 qzone-local:// → 本地文件，用 fs.createReadStream 流式响应，无内存占用。
+    // 格式约定：qzone-local://local/<short-lived-token>
     // 支持 Range 请求（HTML5 video 加载视频时会发 Range）
     // 主窗口用 partition: 'persist:qzone'，必须在该 session 上注册（partition session 不继承 default）
     const qzoneSession = session.fromPartition('persist:qzone')
     const handleProtocol = async (req) => {
       const u = new URL(req.url)
-      const token = u.pathname.replace(/^\//, '')
-      const filePath = resolveLocalMedia(token)
-      if (!filePath) {
-        return new Response('Not found', { status: 404 })
-      }
+      if (u.hostname !== 'local') return new Response('Not found', { status: 404 })
+      const filePath = resolveLocalMedia(u.pathname.replace(/^\//, ''))
+      if (!filePath) return new Response('Not found', { status: 404 })
       try {
         const stat = await fs.promises.stat(filePath)
+        if (!stat.isFile()) return new Response('Not found', { status: 404 })
         const range = req.headers.get('range')
         let start = 0
         let end = stat.size - 1
@@ -56,7 +62,13 @@ app.whenReady().then(async () => {
           const m = /bytes=(\d+)-(\d*)/.exec(range)
           if (m) {
             start = parseInt(m[1], 10)
-            end = m[2] ? parseInt(m[2], 10) : stat.size - 1
+            end = Math.min(m[2] ? parseInt(m[2], 10) : stat.size - 1, stat.size - 1)
+            if (start >= stat.size || start > end) {
+              return new Response(null, {
+                status: 416,
+                headers: { 'Content-Range': `bytes */${stat.size}` }
+              })
+            }
             status = 206
           }
         }
@@ -64,7 +76,7 @@ app.whenReady().then(async () => {
         const webStream = Readable.toWeb(stream)
         const headers = {
           'Content-Length': String(end - start + 1),
-          'Content-Type': 'video/mp4',
+          'Content-Type': getLocalMediaMimeType(filePath),
           'Accept-Ranges': 'bytes'
         }
         if (status === 206) {
@@ -73,7 +85,7 @@ app.whenReady().then(async () => {
         return new Response(webStream, { status, headers })
       } catch (e) {
         logger.error('[qzone-local] 读取失败:', e?.message || e)
-        return new Response(String(e), { status: 500 })
+        return new Response('Unable to read media', { status: 500 })
       }
     }
     // 同时在 default session 和 主窗口 partition session 上注册
@@ -99,6 +111,21 @@ app.whenReady().then(async () => {
     app.exit(1)
   }
 })
+
+function getLocalMediaMimeType(filePath) {
+  switch (path.extname(filePath).toLowerCase()) {
+    case '.webm':
+      return 'video/webm'
+    case '.mov':
+      return 'video/quicktime'
+    case '.m4v':
+      return 'video/x-m4v'
+    case '.avi':
+      return 'video/x-msvideo'
+    default:
+      return 'video/mp4'
+  }
+}
 
 // 生命周期管理
 app.on('window-all-closed', async () => {
