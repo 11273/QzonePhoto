@@ -65,7 +65,7 @@
       platform: 'macos',
       arch: 'arm64',
       packageType: 'dmg',
-      hint: '适合 M1、M2、M3、M4 系列 Mac'
+      hint: '适合所有 Apple 芯片 Mac（M 系列）'
     },
     'macos-x64-dmg': {
       label: 'macOS Intel 版',
