@@ -6,9 +6,10 @@ import { withTimeout } from '@shared/utils/async-timeout.mjs'
 const USER_INFO_TIMEOUT_MS = 15000
 
 export const useUserStore = defineStore('user', () => {
+  const demoMode = window.QzoneAPI?.demoMode === true
   const userInfo = ref({})
-  const qzPSkey = ref('')
-  const qzUin = ref('')
+  const qzPSkey = ref(demoMode ? 'demo-p-skey' : '')
+  const qzUin = ref(demoMode ? '100012026' : '')
   const qzCookies = ref({})
 
   const plainCookies = (cookies = {}) =>
@@ -35,6 +36,11 @@ export const useUserStore = defineStore('user', () => {
 
   // 初始化时从本地存储恢复
   const initFromLocal = async () => {
+    if (demoMode) {
+      const res = await window.QzoneAPI.fetchUserInfo()
+      userInfo.value = res.data
+      return
+    }
     const { p_skey, uin, cookies } = getLocalUserInfo()
     qzPSkey.value = p_skey
     qzUin.value = uin

@@ -146,17 +146,15 @@
       <div v-else key="self" class="user-section">
         <div class="user-card">
           <div class="card-header">
-            <el-avatar
-              shape="square"
-              :size="32"
-              :src="`https://qlogo4.store.qq.com/qzone/${userStore.userInfo?.uin}/${userStore.userInfo?.uin}/100`"
-              class="user-avatar"
-            >
+            <el-avatar shape="square" :size="32" :src="userAvatarUrl" class="user-avatar">
               {{ stripEmoji(userStore.userInfo?.nick)?.[0] || 'Q' }}
             </el-avatar>
             <div class="user-info">
               <!-- eslint-disable-next-line vue/no-v-html -- 名称已做 HTML 转义，仅注入表情 img 标签 -->
-              <div class="nickname" v-html="renderFriendName(userStore.userInfo?.nick || 'QZone用户')"></div>
+              <div
+                class="nickname"
+                v-html="renderFriendName(userStore.userInfo?.nick || 'QZone用户')"
+              ></div>
               <div class="uin-row">
                 <span
                   class="uin uin-copyable"
@@ -510,7 +508,9 @@
 
           <!-- 年份筛选 -->
           <div
-            v-if="selectedPhotoType === 'my-photos' && photoStats.years && photoStats.years.length > 0"
+            v-if="
+              selectedPhotoType === 'my-photos' && photoStats.years && photoStats.years.length > 0
+            "
             class="filter-block"
           >
             <div class="filter-title">年份</div>
@@ -535,7 +535,10 @@
           </div>
 
           <!-- 聚合 stats（已加载） -->
-          <div v-if="selectedPhotoType === 'my-photos' && photoStats.feedsCount > 0" class="agg-stats">
+          <div
+            v-if="selectedPhotoType === 'my-photos' && photoStats.feedsCount > 0"
+            class="agg-stats"
+          >
             <div class="agg-row">
               <ClipboardList :size="12" class="agg-icon" />
               <span class="agg-key">动态</span>
@@ -743,7 +746,10 @@
             </div>
           </section>
 
-          <section v-if="feedsStats.sourceBadgeRows && feedsStats.sourceBadgeRows.length" class="fd-panel">
+          <section
+            v-if="feedsStats.sourceBadgeRows && feedsStats.sourceBadgeRows.length"
+            class="fd-panel"
+          >
             <div class="fd-panel-head">
               <span>未读提醒</span>
             </div>
@@ -754,10 +760,15 @@
             </div>
           </section>
 
-          <section v-if="feedsDynamicMod || feedsStats.trend?.length || feedsStats.recentVisitors?.length" class="fd-panel fd-space-card">
+          <section
+            v-if="feedsDynamicMod || feedsStats.trend?.length || feedsStats.recentVisitors?.length"
+            class="fd-panel fd-space-card"
+          >
             <div class="fd-panel-head">
               <span>空间热度</span>
-              <em v-if="feedsDynamicMod">动态 {{ formatFeedsBigNum(feedsDynamicMod.total || 0) }}</em>
+              <em v-if="feedsDynamicMod"
+                >动态 {{ formatFeedsBigNum(feedsDynamicMod.total || 0) }}</em
+              >
             </div>
             <div v-if="feedsDynamicMod" class="fd-space-line">
               <strong>{{ formatFeedsBigNum(feedsDynamicMod.total || 0) }}</strong>
@@ -776,7 +787,10 @@
                   <stop offset="100%" stop-color="#60a5fa" stop-opacity="0" />
                 </linearGradient>
               </defs>
-              <polygon :points="trendAreaPolygon(feedsStats.trend, 220, 44)" fill="url(#mn-spark-fill)" />
+              <polygon
+                :points="trendAreaPolygon(feedsStats.trend, 220, 44)"
+                fill="url(#mn-spark-fill)"
+              />
               <polyline
                 :points="trendPolyline(feedsStats.trend, 220, 44)"
                 fill="none"
@@ -789,7 +803,10 @@
             </svg>
           </section>
 
-          <section v-if="feedsStats.recentVisitors && feedsStats.recentVisitors.length" class="fd-panel fd-visitors">
+          <section
+            v-if="feedsStats.recentVisitors && feedsStats.recentVisitors.length"
+            class="fd-panel fd-visitors"
+          >
             <div class="fd-panel-head">
               <span>最近来过</span>
               <em>{{ feedsStats.recentVisitors.length }}</em>
@@ -1037,6 +1054,11 @@ const props = defineProps({
 const emit = defineEmits(['album-selected', 'module-changed', 'enter-friend', 'exit-friend'])
 
 const userStore = useUserStore()
+const userAvatarUrl = computed(() =>
+  window.QzoneAPI?.demoMode
+    ? 'http://127.0.0.1:4173/assets/demo/logo.png'
+    : `https://qlogo4.store.qq.com/qzone/${userStore.userInfo?.uin}/${userStore.userInfo?.uin}/100`
+)
 const downloadStore = useDownloadStore()
 const refreshAlbumCallback = inject('refreshAlbumCallback', null)
 const loading = ref(false)
@@ -2343,21 +2365,22 @@ const updateFeedsStats = (stats) => {
 // 给 30 天 sparkline 归一化用
 const feedsTrendMax = computed(() => Math.max(0, ...(feedsStats.trend || [])))
 
-const feedsDynamicMod = computed(() =>
-  (feedsStats.mods || []).find((m) => Number(m.mod) === 8 || m.name === '动态') || null
+const feedsDynamicMod = computed(
+  () => (feedsStats.mods || []).find((m) => Number(m.mod) === 8 || m.name === '动态') || null
 )
 
-const feedsEngagementTotal = computed(() =>
-  (feedsStats.likeCount || 0) + (feedsStats.cmtCount || 0) + (feedsStats.fwdCount || 0)
+const feedsEngagementTotal = computed(
+  () => (feedsStats.likeCount || 0) + (feedsStats.cmtCount || 0) + (feedsStats.fwdCount || 0)
 )
 
 const feedsItemUnit = computed(() =>
   feedsStats.activeSourceKey === 'messageBoard' ? '留言' : '动态'
 )
 
-const feedsUniqueAuthorCount = computed(() => feedsStats.topAuthors?.length
-  ? Math.max(feedsStats.topAuthors.length, Number(feedsStats.uniqueAuthorCount || 0))
-  : Number(feedsStats.uniqueAuthorCount || 0)
+const feedsUniqueAuthorCount = computed(() =>
+  feedsStats.topAuthors?.length
+    ? Math.max(feedsStats.topAuthors.length, Number(feedsStats.uniqueAuthorCount || 0))
+    : Number(feedsStats.uniqueAuthorCount || 0)
 )
 
 const toPercentText = (value, total) => {
@@ -2367,14 +2390,26 @@ const toPercentText = (value, total) => {
 
 const feedsAvgLike = computed(() => {
   const loaded = feedsStats.loaded || 0
-  return loaded ? ((feedsStats.likeCount || 0) / loaded).toFixed((feedsStats.likeCount || 0) >= loaded * 10 ? 0 : 1) : '0'
+  return loaded
+    ? ((feedsStats.likeCount || 0) / loaded).toFixed(
+        (feedsStats.likeCount || 0) >= loaded * 10 ? 0 : 1
+      )
+    : '0'
 })
 const feedsAvgComment = computed(() => {
   const loaded = feedsStats.loaded || 0
-  return loaded ? ((feedsStats.cmtCount || 0) / loaded).toFixed((feedsStats.cmtCount || 0) >= loaded * 10 ? 0 : 1) : '0'
+  return loaded
+    ? ((feedsStats.cmtCount || 0) / loaded).toFixed(
+        (feedsStats.cmtCount || 0) >= loaded * 10 ? 0 : 1
+      )
+    : '0'
 })
-const feedsMediaRate = computed(() => toPercentText(feedsStats.mediaFeedCount || 0, feedsStats.loaded || 0))
-const feedsViewedRate = computed(() => toPercentText(feedsStats.viewedFeedCount || 0, feedsStats.loaded || 0))
+const feedsMediaRate = computed(() =>
+  toPercentText(feedsStats.mediaFeedCount || 0, feedsStats.loaded || 0)
+)
+const feedsViewedRate = computed(() =>
+  toPercentText(feedsStats.viewedFeedCount || 0, feedsStats.loaded || 0)
+)
 const feedsMediaText = computed(() => {
   const imageCount = Number(feedsStats.imageCount || 0)
   const videoCount = Number(feedsStats.videoCount || 0)
@@ -2395,7 +2430,10 @@ const feedsTypeRows = computed(() => {
     .map(([label, count]) => ({ label, count: Number(count) || 0 }))
     .filter((row) => row.count > 0)
     .sort((a, b) => b.count - a.count)
-  const total = Math.max(1, entries.reduce((sum, row) => sum + row.count, 0))
+  const total = Math.max(
+    1,
+    entries.reduce((sum, row) => sum + row.count, 0)
+  )
   return entries.map((row) => ({
     ...row,
     percent: Math.max(6, Math.round((row.count / total) * 100))
@@ -2436,7 +2474,9 @@ const trendPolyline = (arr, w, h) => {
   if (!arr || !arr.length) return ''
   const max = Math.max(...arr, 1)
   const step = w / Math.max(arr.length - 1, 1)
-  return arr.map((v, i) => `${(i * step).toFixed(1)},${(h - (v / max) * (h - 4) - 2).toFixed(1)}`).join(' ')
+  return arr
+    .map((v, i) => `${(i * step).toFixed(1)},${(h - (v / max) * (h - 4) - 2).toFixed(1)}`)
+    .join(' ')
 }
 
 // 同样的归一化，但闭合到底部形成填充多边形
@@ -3579,7 +3619,12 @@ defineExpose({
   border-color: rgba(96, 165, 250, 0.14);
   background:
     radial-gradient(circle at 86% 12%, rgba(52, 211, 153, 0.14), transparent 34%),
-    linear-gradient(135deg, rgba(96, 165, 250, 0.15), rgba(167, 139, 250, 0.065) 45%, rgba(255, 255, 255, 0.025));
+    linear-gradient(
+      135deg,
+      rgba(96, 165, 250, 0.15),
+      rgba(167, 139, 250, 0.065) 45%,
+      rgba(255, 255, 255, 0.025)
+    );
 }
 .fd-cover-top {
   display: grid;
@@ -3633,7 +3678,12 @@ defineExpose({
   border-radius: 50%;
   color: rgba(220, 252, 231, 0.96);
   background:
-    radial-gradient(circle, rgba(52, 211, 153, 0.22), rgba(52, 211, 153, 0.06) 58%, transparent 59%),
+    radial-gradient(
+      circle,
+      rgba(52, 211, 153, 0.22),
+      rgba(52, 211, 153, 0.06) 58%,
+      transparent 59%
+    ),
     rgba(255, 255, 255, 0.035);
   font-variant-numeric: tabular-nums;
 
@@ -3909,7 +3959,9 @@ defineExpose({
   padding: 14px 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.04);
 
-  &:first-child { border-top: none; }
+  &:first-child {
+    border-top: none;
+  }
 }
 
 .mn-h {
@@ -3928,7 +3980,9 @@ defineExpose({
   justify-content: space-between;
   margin: 0 0 10px;
 }
-.mn-h-row .mn-h { margin: 0; }
+.mn-h-row .mn-h {
+  margin: 0;
+}
 .mn-h-sub {
   font-size: 10px;
   font-weight: 500;
@@ -3942,7 +3996,9 @@ defineExpose({
   grid-template-columns: 1fr 1fr;
   gap: 14px 10px;
 }
-.mn-kpis-3 { grid-template-columns: 1fr 1fr 1fr; }
+.mn-kpis-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
 .mn-kpi {
   position: relative;
   padding-left: 10px;
@@ -4001,7 +4057,9 @@ defineExpose({
   height: 44px;
   overflow: visible;
 }
-.mn-spark-area { height: 44px; }
+.mn-spark-area {
+  height: 44px;
+}
 .mn-empty {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.35);
@@ -4022,7 +4080,9 @@ defineExpose({
   height: 100%;
   min-width: 2px;
   transition: filter 0.18s;
-  &:hover { filter: brightness(1.25); }
+  &:hover {
+    filter: brightness(1.25);
+  }
 }
 .mn-mod-list {
   display: flex;
@@ -4046,7 +4106,9 @@ defineExpose({
   border-radius: 50%;
   align-self: center;
 }
-.mn-mod-name { color: rgba(255, 255, 255, 0.78); }
+.mn-mod-name {
+  color: rgba(255, 255, 255, 0.78);
+}
 .mn-mod-pct {
   color: rgba(255, 255, 255, 0.4);
   font-size: 11px;
@@ -4304,9 +4366,13 @@ defineExpose({
   &:hover {
     transform: scale(1.18);
     z-index: 10;
-    img { outline-color: #60a5fa; }
+    img {
+      outline-color: #60a5fa;
+    }
   }
-  &.is-friend img { outline-color: rgba(52, 211, 153, 0.7); }
+  &.is-friend img {
+    outline-color: rgba(52, 211, 153, 0.7);
+  }
 }
 .mn-avatar-dot {
   position: absolute;

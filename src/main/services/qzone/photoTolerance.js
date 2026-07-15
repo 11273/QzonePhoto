@@ -1,6 +1,6 @@
 // 容错获取相册照片：
 // 服务端偶发把单张照片字段（含非法字符 / 截断 utf-8 / 不可见控制符）写进
-// JSONP 回调里，导致 extractJSONFromCallback 的 Function() eval 失败、整页拿不到。
+// JSONP 回调里，导致受限 JSON5 解析失败、整页拿不到。
 // 这里提供一个二分定位 + 跳过坏数据的包装：把 page 折半递归，定位到 pageNum=1
 // 仍然解析失败时把那一张标记 skippedCount，正常返回剩余照片。
 

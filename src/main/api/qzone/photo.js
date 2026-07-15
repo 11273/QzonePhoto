@@ -1,4 +1,4 @@
-import { getGTK } from '@main/api/utils/helpers'
+import { extractJSONFromCallback, getGTK, parseObjectLiteral } from '@main/api/utils/helpers'
 import request from '@main/api/utils/request'
 import { parseSetCookie } from '@main/utils'
 
@@ -7,18 +7,9 @@ const rawUin = (uin) => String(uin).replace(/^o/, '')
 
 const cleanArray = (items) => (Array.isArray(items) ? items : []).filter(Boolean)
 
-const evalObjectLiteral = (source) => {
-  if (!source || typeof source !== 'string') return null
-  try {
-    return Function('"use strict";return (' + source + ')')()
-  } catch {
-    return null
-  }
-}
-
 const extractHomeModuleData = (html = '') => {
   const match = String(html).match(/var\s+_feedsdata\s*=\s*({[\s\S]*?})\s*;\s*(?:for\s*\(|if\s*\()/)
-  return evalObjectLiteral(match?.[1])
+  return parseObjectLiteral(match?.[1])
 }
 
 const extractHomeFeedBlocks = (html = '') => {
@@ -28,8 +19,11 @@ const extractHomeFeedBlocks = (html = '') => {
   let match
   while ((match = startPattern.exec(source))) {
     const start = match.index
-    const next = source.slice(startPattern.lastIndex).search(/<li\b[^>]*class=(["'])[^"']*\bf-single\b[^"']*\1[^>]*>/i)
-    const end = next >= 0 ? startPattern.lastIndex + next : source.indexOf('</ul>', startPattern.lastIndex)
+    const next = source
+      .slice(startPattern.lastIndex)
+      .search(/<li\b[^>]*class=(["'])[^"']*\bf-single\b[^"']*\1[^>]*>/i)
+    const end =
+      next >= 0 ? startPattern.lastIndex + next : source.indexOf('</ul>', startPattern.lastIndex)
     if (end > start) blocks.push(source.slice(start, end))
   }
   return blocks
@@ -74,7 +68,8 @@ const normalizeHomeFeedsPayload = (payload, html = '', fallbackPager = {}) => {
     message: body.message || '',
     hasMore: !!(main.hasMoreFeeds || main.hasMoreFeeds_0) && withHtml.length > 0,
     pager: {
-      start: Number.isFinite(nextOffset) && nextOffset > start ? nextOffset : start + withHtml.length,
+      start:
+        Number.isFinite(nextOffset) && nextOffset > start ? nextOffset : start + withHtml.length,
       count: Number(fallbackPager.count || 10)
     },
     feeds: withHtml
@@ -82,7 +77,9 @@ const normalizeHomeFeedsPayload = (payload, html = '', fallbackPager = {}) => {
 }
 
 const homeHtmlErrorMessage = (html = '') => {
-  const text = String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  const text = String(html || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
   if (/主人设置了保密|没有权限|无权|访问受限|仅主人|权限/.test(text)) {
     return '对不起，主人设置了保密，您没有权限查看'
   }
@@ -349,24 +346,9 @@ export async function cgi_delpic_multi_v2(
     }
   })
 
-  // 返回的是HTML页面，需要解析JavaScript中的JSON数据
-  const htmlContent = response.data
-  // 使用正则提取JSON数据
-  const jsonMatch = htmlContent.match(/frameElement\.callback\(([\s\S]*?)\)/)
-
-  if (jsonMatch && jsonMatch[1]) {
-    try {
-      // 去除可能的尾部分号和空格
-      const jsonStr = jsonMatch[1].trim().replace(/;?\s*$/, '')
-      const result = eval('(' + jsonStr + ')')
-      return result
-    } catch (error) {
-      console.error('解析删除照片响应失败:', error)
-      throw new Error('解析删除响应失败')
-    }
-  }
-
-  throw new Error('删除照片响应格式异常')
+  const parsed = extractJSONFromCallback(response.data)
+  if (!parsed || typeof parsed !== 'object') throw new Error('删除照片响应格式异常')
+  return Array.isArray(parsed.raw) && parsed.raw[0] ? parsed.raw[0] : parsed
 }
 
 /**
@@ -424,14 +406,7 @@ export async function feeds2_html_picfeed_qqtab(uin, p_skey, hostUin, begintime 
  * @param {object} feedRef   { topicId, hostUin, feedsType, start, num, sort }
  */
 export async function emotion_cgi_ic_getcomments(uin, p_skey, feedRef = {}) {
-  const {
-    topicId,
-    hostUin,
-    feedsType = 8,
-    start = 0,
-    num = 20,
-    sort = 1
-  } = feedRef
+  const { topicId, hostUin, feedsType = 8, start = 0, num = 20, sort = 1 } = feedRef
   if (!topicId || !hostUin) {
     return { code: -1, message: 'missing topicId/hostUin' }
   }
@@ -479,9 +454,8 @@ export async function emotion_cgi_ic_getcomments(uin, p_skey, feedRef = {}) {
  * 拉「好友动态」时间线（QQ 空间网页右上「动态」入口对应的接口）。
  *
  * 这个接口返回 `_Callback({...})` 包裹的 JS object literal —— 单引号、
- * unquoted key、嵌入大量 \x3C 转义的 HTML，标准 JSON.parse 解析不了。
- * 我们用 Function('return (...)') 在主进程内 eval（vs renderer eval 风险
- * 等价；服务器本身已经被信任），抽出 data 数组 + 翻页指针。
+ * unquoted key、嵌入大量 \x3C 转义的 HTML，统一由受限 JSON5 解析器处理，
+ * 不执行响应中的 JavaScript。
  *
  * @param {string} uin    cookie uin (带 o 前缀)
  * @param {string} p_skey 登录 skey
@@ -489,7 +463,14 @@ export async function emotion_cgi_ic_getcomments(uin, p_skey, feedRef = {}) {
  * @param {object} pager   { pagenum, begintime, externparam, count }
  */
 export async function feeds3_html_more(uin, p_skey, hostUin, pager = {}) {
-  const { pagenum = 1, begintime = 0, externparam = 'undefined', count = 10, dayspac = 0, scope = 0 } = pager
+  const {
+    pagenum = 1,
+    begintime = 0,
+    externparam = 'undefined',
+    count = 10,
+    dayspac = 0,
+    scope = 0
+  } = pager
   const url =
     'https://user.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/feeds3_html_more'
   const params = {
@@ -868,8 +849,7 @@ export async function get_fav_list(uin, p_skey, opts = {}) {
   // 注意：必须走 user.qzone.qq.com 域的 proxy，不走 h5.qzone.qq.com。
   // h5 域服务器对 cookie 校验严格（需要 ptcz / pt4_token 等），
   // 而主进程 axios 只能给 uin / p_skey；同 CGI 走 user 域 proxy 同样 200，cookie 校验更宽松。
-  const url =
-    'https://user.qzone.qq.com/proxy/domain/fav.qzone.qq.com/cgi-bin/get_fav_list'
+  const url = 'https://user.qzone.qq.com/proxy/domain/fav.qzone.qq.com/cgi-bin/get_fav_list'
   const params = {
     uin: rawUin(uin),
     type,

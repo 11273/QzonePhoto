@@ -184,7 +184,7 @@
                     class="thumbnail-video"
                     preload="metadata"
                     muted
-                    @error="handleImageError"
+                    @error="handleVideoPreviewError($event, task)"
                   />
                   <div v-else-if="isVideoFile(task.filename)" class="file-icon video-icon">
                     <el-icon><VideoPlay /></el-icon>
@@ -367,6 +367,7 @@ const albumOptions = ref([])
 
 // 预览图缓存（避免重复加载）
 const previewCache = new Map()
+const videoPreviewRetryUrls = new WeakMap()
 
 // 计算属性
 const overallProgress = computed(() => {
@@ -443,6 +444,44 @@ const handleImageError = (event) => {
   // 图片加载失败时的处理
   console.warn('缩略图加载失败:', event.target.src)
   // 可以设置一个默认图标或隐藏图片
+}
+
+const refreshVideoPreview = async (task) => {
+  const previewResponse = await window.QzoneAPI.getVideoPreview({ filePath: task.filePath })
+  const previewUrl = previewResponse?.dataUrl
+  if (!previewUrl) throw new Error('未获取到视频预览地址')
+
+  previewCache.set(`video_${task.filePath}`, previewUrl)
+  task.videoPreviewUrl = previewUrl
+
+  const currentTask = currentTasks.value.find((item) => item.id === task.id)
+  if (currentTask && currentTask !== task) {
+    currentTask.videoPreviewUrl = previewUrl
+  }
+
+  return previewUrl
+}
+
+// 本地媒体令牌过期后自动申请新地址；同一地址只重试一次，避免失败循环。
+const handleVideoPreviewError = async (event, task) => {
+  const video = event?.target
+  const failedUrl = video?.currentSrc || video?.src || task?.videoPreviewUrl
+  if (!task?.filePath || !failedUrl || videoPreviewRetryUrls.get(task) === failedUrl) {
+    handleImageError(event)
+    return
+  }
+
+  videoPreviewRetryUrls.set(task, failedUrl)
+  try {
+    const previewUrl = await refreshVideoPreview(task)
+    if (video) {
+      video.src = previewUrl
+      video.load()
+    }
+  } catch (error) {
+    console.warn('刷新视频预览地址失败:', task.filename, error)
+    handleImageError(event)
+  }
 }
 
 const getProgressColor = (status) => {

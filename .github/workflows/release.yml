@@ -4,18 +4,51 @@ on:
   push:
     tags:
       - v*.*.*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已验证、准备发布的标签（例如 v2.6.1）
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
+    if: github.event_name == 'push'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     env:
       VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+      npm_config_arch: ${{ matrix.arch }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-2022]
+        include:
+          - os: ubuntu-latest
+            command: pnpm run build:linux -p never
+            artifact: linux
+            arch: x64
+          - os: macos-15-intel
+            command: pnpm build && pnpm exec electron-builder --mac --x64 -p never
+            artifact: macos-x64
+            arch: x64
+          - os: macos-14
+            command: pnpm build && pnpm exec electron-builder --mac --arm64 -p never
+            artifact: macos-arm64
+            arch: arm64
+          - os: windows-2022
+            command: pnpm build && pnpm exec electron-builder --win --x64 -p never
+            artifact: windows-x64
+            arch: x64
+          - os: windows-2022
+            command: pnpm build && pnpm exec electron-builder --win --ia32 -p never
+            artifact: windows-ia32
+            arch: ia32
 
     steps:
       - name: Check out Git repository
@@ -34,30 +67,25 @@ jobs:
           version: 10
 
       - name: Install Dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
-      - name: build-linux
-        if: matrix.os == 'ubuntu-latest'
-        run: pnpm run build:linux -p never
-
-      - name: build-mac
-        if: matrix.os == 'macos-latest'
-        run: pnpm run build:mac -p never
-
-      - name: build-win
-        if: matrix.os == 'windows-2022'
-        run: pnpm run build:win -p never
+      - name: Build application
+        run: ${{ matrix.command }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.os }}
+          name: dist-${{ matrix.artifact }}
           path: dist/
           retention-days: 1
 
-  release:
+  prepare-release:
+    if: github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
@@ -72,13 +100,13 @@ jobs:
       - name: Display structure of downloaded files
         run: ls -la artifacts/*/
 
-      - name: Create Release
+      - name: Create GitHub draft release
         uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ github.ref_name }}
           draft: true
           body_path: RELEASE_NOTES.md
-          prerelease: true
+          prerelease: false
           files: |
             artifacts/dist-*/*.exe
             artifacts/dist-*/*.zip
@@ -91,4 +119,92 @@ jobs:
             artifacts/dist-*/*.zip.blockmap
           fail_on_unmatched_files: false
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+
+  promote-release:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_EC2_METADATA_DISABLED: 'true'
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+      R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate promote input
+        run: |
+          set -euo pipefail
+          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || {
+            echo "tag must look like v2.6.1"
+            exit 1
+          }
+          test -n "${AWS_ACCESS_KEY_ID:-}" || { echo "Missing secret: R2_ACCESS_KEY_ID"; exit 1; }
+          test -n "${AWS_SECRET_ACCESS_KEY:-}" || { echo "Missing secret: R2_SECRET_ACCESS_KEY"; exit 1; }
+          test -n "${R2_BUCKET:-}" || { echo "Missing repository variable: R2_BUCKET"; exit 1; }
+          test -n "${R2_ENDPOINT:-}" || { echo "Missing repository variable: R2_ENDPOINT"; exit 1; }
+          test "${R2_PUBLIC_BASE_URL:-}" = "https://dl.qzonephoto.getgit.one" || {
+            echo "R2_PUBLIC_BASE_URL must be https://dl.qzonephoto.getgit.one"
+            exit 1
+          }
+
+      - name: Verify matching GitHub draft
+        run: |
+          set -euo pipefail
+          draft="$(gh release view "${RELEASE_TAG}" --json isDraft --jq '.isDraft')"
+          test "${draft}" = "true" || {
+            echo "Release ${RELEASE_TAG} must remain a draft before promotion"
+            exit 1
+          }
+
+      - name: Check out release scripts
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download matching draft assets
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          gh release download "${RELEASE_TAG}" --dir artifacts \
+            --pattern '*.exe' --pattern '*.zip' --pattern '*.dmg' \
+            --pattern '*.AppImage' --pattern '*.deb' --pattern 'latest*.yml' \
+            --pattern '*.blockmap'
+          test -n "$(find artifacts -type f -name 'latest*.yml' -print -quit)" || {
+            echo "Draft release is missing updater metadata"
+            exit 1
+          }
+
+      - name: Generate public download manifest
+        run: |
+          set -euo pipefail
+          node scripts/generate-release-manifest.mjs \
+            --artifacts=artifacts --out=artifacts/latest.json --tag="${RELEASE_TAG}" \
+            --releasePath=latest --publicBaseUrl="${R2_PUBLIC_BASE_URL}"
+
+      - name: Promote R2 release after verification
+        run: |
+          set -euo pipefail
+          find artifacts -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.blockmap' \) -print0 |
+            while IFS= read -r -d '' file; do
+              name="$(basename "$file")"
+              aws s3 cp "$file" "s3://${R2_BUCKET}/releases/latest/${name}" --endpoint-url "${R2_ENDPOINT}" --cache-control "public, max-age=31536000, immutable" --only-show-errors
+            done
+          find artifacts -type f -name 'latest*.yml' -print0 |
+            while IFS= read -r -d '' file; do
+              name="$(basename "$file")"
+              aws s3 cp "$file" "s3://${R2_BUCKET}/releases/latest/${name}" --endpoint-url "${R2_ENDPOINT}" --content-type "application/x-yaml" --cache-control "public, max-age=60" --only-show-errors
+            done
+          aws s3 cp artifacts/latest.json "s3://${R2_BUCKET}/manifests/latest.json" --endpoint-url "${R2_ENDPOINT}" --content-type "application/json" --cache-control "public, max-age=60" --only-show-errors
+          aws s3api head-object --bucket "${R2_BUCKET}" --key "manifests/latest.json" --endpoint-url "${R2_ENDPOINT}" >/dev/null
+
+      - name: Publish matching GitHub draft
+        run: gh release edit "${RELEASE_TAG}" --draft=false --latest

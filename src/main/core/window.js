@@ -11,7 +11,10 @@ const QZONE_COOKIE_URLS = [
   'https://qzs.qq.com'
 ]
 
-const rawQqUin = (uin) => String(uin || '').replace(/^o/, '').trim()
+const rawQqUin = (uin) =>
+  String(uin || '')
+    .replace(/^o/, '')
+    .trim()
 const qqCookieUin = (uin) => {
   const raw = rawQqUin(uin)
   return raw ? `o${raw}` : ''
@@ -43,6 +46,20 @@ const normalizeQzoneWebUrl = (value) => {
   } catch {
     return value
   }
+}
+
+const isSafeExternalUrl = (value) => {
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:'].includes(url.protocol)
+  } catch {
+    return false
+  }
+}
+
+const openSafeExternal = (value) => {
+  if (!isSafeExternalUrl(value)) return
+  void shell.openExternal(value)
 }
 
 export class WindowManager {
@@ -232,7 +249,7 @@ export class WindowManager {
         this.openQzoneWeb({ url: details.url })
         return { action: 'deny' }
       }
-      shell.openExternal(details.url)
+      openSafeExternal(details.url)
       return { action: 'deny' }
     })
 
@@ -248,7 +265,7 @@ export class WindowManager {
           this.openQzoneWeb({ url })
           return
         }
-        shell.openExternal(url)
+        openSafeExternal(url)
       }
     })
 
@@ -353,7 +370,7 @@ export class WindowManager {
         this.openQzoneWeb({ url: details.url })
         return { action: 'deny' }
       }
-      shell.openExternal(details.url)
+      openSafeExternal(details.url)
       return { action: 'deny' }
     })
 
@@ -366,15 +383,13 @@ export class WindowManager {
         // ignore parse errors and block below
       }
       event.preventDefault()
-      shell.openExternal(nextUrl)
+      openSafeExternal(nextUrl)
     })
 
     const ses = qzoneWindow.webContents.session
     const sessionCookies = await this._readQzoneCookieMap(ses)
     const providedCookies =
-      cookies && typeof cookies === 'object' && !Array.isArray(cookies)
-        ? cookies
-        : {}
+      cookies && typeof cookies === 'object' && !Array.isArray(cookies) ? cookies : {}
     const authCookies = {
       ...sessionCookies,
       ...this.qzoneAuth.cookies,

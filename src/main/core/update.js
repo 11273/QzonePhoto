@@ -5,6 +5,7 @@ import logger from '@main/core/logger'
 import { app } from 'electron'
 import path from 'path'
 import fs from 'fs-extra'
+import { getAppApiConfig } from '@main/config/app-api'
 
 export class AutoUpdateManager extends EventEmitter {
   constructor() {
@@ -15,9 +16,11 @@ export class AutoUpdateManager extends EventEmitter {
       autoDownload: false,
       allowPreRelease: false,
       allowDowngrade: false,
+      primaryFeedUrl: '',
       github: {
         owner: '11273',
-        repo: 'QzonePhoto'
+        repo: 'QzonePhoto',
+        releaseType: 'release'
       }
     }
 
@@ -29,7 +32,9 @@ export class AutoUpdateManager extends EventEmitter {
       isInitialized: false,
       isDownloading: false,
       isCheckingForUpdate: false,
-      downloadCancellationToken: null
+      downloadCancellationToken: null,
+      updateSource: 'github',
+      suppressSourceError: false
     }
 
     // 性能优化
@@ -87,7 +92,7 @@ export class AutoUpdateManager extends EventEmitter {
 
     try {
       // 配置更新源
-      this.configureUpdater()
+      await this.configureUpdater()
 
       // 绑定事件
       this.bindEvents()
@@ -109,7 +114,9 @@ export class AutoUpdateManager extends EventEmitter {
   /**
    * 配置更新器
    */
-  configureUpdater() {
+  async configureUpdater(source = 'primary') {
+    await this.resolveUpdateConfig()
+
     // 基础配置
     autoUpdater.autoDownload = this.config.autoDownload
     autoUpdater.allowPrerelease = this.config.allowPreRelease
@@ -117,14 +124,7 @@ export class AutoUpdateManager extends EventEmitter {
     autoUpdater.autoInstallOnAppQuit = false
     autoUpdater.logger = logger
 
-    // 设置更新源
-    autoUpdater.setFeedURL({
-      provider: 'github',
-      owner: this.config.github.owner,
-      repo: this.config.github.repo,
-      private: false,
-      releaseType: this.config.allowPreRelease ? 'prerelease' : 'release'
-    })
+    this.applyUpdateSource(source)
 
     // 强制关闭差异下载
     autoUpdater.disableDifferentialDownload = true
@@ -136,6 +136,49 @@ export class AutoUpdateManager extends EventEmitter {
     autoUpdater.requestHeaders = {
       'User-Agent': `${app.getName()}/${app.getVersion()} (${this.architecture.identifier})`
     }
+  }
+
+  async resolveUpdateConfig() {
+    try {
+      const apiConfig = await getAppApiConfig()
+      const updateConfig = apiConfig?.update || {}
+      this.config.primaryFeedUrl = updateConfig.primaryFeedUrl || ''
+      this.config.github = {
+        owner: updateConfig.githubFallback?.owner || this.config.github.owner,
+        repo: updateConfig.githubFallback?.repo || this.config.github.repo,
+        releaseType: updateConfig.githubFallback?.releaseType || this.config.github.releaseType
+      }
+    } catch (error) {
+      logger.warn('[更新] 远程更新配置读取失败，使用内置 GitHub 兜底:', error?.message || error)
+    }
+  }
+
+  applyUpdateSource(source = 'primary') {
+    const usePrimary = source === 'primary' && this.config.primaryFeedUrl
+    if (usePrimary) {
+      autoUpdater.setFeedURL({
+        provider: 'generic',
+        url: this.config.primaryFeedUrl
+      })
+      this.state.updateSource = 'r2'
+      logger.info('[更新] 使用 R2/generic 更新源', this.config.primaryFeedUrl)
+      return
+    }
+
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: this.config.github.owner,
+      repo: this.config.github.repo,
+      private: false,
+      releaseType: this.config.allowPreRelease
+        ? 'prerelease'
+        : this.config.github.releaseType || 'release'
+    })
+    this.state.updateSource = 'github'
+    logger.info(
+      '[更新] 使用 GitHub 更新源',
+      `${this.config.github.owner}/${this.config.github.repo}`
+    )
   }
 
   /**
@@ -370,6 +413,10 @@ export class AutoUpdateManager extends EventEmitter {
     this.state.downloadProgress = null
 
     const errorInfo = this.parseError(error)
+    if (this.state.suppressSourceError) {
+      logger.warn('[更新] 当前更新源失败，等待兜底源重试:', errorInfo.errorType)
+      return
+    }
     this.sendToRenderer(IPC_UPDATE.ERROR, errorInfo)
   }
 
@@ -494,7 +541,24 @@ export class AutoUpdateManager extends EventEmitter {
         architecture: this.architecture.identifier
       })
 
-      const result = await autoUpdater.checkForUpdates()
+      let result
+      try {
+        await this.configureUpdater('primary')
+        this.state.suppressSourceError = Boolean(this.config.primaryFeedUrl)
+        result = await autoUpdater.checkForUpdates()
+      } catch (primaryError) {
+        if (!this.config.primaryFeedUrl) throw primaryError
+        logger.warn(
+          '[更新] R2 更新源检查失败，切换 GitHub 兜底:',
+          primaryError?.message || primaryError
+        )
+        this.state.isCheckingForUpdate = false
+        this.state.suppressSourceError = false
+        await this.configureUpdater('github')
+        result = await autoUpdater.checkForUpdates()
+      } finally {
+        this.state.suppressSourceError = false
+      }
 
       if (result?.updateInfo) {
         return this.formatUpdateInfo(result.updateInfo)
@@ -535,7 +599,19 @@ export class AutoUpdateManager extends EventEmitter {
       // 启用差异下载
       autoUpdater.disableDifferentialDownload = false
 
-      await autoUpdater.downloadUpdate(this.state.downloadCancellationToken)
+      try {
+        await autoUpdater.downloadUpdate(this.state.downloadCancellationToken)
+      } catch (primaryError) {
+        if (this.state.updateSource !== 'r2') throw primaryError
+
+        logger.warn(
+          '[更新] R2 更新包下载失败，切换 GitHub 兜底:',
+          primaryError?.message || primaryError
+        )
+        await this.configureUpdater('github')
+        await autoUpdater.checkForUpdates()
+        await autoUpdater.downloadUpdate(this.state.downloadCancellationToken)
+      }
 
       logger.info('[更新] 下载完成')
       return { success: true }

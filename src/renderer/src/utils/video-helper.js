@@ -43,13 +43,13 @@ export function readVideoDurationFromRenderer(filePath) {
     video.onerror = () => finish(0)
     // 安全超时
     setTimeout(() => finish(0), 15000)
-    // 主进程注册的 qzone-local:// 协议（file:// 被 Chromium URL safety check 拒绝）
-    // standard scheme 必须带 host：qzone-local://local/<encoded-path>
-    try {
-      video.src = 'qzone-local://local/' + encodeURIComponent(filePath.replace(/\\/g, '/'))
-    } catch {
-      finish(0)
-    }
+    // 主进程签发短时 qzone-local token；renderer 永远不直接拼接本地路径。
+    window.QzoneAPI.getVideoPreview({ filePath })
+      .then((result) => {
+        if (!result?.dataUrl) return finish(0)
+        video.src = result.dataUrl
+      })
+      .catch(() => finish(0))
   })
 }
 

@@ -1,3 +1,5 @@
+import JSON5 from 'json5'
+
 /**
  * 将 Set-Cookie 数组解析为键值对对象
  * @param setCookieHeader Set-Cookie 字符串数组
@@ -41,8 +43,7 @@ export function extractJson(rawStr) {
   }
 
   try {
-    // 使用 Function 构造函数安全地将 JS 对象转为对象
-    const obj = Function('"use strict";return (' + jsObjectStr + ')')()
+    const obj = JSON5.parse(jsObjectStr)
     return obj
   } catch (error) {
     console.error('[extractJson] JS 对象解析失败:', error)

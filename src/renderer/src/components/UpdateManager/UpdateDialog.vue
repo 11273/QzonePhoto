@@ -296,7 +296,7 @@
 
 <script setup>
 import { formatBytes } from '@renderer/utils/formatters'
-import { APP_HOMEPAGE } from '@shared/const'
+import { APP_DOWNLOAD_PAGE } from '@shared/const'
 import { computed } from 'vue'
 import Markdown from '@renderer/components/Markdown/index.vue'
 import { Right } from '@element-plus/icons-vue'
@@ -420,8 +420,7 @@ const handleOverlayClick = () => {
 
 // 打开下载页面
 const openDownloadPage = () => {
-  // 获取GitHub releases页面链接
-  const downloadUrl = APP_HOMEPAGE
+  const downloadUrl = APP_DOWNLOAD_PAGE
 
   // 通过主进程打开外部链接
   if (window.api && window.api.invoke) {

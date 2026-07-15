@@ -14,6 +14,26 @@ import {
 } from '@shared/ipc-channels'
 import { ipcClient } from '@preload/lib/ipc-client'
 import { registerAuthExpiredCallback } from '@preload/lib/auth-checker'
+import { createDemoQzoneAPI } from './demo-api'
+
+const SAFE_INVOKE_CHANNELS = new Set([
+  IPC_WINDOW.MINIMIZE,
+  IPC_WINDOW.MAXIMIZE,
+  IPC_WINDOW.CLOSE,
+  IPC_WINDOW.IS_MAXIMIZED,
+  IPC_WINDOW.OPEN_QZONE_WEB,
+  IPC_APP.GET_INFO,
+  IPC_APP.GET_API_CONFIG,
+  IPC_SHELL.OPEN_EXTERNAL
+])
+const SAFE_LISTEN_CHANNELS = new Set([IPC_WINDOW.MAXIMIZED])
+
+const invokeSafe = (channel, ...args) => {
+  if (!SAFE_INVOKE_CHANNELS.has(channel)) {
+    return Promise.reject(new Error(`不允许调用 IPC 通道: ${String(channel)}`))
+  }
+  return ipcRenderer.invoke(channel, ...args)
+}
 
 try {
   const QzoneAPI = {
@@ -34,7 +54,8 @@ try {
     // 获取我的相册中的照片
     getPhotoByTopicId: (data, meta) => ipcClient.call(IPC_PHOTO.PHOTO_BY_TOPIC_ID, data, meta),
     // 获取照片浮层视图列表
-    getPhotoFloatviewList: (data, meta) => ipcClient.call(IPC_PHOTO.PHOTO_FLOATVIEW_LIST, data, meta),
+    getPhotoFloatviewList: (data, meta) =>
+      ipcClient.call(IPC_PHOTO.PHOTO_FLOATVIEW_LIST, data, meta),
     // 获取照片或视频信息
     getPhotoOrVideoInfo: (data, meta) => ipcClient.call(IPC_PHOTO.PHOTO_OR_VIDEO_INFO, data, meta),
     // 获取视频信息
@@ -126,6 +147,9 @@ try {
       getReplaceExistingSetting: () => ipcClient.call(IPC_DOWNLOAD.GET_REPLACE_EXISTING),
       setReplaceExistingSetting: (replaceExisting) =>
         ipcClient.call(IPC_DOWNLOAD.SET_REPLACE_EXISTING, replaceExisting),
+      getWriteFeedDescriptionSetting: () => ipcClient.call(IPC_DOWNLOAD.GET_WRITE_FEED_DESCRIPTION),
+      setWriteFeedDescriptionSetting: (enabled) =>
+        ipcClient.call(IPC_DOWNLOAD.SET_WRITE_FEED_DESCRIPTION, enabled),
 
       // 用户管理
       setCurrentUser: (uin) => ipcClient.call(IPC_DOWNLOAD.SET_CURRENT_USER, { uin }),
@@ -273,18 +297,16 @@ try {
 
   // 通用API - 包含窗口控制等基础功能
   const api = {
-    // 调用主进程方法
-    invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
-    // 监听主进程事件
+    // 兼容现有渲染层调用，但只允许明确列出的窗口、应用信息和外链通道。
+    invoke: invokeSafe,
     on: (channel, callback) => {
+      if (!SAFE_LISTEN_CHANNELS.has(channel)) {
+        throw new Error(`不允许监听 IPC 通道: ${String(channel)}`)
+      }
       const wrappedCallback = (event, ...args) => callback(...args)
       ipcRenderer.on(channel, wrappedCallback)
       return () => ipcRenderer.removeListener(channel, wrappedCallback)
     },
-    // 移除监听器
-    off: (channel, callback) => ipcRenderer.removeListener(channel, callback),
-    // 发送事件到主进程
-    send: (channel, ...args) => ipcRenderer.send(channel, ...args),
     // 注册认证过期回调
     onAuthExpired: (callback) => {
       registerAuthExpiredCallback(callback)
@@ -293,7 +315,10 @@ try {
 
   contextBridge.exposeInMainWorld('api', api)
 
-  contextBridge.exposeInMainWorld('QzoneAPI', QzoneAPI)
+  contextBridge.exposeInMainWorld(
+    'QzoneAPI',
+    process.env.QZONE_DEMO_MODE === '1' ? createDemoQzoneAPI(QzoneAPI) : QzoneAPI
+  )
 } catch (error) {
   console.error('[Preload] 暴露API失败:', error)
   console.error('[Preload] 错误堆栈:', error.stack)

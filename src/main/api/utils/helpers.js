@@ -1,3 +1,57 @@
+import JSON5 from 'json5'
+
+export function parseObjectLiteral(input) {
+  if (typeof input !== 'string' || !input.trim()) return null
+  try {
+    return JSON5.parse(normalizeUndefinedLiteral(input))
+  } catch {
+    return null
+  }
+}
+
+// QQ 空间的 JSONP 偶尔会在对象字段里使用 JavaScript 的 undefined。
+// JSON5 不支持该字面量；仅在字符串外把完整单词替换为 null，避免执行任何远程脚本。
+function normalizeUndefinedLiteral(input) {
+  let output = ''
+  let quote = ''
+  let escaped = false
+
+  for (let index = 0; index < input.length; index++) {
+    const char = input[index]
+    if (quote) {
+      output += char
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === quote) {
+        quote = ''
+      }
+      continue
+    }
+
+    if (char === "'" || char === '"') {
+      quote = char
+      output += char
+      continue
+    }
+
+    if (
+      input.startsWith('undefined', index) &&
+      !/[A-Za-z0-9_$]/.test(input[index - 1] || '') &&
+      !/[A-Za-z0-9_$]/.test(input[index + 'undefined'.length] || '')
+    ) {
+      output += 'null'
+      index += 'undefined'.length - 1
+      continue
+    }
+
+    output += char
+  }
+
+  return output
+}
+
 export function getGTK(p_skey) {
   let n = 5381
   for (let i = 0; i < p_skey.length; i++) {
@@ -34,7 +88,8 @@ export function extractJSONFromCallback(input = '') {
     const frameCallbackMatch = str.match(/frameElement\.callback\s*\(\s*({[\s\S]*?})\s*\)\s*;?/i)
     if (frameCallbackMatch) {
       try {
-        const obj = Function('"use strict";return (' + frameCallbackMatch[1] + ')')()
+        const obj = parseObjectLiteral(frameCallbackMatch[1])
+        if (!obj || typeof obj !== 'object') return input
         return {
           functionName: 'frameElement.callback',
           raw: [obj],
@@ -52,7 +107,8 @@ export function extractJSONFromCallback(input = '') {
   if (jsonMatch) {
     try {
       const fnName = jsonMatch[1]
-      const obj = Function('"use strict";return (' + jsonMatch[2] + ')')()
+      const obj = parseObjectLiteral(jsonMatch[2])
+      if (!obj || typeof obj !== 'object') return input
       return {
         functionName: fnName,
         raw: [obj],
@@ -83,11 +139,7 @@ export function extractJSONFromCallback(input = '') {
     if (trimmed === 'false') return false
     if (trimmed === 'null') return null
 
-    try {
-      return Function('"use strict";return (' + trimmed + ')')()
-    } catch {
-      return trimmed
-    }
+    return parseObjectLiteral(trimmed) ?? trimmed
   }
 
   const args = []

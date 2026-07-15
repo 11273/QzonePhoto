@@ -128,6 +128,16 @@ export function createDownloadHandlers(service) {
       return downloadService.setReplaceExistingSetting(context.payload)
     },
 
+    // 获取动态图片说明写入设置
+    [IPC_DOWNLOAD.GET_WRITE_FEED_DESCRIPTION]: async () => {
+      return downloadService.getWriteFeedDescriptionSetting()
+    },
+
+    // 设置动态图片说明写入选项
+    [IPC_DOWNLOAD.SET_WRITE_FEED_DESCRIPTION]: async (event, context) => {
+      return downloadService.setWriteFeedDescriptionSetting(context.payload)
+    },
+
     // 设置下载管理器打开状态
     [IPC_DOWNLOAD.SET_MANAGER_OPEN]: async (event, context) => {
       const isOpen = context?.payload?.isOpen || false
