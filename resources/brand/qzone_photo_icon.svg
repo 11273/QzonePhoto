@@ -16,6 +16,7 @@
       <path d="M615 615L696 696" fill="none" stroke="white" stroke-width="76" stroke-linecap="round"/>
     </mask>
   </defs>
+  <rect width="1024" height="1024" fill="url(#background)"/>
   <rect width="1024" height="1024" fill="url(#mark)" mask="url(#q-mask)"/>
   <path d="M 512.00 400.00 L 544.92 478.70 L 629.93 485.68 L 565.26 541.30 L 584.89 624.32 L 512.00 580.00 L 439.11 624.32 L 458.74 541.30 L 394.07 485.68 L 479.08 478.70 Z" fill="#F8FBFF"/>
 </svg>

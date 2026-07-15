@@ -113,7 +113,7 @@
     <div ref="titleCenterRef" class="title-bar-center">
       <div class="title-content">
         <div class="app-logo">
-          <Icon icon="qzone" size="large" color="#F15A24" />
+          <Icon icon="qzone" size="large" color="#5b9cff" />
         </div>
         <span v-if="appDescription" class="app-title">{{ appDescription }}</span>
       </div>
@@ -1206,8 +1206,8 @@ watch([dialogVisible, noticeVisible], () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #f15a24;
-  filter: drop-shadow(0 2px 4px rgba(241, 90, 36, 0.3));
+  color: #5b9cff;
+  filter: drop-shadow(0 1px 2px rgba(70, 132, 244, 0.24));
 }
 
 /* 中间标题区域：不抢占左右命令区空间 */

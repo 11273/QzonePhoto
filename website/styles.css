@@ -133,8 +133,8 @@ h3 {
   flex: 0 0 36px;
   object-fit: contain;
   border-radius: 9px;
-  transform: translateY(-1px) scale(1.06);
-  transform-origin: 50% 46%;
+  transform: none;
+  transform-origin: center;
 }
 .site-nav {
   display: flex;
