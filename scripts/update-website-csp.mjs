@@ -6,6 +6,7 @@ const websiteRoot = path.resolve('website')
 const headersPath = path.join(websiteRoot, '_headers')
 const htmlFiles = await listHtmlFiles(websiteRoot)
 const hashes = new Set()
+const trustedScriptSources = ["'self'", 'https://static.cloudflareinsights.com']
 
 for (const file of htmlFiles) {
   const html = await readFile(file, 'utf8')
@@ -16,7 +17,7 @@ for (const file of htmlFiles) {
 }
 
 const headers = await readFile(headersPath, 'utf8')
-const scriptPolicy = `script-src 'self' ${Array.from(hashes).sort().join(' ')};`
+const scriptPolicy = `script-src ${[...trustedScriptSources, ...Array.from(hashes).sort()].join(' ')};`
 const nextHeaders = headers.replace(/script-src\s+[^;]+;/, scriptPolicy)
 
 if (nextHeaders === headers) {

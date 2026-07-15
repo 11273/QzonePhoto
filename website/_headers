@@ -1,5 +1,5 @@
 /*
-  Content-Security-Policy: default-src 'self'; connect-src 'self' https://qzone.getgit.one https://dl.qzonephoto.getgit.one; img-src 'self' data: https://qzonephoto.getgit.one; script-src 'self' 'sha256-p1qYN7vF9lLEsnLcXGGdmADAc44dN5e6r0VntuJIkrU=' 'sha256-s7FEIgzNCUi+CqFj8v8IZ5PyFlenYJqDfwCS2t4mKeQ='; style-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https://qzone.getgit.one https://dl.qzonephoto.getgit.one https://cloudflareinsights.com; img-src 'self' data: https://qzonephoto.getgit.one; script-src 'self' https://static.cloudflareinsights.com 'sha256-p1qYN7vF9lLEsnLcXGGdmADAc44dN5e6r0VntuJIkrU=' 'sha256-s7FEIgzNCUi+CqFj8v8IZ5PyFlenYJqDfwCS2t4mKeQ='; style-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
   Referrer-Policy: strict-origin-when-cross-origin
