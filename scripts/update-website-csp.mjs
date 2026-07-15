@@ -16,7 +16,13 @@ for (const file of htmlFiles) {
 }
 
 const headers = await readFile(headersPath, 'utf8')
-const scriptPolicy = `script-src 'self' ${Array.from(hashes).sort().join(' ')};`
+const currentScriptSources = headers.match(/script-src\s+([^;]+);/)
+if (!currentScriptSources) throw new Error('website/_headers is missing a script-src CSP directive')
+
+const explicitScriptSources = currentScriptSources[1]
+  .split(/\s+/)
+  .filter((source) => !/^'sha(?:256|384|512)-/.test(source))
+const scriptPolicy = `script-src ${[...new Set([...explicitScriptSources, ...Array.from(hashes).sort()])].join(' ')};`
 const nextHeaders = headers.replace(/script-src\s+[^;]+;/, scriptPolicy)
 
 if (nextHeaders === headers) {
