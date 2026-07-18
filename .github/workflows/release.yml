@@ -49,24 +49,22 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v4
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+        uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Cache Electron build tools
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ${{ runner.temp }}/electron-cache
@@ -91,7 +89,7 @@ jobs:
         run: ${{ matrix.command }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-${{ matrix.artifact }}
           path: |
@@ -115,17 +113,15 @@ jobs:
       contents: write
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v4
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+        uses: actions/checkout@v7
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
