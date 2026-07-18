@@ -1,0 +1,116 @@
+name: Promote verified release to R2
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 指定要同步的已验证标签（可选；留空自动选择最新公开版本）
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-r2
+  cancel-in-progress: false
+
+jobs:
+  promote-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_EC2_METADATA_DISABLED: 'true'
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+      R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate R2 promotion configuration
+        run: |
+          set -euo pipefail
+          test -n "${AWS_ACCESS_KEY_ID:-}" || { echo "Missing secret: R2_ACCESS_KEY_ID"; exit 1; }
+          test -n "${AWS_SECRET_ACCESS_KEY:-}" || { echo "Missing secret: R2_SECRET_ACCESS_KEY"; exit 1; }
+          test -n "${R2_BUCKET:-}" || { echo "Missing repository variable: R2_BUCKET"; exit 1; }
+          test -n "${R2_ENDPOINT:-}" || { echo "Missing repository variable: R2_ENDPOINT"; exit 1; }
+          test "${R2_PUBLIC_BASE_URL:-}" = "https://dl.qzonephoto.getgit.one" || {
+            echo "R2_PUBLIC_BASE_URL must be https://dl.qzonephoto.getgit.one"
+            exit 1
+          }
+
+      - name: Resolve release to promote
+        run: |
+          set -euo pipefail
+          if [ -z "${RELEASE_TAG}" ]; then
+            RELEASE_TAG="$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')"
+            test -n "${RELEASE_TAG}" || {
+              echo 'No published stable GitHub Release is available to promote'
+              exit 1
+            }
+            echo "Automatically selected latest published release: ${RELEASE_TAG}"
+          fi
+          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || {
+            echo "tag must look like v2.6.1"
+            exit 1
+          }
+          draft="$(gh release view "${RELEASE_TAG}" --json isDraft --jq '.isDraft')"
+          prerelease="$(gh release view "${RELEASE_TAG}" --json isPrerelease --jq '.isPrerelease')"
+          test "${draft}" = 'false' || { echo "Release ${RELEASE_TAG} must be public before R2 promotion"; exit 1; }
+          test "${prerelease}" = 'false' || { echo "Release ${RELEASE_TAG} must not be a prerelease"; exit 1; }
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "${GITHUB_ENV}"
+          {
+            echo '### R2 release selected'
+            echo
+            echo "- Tag: \`${RELEASE_TAG}\`"
+            echo '- Source: latest published GitHub Release'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Check out release scripts from main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download matching public release assets
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          gh release download "${RELEASE_TAG}" --dir artifacts \
+            --pattern '*.exe' --pattern '*.zip' --pattern '*.dmg' \
+            --pattern '*.AppImage' --pattern '*.deb' --pattern 'latest*.yml' \
+            --pattern '*.blockmap'
+          test -n "$(find artifacts -type f -name 'latest*.yml' -print -quit)" || {
+            echo "Release is missing updater metadata"
+            exit 1
+          }
+
+      - name: Generate public download manifest
+        run: |
+          set -euo pipefail
+          node scripts/generate-release-manifest.mjs \
+            --artifacts=artifacts --out=artifacts/latest.json --tag="${RELEASE_TAG}" \
+            --releasePath=latest --publicBaseUrl="${R2_PUBLIC_BASE_URL}"
+
+      - name: Promote R2 release after verification
+        run: |
+          set -euo pipefail
+          find artifacts -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.blockmap' \) -print0 |
+            while IFS= read -r -d '' file; do
+              name="$(basename "$file")"
+              aws s3 cp "$file" "s3://${R2_BUCKET}/releases/latest/${name}" --endpoint-url "${R2_ENDPOINT}" --cache-control "public, max-age=31536000, immutable" --only-show-errors
+            done
+          find artifacts -type f -name 'latest*.yml' -print0 |
+            while IFS= read -r -d '' file; do
+              name="$(basename "$file")"
+              aws s3 cp "$file" "s3://${R2_BUCKET}/releases/latest/${name}" --endpoint-url "${R2_ENDPOINT}" --content-type "application/x-yaml" --cache-control "public, max-age=60" --only-show-errors
+            done
+          aws s3 cp artifacts/latest.json "s3://${R2_BUCKET}/manifests/latest.json" --endpoint-url "${R2_ENDPOINT}" --content-type "application/json" --cache-control "public, max-age=60" --only-show-errors
+          aws s3api head-object --bucket "${R2_BUCKET}" --key "manifests/latest.json" --endpoint-url "${R2_ENDPOINT}" >/dev/null
