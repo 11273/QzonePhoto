@@ -69,7 +69,24 @@ export function mergeMetadataDocuments(documents) {
     }
   }
 
-  return `${preferred.versionLine}\nfiles:\n${[...entriesByUrl.values()].join('')}${preferred.suffix}`
+  const fileEntries = [...entriesByUrl.values()].map((entry) => entry.replace(/\n+$/, ''))
+  const merged = `${preferred.versionLine}\nfiles:\n${fileEntries.join('\n')}${preferred.suffix}`
+
+  validateMergedMetadata(merged, fileEntries.length)
+  return merged
+}
+
+function validateMergedMetadata(content, expectedEntryCount) {
+  const parsed = parseMetadataDocument({
+    path: 'merged update metadata',
+    content
+  })
+
+  if (parsed.fileEntries.length !== expectedEntryCount) {
+    throw new Error(
+      `Merged update metadata contains ${parsed.fileEntries.length} file entries; expected ${expectedEntryCount}`
+    )
+  }
 }
 
 function parseMetadataDocument({ path: filePath, content }) {
