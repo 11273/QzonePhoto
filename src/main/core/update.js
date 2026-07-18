@@ -6,6 +6,7 @@ import { app } from 'electron'
 import path from 'path'
 import fs from 'fs-extra'
 import { getAppApiConfig } from '@main/config/app-api'
+import { selectPreferredUpdateCandidate } from '@main/core/update-source'
 
 export class AutoUpdateManager extends EventEmitter {
   constructor() {
@@ -34,7 +35,8 @@ export class AutoUpdateManager extends EventEmitter {
       isCheckingForUpdate: false,
       downloadCancellationToken: null,
       updateSource: 'github',
-      suppressSourceError: false
+      suppressSourceError: false,
+      suppressUpdateEvents: false
     }
 
     // 性能优化
@@ -202,6 +204,42 @@ export class AutoUpdateManager extends EventEmitter {
   }
 
   /**
+   * electron-updater 的下载缓存位于系统缓存目录，而不是应用数据目录。
+   * 发布包曾被替换或下载中断后，同名旧包会被再次用于校验，因此需要在校验失败时清理。
+   */
+  getUpdaterDownloadCacheDirectory() {
+    return path.join(app.getPath('cache'), `${app.getName()}-updater`)
+  }
+
+  async clearInvalidUpdateCache() {
+    const cacheDir = this.getUpdaterDownloadCacheDirectory()
+
+    await Promise.all([
+      fs.remove(path.join(cacheDir, 'pending')),
+      fs.remove(path.join(cacheDir, 'update.zip'))
+    ])
+
+    logger.warn('[更新] 已清理校验失败的更新缓存，准备重新下载')
+  }
+
+  isVerificationError(error) {
+    return /signature|verification|checksum/i.test(error?.message || error?.code || '')
+  }
+
+  async retryDownloadAfterVerificationFailure(cancellationToken, hasRetried) {
+    try {
+      await autoUpdater.downloadUpdate(cancellationToken)
+      return hasRetried
+    } catch (error) {
+      if (hasRetried || !this.isVerificationError(error)) throw error
+
+      await this.clearInvalidUpdateCache()
+      await autoUpdater.downloadUpdate(cancellationToken)
+      return true
+    }
+  }
+
+  /**
    * 绑定事件监听
    */
   bindEvents() {
@@ -212,46 +250,21 @@ export class AutoUpdateManager extends EventEmitter {
     autoUpdater.on('checking-for-update', () => {
       // logger.info('[更新] 正在检查更新...')
       this.state.isCheckingForUpdate = true
+      if (this.state.suppressUpdateEvents) return
       this.sendToRenderer(IPC_UPDATE.CHECKING)
     })
 
     // 发现更新
     autoUpdater.on('update-available', (info) => {
-      logger.info('[更新] 发现新版本:', info.version)
-      this.state.isCheckingForUpdate = false
-
-      // 验证架构兼容性
-      const compatibleAsset = this.findCompatibleAsset(info)
-      if (!compatibleAsset) {
-        logger.warn('[更新] 未找到兼容的更新包')
-        this.sendToRenderer(IPC_UPDATE.NOT_AVAILABLE, {
-          ...this.formatUpdateInfo(info),
-          incompatible: true,
-          reason: 'architecture_mismatch'
-        })
-        return
-      }
-
-      // 设置正确的下载URL
-      if (compatibleAsset.url) {
-        info.files = [
-          {
-            url: compatibleAsset.url,
-            size: compatibleAsset.size,
-            sha512: compatibleAsset.sha512
-          }
-        ]
-      }
-
-      this.state.lastUpdateInfo = this.formatUpdateInfo(info)
-      this.sendToRenderer(IPC_UPDATE.AVAILABLE, this.state.lastUpdateInfo)
+      if (this.state.suppressUpdateEvents) return
+      this.publishAvailableUpdate(info)
     })
 
     // 没有更新
     autoUpdater.on('update-not-available', (info) => {
       // logger.info('[更新] 当前已是最新版本')
-      this.state.isCheckingForUpdate = false
-      this.sendToRenderer(IPC_UPDATE.NOT_AVAILABLE, this.formatUpdateInfo(info))
+      if (this.state.suppressUpdateEvents) return
+      this.publishNoUpdate(info)
     })
 
     // 下载进度
@@ -281,6 +294,44 @@ export class AutoUpdateManager extends EventEmitter {
     autoUpdater.on('differential-download-failed', () => {
       logger.warn('[更新] 差异下载失败，切换到完整下载')
     })
+  }
+
+  publishAvailableUpdate(info) {
+    logger.info('[更新] 发现新版本:', info.version)
+    this.state.isCheckingForUpdate = false
+
+    const compatibleAsset = this.findCompatibleAsset(info)
+    if (!compatibleAsset) {
+      logger.warn('[更新] 未找到兼容的更新包')
+      this.sendToRenderer(IPC_UPDATE.NOT_AVAILABLE, {
+        ...this.formatUpdateInfo(info),
+        incompatible: true,
+        reason: 'architecture_mismatch'
+      })
+      return
+    }
+
+    if (compatibleAsset.url) {
+      info.files = [
+        {
+          url: compatibleAsset.url,
+          size: compatibleAsset.size,
+          sha512: compatibleAsset.sha512
+        }
+      ]
+    }
+
+    this.state.lastUpdateInfo = this.formatUpdateInfo(info)
+    if (this.state.isDownloading) {
+      logger.info('[更新] 已切换下载源，继续下载当前更新')
+      return
+    }
+    this.sendToRenderer(IPC_UPDATE.AVAILABLE, this.state.lastUpdateInfo)
+  }
+
+  publishNoUpdate(info) {
+    this.state.isCheckingForUpdate = false
+    this.sendToRenderer(IPC_UPDATE.NOT_AVAILABLE, this.formatUpdateInfo(info))
   }
 
   /**
@@ -408,15 +459,15 @@ export class AutoUpdateManager extends EventEmitter {
       stack: error?.stack
     })
 
-    this.state.isDownloading = false
-    this.state.isCheckingForUpdate = false
-    this.state.downloadProgress = null
-
     const errorInfo = this.parseError(error)
     if (this.state.suppressSourceError) {
       logger.warn('[更新] 当前更新源失败，等待兜底源重试:', errorInfo.errorType)
       return
     }
+
+    this.state.isDownloading = false
+    this.state.isCheckingForUpdate = false
+    this.state.downloadProgress = null
     this.sendToRenderer(IPC_UPDATE.ERROR, errorInfo)
   }
 
@@ -541,27 +592,49 @@ export class AutoUpdateManager extends EventEmitter {
         architecture: this.architecture.identifier
       })
 
-      let result
-      try {
-        await this.configureUpdater('primary')
-        this.state.suppressSourceError = Boolean(this.config.primaryFeedUrl)
-        result = await autoUpdater.checkForUpdates()
-      } catch (primaryError) {
-        if (!this.config.primaryFeedUrl) throw primaryError
-        logger.warn(
-          '[更新] R2 更新源检查失败，切换 GitHub 兜底:',
-          primaryError?.message || primaryError
-        )
-        this.state.isCheckingForUpdate = false
-        this.state.suppressSourceError = false
-        await this.configureUpdater('github')
-        result = await autoUpdater.checkForUpdates()
-      } finally {
-        this.state.suppressSourceError = false
+      await this.resolveUpdateConfig()
+      this.state.isCheckingForUpdate = true
+      this.sendToRenderer(IPC_UPDATE.CHECKING)
+      this.state.suppressSourceError = true
+      this.state.suppressUpdateEvents = true
+
+      const githubCheck = await this.checkUpdateSource('github')
+      const r2Check = this.config.primaryFeedUrl ? await this.checkUpdateSource('primary') : null
+      const candidates = {
+        r2: r2Check?.result?.isUpdateAvailable ? { source: 'r2', result: r2Check.result } : null,
+        github: githubCheck.result?.isUpdateAvailable
+          ? { source: 'github', result: githubCheck.result }
+          : null
+      }
+      let selected = selectPreferredUpdateCandidate(candidates.r2, candidates.github)
+
+      if (!selected && !githubCheck.result && !r2Check?.result) {
+        throw githubCheck.error || r2Check?.error || new Error('更新服务暂不可用')
       }
 
-      if (result?.updateInfo) {
-        return this.formatUpdateInfo(result.updateInfo)
+      if (selected && this.state.updateSource !== selected.source) {
+        const refreshedCheck = await this.checkUpdateSource(
+          selected.source === 'r2' ? 'primary' : 'github'
+        )
+        if (refreshedCheck.result?.isUpdateAvailable) {
+          selected = { source: selected.source, result: refreshedCheck.result }
+        } else if (refreshedCheck.error) {
+          throw refreshedCheck.error
+        }
+      }
+
+      this.state.suppressUpdateEvents = false
+      this.state.suppressSourceError = false
+
+      if (selected?.result?.updateInfo) {
+        this.publishAvailableUpdate(selected.result.updateInfo)
+        return this.formatUpdateInfo(selected.result.updateInfo)
+      }
+
+      const noUpdateInfo = r2Check?.result?.updateInfo || githubCheck.result?.updateInfo
+      if (noUpdateInfo) {
+        this.publishNoUpdate(noUpdateInfo)
+        return this.formatUpdateInfo(noUpdateInfo)
       }
 
       return null
@@ -569,6 +642,21 @@ export class AutoUpdateManager extends EventEmitter {
       this.state.isCheckingForUpdate = false
       const errorInfo = this.parseError(error)
       throw new Error(errorInfo.message)
+    } finally {
+      this.state.suppressSourceError = false
+      this.state.suppressUpdateEvents = false
+    }
+  }
+
+  async checkUpdateSource(source) {
+    try {
+      await this.configureUpdater(source)
+      const result = await autoUpdater.checkForUpdates()
+      return { result, error: null }
+    } catch (error) {
+      const sourceName = source === 'primary' ? 'R2' : 'GitHub'
+      logger.warn(`[更新] ${sourceName} 更新源检查失败:`, error?.message || error)
+      return { result: null, error }
     }
   }
 
@@ -593,16 +681,26 @@ export class AutoUpdateManager extends EventEmitter {
       this.state.isDownloading = true
       this.state.downloadProgress = null
       this.state.downloadCancellationToken = new CancellationToken()
+      this.state.suppressSourceError = true
 
       logger.info('[更新] 开始下载更新...')
 
       // 启用差异下载
       autoUpdater.disableDifferentialDownload = false
+      let hasRetriedAfterVerificationFailure = false
 
       try {
-        await autoUpdater.downloadUpdate(this.state.downloadCancellationToken)
+        hasRetriedAfterVerificationFailure = await this.retryDownloadAfterVerificationFailure(
+          this.state.downloadCancellationToken,
+          hasRetriedAfterVerificationFailure
+        )
       } catch (primaryError) {
-        if (this.state.updateSource !== 'r2') throw primaryError
+        if (
+          this.state.updateSource !== 'r2' ||
+          this.parseError(primaryError).errorType === 'CANCELLED'
+        ) {
+          throw primaryError
+        }
 
         logger.warn(
           '[更新] R2 更新包下载失败，切换 GitHub 兜底:',
@@ -610,7 +708,10 @@ export class AutoUpdateManager extends EventEmitter {
         )
         await this.configureUpdater('github')
         await autoUpdater.checkForUpdates()
-        await autoUpdater.downloadUpdate(this.state.downloadCancellationToken)
+        await this.retryDownloadAfterVerificationFailure(
+          this.state.downloadCancellationToken,
+          hasRetriedAfterVerificationFailure
+        )
       }
 
       logger.info('[更新] 下载完成')
@@ -629,8 +730,9 @@ export class AutoUpdateManager extends EventEmitter {
         }
       }
 
-      throw new Error(errorInfo.message)
+      throw Object.assign(new Error(errorInfo.message), errorInfo)
     } finally {
+      this.state.suppressSourceError = false
       this.state.downloadCancellationToken = null
     }
   }

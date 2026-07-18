@@ -56,31 +56,57 @@ jobs:
         env:
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Cache Electron build tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/electron-cache
+            ${{ runner.temp }}/electron-builder-cache
+          key: electron-build-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            electron-build-${{ runner.os }}-${{ matrix.arch }}-
 
       - name: Install Dependencies
         # ffmpeg-static 的 b6.1.1 未发布 win32-ia32 二进制；仅 32 位构建回退到
         # 仍提供该架构的 b6.0，其余构建继续使用依赖默认的 b6.1.1。
         env:
           FFMPEG_BINARY_RELEASE: ${{ matrix.arch == 'ia32' && 'b6.0' || '' }}
+          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         run: pnpm install --frozen-lockfile
 
       - name: Build application
+        env:
+          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         run: ${{ matrix.command }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.artifact }}
-          path: dist/
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.deb
+            dist/latest*.yml
+            dist/*.blockmap
+          compression-level: 0
+          if-no-files-found: error
           retention-days: 1
 
   prepare-release:
@@ -121,6 +147,7 @@ jobs:
             artifacts/dist-*/*.exe.blockmap
             artifacts/dist-*/*.dmg.blockmap
             artifacts/dist-*/*.zip.blockmap
+          overwrite_files: false
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -157,12 +184,12 @@ jobs:
             exit 1
           }
 
-      - name: Verify matching GitHub draft
+      - name: Verify matching GitHub release
         run: |
           set -euo pipefail
           draft="$(gh release view "${RELEASE_TAG}" --json isDraft --jq '.isDraft')"
-          test "${draft}" = "true" || {
-            echo "Release ${RELEASE_TAG} must remain a draft before promotion"
+          test "${draft}" = "true" || test "${draft}" = "false" || {
+            echo "Release ${RELEASE_TAG} was not found"
             exit 1
           }
 
@@ -174,7 +201,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Download matching draft assets
+      - name: Download matching release assets
         run: |
           set -euo pipefail
           mkdir -p artifacts
@@ -210,5 +237,12 @@ jobs:
           aws s3 cp artifacts/latest.json "s3://${R2_BUCKET}/manifests/latest.json" --endpoint-url "${R2_ENDPOINT}" --content-type "application/json" --cache-control "public, max-age=60" --only-show-errors
           aws s3api head-object --bucket "${R2_BUCKET}" --key "manifests/latest.json" --endpoint-url "${R2_ENDPOINT}" >/dev/null
 
-      - name: Publish matching GitHub draft
-        run: gh release edit "${RELEASE_TAG}" --draft=false --latest
+      - name: Publish matching GitHub release when still a draft
+        run: |
+          set -euo pipefail
+          draft="$(gh release view "${RELEASE_TAG}" --json isDraft --jq '.isDraft')"
+          if [ "${draft}" = "true" ]; then
+            gh release edit "${RELEASE_TAG}" --draft=false --latest
+          else
+            echo "Release ${RELEASE_TAG} is already public; R2 sync completed."
+          fi
