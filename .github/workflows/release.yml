@@ -67,6 +67,10 @@ jobs:
           version: 10
 
       - name: Install Dependencies
+        # ffmpeg-static 的 b6.1.1 未发布 win32-ia32 二进制；仅 32 位构建回退到
+        # 仍提供该架构的 b6.0，其余构建继续使用依赖默认的 b6.1.1。
+        env:
+          FFMPEG_BINARY_RELEASE: ${{ matrix.arch == 'ia32' && 'b6.0' || '' }}
         run: pnpm install --frozen-lockfile
 
       - name: Build application
