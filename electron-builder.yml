@@ -98,9 +98,7 @@ mac:
   artifactName: QzonePhoto-${version}-${os}-${arch}.${ext}
   target:
     - target: zip
-      arch: [x64, arm64]
     - target: dmg
-      arch: [x64, arm64]
 
 # macOS DMG配置
 dmg:
