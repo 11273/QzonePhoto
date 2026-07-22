@@ -54,7 +54,7 @@
     "@vitejs/plugin-vue": "^5.2.1",
     "asarmor": "^3.0.2",
     "dompurify": "^3.2.6",
-    "electron": "^39.2.7",
+    "electron": "^43.2.0",
     "electron-builder": "^26.8.2",
     "electron-store": "8.2.0",
     "electron-vite": "^3.0.0",

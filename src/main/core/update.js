@@ -2,11 +2,16 @@ import { autoUpdater, CancellationToken } from 'electron-updater'
 import { EventEmitter } from 'events'
 import { IPC_UPDATE } from '@shared/ipc-channels'
 import logger from '@main/core/logger'
-import { app } from 'electron'
+import { app, shell } from 'electron'
 import path from 'path'
 import fs from 'fs-extra'
-import { getAppApiConfig } from '@main/config/app-api'
-import { selectPreferredUpdateCandidate } from '@main/core/update-source'
+import { APP_DOWNLOAD_PAGE } from '@shared/const'
+import {
+  isStableReleaseVersion,
+  matchesPinnedUpdateCandidate,
+  OFFICIAL_UPDATE_SOURCES,
+  selectCompatibleUpdateFile
+} from '@main/core/update-source'
 
 export class AutoUpdateManager extends EventEmitter {
   constructor() {
@@ -17,12 +22,8 @@ export class AutoUpdateManager extends EventEmitter {
       autoDownload: false,
       allowPreRelease: false,
       allowDowngrade: false,
-      primaryFeedUrl: '',
-      github: {
-        owner: '11273',
-        repo: 'QzonePhoto',
-        releaseType: 'release'
-      }
+      primaryFeedUrl: OFFICIAL_UPDATE_SOURCES.r2FeedUrl,
+      github: OFFICIAL_UPDATE_SOURCES.github
     }
 
     // 状态
@@ -34,7 +35,8 @@ export class AutoUpdateManager extends EventEmitter {
       isDownloading: false,
       isCheckingForUpdate: false,
       downloadCancellationToken: null,
-      updateSource: 'github',
+      updateSource: 'r2',
+      selectedUpdate: null,
       suppressSourceError: false,
       suppressUpdateEvents: false
     }
@@ -117,8 +119,6 @@ export class AutoUpdateManager extends EventEmitter {
    * 配置更新器
    */
   async configureUpdater(source = 'primary') {
-    await this.resolveUpdateConfig()
-
     // 基础配置
     autoUpdater.autoDownload = this.config.autoDownload
     autoUpdater.allowPrerelease = this.config.allowPreRelease
@@ -137,21 +137,6 @@ export class AutoUpdateManager extends EventEmitter {
     // 自定义请求头，包含架构信息
     autoUpdater.requestHeaders = {
       'User-Agent': `${app.getName()}/${app.getVersion()} (${this.architecture.identifier})`
-    }
-  }
-
-  async resolveUpdateConfig() {
-    try {
-      const apiConfig = await getAppApiConfig()
-      const updateConfig = apiConfig?.update || {}
-      this.config.primaryFeedUrl = updateConfig.primaryFeedUrl || ''
-      this.config.github = {
-        owner: updateConfig.githubFallback?.owner || this.config.github.owner,
-        repo: updateConfig.githubFallback?.repo || this.config.github.repo,
-        releaseType: updateConfig.githubFallback?.releaseType || this.config.github.releaseType
-      }
-    } catch (error) {
-      logger.warn('[更新] 远程更新配置读取失败，使用内置 GitHub 兜底:', error?.message || error)
     }
   }
 
@@ -338,86 +323,11 @@ export class AutoUpdateManager extends EventEmitter {
    * 查找兼容的更新资源
    */
   findCompatibleAsset(updateInfo) {
-    if (!updateInfo?.files?.length) {
-      return null
+    const compatibleAsset = selectCompatibleUpdateFile(updateInfo?.files, this.architecture)
+    if (compatibleAsset) {
+      logger.info(`[更新] 找到兼容的更新包: ${compatibleAsset.url}`)
     }
-
-    const { platform, arch } = this.architecture
-
-    // 定义文件名匹配规则
-    const matchers = {
-      win32: {
-        x64: [/x64|win64/i, /\.exe$/i],
-        x86: [/x86|ia32|win32/i, /\.exe$/i, (name) => !name.includes('x64')],
-        arm64: [/arm64/i, /\.exe$/i]
-      },
-      darwin: {
-        x64: [/x64|intel/i, /\.dmg$|\.zip$/i],
-        arm64: [/arm64|apple.?silicon|m1/i, /\.dmg$|\.zip$/i],
-        universal: [/universal/i, /\.dmg$|\.zip$/i]
-      },
-      linux: {
-        x64: [/x86_64|amd64|x64/i, /\.AppImage$|\.deb$|\.rpm$/i],
-        x86: [/i386|i686|x86/i, /\.AppImage$|\.deb$|\.rpm$/i],
-        arm64: [/aarch64|arm64/i, /\.AppImage$|\.deb$|\.rpm$/i],
-        armv7l: [/armv7|armhf/i, /\.AppImage$|\.deb$|\.rpm$/i]
-      }
-    }
-
-    // 获取当前平台的匹配规则
-    const platformMatchers = matchers[platform]
-    if (!platformMatchers) {
-      logger.warn(`[更新] 不支持的平台: ${platform}`)
-      return null
-    }
-
-    // 优先级排序：精确架构 > universal > 默认
-    const priorityOrder = [arch]
-    if (platform === 'darwin') {
-      priorityOrder.push('universal')
-    }
-
-    // 查找最佳匹配
-    for (const targetArch of priorityOrder) {
-      const archMatchers = platformMatchers[targetArch]
-      if (!archMatchers) continue
-
-      const matchedFile = updateInfo.files.find((file) => {
-        const fileName = file.url.toLowerCase()
-        return archMatchers.every((matcher) => {
-          if (typeof matcher === 'function') {
-            return matcher(fileName)
-          }
-          return matcher.test(fileName)
-        })
-      })
-
-      if (matchedFile) {
-        logger.info(`[更新] 找到兼容的更新包: ${matchedFile.url}`)
-        return matchedFile
-      }
-    }
-
-    // 如果没有找到精确匹配，尝试通用匹配
-    const fallbackFile = updateInfo.files.find((file) => {
-      const fileName = file.url.toLowerCase()
-      const ext = path.extname(fileName)
-
-      // 基于扩展名的平台匹配
-      const platformExtensions = {
-        win32: ['.exe'],
-        darwin: ['.dmg', '.zip'],
-        linux: ['.AppImage', '.deb', '.rpm', '.tar.gz']
-      }
-
-      return platformExtensions[platform]?.includes(ext)
-    })
-
-    if (fallbackFile) {
-      logger.warn(`[更新] 使用通用更新包: ${fallbackFile.url}`)
-    }
-
-    return fallbackFile
+    return compatibleAsset
   }
 
   /**
@@ -592,46 +502,36 @@ export class AutoUpdateManager extends EventEmitter {
         architecture: this.architecture.identifier
       })
 
-      await this.resolveUpdateConfig()
+      this.state.selectedUpdate = null
       this.state.isCheckingForUpdate = true
       this.sendToRenderer(IPC_UPDATE.CHECKING)
       this.state.suppressSourceError = true
       this.state.suppressUpdateEvents = true
 
-      const githubCheck = await this.checkUpdateSource('github')
-      const r2Check = this.config.primaryFeedUrl ? await this.checkUpdateSource('primary') : null
-      const candidates = {
-        r2: r2Check?.result?.isUpdateAvailable ? { source: 'r2', result: r2Check.result } : null,
-        github: githubCheck.result?.isUpdateAvailable
-          ? { source: 'github', result: githubCheck.result }
-          : null
-      }
-      let selected = selectPreferredUpdateCandidate(candidates.r2, candidates.github)
+      const r2Check = await this.checkUpdateSource('primary')
+      let selected = this.createUpdateCandidate('r2', r2Check.result)
+      let githubCheck = null
 
-      if (!selected && !githubCheck.result && !r2Check?.result) {
-        throw githubCheck.error || r2Check?.error || new Error('更新服务暂不可用')
+      // R2 有可用的完整更新时不再请求 GitHub。只有 R2 尚未同步或不可用，才启用兜底。
+      if (!selected) {
+        githubCheck = await this.checkUpdateSource('github')
+        selected = this.createUpdateCandidate('github', githubCheck.result)
       }
 
-      if (selected && this.state.updateSource !== selected.source) {
-        const refreshedCheck = await this.checkUpdateSource(
-          selected.source === 'r2' ? 'primary' : 'github'
-        )
-        if (refreshedCheck.result?.isUpdateAvailable) {
-          selected = { source: selected.source, result: refreshedCheck.result }
-        } else if (refreshedCheck.error) {
-          throw refreshedCheck.error
-        }
+      if (!selected && !r2Check.result && !githubCheck?.result) {
+        throw r2Check.error || githubCheck?.error || new Error('更新服务暂不可用')
       }
 
       this.state.suppressUpdateEvents = false
       this.state.suppressSourceError = false
 
       if (selected?.result?.updateInfo) {
-        this.publishAvailableUpdate(selected.result.updateInfo)
-        return this.formatUpdateInfo(selected.result.updateInfo)
+        this.state.selectedUpdate = selected
+        this.publishAvailableUpdate(selected.updateInfo)
+        return this.formatUpdateInfo(selected.updateInfo)
       }
 
-      const noUpdateInfo = r2Check?.result?.updateInfo || githubCheck.result?.updateInfo
+      const noUpdateInfo = r2Check?.result?.updateInfo || githubCheck?.result?.updateInfo
       if (noUpdateInfo) {
         this.publishNoUpdate(noUpdateInfo)
         return this.formatUpdateInfo(noUpdateInfo)
@@ -660,6 +560,23 @@ export class AutoUpdateManager extends EventEmitter {
     }
   }
 
+  createUpdateCandidate(source, result) {
+    const updateInfo = result?.updateInfo
+    if (!isStableReleaseVersion(updateInfo?.version)) return null
+    const compatibleAsset = this.findCompatibleAsset(updateInfo)
+    if (!result?.isUpdateAvailable || !compatibleAsset) return null
+
+    // electron-updater 会在后续 downloadUpdate 中复用同一份 updateInfo；在这里收窄文件列表，
+    // 使下载阶段和已展示给用户的架构/哈希保持一致。
+    updateInfo.files = [compatibleAsset]
+
+    return {
+      source,
+      result,
+      updateInfo
+    }
+  }
+
   /**
    * 下载更新
    */
@@ -677,6 +594,15 @@ export class AutoUpdateManager extends EventEmitter {
       }
     }
 
+    if (process.platform === 'linux') {
+      await shell.openExternal(APP_DOWNLOAD_PAGE)
+      return { success: true, manualDownload: true }
+    }
+
+    if (!this.state.selectedUpdate?.updateInfo) {
+      throw new Error('请先重新检查更新')
+    }
+
     try {
       this.state.isDownloading = true
       this.state.downloadProgress = null
@@ -685,8 +611,8 @@ export class AutoUpdateManager extends EventEmitter {
 
       logger.info('[更新] 开始下载更新...')
 
-      // 启用差异下载
-      autoUpdater.disableDifferentialDownload = false
+      // 保持完整包校验，切换更新源时不复用差分包。
+      autoUpdater.disableDifferentialDownload = true
       let hasRetriedAfterVerificationFailure = false
 
       try {
@@ -706,8 +632,21 @@ export class AutoUpdateManager extends EventEmitter {
           '[更新] R2 更新包下载失败，切换 GitHub 兜底:',
           primaryError?.message || primaryError
         )
-        await this.configureUpdater('github')
-        await autoUpdater.checkForUpdates()
+        this.state.suppressUpdateEvents = true
+        const githubCheck = await this.checkUpdateSource('github')
+        this.state.suppressUpdateEvents = false
+        if (
+          !githubCheck.result?.isUpdateAvailable ||
+          !matchesPinnedUpdateCandidate(
+            this.state.selectedUpdate.updateInfo,
+            githubCheck.result.updateInfo,
+            this.architecture
+          )
+        ) {
+          throw new Error('备用更新包与当前版本不一致，已停止下载')
+        }
+
+        this.state.selectedUpdate = this.createUpdateCandidate('github', githubCheck.result)
         await this.retryDownloadAfterVerificationFailure(
           this.state.downloadCancellationToken,
           hasRetriedAfterVerificationFailure
@@ -733,6 +672,7 @@ export class AutoUpdateManager extends EventEmitter {
       throw Object.assign(new Error(errorInfo.message), errorInfo)
     } finally {
       this.state.suppressSourceError = false
+      this.state.suppressUpdateEvents = false
       this.state.downloadCancellationToken = null
     }
   }

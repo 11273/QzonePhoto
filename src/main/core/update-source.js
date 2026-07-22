@@ -1,49 +1,88 @@
-function parseVersion(value) {
-  const normalized = String(value || '')
-    .trim()
-    .replace(/^v/i, '')
-    .split('+', 1)[0]
-  const [core, prerelease = ''] = normalized.split('-', 2)
-  const parts = core.split('.').map((part) => Number.parseInt(part, 10))
+export const OFFICIAL_UPDATE_SOURCES = Object.freeze({
+  r2FeedUrl: 'https://dl.qzonephoto.getgit.one/releases/latest',
+  github: Object.freeze({
+    owner: '11273',
+    repo: 'QzonePhoto',
+    releaseType: 'release'
+  })
+})
 
-  return {
-    parts: parts.length === 3 && parts.every(Number.isFinite) ? parts : [],
-    prerelease
-  }
+export function isStableReleaseVersion(value) {
+  return /^\d+\.\d+\.\d+$/.test(String(value || '').trim())
 }
 
-/**
- * 比较两个稳定版版本号。返回正数代表 left 更新，负数代表 right 更新。
- * 预发布版本默认低于同一主版本的正式版，和 electron-updater 的稳定通道保持一致。
- */
-export function compareReleaseVersions(left, right) {
-  const leftVersion = parseVersion(left)
-  const rightVersion = parseVersion(right)
-
-  if (!leftVersion.parts.length || !rightVersion.parts.length) return 0
-
-  for (let index = 0; index < 3; index += 1) {
-    const difference = leftVersion.parts[index] - rightVersion.parts[index]
-    if (difference !== 0) return difference
-  }
-
-  if (leftVersion.prerelease === rightVersion.prerelease) return 0
-  if (!leftVersion.prerelease) return 1
-  if (!rightVersion.prerelease) return -1
-  return leftVersion.prerelease.localeCompare(rightVersion.prerelease)
+function isSafeAssetUrl(value) {
+  const url = String(value || '').trim()
+  return Boolean(url) && !/[\\/]|:\/\/|[?#]|\.\./.test(url)
 }
 
-/**
- * 两个来源均有可用版本时优先选择版本更高者；完全相同则优先 R2。
- */
-export function selectPreferredUpdateCandidate(r2Candidate, githubCandidate) {
-  if (!r2Candidate) return githubCandidate || null
-  if (!githubCandidate) return r2Candidate
+function isValidSha512(value) {
+  return /^[A-Za-z0-9+/]{86}==$/.test(String(value || '').trim())
+}
 
-  const comparison = compareReleaseVersions(
-    r2Candidate.result?.updateInfo?.version,
-    githubCandidate.result?.updateInfo?.version
+function isValidAsset(file) {
+  return (
+    file &&
+    isSafeAssetUrl(file.url) &&
+    /^qzonephoto-/i.test(String(file.url)) &&
+    Number.isSafeInteger(Number(file.size)) &&
+    Number(file.size) > 0 &&
+    isValidSha512(file.sha512)
   )
+}
 
-  return comparison >= 0 ? r2Candidate : githubCandidate
+function matchesFilename(file, expressions) {
+  const filename = String(file?.url || '').toLowerCase()
+  return expressions.every((expression) => expression.test(filename))
+}
+
+/**
+ * 只接受当前系统可自动安装的、明确标注架构的更新包。
+ * 不接受无架构后缀的旧安装包，也不允许元数据将下载跳转到其他主机。
+ */
+export function selectCompatibleUpdateFile(files, architecture) {
+  if (!Array.isArray(files)) return null
+
+  const platform = architecture?.platform
+  const arch = architecture?.arch
+  const matchers = {
+    win32: {
+      x64: [/win[-_]x64|x64[-_]setup/, /\.exe$/],
+      x86: [/win[-_](?:ia32|x86)|(?:ia32|x86)[-_]setup/, /\.exe$/],
+      arm64: [/win[-_]arm64|arm64[-_]setup/, /\.exe$/]
+    },
+    darwin: {
+      x64: [/(?:mac|darwin)[-_]x64|x64\.(?:zip)$/i, /\.zip$/],
+      arm64: [/(?:mac|darwin)[-_]arm64|arm64\.(?:zip)$/i, /\.zip$/]
+    },
+    linux: {
+      x64: [/(?:linux[-_])?(?:x86_64|amd64|x64)/, /\.appimage$/]
+    }
+  }
+
+  const expressions = matchers[platform]?.[arch]
+  if (!expressions) return null
+
+  return files.find((file) => isValidAsset(file) && matchesFilename(file, expressions)) || null
+}
+
+/**
+ * GitHub 兜底只能下载与已选 R2 更新完全相同的发布包，防止切源时意外切到另一版本。
+ */
+export function matchesPinnedUpdateCandidate(expectedInfo, fallbackInfo, architecture) {
+  if (
+    !isStableReleaseVersion(expectedInfo?.version) ||
+    expectedInfo.version !== fallbackInfo?.version
+  ) {
+    return false
+  }
+
+  const expectedFile = selectCompatibleUpdateFile(expectedInfo.files, architecture)
+  const fallbackFile = selectCompatibleUpdateFile(fallbackInfo.files, architecture)
+  return Boolean(
+    expectedFile &&
+    fallbackFile &&
+    expectedFile.size === fallbackFile.size &&
+    expectedFile.sha512 === fallbackFile.sha512
+  )
 }

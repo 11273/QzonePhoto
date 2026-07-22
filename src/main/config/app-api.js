@@ -9,14 +9,6 @@ const ENV = import.meta.env || {}
 const DEFAULT_REMOTE_TIMEOUT_MS = 3500
 const DEFAULT_CACHE_FILENAME = 'app-api-config.json'
 const DEFAULT_REMOTE_CONFIG_FILENAME = '.github/app-config.json'
-const DEFAULT_UPDATE_CONFIG = {
-  primaryFeedUrl: 'https://dl.qzonephoto.getgit.one/releases/latest',
-  githubFallback: {
-    owner: '11273',
-    repo: 'QzonePhoto',
-    releaseType: 'release'
-  }
-}
 
 let sessionApiConfig = null
 
@@ -122,7 +114,6 @@ function normalizeApiConfig(input, context = {}) {
     fallbackBaseUrls,
     websiteUrl: normalizeBaseUrl(input?.websiteUrl || input?.siteUrl || APP_WEBSITE),
     downloadPageUrl: normalizeHttpUrl(input?.downloadPageUrl || APP_DOWNLOAD_PAGE),
-    update: normalizeUpdateConfig(input?.update),
     version,
     ttlSeconds,
     fetchedAt,
@@ -137,7 +128,6 @@ function buildFallbackConfig(fallbackApiBaseUrl, remoteConfigUrl) {
     fallbackBaseUrls: [],
     websiteUrl: APP_WEBSITE,
     downloadPageUrl: APP_DOWNLOAD_PAGE,
-    update: normalizeUpdateConfig(),
     version: '',
     ttlSeconds: normalizeTtlSeconds(),
     fetchedAt: new Date().toISOString(),
@@ -163,43 +153,6 @@ function isTruthyEnv(value) {
       .trim()
       .toLowerCase()
   )
-}
-
-function normalizeUpdateConfig(input = {}) {
-  const githubFallback =
-    input?.githubFallback && typeof input.githubFallback === 'object' ? input.githubFallback : {}
-  const updateFeedOverride = normalizeBaseUrl(
-    ENV.VITE_UPDATE_FEED_URL || process.env.VITE_UPDATE_FEED_URL || ''
-  )
-  return {
-    primaryFeedUrl:
-      updateFeedOverride ||
-      normalizeBaseUrl(input?.primaryFeedUrl || DEFAULT_UPDATE_CONFIG.primaryFeedUrl),
-    downloadManifestUrl: normalizeHttpUrl(input?.downloadManifestUrl || ''),
-    releaseChannel: normalizeToken(input?.releaseChannel || 'stable', 'stable'),
-    githubFallback: {
-      owner: normalizeToken(
-        githubFallback.owner || DEFAULT_UPDATE_CONFIG.githubFallback.owner,
-        DEFAULT_UPDATE_CONFIG.githubFallback.owner
-      ),
-      repo: normalizeToken(
-        githubFallback.repo || DEFAULT_UPDATE_CONFIG.githubFallback.repo,
-        DEFAULT_UPDATE_CONFIG.githubFallback.repo
-      ),
-      releaseType: normalizeToken(
-        githubFallback.releaseType || DEFAULT_UPDATE_CONFIG.githubFallback.releaseType,
-        DEFAULT_UPDATE_CONFIG.githubFallback.releaseType
-      )
-    }
-  }
-}
-
-function normalizeToken(value, fallback) {
-  const text = String(value || '')
-    .trim()
-    .replace(/[^a-z0-9_.-]/gi, '')
-    .slice(0, 80)
-  return text || fallback
 }
 
 function resolveFallbackApiBaseUrl() {

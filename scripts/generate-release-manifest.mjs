@@ -19,7 +19,7 @@ const publicBaseUrl = (args.publicBaseUrl || process.env.R2_PUBLIC_BASE_URL || '
   /\/+$/,
   ''
 )
-const githubRepo = process.env.GITHUB_REPOSITORY || '11273/QzonePhoto'
+const githubRepo = args.githubRepo || '11273/QzonePhoto'
 
 const files = await listFiles(artifactsDir)
 const releaseFiles = files.filter((file) => /\.(exe|dmg|zip|AppImage|deb)$/i.test(file))

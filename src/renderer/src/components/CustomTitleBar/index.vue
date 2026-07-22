@@ -704,7 +704,12 @@ const handleDownloadUpdate = async () => {
     updateState.downloading = true
     updateState.progress = 0
     dialogState.value = 'downloading'
-    await window.QzoneAPI.update.downloadUpdate()
+    const result = await window.QzoneAPI.update.downloadUpdate()
+    if (result?.manualDownload) {
+      updateState.downloading = false
+      dialogVisible.value = false
+      dialogState.value = 'idle'
+    }
     console.log('下载更新API调用完成')
   } catch (error) {
     console.error('下载更新失败:', error)

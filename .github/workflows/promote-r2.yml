@@ -19,7 +19,7 @@ concurrency:
 jobs:
   promote-release:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -29,6 +29,7 @@ jobs:
       R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
       RELEASE_TAG: ${{ inputs.tag }}
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: 11273/QzonePhoto
     steps:
       - name: Validate R2 promotion configuration
         run: |
@@ -46,22 +47,23 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${RELEASE_TAG}" ]; then
-            RELEASE_TAG="$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')"
+            RELEASE_TAG="$(gh release list --repo "${GH_REPO}" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')"
             test -n "${RELEASE_TAG}" || {
               echo 'No published stable GitHub Release is available to promote'
               exit 1
             }
             echo "Automatically selected latest published release: ${RELEASE_TAG}"
           fi
-          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || {
-            echo "tag must look like v2.6.1"
+          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Only stable tags such as v2.6.1 can enter the R2 stable channel"
             exit 1
           }
-          draft="$(gh release view "${RELEASE_TAG}" --json isDraft --jq '.isDraft')"
-          prerelease="$(gh release view "${RELEASE_TAG}" --json isPrerelease --jq '.isPrerelease')"
+          draft="$(gh release view "${RELEASE_TAG}" --repo "${GH_REPO}" --json isDraft --jq '.isDraft')"
+          prerelease="$(gh release view "${RELEASE_TAG}" --repo "${GH_REPO}" --json isPrerelease --jq '.isPrerelease')"
           test "${draft}" = 'false' || { echo "Release ${RELEASE_TAG} must be public before R2 promotion"; exit 1; }
           test "${prerelease}" = 'false' || { echo "Release ${RELEASE_TAG} must not be a prerelease"; exit 1; }
           echo "RELEASE_TAG=${RELEASE_TAG}" >> "${GITHUB_ENV}"
+          echo "RELEASE_VERSION=${RELEASE_TAG#v}" >> "${GITHUB_ENV}"
           {
             echo '### R2 release selected'
             echo
@@ -83,7 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          gh release download "${RELEASE_TAG}" --dir artifacts \
+          gh release download "${RELEASE_TAG}" --repo "${GH_REPO}" --dir artifacts \
             --pattern '*.exe' --pattern '*.zip' --pattern '*.dmg' \
             --pattern '*.AppImage' --pattern '*.deb' --pattern 'latest*.yml' \
             --pattern '*.blockmap'
@@ -95,22 +97,134 @@ jobs:
       - name: Generate public download manifest
         run: |
           set -euo pipefail
+          node scripts/verify-release-assets.mjs \
+            --assets=artifacts --version="${RELEASE_VERSION}" \
+            --fileList=verified-release-files.txt
+          mkdir verified-assets
+          while IFS= read -r name; do
+            cp "artifacts/${name}" "verified-assets/${name}"
+          done < verified-release-files.txt
           node scripts/generate-release-manifest.mjs \
-            --artifacts=artifacts --out=artifacts/latest.json --tag="${RELEASE_TAG}" \
-            --releasePath=latest --publicBaseUrl="${R2_PUBLIC_BASE_URL}"
+            --artifacts=verified-assets --out="artifacts/${RELEASE_TAG}.json" --tag="${RELEASE_TAG}" \
+            --releasePath="${RELEASE_TAG}" --publicBaseUrl="${R2_PUBLIC_BASE_URL}" --githubRepo="${GH_REPO}"
 
-      - name: Promote R2 release after verification
+      - name: Prevent stable channel rollback
         run: |
           set -euo pipefail
-          find artifacts -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.blockmap' \) -print0 |
-            while IFS= read -r -d '' file; do
-              name="$(basename "$file")"
-              aws s3 cp "$file" "s3://${R2_BUCKET}/releases/latest/${name}" --endpoint-url "${R2_ENDPOINT}" --cache-control "public, max-age=31536000, immutable" --only-show-errors
-            done
-          find artifacts -type f -name 'latest*.yml' -print0 |
-            while IFS= read -r -d '' file; do
-              name="$(basename "$file")"
-              aws s3 cp "$file" "s3://${R2_BUCKET}/releases/latest/${name}" --endpoint-url "${R2_ENDPOINT}" --content-type "application/x-yaml" --cache-control "public, max-age=60" --only-show-errors
-            done
-          aws s3 cp artifacts/latest.json "s3://${R2_BUCKET}/manifests/latest.json" --endpoint-url "${R2_ENDPOINT}" --content-type "application/json" --cache-control "public, max-age=60" --only-show-errors
-          aws s3api head-object --bucket "${R2_BUCKET}" --key "manifests/latest.json" --endpoint-url "${R2_ENDPOINT}" >/dev/null
+          for metadata in latest.yml latest-mac.yml latest-linux.yml; do
+            if aws s3api head-object \
+              --bucket "${R2_BUCKET}" --key "releases/latest/${metadata}" \
+              --endpoint-url "${R2_ENDPOINT}" >/dev/null 2>&1; then
+              aws s3 cp "s3://${R2_BUCKET}/releases/latest/${metadata}" "current-${metadata}" \
+                --endpoint-url "${R2_ENDPOINT}" --only-show-errors
+              node scripts/assert-forward-promotion.mjs \
+                --current="current-${metadata}" --candidate="artifacts/${metadata}"
+            else
+              echo "No existing ${metadata}; its first stable promotion is allowed"
+            fi
+          done
+
+      - name: Upload and verify immutable release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          upload_and_verify() {
+            local file="$1"
+            local key="$2"
+            local cache_control="$3"
+            local content_type="${4:-}"
+            local size
+            local sha512
+            size="$(stat --format=%s "$file")"
+            sha512="$(openssl dgst -sha512 -binary "$file" | base64 -w0)"
+            if aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
+              --endpoint-url "${R2_ENDPOINT}" >/dev/null 2>&1; then
+              remote_size="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
+                --endpoint-url "${R2_ENDPOINT}" --query ContentLength --output text)"
+              remote_sha512="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
+                --endpoint-url "${R2_ENDPOINT}" --query 'Metadata."qzone-sha512"' --output text)"
+              test "${remote_size}" = "${size}" && test "${remote_sha512}" = "${sha512}" || {
+                echo "Refusing to overwrite immutable R2 object with different content: ${key}"
+                exit 1
+              }
+              echo "Verified existing immutable object: ${key}"
+              return
+            fi
+            args=(s3 cp "$file" "s3://${R2_BUCKET}/${key}" --endpoint-url "${R2_ENDPOINT}" --cache-control "${cache_control}" --checksum-algorithm SHA256 --metadata "qzone-sha512=${sha512}" --only-show-errors)
+            if [ -n "${content_type}" ]; then
+              args+=(--content-type "${content_type}")
+            fi
+            aws "${args[@]}"
+            remote_size="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
+              --endpoint-url "${R2_ENDPOINT}" --query ContentLength --output text)"
+            remote_sha512="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
+              --endpoint-url "${R2_ENDPOINT}" --query 'Metadata."qzone-sha512"' --output text)"
+            test "${remote_size}" = "${size}" && test "${remote_sha512}" = "${sha512}" || {
+              echo "R2 object verification failed for ${key}"
+              exit 1
+            }
+          }
+
+          release_prefix="releases/${RELEASE_TAG}"
+          while IFS= read -r name; do
+            case "${name}" in
+              latest*.yml)
+                upload_and_verify "artifacts/${name}" "${release_prefix}/${name}" \
+                  "no-cache, no-store, max-age=0" "application/x-yaml"
+                ;;
+              *)
+                upload_and_verify "verified-assets/${name}" "${release_prefix}/${name}" \
+                  "public, max-age=31536000, immutable"
+                ;;
+            esac
+          done < verified-release-files.txt
+          upload_and_verify "artifacts/${RELEASE_TAG}.json" "manifests/${RELEASE_TAG}.json" "public, max-age=31536000, immutable" "application/json"
+
+      - name: Switch stable metadata after immutable files are ready
+        shell: bash
+        run: |
+          set -euo pipefail
+          promote_and_verify() {
+            local source_key="$1"
+            local target_key="$2"
+            local cache_control="${3:-}"
+            local content_type="${4:-}"
+            source_sha512="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${source_key}" \
+              --endpoint-url "${R2_ENDPOINT}" --query 'Metadata."qzone-sha512"' --output text)"
+            test "${source_sha512}" != 'None' || {
+              echo "Missing immutable SHA-512 metadata on ${source_key}"
+              exit 1
+            }
+            args=(s3 cp "s3://${R2_BUCKET}/${source_key}" "s3://${R2_BUCKET}/${target_key}" --endpoint-url "${R2_ENDPOINT}" --only-show-errors)
+            if [ -n "${cache_control}" ]; then
+              args+=(--metadata-directive REPLACE --cache-control "${cache_control}" --metadata "qzone-sha512=${source_sha512}")
+            fi
+            if [ -n "${content_type}" ]; then
+              args+=(--content-type "${content_type}")
+            fi
+            aws "${args[@]}"
+            source_size="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${source_key}" \
+              --endpoint-url "${R2_ENDPOINT}" --query ContentLength --output text)"
+            target_size="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${target_key}" \
+              --endpoint-url "${R2_ENDPOINT}" --query ContentLength --output text)"
+            target_sha512="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${target_key}" \
+              --endpoint-url "${R2_ENDPOINT}" --query 'Metadata."qzone-sha512"' --output text)"
+            test "${source_size}" = "${target_size}" && test "${source_sha512}" = "${target_sha512}" || {
+              echo "R2 promotion verification failed for ${target_key}"
+              exit 1
+            }
+          }
+
+          release_prefix="releases/${RELEASE_TAG}"
+          while IFS= read -r name; do
+            case "${name}" in
+              latest*.yml) ;;
+              *) promote_and_verify "${release_prefix}/${name}" "releases/latest/${name}" ;;
+            esac
+          done < verified-release-files.txt
+          for name in latest.yml latest-mac.yml latest-linux.yml; do
+            promote_and_verify "${release_prefix}/${name}" "releases/latest/${name}" \
+              "no-cache, no-store, max-age=0" "application/x-yaml"
+          done
+          promote_and_verify "manifests/${RELEASE_TAG}.json" "manifests/latest.json" \
+            "no-cache, no-store, max-age=0" "application/json"

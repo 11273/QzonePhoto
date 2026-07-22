@@ -13,8 +13,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+
+      - name: Validate tag and package version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="$(node -p "require('./package.json').version")"
+          test "${tag}" = "v${version}" || {
+            echo "Tag ${tag} must exactly match package.json version ${version}"
+            exit 1
+          }
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || {
+            echo "package.json version must be valid semver"
+            exit 1
+          }
+          if [[ "${version}" == *-* ]]; then
+            prerelease=true
+          else
+            prerelease=false
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "prerelease=${prerelease}" >> "${GITHUB_OUTPUT}"
+
   build:
-    if: github.event_name == 'push'
+    needs: validate-release
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
@@ -105,12 +137,13 @@ jobs:
           retention-days: 1
 
   prepare-release:
-    if: github.event_name == 'push'
-    needs: build
+    needs: [validate-release, build]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: write
+    env:
+      GH_REPO: 11273/QzonePhoto
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v7
@@ -153,6 +186,21 @@ jobs:
       - name: Merge multi-architecture update metadata
         run: node scripts/merge-update-metadata.mjs --artifacts=artifacts --out=release-assets
 
+      - name: Verify release assets and updater metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-release-assets.mjs \
+            --assets=release-assets \
+            --version="${{ needs.validate-release.outputs.version }}" \
+            --fileList=verified-release-files.txt
+          mkdir verified-release-assets
+          while IFS= read -r name; do
+            cp "release-assets/${name}" "verified-release-assets/${name}"
+          done < verified-release-files.txt
+          rm -rf release-assets
+          mv verified-release-assets release-assets
+
       - name: Display release assets
         run: ls -lah release-assets
 
@@ -160,19 +208,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            draft="$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq '.isDraft')"
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GH_REPO}" >/dev/null 2>&1; then
+            draft="$(gh release view "${GITHUB_REF_NAME}" --repo "${GH_REPO}" --json isDraft --jq '.isDraft')"
             test "${draft}" = 'true' || {
               echo "Refusing to replace the published release ${GITHUB_REF_NAME}"
               exit 1
             }
           else
-            gh release create "${GITHUB_REF_NAME}" --draft --verify-tag \
-              --title "Release ${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md
+            release_args=(--draft --verify-tag --title "Release ${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md)
+            if [ "${{ needs.validate-release.outputs.prerelease }}" = 'true' ]; then
+              release_args+=(--prerelease)
+            fi
+            gh release create "${GITHUB_REF_NAME}" --repo "${GH_REPO}" "${release_args[@]}"
           fi
 
           for attempt in 1 2 3; do
-            if gh release upload "${GITHUB_REF_NAME}" release-assets/* --clobber; then
+            if gh release upload "${GITHUB_REF_NAME}" release-assets/* --repo "${GH_REPO}" --clobber; then
               exit 0
             fi
             test "${attempt}" = 3 && exit 1
