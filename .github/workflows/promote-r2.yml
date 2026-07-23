@@ -120,21 +120,41 @@ jobs:
           while IFS= read -r name; do
             cp "artifacts/${name}" "verified-assets/${name}"
           done < verified-release-files.txt
-          generated_at="${RELEASE_PUBLISHED_AT}"
           manifest_key="manifests/${RELEASE_TAG}.json"
+          candidate_manifest='candidate-release-manifest.json'
+          node scripts/generate-release-manifest.mjs \
+            --artifacts=verified-assets --out="${candidate_manifest}" --tag="${RELEASE_TAG}" \
+            --releasePath="${RELEASE_TAG}" --publicBaseUrl="${R2_PUBLIC_BASE_URL}" --githubRepo="${GH_REPO}"
           if aws s3api head-object --bucket "${R2_BUCKET}" --key "${manifest_key}" \
             --endpoint-url "${R2_ENDPOINT}" >/dev/null 2>&1; then
             aws s3 cp "s3://${R2_BUCKET}/${manifest_key}" existing-release-manifest.json \
               --endpoint-url "${R2_ENDPOINT}" --only-show-errors
-            generated_at="$(node -e 'const value = require("./existing-release-manifest.json"); const date = new Date(value.generatedAt); if (Number.isNaN(date.getTime())) process.exit(1); process.stdout.write(date.toISOString())')" || {
-              echo "Existing immutable manifest has an invalid generatedAt timestamp"
+            if node -e '
+              const fs = require("node:fs")
+              const [candidatePath, existingPath] = process.argv.slice(1)
+              const candidate = JSON.parse(fs.readFileSync(candidatePath, "utf8"))
+              const existing = JSON.parse(fs.readFileSync(existingPath, "utf8"))
+              if (Number.isNaN(new Date(existing.generatedAt).getTime())) process.exit(2)
+              const normalize = ({ generatedAt, ...value }) => value
+              if (JSON.stringify(normalize(candidate)) !== JSON.stringify(normalize(existing))) process.exit(3)
+            ' "${candidate_manifest}" existing-release-manifest.json
+            then
+              cp existing-release-manifest.json "artifacts/${RELEASE_TAG}.json"
+              echo "Verified and reused existing immutable manifest: ${manifest_key}"
+            else
+              manifest_check_status="$?"
+              if [ "${manifest_check_status}" -eq 2 ]; then
+                echo "Existing immutable manifest has an invalid generatedAt timestamp"
+              elif [ "${manifest_check_status}" -eq 3 ]; then
+                echo "Existing immutable manifest does not match the selected release assets"
+              else
+                echo "Existing immutable manifest could not be verified"
+              fi
               exit 1
-            }
+            fi
+          else
+            mv "${candidate_manifest}" "artifacts/${RELEASE_TAG}.json"
           fi
-          node scripts/generate-release-manifest.mjs \
-            --artifacts=verified-assets --out="artifacts/${RELEASE_TAG}.json" --tag="${RELEASE_TAG}" \
-            --releasePath="${RELEASE_TAG}" --publicBaseUrl="${R2_PUBLIC_BASE_URL}" --githubRepo="${GH_REPO}" \
-            --generatedAt="${generated_at}"
 
       - name: Prevent stable channel rollback
         run: |
