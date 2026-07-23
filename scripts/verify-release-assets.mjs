@@ -4,6 +4,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const RELEASE_ASSET_NAMES = (version) => ({
+  windowsDefault: `QzonePhoto-${version}-win-setup.exe`,
   windowsX64: `QzonePhoto-${version}-win-x64-setup.exe`,
   windowsIa32: `QzonePhoto-${version}-win-ia32-setup.exe`,
   macosX64Zip: `QzonePhoto-${version}-mac-x64.zip`,
@@ -15,14 +16,16 @@ const RELEASE_ASSET_NAMES = (version) => ({
 })
 
 const METADATA_REQUIREMENTS = (assets) => ({
-  'latest.yml': [assets.windowsX64, assets.windowsIa32],
-  'latest-mac.yml': [
-    assets.macosX64Zip,
-    assets.macosArm64Zip,
-    assets.macosX64Dmg,
-    assets.macosArm64Dmg
-  ],
-  'latest-linux.yml': [assets.linuxAppImage, assets.linuxDeb]
+  'latest.yml': {
+    required: [assets.windowsX64, assets.windowsIa32],
+    allowed: [assets.windowsDefault, assets.windowsX64, assets.windowsIa32]
+  },
+  'latest-mac.yml': {
+    required: [assets.macosX64Zip, assets.macosArm64Zip, assets.macosX64Dmg, assets.macosArm64Dmg]
+  },
+  'latest-linux.yml': {
+    required: [assets.linuxAppImage, assets.linuxDeb]
+  }
 })
 
 const METADATA_NAMES = ['latest.yml', 'latest-mac.yml', 'latest-linux.yml']
@@ -40,9 +43,10 @@ export async function verifyReleaseAssets({ assetsDir, version }) {
 
   const directory = path.resolve(assetsDir || 'release-assets')
   const names = RELEASE_ASSET_NAMES(version)
-  const expectedAssets = Object.values(names)
-  const expectedBlockmaps = blockmapNames(names)
-  const fileNames = [...expectedAssets, ...expectedBlockmaps, ...METADATA_NAMES].sort()
+  const expectedAssets = Object.values(names).filter((name) => name !== names.windowsDefault)
+  const expectedBlockmaps = blockmapNames(
+    Object.fromEntries(expectedAssets.map((name) => [name, name]))
+  )
   const directoryEntries = await readdir(directory, { withFileTypes: true })
   const files = new Set(
     directoryEntries.filter((entry) => entry.isFile()).map((entry) => entry.name)
@@ -56,20 +60,42 @@ export async function verifyReleaseAssets({ assetsDir, version }) {
   }
 
   const metadataRequirements = METADATA_REQUIREMENTS(names)
-  for (const [metadataName, requiredAssets] of Object.entries(metadataRequirements)) {
+  const metadataAssets = new Set()
+  for (const [metadataName, requirements] of Object.entries(metadataRequirements)) {
     if (!files.has(metadataName)) throw new Error(`Missing updater metadata: ${metadataName}`)
-    await verifyMetadata({
+    const verifiedAssets = await verifyMetadata({
       metadataPath: path.join(directory, metadataName),
       directory,
       version,
-      requiredAssets
+      requiredAssets: requirements.required,
+      allowedAssets: requirements.allowed || requirements.required
     })
+    for (const assetName of verifiedAssets) metadataAssets.add(assetName)
   }
+
+  const metadataBlockmaps = blockmapNames(
+    Object.fromEntries([...metadataAssets].map((name) => [name, name]))
+  )
+  for (const blockmap of metadataBlockmaps) {
+    if (!files.has(blockmap)) {
+      throw new Error(`Missing required blockmap: ${blockmap}`)
+    }
+  }
+
+  const fileNames = [
+    ...new Set([
+      ...expectedAssets,
+      ...expectedBlockmaps,
+      ...metadataAssets,
+      ...metadataBlockmaps,
+      ...METADATA_NAMES
+    ])
+  ].sort()
 
   return { version, assetCount: expectedAssets.length, fileNames }
 }
 
-async function verifyMetadata({ metadataPath, directory, version, requiredAssets }) {
+async function verifyMetadata({ metadataPath, directory, version, requiredAssets, allowedAssets }) {
   const content = await readFile(metadataPath, 'utf8')
   const declaredVersion = content.match(/^version:\s*(.+)$/m)?.[1]?.trim()
   if (declaredVersion !== version) {
@@ -79,9 +105,9 @@ async function verifyMetadata({ metadataPath, directory, version, requiredAssets
   }
 
   const entries = parseMetadataEntries(content, metadataPath)
-  const allowedAssets = new Set(requiredAssets)
+  const allowedAssetNames = new Set(allowedAssets)
   for (const assetName of entries.keys()) {
-    if (!allowedAssets.has(assetName)) {
+    if (!allowedAssetNames.has(assetName)) {
       throw new Error(
         `${path.basename(metadataPath)} contains an unexpected updater asset: ${assetName}`
       )
@@ -103,6 +129,8 @@ async function verifyMetadata({ metadataPath, directory, version, requiredAssets
       throw new Error(`${path.basename(metadataPath)} has an invalid asset entry: ${error.message}`)
     }
   }
+
+  return entries.keys()
 }
 
 function parseMetadataEntries(content, metadataPath) {

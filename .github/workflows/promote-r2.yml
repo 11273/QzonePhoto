@@ -8,6 +8,11 @@ on:
         required: false
         default: ''
         type: string
+      allow_rollback:
+        description: 紧急回退稳定通道（仅在手动指定旧标签并确认后启用）
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -28,6 +33,8 @@ jobs:
       R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
       R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
       RELEASE_TAG: ${{ inputs.tag }}
+      REQUESTED_TAG: ${{ inputs.tag }}
+      ALLOW_ROLLBACK: ${{ inputs.allow_rollback }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: 11273/QzonePhoto
     steps:
@@ -54,21 +61,37 @@ jobs:
             }
             echo "Automatically selected latest published release: ${RELEASE_TAG}"
           fi
+          if [ "${ALLOW_ROLLBACK}" = 'true' ]; then
+            test -n "${REQUESTED_TAG}" || {
+              echo 'Rollback requires an explicitly selected release tag'
+              exit 1
+            }
+            echo "Emergency rollback explicitly enabled for ${RELEASE_TAG}"
+          fi
           [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
             echo "Only stable tags such as v2.6.1 can enter the R2 stable channel"
             exit 1
           }
           draft="$(gh release view "${RELEASE_TAG}" --repo "${GH_REPO}" --json isDraft --jq '.isDraft')"
           prerelease="$(gh release view "${RELEASE_TAG}" --repo "${GH_REPO}" --json isPrerelease --jq '.isPrerelease')"
+          published_at="$(gh release view "${RELEASE_TAG}" --repo "${GH_REPO}" --json publishedAt --jq '.publishedAt')"
           test "${draft}" = 'false' || { echo "Release ${RELEASE_TAG} must be public before R2 promotion"; exit 1; }
           test "${prerelease}" = 'false' || { echo "Release ${RELEASE_TAG} must not be a prerelease"; exit 1; }
+          node -e 'const value = process.argv[1]; if (Number.isNaN(Date.parse(value))) process.exit(1)' "${published_at}" || {
+            echo "Release ${RELEASE_TAG} has an invalid publishedAt timestamp"
+            exit 1
+          }
           echo "RELEASE_TAG=${RELEASE_TAG}" >> "${GITHUB_ENV}"
           echo "RELEASE_VERSION=${RELEASE_TAG#v}" >> "${GITHUB_ENV}"
+          echo "RELEASE_PUBLISHED_AT=${published_at}" >> "${GITHUB_ENV}"
           {
             echo '### R2 release selected'
             echo
             echo "- Tag: \`${RELEASE_TAG}\`"
             echo '- Source: latest published GitHub Release'
+            if [ "${ALLOW_ROLLBACK}" = 'true' ]; then
+              echo '- Stable channel: emergency rollback explicitly approved'
+            fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Check out release scripts from main
@@ -104,9 +127,21 @@ jobs:
           while IFS= read -r name; do
             cp "artifacts/${name}" "verified-assets/${name}"
           done < verified-release-files.txt
+          generated_at="${RELEASE_PUBLISHED_AT}"
+          manifest_key="manifests/${RELEASE_TAG}.json"
+          if aws s3api head-object --bucket "${R2_BUCKET}" --key "${manifest_key}" \
+            --endpoint-url "${R2_ENDPOINT}" >/dev/null 2>&1; then
+            aws s3 cp "s3://${R2_BUCKET}/${manifest_key}" existing-release-manifest.json \
+              --endpoint-url "${R2_ENDPOINT}" --only-show-errors
+            generated_at="$(node -e 'const value = require("./existing-release-manifest.json"); const date = new Date(value.generatedAt); if (Number.isNaN(date.getTime())) process.exit(1); process.stdout.write(date.toISOString())')" || {
+              echo "Existing immutable manifest has an invalid generatedAt timestamp"
+              exit 1
+            }
+          fi
           node scripts/generate-release-manifest.mjs \
             --artifacts=verified-assets --out="artifacts/${RELEASE_TAG}.json" --tag="${RELEASE_TAG}" \
-            --releasePath="${RELEASE_TAG}" --publicBaseUrl="${R2_PUBLIC_BASE_URL}" --githubRepo="${GH_REPO}"
+            --releasePath="${RELEASE_TAG}" --publicBaseUrl="${R2_PUBLIC_BASE_URL}" --githubRepo="${GH_REPO}" \
+            --generatedAt="${generated_at}"
 
       - name: Prevent stable channel rollback
         run: |
@@ -117,14 +152,18 @@ jobs:
               --endpoint-url "${R2_ENDPOINT}" >/dev/null 2>&1; then
               aws s3 cp "s3://${R2_BUCKET}/releases/latest/${metadata}" "current-${metadata}" \
                 --endpoint-url "${R2_ENDPOINT}" --only-show-errors
-              node scripts/assert-forward-promotion.mjs \
-                --current="current-${metadata}" --candidate="artifacts/${metadata}"
+              if [ "${ALLOW_ROLLBACK}" = 'true' ]; then
+                echo "Explicit rollback approved: replacing ${metadata}"
+              else
+                node scripts/assert-forward-promotion.mjs \
+                  --current="current-${metadata}" --candidate="artifacts/${metadata}"
+              fi
             else
               echo "No existing ${metadata}; its first stable promotion is allowed"
             fi
           done
 
-      - name: Upload and verify immutable release files
+      - name: Upload and verify release files, then switch stable metadata
         shell: bash
         run: |
           set -euo pipefail
@@ -133,11 +172,12 @@ jobs:
             local key="$2"
             local cache_control="$3"
             local content_type="${4:-}"
+            local mutable="${5:-false}"
             local size
             local sha512
             size="$(stat --format=%s "$file")"
             sha512="$(openssl dgst -sha512 -binary "$file" | base64 -w0)"
-            if aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
+            if [ "${mutable}" != 'true' ] && aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
               --endpoint-url "${R2_ENDPOINT}" >/dev/null 2>&1; then
               remote_size="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
                 --endpoint-url "${R2_ENDPOINT}" --query ContentLength --output text)"
@@ -179,52 +219,17 @@ jobs:
             esac
           done < verified-release-files.txt
           upload_and_verify "artifacts/${RELEASE_TAG}.json" "manifests/${RELEASE_TAG}.json" "public, max-age=31536000, immutable" "application/json"
-
-      - name: Switch stable metadata after immutable files are ready
-        shell: bash
-        run: |
-          set -euo pipefail
-          promote_and_verify() {
-            local source_key="$1"
-            local target_key="$2"
-            local cache_control="${3:-}"
-            local content_type="${4:-}"
-            source_sha512="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${source_key}" \
-              --endpoint-url "${R2_ENDPOINT}" --query 'Metadata."qzone-sha512"' --output text)"
-            test "${source_sha512}" != 'None' || {
-              echo "Missing immutable SHA-512 metadata on ${source_key}"
-              exit 1
-            }
-            args=(s3 cp "s3://${R2_BUCKET}/${source_key}" "s3://${R2_BUCKET}/${target_key}" --endpoint-url "${R2_ENDPOINT}" --only-show-errors)
-            if [ -n "${cache_control}" ]; then
-              args+=(--metadata-directive REPLACE --cache-control "${cache_control}" --metadata "qzone-sha512=${source_sha512}")
-            fi
-            if [ -n "${content_type}" ]; then
-              args+=(--content-type "${content_type}")
-            fi
-            aws "${args[@]}"
-            source_size="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${source_key}" \
-              --endpoint-url "${R2_ENDPOINT}" --query ContentLength --output text)"
-            target_size="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${target_key}" \
-              --endpoint-url "${R2_ENDPOINT}" --query ContentLength --output text)"
-            target_sha512="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${target_key}" \
-              --endpoint-url "${R2_ENDPOINT}" --query 'Metadata."qzone-sha512"' --output text)"
-            test "${source_size}" = "${target_size}" && test "${source_sha512}" = "${target_sha512}" || {
-              echo "R2 promotion verification failed for ${target_key}"
-              exit 1
-            }
-          }
-
-          release_prefix="releases/${RELEASE_TAG}"
+          echo 'All immutable versioned objects are verified; uploading stable download objects.'
           while IFS= read -r name; do
             case "${name}" in
               latest*.yml) ;;
-              *) promote_and_verify "${release_prefix}/${name}" "releases/latest/${name}" ;;
+              *) upload_and_verify "verified-assets/${name}" "releases/latest/${name}" \
+                "public, max-age=31536000, immutable" ;;
             esac
           done < verified-release-files.txt
           for name in latest.yml latest-mac.yml latest-linux.yml; do
-            promote_and_verify "${release_prefix}/${name}" "releases/latest/${name}" \
-              "no-cache, no-store, max-age=0" "application/x-yaml"
+            upload_and_verify "artifacts/${name}" "releases/latest/${name}" \
+              "no-cache, no-store, max-age=0" "application/x-yaml" true
           done
-          promote_and_verify "manifests/${RELEASE_TAG}.json" "manifests/latest.json" \
-            "no-cache, no-store, max-age=0" "application/json"
+          upload_and_verify "artifacts/${RELEASE_TAG}.json" "manifests/latest.json" \
+            "no-cache, no-store, max-age=0" "application/json" true
