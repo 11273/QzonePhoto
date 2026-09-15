@@ -73,6 +73,24 @@
             </div>
           </div>
         </el-tooltip>
+
+        <el-tooltip
+          content="用于下载文件名和本地文件时间；所选时间缺失时会自动使用另一种时间。"
+          placement="bottom"
+        >
+          <div class="setting-group compact">
+            <label class="setting-label">文件时间</label>
+            <el-select
+              v-model="downloadTimePreference"
+              size="small"
+              class="time-preference-select"
+              @change="handleTimePreferenceChange"
+            >
+              <el-option label="拍摄时间优先" value="shoot" />
+              <el-option label="使用上传时间" value="upload" />
+            </el-select>
+          </div>
+        </el-tooltip>
       </div>
 
       <div class="actions-right">
@@ -457,6 +475,7 @@ const concurrency = ref(3)
 const tempConcurrency = ref(3)
 const replaceExisting = ref(false)
 const writeFeedDescription = ref(true)
+const downloadTimePreference = ref('shoot')
 
 // 任务数据
 const currentPageTasks = ref([]) // 当前页的任务
@@ -547,6 +566,15 @@ const initWriteFeedDescriptionSetting = async () => {
   } catch (error) {
     console.error('获取动态信息设置失败:', error)
     writeFeedDescription.value = true
+  }
+}
+
+const initTimePreference = async () => {
+  try {
+    downloadTimePreference.value = await window.QzoneAPI.download.getTimePreference()
+  } catch (error) {
+    console.error('获取文件时间设置失败:', error)
+    downloadTimePreference.value = 'shoot'
   }
 }
 
@@ -729,6 +757,7 @@ watch(visible, async (newVisible) => {
     initConcurrency()
     initReplaceExistingSetting()
     initWriteFeedDescriptionSetting()
+    initTimePreference()
     loadStats()
     loadTasksPage()
     setupEventListeners()
@@ -751,6 +780,7 @@ onMounted(async () => {
     initConcurrency()
     initReplaceExistingSetting()
     initWriteFeedDescriptionSetting()
+    initTimePreference()
     loadStats()
     loadTasksPage()
     setupEventListeners()
@@ -1128,6 +1158,22 @@ const handleWriteFeedDescriptionChange = async (enabled) => {
     ElMessage.error('保存动态信息设置失败')
   }
 }
+
+const handleTimePreferenceChange = async (preference) => {
+  const previous = preference === 'upload' ? 'shoot' : 'upload'
+  try {
+    downloadTimePreference.value = await window.QzoneAPI.download.setTimePreference(preference)
+    ElMessage.success(
+      downloadTimePreference.value === 'upload'
+        ? '后续下载将使用上传时间'
+        : '后续下载将优先使用原始拍摄时间'
+    )
+  } catch (error) {
+    console.error('保存文件时间设置失败:', error)
+    downloadTimePreference.value = previous
+    ElMessage.error('保存文件时间设置失败')
+  }
+}
 </script>
 <style lang="scss">
 .custom-tooltip {
@@ -1274,6 +1320,10 @@ const handleWriteFeedDescriptionChange = async (enabled) => {
               color: rgba(255, 255, 255, 0.9);
             }
           }
+        }
+
+        .time-preference-select {
+          width: 122px;
         }
 
         :deep(.el-switch) {

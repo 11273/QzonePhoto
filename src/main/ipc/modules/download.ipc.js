@@ -138,6 +138,14 @@ export function createDownloadHandlers(service) {
       return downloadService.setWriteFeedDescriptionSetting(context.payload)
     },
 
+    [IPC_DOWNLOAD.GET_TIME_PREFERENCE]: async () => {
+      return downloadService.getDownloadTimePreference()
+    },
+
+    [IPC_DOWNLOAD.SET_TIME_PREFERENCE]: async (event, context) => {
+      return downloadService.setDownloadTimePreference(context.payload)
+    },
+
     // 设置下载管理器打开状态
     [IPC_DOWNLOAD.SET_MANAGER_OPEN]: async (event, context) => {
       const isOpen = context?.payload?.isOpen || false

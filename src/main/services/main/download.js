@@ -9,7 +9,10 @@ import { JSONFile } from 'lowdb/node'
 import { APP_NAME } from '@shared/const'
 import { ServiceNames } from '@main/services/service-manager'
 import { reportHealthEvent, telemetryBuckets } from '@main/services/app-telemetry'
-import { getPhotoFileTime } from '@main/utils/download-file-time.mjs'
+import {
+  getPhotoFileTime,
+  normalizeDownloadTimePreference
+} from '@main/utils/download-file-time.mjs'
 import { writeTaskMediaMetadata } from '@main/utils/media-metadata-writer.mjs'
 import { isVideoPhoto, mergeEnrichedImagesInOriginalOrder } from '@main/utils/photo-order.mjs'
 // 直接定义必要的默认配置，避免使用外部常量系统
@@ -17,6 +20,7 @@ const DEFAULT_CONCURRENCY = 3
 const DEFAULT_PAGE_SIZE = 50
 const DEFAULT_REPLACE_EXISTING = false
 const DEFAULT_WRITE_FEED_DESCRIPTION = true
+const DEFAULT_DOWNLOAD_TIME_PREFERENCE = 'shoot'
 const MAX_ACTIVE_TASKS_IN_MEMORY = 1000
 const DEFAULT_DOWNLOAD_FOLDER = APP_NAME
 
@@ -337,6 +341,22 @@ export class DownloadService {
     return boolValue
   }
 
+  getDownloadTimePreference() {
+    return normalizeDownloadTimePreference(
+      this.getSetting('downloadTimePreference') || DEFAULT_DOWNLOAD_TIME_PREFERENCE
+    )
+  }
+
+  async setDownloadTimePreference(preference) {
+    const normalized = normalizeDownloadTimePreference(preference)
+    await this.setSetting('downloadTimePreference', normalized)
+    return normalized
+  }
+
+  getConfiguredPhotoFileTime(photo) {
+    return getPhotoFileTime(photo, this.getDownloadTimePreference())
+  }
+
   // 生成任务ID
   generateTaskId() {
     return `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -604,7 +624,7 @@ export class DownloadService {
           sourceKey: photo.sourceKey || album.sourceKey || '',
           referer: album.referer || '',
           requestHeaders,
-          fileTime: getPhotoFileTime(photo),
+          fileTime: this.getConfiguredPhotoFileTime(photo),
           metadataDescription: photo.metadataDescription || album.feedDescription || '',
           mediaMetadata: photo.mediaMetadata || album.feedMetadata || null,
           priority: PRIORITY.NORMAL
@@ -631,7 +651,7 @@ export class DownloadService {
             sourceKey: video.sourceKey || album.sourceKey || '',
             referer: album.referer || '',
             requestHeaders,
-            fileTime: getPhotoFileTime(video),
+            fileTime: this.getConfiguredPhotoFileTime(video),
             metadataDescription: video.metadataDescription || album.feedDescription || '',
             mediaMetadata: video.mediaMetadata || album.feedMetadata || null,
             priority: PRIORITY.NORMAL
@@ -658,7 +678,9 @@ export class DownloadService {
               sourceKey: video.sourceKey || album.sourceKey || '',
               referer: album.referer || '',
               requestHeaders,
-              fileTime: getPhotoFileTime(videoInfo) || getPhotoFileTime(video),
+              fileTime:
+                this.getConfiguredPhotoFileTime(videoInfo) ||
+                this.getConfiguredPhotoFileTime(video),
               metadataDescription: video.metadataDescription || album.feedDescription || '',
               mediaMetadata: video.mediaMetadata || album.feedMetadata || null,
               priority: PRIORITY.NORMAL
@@ -680,7 +702,7 @@ export class DownloadService {
               sourceKey: video.sourceKey || album.sourceKey || '',
               referer: album.referer || '',
               requestHeaders,
-              fileTime: getPhotoFileTime(video),
+              fileTime: this.getConfiguredPhotoFileTime(video),
               metadataDescription: video.metadataDescription || album.feedDescription || '',
               mediaMetadata: video.mediaMetadata || album.feedMetadata || null,
               priority: PRIORITY.NORMAL
@@ -704,7 +726,7 @@ export class DownloadService {
           sourceKey: video.sourceKey || album.sourceKey || '',
           referer: album.referer || '',
           requestHeaders,
-          fileTime: getPhotoFileTime(video),
+          fileTime: this.getConfiguredPhotoFileTime(video),
           metadataDescription: video.metadataDescription || album.feedDescription || '',
           mediaMetadata: video.mediaMetadata || album.feedMetadata || null,
           priority: PRIORITY.NORMAL
@@ -1461,49 +1483,14 @@ export class DownloadService {
     // 获取真正的唯一标识符 - lloc 是最可靠的唯一标识符
     const uniqueId = photo.lloc || photo.id || Date.now()
 
-    // 获取拍摄时间或修改时间 - 避免使用本地时间
+    // 文件名和下载后的文件时间共用同一偏好，避免两者显示不同日期。
     let dateStr = ''
     let timeStr = ''
-
-    // 优先使用 exif 中的原始拍摄时间
-    if (photo.exif && photo.exif.originalTime) {
-      const originalTime = photo.exif.originalTime.replace(/:/g, '-')
-      const date = new Date(originalTime)
-      if (!isNaN(date.getTime())) {
-        dateStr = date.toISOString().split('T')[0].replace(/-/g, '')
-        timeStr = date.toTimeString().split(' ')[0].replace(/:/g, '')
-      }
-    }
-
-    // 如果没有 exif 时间，使用 modifytime（Unix 时间戳）
-    if (!dateStr && photo.modifytime) {
-      const timestamp = photo.modifytime * 1000 // Unix 时间戳转毫秒
-      const date = new Date(timestamp)
-      if (!isNaN(date.getTime())) {
-        dateStr = date.toISOString().split('T')[0].replace(/-/g, '')
-        timeStr = date.toTimeString().split(' ')[0].replace(/:/g, '')
-      }
-    }
-
-    // 如果还没有时间，使用 rawshoottime 或 shoottime（排除0值）
-    if (!dateStr) {
-      const shootTime = photo.rawshoottime || photo.shoottime
-      if (shootTime && shootTime !== 0) {
-        const date = new Date(shootTime)
-        if (!isNaN(date.getTime())) {
-          dateStr = date.toISOString().split('T')[0].replace(/-/g, '')
-          timeStr = date.toTimeString().split(' ')[0].replace(/:/g, '')
-        }
-      }
-    }
-
-    // 尝试使用 uploadTime（字符串格式：'2025-03-16 21:56:48'）
-    if (!dateStr && photo.uploadTime) {
-      const uploadDate = new Date(photo.uploadTime)
-      if (!isNaN(uploadDate.getTime())) {
-        dateStr = uploadDate.toISOString().split('T')[0].replace(/-/g, '')
-        timeStr = uploadDate.toTimeString().split(' ')[0].replace(/:/g, '')
-      }
+    const selectedTime = this.getConfiguredPhotoFileTime(photo)
+    if (selectedTime) {
+      const pad = (value) => String(value).padStart(2, '0')
+      dateStr = `${selectedTime.getFullYear()}${pad(selectedTime.getMonth() + 1)}${pad(selectedTime.getDate())}`
+      timeStr = `${pad(selectedTime.getHours())}${pad(selectedTime.getMinutes())}${pad(selectedTime.getSeconds())}`
     }
 
     // 最后兜底：使用照片名称中的日期信息

@@ -270,6 +270,8 @@ export const createDemoQzoneAPI = (realApi) => ({
     getDefaultPath: async () => '/Users/demo/Pictures/企鹅相册',
     getConcurrency: async () => 3,
     getReplaceExistingSetting: async () => false,
+    getTimePreference: async () => 'shoot',
+    setTimePreference: async (preference) => (preference === 'upload' ? 'upload' : 'shoot'),
     setCurrentUser: noop,
     setManagerOpen: noop,
     requestTasksPage: async () => ({

@@ -786,7 +786,11 @@ const getDownloadableMedia = (feed) => {
         lloc: media.lloc || picKey,
         is_video: isVideo,
         modifytime: media.modifytime || Number(feed.time) || 0,
-        uploadTime: media.uploadTime || '',
+        uploadtime: media.uploadtime || '',
+        uploadTime: media.uploadTime || media.uploadtime || '',
+        rawshoottime: media.rawshoottime || '',
+        shoottime: media.shoottime || '',
+        exif: media.exif || null,
         size: media.size || 0
       }
     })
@@ -981,7 +985,12 @@ const transformFeedData = (apiFeed) => {
           picKey: photo.picKey || photo.lloc || photo.videokey,
           lloc: photo.lloc || photo.picKey || photo.videokey,
           name: photo.name || photo.desc || '',
-          modifytime: parseInt(apiFeed.time) || 0
+          modifytime: parseInt(photo.modifytime || photo.uploadtime || apiFeed.time) || 0,
+          uploadtime: photo.uploadtime,
+          uploadTime: photo.uploadTime,
+          rawshoottime: photo.rawshoottime,
+          shoottime: photo.shoottime,
+          exif: photo.exif
         })
       } else if (photo.url || photo.picsmallurl) {
         // 图片
@@ -993,7 +1002,12 @@ const transformFeedData = (apiFeed) => {
           picKey: photo.picKey || photo.lloc || photo.id,
           lloc: photo.lloc || photo.picKey || photo.id,
           name: photo.name || photo.desc || '',
-          modifytime: parseInt(apiFeed.time) || 0
+          modifytime: parseInt(photo.modifytime || photo.uploadtime || apiFeed.time) || 0,
+          uploadtime: photo.uploadtime,
+          uploadTime: photo.uploadTime,
+          rawshoottime: photo.rawshoottime,
+          shoottime: photo.shoottime,
+          exif: photo.exif
         })
       }
     })
@@ -1913,6 +1927,11 @@ const processFriendPhotos = (photos) => {
           picKey: photo.lloc,
           name: photo.name || photo.desc || '',
           modifytime: parseInt(photo.uploadtime) || 0,
+          uploadtime: photo.uploadtime,
+          uploadTime: photo.uploadTime,
+          rawshoottime: photo.rawshoottime,
+          shoottime: photo.shoottime,
+          exif: photo.exif,
           albumId: photo.album?.id,
           ownerUin: photo.owner?.uin
         })
@@ -1925,7 +1944,12 @@ const processFriendPhotos = (photos) => {
           lloc: photo.lloc,
           picKey: photo.lloc,
           name: photo.name || photo.desc || '',
-          modifytime: parseInt(photo.uploadtime) || 0
+          modifytime: parseInt(photo.uploadtime) || 0,
+          uploadtime: photo.uploadtime,
+          uploadTime: photo.uploadTime,
+          rawshoottime: photo.rawshoottime,
+          shoottime: photo.shoottime,
+          exif: photo.exif
         })
       }
 

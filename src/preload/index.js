@@ -152,6 +152,9 @@ try {
       getWriteFeedDescriptionSetting: () => ipcClient.call(IPC_DOWNLOAD.GET_WRITE_FEED_DESCRIPTION),
       setWriteFeedDescriptionSetting: (enabled) =>
         ipcClient.call(IPC_DOWNLOAD.SET_WRITE_FEED_DESCRIPTION, enabled),
+      getTimePreference: () => ipcClient.call(IPC_DOWNLOAD.GET_TIME_PREFERENCE),
+      setTimePreference: (preference) =>
+        ipcClient.call(IPC_DOWNLOAD.SET_TIME_PREFERENCE, preference),
 
       // 用户管理
       setCurrentUser: (uin) => ipcClient.call(IPC_DOWNLOAD.SET_CURRENT_USER, { uin }),

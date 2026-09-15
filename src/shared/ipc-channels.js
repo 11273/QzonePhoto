@@ -123,6 +123,10 @@ export const IPC_DOWNLOAD = {
   GET_WRITE_FEED_DESCRIPTION: 'download:getWriteFeedDescription',
   /** 设置动态图片说明写入选项 */
   SET_WRITE_FEED_DESCRIPTION: 'download:setWriteFeedDescription',
+  /** 获取下载文件时间来源 */
+  GET_TIME_PREFERENCE: 'download:getTimePreference',
+  /** 设置下载文件时间来源 */
+  SET_TIME_PREFERENCE: 'download:setTimePreference',
   /** 设置下载管理器打开状态 */
   SET_MANAGER_OPEN: 'download:setManagerOpen',
   /** 请求分页任务列表 */
