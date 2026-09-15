@@ -286,7 +286,7 @@
                 <ThumbsUp :size="11" class="fc-likers-icon" />
                 <div class="fc-likers-avatars">
                   <el-tooltip
-                    v-for="liker in feed.likers"
+                    v-for="liker in feed.likers.slice(0, 8)"
                     :key="liker.uin"
                     :content="liker.name || liker.uin"
                     placement="top"
@@ -301,7 +301,10 @@
                     </button>
                   </el-tooltip>
                 </div>
-                <span v-if="feed.likeCount > feed.likers.length" class="fc-likers-rest">
+                <span
+                  v-if="feed.likeCount > Math.min(feed.likers.length, 8)"
+                  class="fc-likers-rest"
+                >
                   等 {{ feed.likeCount }} 人
                 </span>
               </div>
@@ -1144,7 +1147,6 @@ const normalize = (raw) => {
   const likeCount = parseInt(likeBtn?.dataset?.likecnt || '0', 10) || 0
   const isLiked = likeBtn?.dataset?.islike === '1'
   const likers = [...doc.querySelectorAll('.f-like-list .user-list a')]
-    .slice(0, 8)
     .map((a) => {
       const href = a.getAttribute('href') || ''
       const m = href.match(/user\.qzone\.qq\.com\/(\d+)/)
