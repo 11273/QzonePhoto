@@ -14,6 +14,7 @@ const EXIF_TAG = {
   X_RESOLUTION: 0x011a,
   Y_RESOLUTION: 0x011b,
   RESOLUTION_UNIT: 0x0128,
+  DATE_TIME: 0x0132,
   EXIF_IFD_POINTER: 0x8769,
   DATE_TIME_ORIGINAL: 0x9003,
   DATE_TIME_DIGITIZED: 0x9004,
@@ -247,8 +248,18 @@ const createResolutionValue = (littleEndian) => {
 
 const toExifDateTime = (value) => {
   if (!value) return ''
-  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/)
-  return match ? `${match[1]}:${match[2]}:${match[3]} ${match[4]}:${match[5]}:${match[6]}` : ''
+  const directMatch = String(value).match(
+    /^(\d{4})[-:](\d{2})[-:](\d{2})[T ](\d{2}):(\d{2}):(\d{2})/
+  )
+  if (directMatch) {
+    return `${directMatch[1]}:${directMatch[2]}:${directMatch[3]} ${directMatch[4]}:${directMatch[5]}:${directMatch[6]}`
+  }
+
+  const numeric = Number(value)
+  const date = value instanceof Date ? value : Number.isFinite(numeric) ? new Date(numeric) : null
+  if (!date || Number.isNaN(date.getTime())) return ''
+  const pad = (number) => String(number).padStart(2, '0')
+  return `${date.getFullYear()}:${pad(date.getMonth() + 1)}:${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
 const mergeDescriptionIntoExif = (sourceTiff, metadata) => {
@@ -268,17 +279,41 @@ const mergeDescriptionIntoExif = (sourceTiff, metadata) => {
     ? readIfd(tiff, existingExifOffset, littleEndian)
     : { entries: [], nextOffset: 0 }
 
-  const dateTimeOriginal = toExifDateTime(metadata.publishedAt || metadata.publishedAtIso)
-  const keywords = ['QQ 空间', '企鹅相册', metadata.authorName, metadata.albumName]
-    .filter(Boolean)
-    .join('; ')
+  // 动态发布时间不是照片拍摄时间。只有调用方明确传入 captureAt 时才更新
+  // DateTime / DateTimeOriginal / DateTimeDigitized；否则保留原图已有的 EXIF 日期。
+  const dateTimeOriginal = toExifDateTime(metadata.captureAt || metadata.captureAtIso)
+  const hasDescription = Boolean(metadata.comment)
+  const hasDescriptiveMetadata = Boolean(
+    metadata.comment ||
+    metadata.title ||
+    metadata.author ||
+    metadata.description ||
+    metadata.authorName ||
+    metadata.albumName
+  )
+  const keywords = hasDescriptiveMetadata
+    ? ['QQ 空间', '企鹅相册', metadata.authorName, metadata.albumName].filter(Boolean).join('; ')
+    : ''
   const ifd0ValueSpecs = [
-    {
-      tag: EXIF_TAG.IMAGE_DESCRIPTION,
-      type: TIFF_TYPE.ASCII,
-      value: toAsciiValue(metadata.comment)
-    },
-    { tag: EXIF_TAG.XP_COMMENT, type: TIFF_TYPE.BYTE, value: toXpValue(metadata.comment) },
+    ...(dateTimeOriginal
+      ? [
+          {
+            tag: EXIF_TAG.DATE_TIME,
+            type: TIFF_TYPE.ASCII,
+            value: toAsciiValue(dateTimeOriginal)
+          }
+        ]
+      : []),
+    ...(hasDescription
+      ? [
+          {
+            tag: EXIF_TAG.IMAGE_DESCRIPTION,
+            type: TIFF_TYPE.ASCII,
+            value: toAsciiValue(metadata.comment)
+          },
+          { tag: EXIF_TAG.XP_COMMENT, type: TIFF_TYPE.BYTE, value: toXpValue(metadata.comment) }
+        ]
+      : []),
     ...(metadata.title
       ? [{ tag: EXIF_TAG.XP_TITLE, type: TIFF_TYPE.BYTE, value: toXpValue(metadata.title) }]
       : []),
@@ -300,11 +335,15 @@ const mergeDescriptionIntoExif = (sourceTiff, metadata) => {
           }
         ]
       : []),
-    {
-      tag: EXIF_TAG.COPYRIGHT,
-      type: TIFF_TYPE.ASCII,
-      value: toAsciiValue('内容来自 QQ 空间')
-    },
+    ...(hasDescriptiveMetadata
+      ? [
+          {
+            tag: EXIF_TAG.COPYRIGHT,
+            type: TIFF_TYPE.ASCII,
+            value: toAsciiValue('内容来自 QQ 空间')
+          }
+        ]
+      : []),
     ...(!sourceTiff
       ? [
           {
@@ -323,11 +362,15 @@ const mergeDescriptionIntoExif = (sourceTiff, metadata) => {
       : [])
   ]
   const exifValueSpecs = [
-    {
-      tag: EXIF_TAG.USER_COMMENT,
-      type: TIFF_TYPE.UNDEFINED,
-      value: Buffer.concat([Buffer.from('UNICODE\0', 'ascii'), toUtf16be(metadata.comment)])
-    },
+    ...(hasDescription
+      ? [
+          {
+            tag: EXIF_TAG.USER_COMMENT,
+            type: TIFF_TYPE.UNDEFINED,
+            value: Buffer.concat([Buffer.from('UNICODE\0', 'ascii'), toUtf16be(metadata.comment)])
+          }
+        ]
+      : []),
     ...(dateTimeOriginal
       ? [
           {
@@ -345,24 +388,13 @@ const mergeDescriptionIntoExif = (sourceTiff, metadata) => {
   ]
 
   const updatedIfd0Tags = new Set([
-    EXIF_TAG.IMAGE_DESCRIPTION,
-    EXIF_TAG.ARTIST,
-    EXIF_TAG.COPYRIGHT,
-    EXIF_TAG.XP_TITLE,
-    EXIF_TAG.XP_COMMENT,
-    EXIF_TAG.XP_AUTHOR,
-    EXIF_TAG.XP_KEYWORDS,
-    EXIF_TAG.XP_SUBJECT,
+    ...ifd0ValueSpecs.map((spec) => spec.tag),
     EXIF_TAG.EXIF_IFD_POINTER
   ])
   const retainedIfd0Entries = originalIfd0.entries.filter(
     (entry) => !updatedIfd0Tags.has(entry.tag)
   )
-  const updatedExifTags = new Set([
-    EXIF_TAG.USER_COMMENT,
-    EXIF_TAG.DATE_TIME_ORIGINAL,
-    EXIF_TAG.DATE_TIME_DIGITIZED
-  ])
+  const updatedExifTags = new Set(exifValueSpecs.map((spec) => spec.tag))
   const retainedExifEntries = originalExifIfd.entries.filter(
     (entry) => !updatedExifTags.has(entry.tag)
   )
@@ -489,6 +521,34 @@ const writeJpegMetadata = async (filePath, metadata) => {
   }
 }
 
+const writeJpegDateTime = async (filePath, captureAt) => {
+  const source = await fs.promises.readFile(filePath)
+  const { exif: existingExif } = scanJpegMetadataSegments(source)
+  const exifSegment = createJpegExifSegment(
+    mergeDescriptionIntoExif(existingExif?.tiff, { captureAt })
+  )
+  const insertionOffset = existingExif?.start || getJpegMetadataInsertionOffset(source)
+  const updated = replaceJpegMetadataSegments(
+    source,
+    existingExif ? [existingExif] : [],
+    insertionOffset,
+    exifSegment
+  )
+
+  const tempPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${crypto.randomUUID()}.tmp`
+  )
+  try {
+    await fs.promises.writeFile(tempPath, updated, { flag: 'wx' })
+    await replaceFileSafely(tempPath, filePath)
+    return true
+  } catch (error) {
+    await fs.promises.unlink(tempPath).catch(() => {})
+    throw error
+  }
+}
+
 const writeXmpSidecar = async (filePath, xmpPacket) => {
   const sidecarPath = path.join(path.dirname(filePath), `${path.parse(filePath).name}.xmp`)
   const existing = await fs.promises.readFile(sidecarPath).catch(() => null)
@@ -525,7 +585,9 @@ export const writeImageDescription = async (filePath, description, details = {})
     albumName: normalizeText(details.albumName || '', 512),
     sourceUrl: normalizeText(details.sourceUrl || '', 2000),
     publishedAt: normalizeText(details.publishedAt || '', 64),
-    publishedAtIso: normalizeText(details.publishedAtIso || '', 64)
+    publishedAtIso: normalizeText(details.publishedAtIso || '', 64),
+    captureAt: details.captureAt || '',
+    captureAtIso: normalizeText(details.captureAtIso || '', 64)
   }
 
   const xmpPacket = createXmpPacket(metadata)
@@ -553,3 +615,24 @@ export const writeImageDescription = async (filePath, description, details = {})
 
   return writeXmpSidecar(filePath, xmpPacket)
 }
+
+export const writeImageDateTime = async (filePath, captureAt) => {
+  const exifDateTime = toExifDateTime(captureAt)
+  if (!exifDateTime) return { written: false, reason: 'invalid-date' }
+
+  const handle = await fs.promises.open(filePath, 'r')
+  const signature = Buffer.alloc(2)
+  try {
+    await handle.read(signature, 0, signature.length, 0)
+  } finally {
+    await handle.close()
+  }
+  if (signature[0] !== 0xff || signature[1] !== 0xd8) {
+    return { written: false, reason: 'unsupported-format' }
+  }
+
+  const changed = await writeJpegDateTime(filePath, exifDateTime)
+  return { written: true, changed, format: 'embedded-exif-datetime' }
+}
+
+export const formatExifDateTime = toExifDateTime

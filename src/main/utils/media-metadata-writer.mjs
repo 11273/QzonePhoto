@@ -3,7 +3,7 @@ import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import ffmpegStatic from 'ffmpeg-static'
-import { writeImageDescription } from './image-description-writer.mjs'
+import { writeImageDateTime, writeImageDescription } from './image-description-writer.mjs'
 import { replaceFileSafely } from './replace-file.mjs'
 
 const MAX_FIELD_LENGTH = 2000
@@ -48,6 +48,7 @@ export const buildMediaMetadata = (metadata = {}, fallbackDescription = '') => {
   const albumName = normalizeText(metadata.albumName)
   const sourceUrl = normalizeText(metadata.sourceUrl)
   const publishedAt = formatPublishedAt(metadata.publishedAt)
+  const captureAt = formatPublishedAt(metadata.captureAt)
   const author = [authorName, authorUin ? `QQ：${authorUin}` : ''].filter(Boolean).join(' · ')
   const lines = [
     description ? `动态：${description}` : '',
@@ -70,7 +71,9 @@ export const buildMediaMetadata = (metadata = {}, fallbackDescription = '') => {
     sourceUrl,
     keywords: ['QQ 空间', '企鹅相册', authorName, albumName].filter(Boolean).join('; '),
     publishedAt: publishedAt.display,
-    publishedAtIso: publishedAt.iso
+    publishedAtIso: publishedAt.iso,
+    captureAt: captureAt.display,
+    captureAtIso: captureAt.iso
   }
 }
 
@@ -215,14 +218,23 @@ export const writeVideoMetadata = async (filePath, metadata, fallbackDescription
 }
 
 export const writeTaskMediaMetadata = async (filePath, task) => {
-  const metadata = buildMediaMetadata(task?.media_metadata, task?.metadata_description)
-  if (!metadata.comment) return { written: false, reason: 'empty-description' }
+  const hasDescriptiveMetadata = Boolean(task?.metadata_description || task?.media_metadata)
+  if (task?.type === 'image' && !hasDescriptiveMetadata) {
+    return writeImageDateTime(filePath, task?.file_time)
+  }
+
+  const metadata = buildMediaMetadata(
+    { ...(task?.media_metadata || {}), captureAt: task?.file_time || 0 },
+    task?.metadata_description
+  )
 
   if (task?.type === 'image') {
+    if (!metadata.comment) return writeImageDateTime(filePath, metadata.captureAt)
     const result = await writeImageDescription(filePath, metadata.comment, metadata)
     await writeFinderComment(filePath, metadata.comment)
     return { ...result, metadata }
   }
+  if (!metadata.comment) return { written: false, reason: 'empty-description' }
   if (task?.type === 'video')
     return writeVideoMetadata(filePath, task?.media_metadata, task?.metadata_description)
   return { written: false, reason: 'unsupported-media-type' }

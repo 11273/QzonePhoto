@@ -75,7 +75,7 @@
         </el-tooltip>
 
         <el-tooltip
-          content="用于下载文件名和本地文件时间；所选时间缺失时会自动使用另一种时间。"
+          content="用于下载文件名、本地文件时间和 JPEG EXIF 日期；所选时间缺失时会自动使用另一种时间。"
           placement="bottom"
         >
           <div class="setting-group compact">

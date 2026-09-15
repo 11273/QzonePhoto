@@ -1188,7 +1188,9 @@ export class DownloadService {
   async applyTaskMediaMetadata(filePath, task) {
     if (
       !['image', 'video'].includes(task.type) ||
-      (!task.metadata_description && !task.media_metadata)
+      (!task.metadata_description &&
+        !task.media_metadata &&
+        !(task.type === 'image' && task.file_time))
     )
       return
 
