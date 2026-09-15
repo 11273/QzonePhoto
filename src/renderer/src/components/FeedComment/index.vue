@@ -24,15 +24,26 @@
     }
   -->
   <div v-if="normalizedComments.length > 0" class="feed-comments">
-    <div v-for="comment in normalizedComments" :key="comment.id || comment.uin + comment.time" class="comment-item">
+    <div
+      v-for="comment in normalizedComments"
+      :key="comment.id || comment.uin + comment.time"
+      class="comment-item"
+    >
       <div class="comment-row">
         <el-tooltip :content="`QQ: ${comment.uin}`" placement="top">
-          <img
-            :src="getAvatarUrl(comment.uin)"
-            :alt="comment.author"
-            class="comment-avatar"
-            @error="onAvatarError"
-          />
+          <button
+            type="button"
+            class="comment-avatar-button"
+            title="在应用内查看空间"
+            @click="emit('author-click', comment)"
+          >
+            <img
+              :src="getAvatarUrl(comment.uin)"
+              :alt="comment.author"
+              class="comment-avatar"
+              @error="onAvatarError"
+            />
+          </button>
         </el-tooltip>
         <div class="comment-content">
           <div class="comment-header">
@@ -168,6 +179,23 @@ const onAvatarError = (e) => {
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.06);
   object-fit: cover;
+}
+
+.comment-avatar-button {
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+
+  &:hover {
+    transform: scale(1.06);
+  }
 }
 
 .comment-content {

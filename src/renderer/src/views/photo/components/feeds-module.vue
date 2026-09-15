@@ -60,11 +60,10 @@
         <template v-else-if="activeSource.kind === 'messageBoard'">
           <div class="fm-message-list">
             <article v-for="message in filteredFeeds" :key="message.tid" class="mb-card">
-              <a
+              <button
+                type="button"
                 class="mb-avatar-link"
-                :href="message.userHome"
-                rel="noopener"
-                @click.prevent="openQzoneProfile(message.uin, message.userHome)"
+                @click="openQzoneProfile(message, message.userHome)"
               >
                 <img
                   :src="message.avatar || avatarUrl(message.uin)"
@@ -73,18 +72,17 @@
                   referrerpolicy="no-referrer"
                   @error="onAvatarError"
                 />
-              </a>
+              </button>
               <div class="mb-body">
                 <header class="mb-head">
                   <div class="mb-author">
-                    <a
+                    <button
+                      type="button"
                       class="mb-name"
-                      :href="message.userHome"
-                      rel="noopener"
-                      @click.prevent="openQzoneProfile(message.uin, message.userHome)"
+                      @click="openQzoneProfile(message, message.userHome)"
                     >
                       {{ message.name || message.uin }}
-                    </a>
+                    </button>
                     <span v-if="message.secret" class="mb-privacy">仅彼此可见</span>
                   </div>
                   <div class="mb-meta">
@@ -139,12 +137,9 @@
                     :key="reply.id"
                     class="mb-reply"
                   >
-                    <a
-                      class="mb-reply-author"
-                      href="javascript:;"
-                      @click.prevent="openQzoneProfile(reply.uin)"
-                      >{{ reply.author || reply.uin }}</a
-                    >
+                    <button type="button" class="mb-reply-author" @click="openQzoneProfile(reply)">
+                      {{ reply.author || reply.uin }}
+                    </button>
                     <RichText
                       class="mb-reply-text"
                       :text="reply.text"
@@ -169,11 +164,10 @@
           <div class="fm-masonry">
             <article v-for="feed in filteredFeeds" :key="feed.tid" class="fc-card">
               <header class="fc-header">
-                <a
+                <button
+                  type="button"
                   class="fc-avatar-link"
-                  :href="feed.userHome"
-                  rel="noopener"
-                  @click.prevent="openQzoneProfile(feed.uin, feed.userHome)"
+                  @click="openQzoneProfile(feed, feed.userHome)"
                 >
                   <img
                     :src="feed.avatar || avatarUrl(feed.uin)"
@@ -182,20 +176,19 @@
                     referrerpolicy="no-referrer"
                     @error="onAvatarError"
                   />
-                </a>
+                </button>
                 <div class="fc-author">
-                  <a
+                  <button
+                    type="button"
                     class="fc-name"
-                    :href="feed.userHome"
-                    rel="noopener"
-                    @click.prevent="openQzoneProfile(feed.uin, feed.userHome)"
+                    @click="openQzoneProfile(feed, feed.userHome)"
                   >
                     <RichText
                       class="fc-name-rich"
                       :text="feed.name || feed.uin"
                       @mention-click="onCommentAuthorClick"
                     />
-                  </a>
+                  </button>
                   <div class="fc-author-meta">
                     <span v-if="feed.appType" class="fc-type-chip" :data-type="feed.appType">
                       {{ feed.appType }}
@@ -289,19 +282,14 @@
                     :content="liker.name || liker.uin"
                     placement="top"
                   >
-                    <a
-                      class="fc-liker-avatar"
-                      :href="`https://user.qzone.qq.com/${liker.uin}`"
-                      rel="noopener"
-                      @click.prevent="openQzoneProfile(liker.uin)"
-                    >
+                    <button type="button" class="fc-liker-avatar" @click="openQzoneProfile(liker)">
                       <img
                         :src="avatarUrl(liker.uin)"
                         :alt="liker.name"
                         referrerpolicy="no-referrer"
                         @error="onAvatarError"
                       />
-                    </a>
+                    </button>
                   </el-tooltip>
                 </div>
                 <span v-if="feed.likeCount > feed.likers.length" class="fc-likers-rest">
@@ -427,6 +415,7 @@ import {
 
 const userStore = useUserStore()
 const privacyStore = usePrivacyStore()
+const emit = defineEmits(['enter-friend'])
 const leftRef = inject('leftRef', ref(null))
 const hostUinOverride = inject('hostUinOverride', null)
 const isFriendContext = computed(() => !!hostUinOverride?.value)
@@ -1828,19 +1817,15 @@ const uinFromQzoneUrl = (url) => {
     return ''
   }
 }
-const openQzoneProfile = async (uin, fallbackUrl = '') => {
-  const targetUin = normalizeQzoneUin(uin) || uinFromQzoneUrl(fallbackUrl)
+const openQzoneProfile = (profile, fallbackUrl = '') => {
+  const source = profile && typeof profile === 'object' ? profile : { uin: profile }
+  const targetUin = normalizeQzoneUin(source.uin) || uinFromQzoneUrl(fallbackUrl)
   if (!targetUin) return
-  try {
-    await window.api.invoke('window:openQzoneWeb', {
-      uin: userStore.Uin,
-      p_skey: userStore.PSkey,
-      targetUin
-    })
-  } catch (error) {
-    console.error('打开 QQ 空间失败:', error)
-    ElMessage.error('打开 QQ 空间失败')
-  }
+  emit('enter-friend', {
+    uin: targetUin,
+    name: source.name || source.author || source.nick || `QQ ${targetUin}`,
+    img: source.avatar || source.img || avatarUrl(targetUin)
+  })
 }
 
 // ============= 统计 =============
@@ -2177,7 +2162,7 @@ const expandMoreComments = async (feed) => {
 }
 
 const onCommentAuthorClick = (target) => {
-  if (target?.uin) openQzoneProfile(target.uin)
+  if (target?.uin) openQzoneProfile(target)
 }
 
 // ============= 下载 =============
@@ -2741,6 +2726,19 @@ defineExpose({ refresh: handleRefresh })
   &:hover {
     transform: scale(1.04);
   }
+}
+
+.mb-avatar-link,
+.mb-name,
+.mb-reply-author,
+.fc-avatar-link,
+.fc-name,
+.fc-liker-avatar {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
 }
 
 .mb-avatar {

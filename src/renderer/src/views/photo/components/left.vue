@@ -77,7 +77,7 @@
                 text
                 :icon="Monitor"
                 class="action-btn open-web-btn"
-                title="打开好友空间"
+                title="在网页打开好友空间"
                 @click="openFriendQzoneWeb"
               >
               </el-button>
@@ -757,20 +757,19 @@
               <em>{{ feedsUniqueAuthorCount }} 人</em>
             </div>
             <div class="fd-people-stack">
-              <a
+              <button
                 v-for="author in feedsStats.topAuthors.slice(0, 5)"
                 :key="author.uin || author.name"
+                type="button"
                 class="fd-person"
-                :href="author.uin ? `https://user.qzone.qq.com/${author.uin}` : undefined"
-                rel="noopener"
                 :title="`${author.name} · ${author.count} 条${feedsItemUnit}`"
-                @click.prevent="openQzoneProfile(author.uin)"
+                @click="openQzoneProfile(author.uin, author.name, author.avatar)"
               >
                 <img :src="author.avatar" :alt="author.name" referrerpolicy="no-referrer" />
                 <!-- eslint-disable-next-line vue/no-v-html -- 名称已做 HTML 转义，仅注入表情 img 标签 -->
                 <span v-html="renderFriendName(author.name)"></span>
                 <strong>{{ author.count }}</strong>
-              </a>
+              </button>
             </div>
           </section>
 
@@ -840,19 +839,18 @@
               <em>{{ feedsStats.recentVisitors.length }}</em>
             </div>
             <div class="mn-avatars">
-              <a
+              <button
                 v-for="v in feedsStats.recentVisitors.slice(0, 12)"
                 :key="v.uin"
+                type="button"
                 class="mn-avatar"
                 :class="{ 'is-friend': v.isFriend }"
-                :href="`https://user.qzone.qq.com/${v.uin}`"
-                rel="noopener"
                 :title="`${v.name || v.uin}${v.time ? ' · ' + formatRelativeTime(v.time) : ''}`"
-                @click.prevent="openQzoneProfile(v.uin)"
+                @click="openQzoneProfile(v.uin, v.name, v.img)"
               >
                 <img :src="v.img" :alt="v.name" referrerpolicy="no-referrer" />
                 <span v-if="v.haveNewFeeds" class="mn-avatar-dot"></span>
-              </a>
+              </button>
             </div>
           </section>
         </div>
@@ -2329,19 +2327,14 @@ const openQzoneWeb = async () => {
   }
 }
 
-const openQzoneProfile = async (targetUin) => {
+const openQzoneProfile = (targetUin, name = '', img = '') => {
   const normalizedUin = String(targetUin || '').replace(/^o/, '')
   if (!normalizedUin) return
-  try {
-    await window.api.invoke('window:openQzoneWeb', {
-      uin: userStore.Uin,
-      p_skey: userStore.PSkey,
-      targetUin: normalizedUin
-    })
-  } catch (error) {
-    console.error('打开 QQ 空间失败:', error)
-    ElMessage.error('打开 QQ 空间失败')
-  }
+  emit('enter-friend', {
+    uin: normalizedUin,
+    name: name || `QQ ${normalizedUin}`,
+    img: img || `https://qlogo4.store.qq.com/qzone/${normalizedUin}/${normalizedUin}/100`
+  })
 }
 
 // 打开好友 QQ 空间
@@ -4053,6 +4046,12 @@ defineExpose({
   min-width: 0;
   color: inherit;
   text-decoration: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 
   img {
     display: block;
@@ -4524,6 +4523,10 @@ defineExpose({
   width: 26px;
   height: 26px;
   border-radius: 50%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   transition: transform 0.18s ease;
 
   img {

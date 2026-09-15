@@ -106,15 +106,20 @@
               </div>
               <!-- 底部信息 -->
               <div class="card-info">
-                <div class="card-owner">
+                <button
+                  v-if="feed.owner?.uin"
+                  type="button"
+                  class="card-owner"
+                  title="在应用内查看空间"
+                  @click.stop="onCommentAuthorClick(feed.owner)"
+                >
                   <img
-                    v-if="feed.owner"
                     :src="feed.owner.face || getAvatarUrl(feed.owner.uin)"
                     class="card-avatar"
                     @error="handleAvatarError"
                   />
                   <span class="card-nick">{{ feed.owner?.nick || '未知' }}</span>
-                </div>
+                </button>
                 <div class="card-meta">
                   <span v-if="feed.albumName" class="card-album">{{ feed.albumName }}</span>
                   <span class="card-time">{{ formatFeedTime(feed.time) }}</span>
@@ -337,9 +342,15 @@
                       <ThumbsUp :size="14" class="like-icon" />
                       <div class="likes-content">
                         <template v-if="feed.likes.length <= 5 || expandedLikes.has(feed.id)">
-                          <span v-for="like in feed.likes" :key="like.uin" class="like-name">{{
-                            like.name
-                          }}</span>
+                          <button
+                            v-for="like in feed.likes"
+                            :key="like.uin"
+                            type="button"
+                            class="like-name"
+                            @click="onCommentAuthorClick(like)"
+                          >
+                            {{ like.name }}
+                          </button>
                           <button
                             v-if="feed.likes.length > 5"
                             class="like-toggle"
@@ -349,12 +360,15 @@
                           </button>
                         </template>
                         <template v-else>
-                          <span
+                          <button
                             v-for="like in feed.likes.slice(0, 5)"
                             :key="like.uin"
+                            type="button"
                             class="like-name"
-                            >{{ like.name }}</span
+                            @click="onCommentAuthorClick(like)"
                           >
+                            {{ like.name }}
+                          </button>
                           <button class="like-toggle" @click="expandedLikes.add(feed.id)">
                             等 {{ feed.likes.length }} 人
                           </button>
@@ -604,7 +618,6 @@ import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import RichText from '@renderer/components/RichText/index.vue'
 import FeedComment from '@renderer/components/FeedComment/index.vue'
-import { copyToClipboard } from '@renderer/utils'
 import { getQQAvatarUrl } from '@renderer/utils/formatters'
 import {
   createPaginationGuard,
@@ -613,7 +626,11 @@ import {
   shouldContinuePagination
 } from '@renderer/utils/paginationGuard'
 import { cacheFeedDescriptions } from '@renderer/utils/feed-description-cache'
-import { resolveQzoneHostUin, resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
+import {
+  normalizeQzoneUin,
+  resolveQzoneHostUin,
+  resolveSelfQzoneUin
+} from '@renderer/utils/qzone-identity'
 import Hls from 'hls.js'
 
 const privacyStore = usePrivacyStore()
@@ -625,7 +642,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['album-click'])
+const emit = defineEmits(['album-click', 'enter-friend'])
 
 const isFriendPhotos = computed(() => props.photoType === 'friend-photos')
 
@@ -1556,9 +1573,15 @@ const handleAvatarError = (event) => {
     'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="40" height="40"%3E%3Crect width="40" height="40" fill="%2360a5fa"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="16" font-family="sans-serif"%3E?%3C/text%3E%3C/svg%3E'
 }
 
-// 点击评论作者 / @mention：复制对方 QQ 号
+// 点击作者 / 点赞者 / @mention：在桌面端内切换到对方空间。
 const onCommentAuthorClick = (target) => {
-  if (target?.uin) copyToClipboard(target.uin, 'QQ 号')
+  const targetUin = normalizeQzoneUin(target?.uin)
+  if (!targetUin) return
+  emit('enter-friend', {
+    uin: targetUin,
+    name: target?.name || target?.author || target?.nick || `QQ ${targetUin}`,
+    img: target?.face || target?.avatar || target?.img || getAvatarUrl(targetUin)
+  })
 }
 
 // 处理相册标题点击
@@ -2261,6 +2284,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
 }
 
 .card-avatar {
@@ -2711,6 +2739,15 @@ onUnmounted(() => {
   color: #60a5fa;
   font-weight: 500;
   margin-right: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    color: #93c5fd;
+  }
 
   &.is-me {
     color: #85ce61;

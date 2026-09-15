@@ -20,9 +20,15 @@
         :photo-type="photoType"
         class="flex-1"
         @album-click="handleAlbumClick"
+        @enter-friend="handleEnterFriend"
       />
       <VideoModule v-if="currentModule === 'video'" ref="videoModuleRef" class="flex-1" />
-      <FeedsModule v-if="currentModule === 'feeds'" ref="feedsModuleRef" class="flex-1" />
+      <FeedsModule
+        v-if="currentModule === 'feeds'"
+        ref="feedsModuleRef"
+        class="flex-1"
+        @enter-friend="handleEnterFriend"
+      />
     </div>
 
     <!-- 相册查看弹窗（从动态跳转） -->
@@ -65,8 +71,11 @@ import VideoModule from '@renderer/views/photo/components/video-module.vue'
 import FeedsModule from '@renderer/views/photo/components/feeds-module.vue'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
 import { useDownloadStore } from '@renderer/store/download.store'
+import { useUserStore } from '@renderer/store/user.store'
+import { normalizeQzoneUin, resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
 
 const downloadStore = useDownloadStore()
+const userStore = useUserStore()
 const loading = ref(false)
 const mainRef = ref()
 const leftRef = ref()
@@ -84,7 +93,9 @@ const viewMode = ref('self') // 'self' | 'friend'
 const currentFriend = ref(null) // { uin, name, img, score }
 
 // 为所有子组件提供 hostUin 覆盖（好友模式时生效）
-const hostUinOverride = computed(() => (viewMode.value === 'friend' ? currentFriend.value?.uin : null))
+const hostUinOverride = computed(() =>
+  viewMode.value === 'friend' ? currentFriend.value?.uin : null
+)
 provide('hostUinOverride', hostUinOverride)
 
 // 相册弹窗状态（仅用于动态跳转）
@@ -93,7 +104,18 @@ const currentDialogAlbum = ref(null)
 
 // 进入好友空间
 const handleEnterFriend = (friend) => {
-  currentFriend.value = friend
+  const targetUin = normalizeQzoneUin(friend?.uin)
+  if (!targetUin) return
+  if (targetUin === resolveSelfQzoneUin(userStore)) {
+    handleExitFriend()
+    return
+  }
+  currentFriend.value = {
+    ...friend,
+    uin: targetUin,
+    name: friend?.name || `QQ ${targetUin}`,
+    img: friend?.img || `https://qlogo4.store.qq.com/qzone/${targetUin}/${targetUin}/100`
+  }
   viewMode.value = 'friend'
 }
 
