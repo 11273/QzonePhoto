@@ -177,7 +177,12 @@ import EmptyState from '@renderer/components/EmptyState/index.vue'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
-import { createPaginationGuard } from '@renderer/utils/paginationGuard'
+import {
+  createPaginationGuard,
+  isNearScrollEnd,
+  normalizePaginationFlag,
+  shouldContinuePagination
+} from '@renderer/utils/paginationGuard'
 import { resolveQzoneHostUin, resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
 import Hls from 'hls.js'
 
@@ -241,10 +246,15 @@ const fetchVideoList = async (isLoadMore = false) => {
     if (thisLoadId !== currentLoadId) return
 
     if (response.code === 0 && response.data) {
-      const newVideos = response.data.Videos || []
+      const newVideos = Array.isArray(response.data.Videos) ? response.data.Videos : []
+      const previousStart = isLoadMore ? currentStart.value : 0
 
       if (isLoadMore) {
-        videos.value = [...videos.value, ...newVideos]
+        const existingIds = new Set(videos.value.map((video) => video.vid || video.id))
+        videos.value = [
+          ...videos.value,
+          ...newVideos.filter((video) => !existingIds.has(video.vid || video.id))
+        ]
       } else {
         videos.value = newVideos
         currentStart.value = 0
@@ -254,23 +264,37 @@ const fetchVideoList = async (isLoadMore = false) => {
       }
 
       total.value = response.data.total || 0
-      currentStart.value = response.data.nextPageStart || 0
-      hasMore.value = response.data.isLast !== 'true' && newVideos.length > 0
+      const responseStart = Number(response.data.nextPageStart)
+      currentStart.value =
+        Number.isFinite(responseStart) && responseStart > previousStart
+          ? responseStart
+          : previousStart + newVideos.length
+      const isLast = normalizePaginationFlag(response.data.isLast)
+      const serverHasMore =
+        isLast === null ? (response.data.hasMore ?? response.data.hasmore) : !isLast
+      hasMore.value = shouldContinuePagination({
+        serverHasMore,
+        cursorMoved: currentStart.value > previousStart,
+        itemCount: newVideos.length,
+        pageSize: pageSize.value,
+        nextOffset: currentStart.value,
+        total: total.value
+      })
       pageGuard.succeed()
 
       updateLeftStats()
     } else {
       if (isLoadMore) {
-        const failure = pageGuard.fail(pageKey)
-        hasMore.value = !failure.shouldStop
+        pageGuard.fail(pageKey)
+        hasMore.value = true
       }
       ElMessage.error(response.message || '获取视频列表失败')
     }
   } catch {
     if (thisLoadId === currentLoadId) {
       if (isLoadMore) {
-        const failure = pageGuard.fail(pageKey)
-        hasMore.value = !failure.shouldStop
+        pageGuard.fail(pageKey)
+        hasMore.value = true
       }
       ElMessage.error('获取视频列表失败，请重试')
     }
@@ -407,37 +431,33 @@ const handleScroll = ({ scrollTop }) => {
   const wrapElement = scrollbarRef.value?.wrapRef
   if (!wrapElement) return
 
-  const distanceToBottom = wrapElement.scrollHeight - scrollTop - wrapElement.clientHeight
-
-  if (distanceToBottom < 100 && hasMore.value && !loading.value && !isLoadingMore.value) {
+  if (
+    isNearScrollEnd(
+      {
+        scrollHeight: wrapElement.scrollHeight,
+        clientHeight: wrapElement.clientHeight,
+        scrollTop
+      },
+      100
+    ) &&
+    hasMore.value &&
+    !loading.value &&
+    !isLoadingMore.value
+  ) {
     fetchVideoList(true)
   }
 }
 
 // 检查容器是否需要加载更多数据（解决首次加载数据不足以填满容器的问题）
 const checkAndLoadMore = async () => {
-  // 等待 DOM 更新
-  await nextTick()
-
-  const wrapElement = scrollbarRef.value?.wrapRef
-  if (!wrapElement) return
-
-  const hasScrollbar = wrapElement.scrollHeight > wrapElement.clientHeight
-
-  // 如果没有滚动条且还有更多数据可以加载，则自动加载
-  if (
-    !hasScrollbar &&
-    hasMore.value &&
-    !loading.value &&
-    !isLoadingMore.value &&
-    videos.value.length > 0
-  ) {
-    console.log('检测到视频内容未填满容器，自动加载更多...')
+  for (let page = 0; page < 12; page++) {
+    await nextTick()
+    const wrapElement = scrollbarRef.value?.wrapRef
+    if (!wrapElement || wrapElement.scrollHeight > wrapElement.clientHeight) return
+    if (!hasMore.value || loading.value || isLoadingMore.value || videos.value.length === 0) return
+    const previousStart = currentStart.value
     await fetchVideoList(true)
-    // 递归检查是否还需要继续加载
-    if (hasMore.value) {
-      await checkAndLoadMore()
-    }
+    if (currentStart.value === previousStart) return
   }
 }
 

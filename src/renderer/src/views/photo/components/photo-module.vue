@@ -52,7 +52,11 @@
 
     <!-- 动态时间线内容 -->
     <div class="module-content">
-      <el-scrollbar class="timeline-scrollbar">
+      <el-scrollbar
+        ref="timelineScrollbarRef"
+        class="timeline-scrollbar"
+        @scroll="handleTimelineScroll"
+      >
         <div class="timeline-container">
           <LoadingState v-if="loading" text="正在加载动态..." />
 
@@ -602,7 +606,12 @@ import RichText from '@renderer/components/RichText/index.vue'
 import FeedComment from '@renderer/components/FeedComment/index.vue'
 import { copyToClipboard } from '@renderer/utils'
 import { getQQAvatarUrl } from '@renderer/utils/formatters'
-import { createPaginationGuard } from '@renderer/utils/paginationGuard'
+import {
+  createPaginationGuard,
+  isNearScrollEnd,
+  normalizePaginationFlag,
+  shouldContinuePagination
+} from '@renderer/utils/paginationGuard'
 import { cacheFeedDescriptions } from '@renderer/utils/feed-description-cache'
 import { resolveQzoneHostUin, resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
 import Hls from 'hls.js'
@@ -636,6 +645,8 @@ const friendMeta = computed(() => (isFriendContext.value ? { skipAuthCheck: true
 const feeds = ref([])
 const hasMore = ref(true)
 const pageGuard = createPaginationGuard({ cooldownMs: 1500, maxFailures: 3 })
+const timelineScrollbarRef = ref(null)
+const feedPager = reactive({ start: 0, begintime: 0 })
 
 // 多选状态
 const selectedFeeds = ref(new Set())
@@ -1618,10 +1629,11 @@ const enrichFeedsWithShuoshuo = async () => {
 let currentLoadId = 0
 
 const getFeedPageKey = () => {
-  const lastFeed = feeds.value[feeds.value.length - 1]
-  const begintime = lastFeed ? parseInt(lastFeed.time) || 0 : 0
-  return `${props.photoType}:${effectiveHostUin.value}:${feeds.value.length}:${begintime}`
+  return `${props.photoType}:${effectiveHostUin.value}:${feedPager.start}:${feedPager.begintime}`
 }
+
+const getRawFeedTime = (item) =>
+  Number(item?.time || item?.uploadtime || item?.created_time || item?.abstime || 0) || 0
 
 const loadFeeds = async (isLoadMore = false) => {
   console.log('[loadFeeds] 开始加载', {
@@ -1638,7 +1650,11 @@ const loadFeeds = async (isLoadMore = false) => {
 
   const pageKey = getFeedPageKey()
   if (isLoadMore && !pageGuard.canLoad(pageKey)) return
-  if (!isLoadMore) pageGuard.reset()
+  if (!isLoadMore) {
+    pageGuard.reset()
+    feedPager.start = 0
+    feedPager.begintime = 0
+  }
 
   const thisLoadId = ++currentLoadId
 
@@ -1649,22 +1665,20 @@ const loadFeeds = async (isLoadMore = false) => {
   }
 
   try {
-    let currentBegintime = 0
-    if (isLoadMore && feeds.value.length > 0) {
-      // 获取当前列表中最后一条动态的 time
-      const lastFeed = feeds.value[feeds.value.length - 1]
-      currentBegintime = parseInt(lastFeed.time) || 0
-    }
+    const previousStart = feedPager.start
+    const previousBegintime = feedPager.begintime
+    const currentBegintime = isLoadMore ? previousBegintime : 0
 
     let response
     let transformedFeeds
     let responseHasMore = null
+    let rawItems = []
 
     if (isFriendPhotos.value) {
       // 好友照片模式：使用 feeds2_html_picfeed API
       response = await window.QzoneAPI.getFriendPhotos(
         {
-          start: isLoadMore ? feeds.value.length : 0,
+          start: isLoadMore ? previousStart : 0,
           count: 20,
           begintime: currentBegintime
         },
@@ -1672,10 +1686,10 @@ const loadFeeds = async (isLoadMore = false) => {
       )
 
       if (response && response.code === 0 && response.data) {
-        const photos = response.data.photos || []
-        transformedFeeds = processFriendPhotos(photos)
+        rawItems = Array.isArray(response.data.photos) ? response.data.photos : []
+        transformedFeeds = processFriendPhotos(rawItems)
         // 好友照片用 hasmore 字段判断；等过时请求校验后再落状态。
-        responseHasMore = !!response.data.hasmore
+        responseHasMore = normalizePaginationFlag(response.data.hasmore ?? response.data.hasMore)
       }
     } else {
       // 我的照片模式：使用 feeds2_html_picfeed_qqtab API
@@ -1689,8 +1703,11 @@ const loadFeeds = async (isLoadMore = false) => {
       )
 
       if (response && response.code === 0 && response.data) {
-        const apiFeeds = response.data.feeds || []
-        transformedFeeds = processApiFeeds(apiFeeds)
+        rawItems = Array.isArray(response.data.feeds) ? response.data.feeds : []
+        transformedFeeds = processApiFeeds(rawItems)
+        responseHasMore = normalizePaginationFlag(
+          response.data.hasmore ?? response.data.hasMore ?? response.data.has_more
+        )
       }
     }
 
@@ -1699,37 +1716,44 @@ const loadFeeds = async (isLoadMore = false) => {
 
     if (response && response.code === 0 && response.data && transformedFeeds) {
       pageGuard.succeed()
-      if (transformedFeeds.length > 0) {
-        if (isLoadMore) {
-          const existingIds = new Set(feeds.value.map((f) => f.id))
-          const filteredFeeds = transformedFeeds.filter((feed) => !existingIds.has(feed.id))
+      const responseBegintime =
+        Number(response.data.begintime || response.data.beginTime || response.data.nextBegintime) ||
+        getRawFeedTime(rawItems[rawItems.length - 1])
+      feedPager.start = previousStart + rawItems.length
+      if (responseBegintime > 0) feedPager.begintime = responseBegintime
+      const cursorMoved = isFriendPhotos.value
+        ? feedPager.start > previousStart
+        : feedPager.begintime > 0 && feedPager.begintime !== previousBegintime
 
-          if (filteredFeeds.length > 0) {
-            feeds.value.push(...filteredFeeds)
-            if (responseHasMore === false) hasMore.value = false
-          } else {
-            hasMore.value = false
-          }
-        } else {
-          feeds.value = transformedFeeds
-          hasMore.value = responseHasMore ?? true
-        }
+      if (isLoadMore) {
+        const existingIds = new Set(feeds.value.map((f) => f.id))
+        const filteredFeeds = transformedFeeds.filter((feed) => !existingIds.has(feed.id))
+        if (filteredFeeds.length > 0) feeds.value.push(...filteredFeeds)
+      } else {
+        feeds.value = transformedFeeds
+      }
+
+      hasMore.value = shouldContinuePagination({
+        serverHasMore: responseHasMore,
+        cursorMoved,
+        itemCount: rawItems.length,
+        // This legacy endpoint does not expose a stable page size. Any non-empty
+        // page can have a successor; an empty response confirms the terminal page.
+        pageSize: isFriendPhotos.value ? 20 : 1
+      })
+
+      if (transformedFeeds.length > 0) {
         cacheFeedDescriptions(effectiveHostUin.value, feeds.value)
         // 异步加载说说数据来增强feeds（设备信息、浏览量等）
         enrichFeedsWithShuoshuo()
-      } else {
-        // 返回的数据为空，说明没有更多数据了
-        hasMore.value = false
-        if (!isLoadMore) {
-          // 首次加载就没数据，显示空状态
-          feeds.value = []
-        }
+      } else if (!isLoadMore) {
+        feeds.value = []
       }
     } else {
       // API 调用失败
       if (isLoadMore) {
-        const failure = pageGuard.fail(pageKey)
-        hasMore.value = !failure.shouldStop
+        pageGuard.fail(pageKey)
+        hasMore.value = true
         ElMessage.warning(response?.message || '加载更多失败，稍后可继续重试')
       } else {
         hasMore.value = false
@@ -1739,8 +1763,8 @@ const loadFeeds = async (isLoadMore = false) => {
   } catch (error) {
     console.error('加载动态失败:', error)
     if (isLoadMore) {
-      const failure = pageGuard.fail(pageKey)
-      hasMore.value = !failure.shouldStop
+      pageGuard.fail(pageKey)
+      hasMore.value = true
       ElMessage.warning('加载更多失败，稍后可继续重试')
     } else {
       hasMore.value = false
@@ -1815,7 +1839,7 @@ const setupIntersectionObserver = () => {
       })
     },
     {
-      root: null, // 使用视口作为根
+      root: timelineScrollbarRef.value?.wrapRef || null,
       rootMargin: '100px', // 提前100px触发加载
       threshold: 0.1
     }
@@ -1824,6 +1848,23 @@ const setupIntersectionObserver = () => {
   // 开始观察
   if (loadMoreTrigger.value) {
     observer.observe(loadMoreTrigger.value)
+  }
+}
+
+const handleTimelineScroll = ({ scrollTop }) => {
+  const wrapElement = timelineScrollbarRef.value?.wrapRef
+  if (!wrapElement || !hasMore.value || loading.value || loadingMore.value) return
+  if (
+    isNearScrollEnd(
+      {
+        scrollHeight: wrapElement.scrollHeight,
+        clientHeight: wrapElement.clientHeight,
+        scrollTop
+      },
+      160
+    )
+  ) {
+    loadMoreFeeds()
   }
 }
 
@@ -1903,28 +1944,14 @@ defineExpose({
 
 // 检查容器是否需要加载更多数据（解决首次加载数据不足以填满容器的问题）
 const checkAndLoadMore = async () => {
-  // 等待 DOM 更新
-  await nextTick()
-
-  const scrollbarEl = document.querySelector('.timeline-scrollbar .el-scrollbar__wrap')
-  if (!scrollbarEl) return
-
-  const hasScrollbar = scrollbarEl.scrollHeight > scrollbarEl.clientHeight
-
-  // 如果没有滚动条且还有更多数据可以加载，则自动加载
-  if (
-    !hasScrollbar &&
-    hasMore.value &&
-    !loading.value &&
-    !isScrollLoading.value &&
-    feeds.value.length > 0
-  ) {
-    console.log('检测到内容未填满容器，自动加载更多...')
+  for (let page = 0; page < 12; page++) {
+    await nextTick()
+    const scrollbarEl = timelineScrollbarRef.value?.wrapRef
+    if (!scrollbarEl || scrollbarEl.scrollHeight > scrollbarEl.clientHeight) return
+    if (!hasMore.value || loading.value || isScrollLoading.value || feeds.value.length === 0) return
+    const beforeKey = getFeedPageKey()
     await loadMoreFeeds()
-    // 递归检查是否还需要继续加载
-    if (hasMore.value) {
-      await checkAndLoadMore()
-    }
+    if (getFeedPageKey() === beforeKey) return
   }
 }
 
@@ -1948,6 +1975,8 @@ const resetFeedsAndLoad = () => {
   currentLoadId++
   feeds.value = []
   hasMore.value = true
+  feedPager.start = 0
+  feedPager.begintime = 0
   pageGuard.reset()
   loading.value = false
   loadingMore.value = false

@@ -414,7 +414,11 @@ import FeedComment from '@renderer/components/FeedComment/index.vue'
 import RichText from '@renderer/components/RichText/index.vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
-import { createPaginationGuard } from '@renderer/utils/paginationGuard'
+import {
+  createPaginationGuard,
+  isNearScrollEnd,
+  shouldContinuePagination
+} from '@renderer/utils/paginationGuard'
 import {
   normalizeQzoneUin,
   resolveQzoneHostUin,
@@ -2306,8 +2310,7 @@ const handleLoadFailure = (source, message, pageKey = '') => {
     return false
   }
   if (pageKey) {
-    const failure = pageGuard.fail(pageKey)
-    if (failure.shouldStop) hasMore.value = false
+    pageGuard.fail(pageKey)
   }
   loadRetryAfter.value = Date.now() + 3000
   return false
@@ -2346,17 +2349,23 @@ const loadPage = async ({ reset = false } = {}) => {
     pageGuard.succeed()
     if (source.kind === 'shuoshuo') {
       const msgList = Array.isArray(res.msglist) ? res.msglist : []
-      const added = appendUniqueFeeds(msgList.map(normalizeShuoshuo))
+      appendUniqueFeeds(msgList.map(normalizeShuoshuo))
+      const previousPos = Number(pager.value.pos || 0)
       pager.value = {
         ...pager.value,
-        pos: (pager.value.pos || 0) + msgList.length
+        pos: previousPos + msgList.length
       }
-      hasMore.value = msgList.length === PAGE_SIZE && added > 0
+      hasMore.value = shouldContinuePagination({
+        cursorMoved: Number(pager.value.pos) > previousPos,
+        itemCount: msgList.length,
+        pageSize: PAGE_SIZE
+      })
     } else if (source.kind === 'messageBoard') {
       const comments = Array.isArray(res.comments) ? res.comments : []
-      const start = Number(res.start ?? pager.value.start ?? 0)
+      const previousStart = Number(pager.value.start || 0)
+      const start = Number(res.start ?? previousStart)
       messageBoardTotal.value = Number(res.total) || messageBoardTotal.value || comments.length
-      const added = appendUniqueFeeds(
+      appendUniqueFeeds(
         comments.map((item, index) =>
           normalizeMessageBoard(item, {
             index,
@@ -2370,17 +2379,30 @@ const loadPage = async ({ reset = false } = {}) => {
         start: start + comments.length,
         total: messageBoardTotal.value
       }
-      hasMore.value = !!res.hasMore && comments.length > 0 && added > 0
+      hasMore.value = shouldContinuePagination({
+        serverHasMore: res.hasMore,
+        cursorMoved: Number(pager.value.start) > previousStart,
+        itemCount: comments.length,
+        pageSize: PAGE_SIZE,
+        nextOffset: pager.value.start,
+        total: messageBoardTotal.value
+      })
     } else if (source.key === 'fav') {
       // 收藏：fav_list 结构不同，单独 normalize
       const favList = res.favList || []
-      const added = appendUniqueFeeds(favList.map(normalizeFav))
+      appendUniqueFeeds(favList.map(normalizeFav))
+      const previousStart = Number(pager.value.start || 0)
       pager.value = {
         ...pager.value,
-        start: (pager.value.start || 0) + favList.length
+        start: previousStart + favList.length
       }
-      hasMore.value =
-        favList.length === PAGE_SIZE && added > 0 && pager.value.start < (res.total || Infinity)
+      hasMore.value = shouldContinuePagination({
+        cursorMoved: Number(pager.value.start) > previousStart,
+        itemCount: favList.length,
+        pageSize: PAGE_SIZE,
+        nextOffset: pager.value.start,
+        total: res.total
+      })
     } else {
       const previousPager = { ...pager.value }
       const rawList = res.feeds || []
@@ -2392,7 +2414,7 @@ const loadPage = async ({ reset = false } = {}) => {
         if (filterSelf && normalizeQzoneUin(f?.uin) === currentSelfUin) return false
         return true
       })
-      const added = appendUniqueFeeds(realFeeds.map(normalize))
+      appendUniqueFeeds(realFeeds.map(normalize))
       if (res.pager) pager.value = { ...pager.value, ...res.pager }
       if (source.key === 'lastYear') {
         const currentYear = Number(
@@ -2404,13 +2426,18 @@ const loadPage = async ({ reset = false } = {}) => {
           count: res.hasMore ? (previousPager.count || PAGE_SIZE) + PAGE_SIZE : PAGE_SIZE
         }
       }
-      const pagerMoved =
-        source.key !== 'aboutMe' ||
-        Number(pager.value.offset || 0) > Number(previousPager.offset || 0)
+      const pagerMoved = JSON.stringify(pager.value) !== JSON.stringify(previousPager)
       hasMore.value =
         source.key === 'lastYear'
-          ? added > 0 && (!!res.hasMore || Number(pager.value.year) >= LAST_YEAR_MIN)
-          : !!res.hasMore && rawList.length > 0 && added > 0 && pagerMoved
+          ? res.hasMore
+            ? pagerMoved
+            : Number(pager.value.year) >= LAST_YEAR_MIN
+          : shouldContinuePagination({
+              serverHasMore: res.hasMore,
+              cursorMoved: pagerMoved,
+              itemCount: rawList.length,
+              pageSize: PAGE_SIZE
+            })
     }
   } catch (e) {
     if (isCurrentLoad()) {
@@ -2480,7 +2507,7 @@ const handleScroll = async () => {
   if (loadingMore.value || !hasMore.value) return
   const el = scrollbarRef.value?.wrapRef
   if (!el) return
-  if (el.scrollHeight - el.scrollTop - el.clientHeight < 240) {
+  if (isNearScrollEnd(el, 240)) {
     if (loadRetryAfter.value && Date.now() < loadRetryAfter.value) return
     const ok = await loadPage()
     if (ok) await ensureScrollable()

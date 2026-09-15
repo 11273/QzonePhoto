@@ -257,7 +257,11 @@ import EmptyState from '@renderer/components/EmptyState/index.vue'
 import MediaPreview from '@renderer/components/MediaPreview/index.vue'
 import Top from './top.vue'
 import { generateUniqueAlbumName } from '@renderer/utils'
-import { createPaginationGuard } from '@renderer/utils/paginationGuard'
+import {
+  createPaginationGuard,
+  isNearScrollEnd,
+  retryPageRequest
+} from '@renderer/utils/paginationGuard'
 import { findCachedFeedMetadata } from '@renderer/utils/feed-description-cache'
 import { resolveQzoneHostUin, resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
 
@@ -696,8 +700,8 @@ const loadMorePhotos = async () => {
       if (result.code === -10805) {
         hasMore.value = false
       } else {
-        const failure = pageGuard.fail(pageKey)
-        hasMore.value = !failure.shouldStop
+        pageGuard.fail(pageKey)
+        hasMore.value = true
       }
       ElMessage.error(result.error || '加载照片失败')
     }
@@ -705,8 +709,8 @@ const loadMorePhotos = async () => {
     console.error('加载更多照片失败:', error)
 
     ElMessage.error('加载照片失败')
-    const failure = pageGuard.fail(pageKey)
-    hasMore.value = !failure.shouldStop
+    pageGuard.fail(pageKey)
+    hasMore.value = true
   } finally {
     loadingMore.value = false
     // 简单延迟解锁
@@ -718,14 +722,24 @@ const loadMorePhotos = async () => {
 
 // 处理滚动事件
 const handleScroll = () => {
-  if (!topRef.value || !topRef.value.setCollapsed || isCollapsing.value) return
-
   // 获取滚动元素和滚动位置
   const scrollElement =
     scrollbarRef.value?.wrapRef || scrollbarRef.value?.$el?.querySelector('.el-scrollbar__wrap')
   if (!scrollElement) return
 
   const scrollTop = scrollElement.scrollTop || 0
+
+  if (
+    isNearScrollEnd(scrollElement, 140) &&
+    hasMore.value &&
+    !loading.value &&
+    !loadingMore.value &&
+    !isScrollLoading.value
+  ) {
+    loadMorePhotos()
+  }
+
+  if (!topRef.value || !topRef.value.setCollapsed || isCollapsing.value) return
 
   // 检查内容高度是否足够滚动（避免内容少时抖动）
   const scrollHeight = scrollElement.scrollHeight
@@ -963,7 +977,18 @@ const fetchAndAddPhotosStream = async (album, albumId, onProgress = null) => {
 
     try {
       const currentBatchStart = pageStart
-      const result = await fetchPhotosByTopicId(album.id, pageStart, batchSize)
+      const result = await retryPageRequest(
+        async () => {
+          const page = await fetchPhotosByTopicId(album.id, pageStart, batchSize)
+          if (!page.success && page.code !== -10805) {
+            const error = new Error(page.error || '获取照片失败')
+            error.pageResult = page
+            throw error
+          }
+          return page
+        },
+        { attempts: 3, delayMs: 400 }
+      )
 
       if (!result.success) {
         console.error('获取照片失败:', result.error)
@@ -1503,6 +1528,10 @@ const setupIntersectionObserver = () => {
       }
     },
     {
+      root:
+        scrollbarRef.value?.wrapRef ||
+        scrollbarRef.value?.$el?.querySelector('.el-scrollbar__wrap') ||
+        null,
       rootMargin: '50px',
       threshold: 0.1
     }
@@ -1513,29 +1542,15 @@ const setupIntersectionObserver = () => {
 
 // 检查容器是否需要加载更多数据（解决首次加载数据不足以填满容器的问题）
 const checkAndLoadMore = async () => {
-  // 等待 DOM 更新
-  await nextTick()
-
-  const scrollElement =
-    scrollbarRef.value?.wrapRef || scrollbarRef.value?.$el?.querySelector('.el-scrollbar__wrap')
-  if (!scrollElement) return
-
-  const hasScrollbar = scrollElement.scrollHeight > scrollElement.clientHeight
-
-  // 如果没有滚动条且还有更多数据可以加载，则自动加载
-  if (
-    !hasScrollbar &&
-    hasMore.value &&
-    !loading.value &&
-    !isScrollLoading.value &&
-    !loadingMore.value
-  ) {
-    console.log('检测到照片内容未填满容器，自动加载更多...')
+  for (let page = 0; page < 12; page++) {
+    await nextTick()
+    const scrollElement =
+      scrollbarRef.value?.wrapRef || scrollbarRef.value?.$el?.querySelector('.el-scrollbar__wrap')
+    if (!scrollElement || scrollElement.scrollHeight > scrollElement.clientHeight) return
+    if (!hasMore.value || loading.value || isScrollLoading.value || loadingMore.value) return
+    const previousStart = currentPageStart.value
     await loadMorePhotos()
-    // 递归检查是否还需要继续加载
-    if (hasMore.value) {
-      await checkAndLoadMore()
-    }
+    if (currentPageStart.value === previousStart) return
   }
 }
 

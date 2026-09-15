@@ -919,6 +919,7 @@ import { generateUniqueAlbumName, copyToClipboard } from '@renderer/utils'
 import { QZONE_CONFIG } from '@shared/const'
 import { formatBytes } from '@renderer/utils/formatters'
 import { resolveQzoneHostUin, resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
+import { retryPageRequest } from '@renderer/utils/paginationGuard'
 
 const handleMenuSelect = (index) => {
   // 菜单选择处理由 selectAlbumItem 函数处理
@@ -1535,12 +1536,16 @@ const startDownloadAll = async () => {
               break
             }
 
-            const albumDetail = await window.QzoneAPI.getPhotoByTopicId({
-              hostUin: effectiveHostUin.value,
-              topicId: album.id,
-              pageStart: pageStart,
-              pageNum: batchSize
-            })
+            const albumDetail = await retryPageRequest(
+              () =>
+                window.QzoneAPI.getPhotoByTopicId({
+                  hostUin: effectiveHostUin.value,
+                  topicId: album.id,
+                  pageStart: pageStart,
+                  pageNum: batchSize
+                }),
+              { attempts: 3, delayMs: 400 }
+            )
 
             // 权限不足或接口错误，跳过该相册
             if (albumDetail?.code !== undefined && albumDetail.code !== 0) {
@@ -1840,13 +1845,17 @@ const fetchPhotoData = async () => {
 
   try {
     // 获取初始数据
-    const initialRes = await window.QzoneAPI.getPhotoList(
-      {
-        hostUin: effectiveHostUin.value,
-        pageStart: 0,
-        pageNum: pageSize.value
-      },
-      friendMeta.value
+    const initialRes = await retryPageRequest(
+      () =>
+        window.QzoneAPI.getPhotoList(
+          {
+            hostUin: effectiveHostUin.value,
+            pageStart: 0,
+            pageNum: pageSize.value
+          },
+          friendMeta.value
+        ),
+      { attempts: 3, delayMs: 400 }
     )
     if (!initialRes || !initialRes.data) {
       if (requestId === albumLoadRequestId) {
@@ -1904,15 +1913,19 @@ const fetchPhotoData = async () => {
           const nextPageStart = category.nextPageStart || currentLoaded
 
           try {
-            const categoryRes = await window.QzoneAPI.getPhotoList(
-              {
-                hostUin: effectiveHostUin.value,
-                pageStart: nextPageStart,
-                pageNum: pageSize.value,
-                mode: 4,
-                classId: category.classId
-              },
-              friendMeta.value
+            const categoryRes = await retryPageRequest(
+              () =>
+                window.QzoneAPI.getPhotoList(
+                  {
+                    hostUin: effectiveHostUin.value,
+                    pageStart: nextPageStart,
+                    pageNum: pageSize.value,
+                    mode: 4,
+                    classId: category.classId
+                  },
+                  friendMeta.value
+                ),
+              { attempts: 3, delayMs: 400 }
             )
 
             if (!categoryRes || !categoryRes.data) {
@@ -1933,17 +1946,20 @@ const fetchPhotoData = async () => {
             }
 
             // 更新分页信息
-            if (categoryRes.data.nextPageStart !== undefined) {
-              category.nextPageStart = categoryRes.data.nextPageStart
-            }
+            const responseNextStart = Number(categoryRes.data.nextPageStart)
+            category.nextPageStart =
+              Number.isFinite(responseNextStart) && responseNextStart > nextPageStart
+                ? responseNextStart
+                : nextPageStart + newAlbums.length
             if (categoryRes.data.totalInClass !== undefined) {
               category.totalInClass = categoryRes.data.totalInClass
             }
 
-            // 如果没有新增数据或已加载完毕，退出循环
+            // 可见结果全部重复时仍按服务端游标继续；只有到达总数、空页或游标停滞才结束。
             if (
               category.albumList.length >= category.totalInClass ||
-              uniqueNewAlbums.length === 0
+              newAlbums.length === 0 ||
+              category.nextPageStart <= nextPageStart
             ) {
               break
             }
@@ -1993,14 +2009,19 @@ const fetchPhotoData = async () => {
 
       while (pageStart < totalAlbums && pageStart > 0) {
         try {
-          const nextRes = await window.QzoneAPI.getPhotoList(
-            {
-              hostUin: effectiveHostUin.value,
-              pageStart: pageStart,
-              pageNum: pageSize.value,
-              mode: 2 // normal模式
-            },
-            friendMeta.value
+          const previousPageStart = pageStart
+          const nextRes = await retryPageRequest(
+            () =>
+              window.QzoneAPI.getPhotoList(
+                {
+                  hostUin: effectiveHostUin.value,
+                  pageStart: previousPageStart,
+                  pageNum: pageSize.value,
+                  mode: 2 // normal模式
+                },
+                friendMeta.value
+              ),
+            { attempts: 3, delayMs: 400 }
           )
 
           if (!nextRes || !nextRes.data || !nextRes.data.albumListModeSort) {
@@ -2030,9 +2051,14 @@ const fetchPhotoData = async () => {
             }
           })
 
-          // 更新分页
-          pageStart = nextRes.data.nextPageStartModeSort || 0
-          if (pageStart === 0 || pageStart <= initialRes.data.albumListModeSort.length) {
+          // 更新分页；去重不会影响服务端游标推进。
+          const pageAlbums = nextRes.data.albumListModeSort
+          const responseNextStart = Number(nextRes.data.nextPageStartModeSort)
+          pageStart =
+            Number.isFinite(responseNextStart) && responseNextStart > previousPageStart
+              ? responseNextStart
+              : previousPageStart + pageAlbums.length
+          if (pageAlbums.length === 0 || pageStart <= previousPageStart) {
             break
           }
 

@@ -225,6 +225,7 @@ import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
 import { copyToClipboard, generateUniqueAlbumName } from '@renderer/utils'
 import { resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
+import { retryPageRequest, shouldContinuePagination } from '@renderer/utils/paginationGuard'
 import EnterByUinDialog from './enter-by-uin-dialog.vue'
 
 defineProps({
@@ -357,20 +358,25 @@ const cancelBatchDownload = () => {
   ElMessage.info('正在停止批量下载（当前相册完成后停止）...')
 }
 
-// 拉取好友全部相册列表（最多 10 页 × 100）
+// 拉取好友全部相册列表；以服务端总数/游标为终点，不设会截断大空间的固定页数。
 const fetchAllAlbumsForFriend = async (friendUin) => {
   const collected = []
   const seen = new Set()
   const pageNum = 100
   let pageStart = 0
 
-  for (let i = 0; i < 10; i++) {
+  while (!batchCancelled.value) {
     if (batchCancelled.value) break
     try {
-      const res = await window.QzoneAPI.getPhotoList(
-        { hostUin: friendUin, pageStart, pageNum },
-        { skipAuthCheck: true }
+      const res = await retryPageRequest(
+        () =>
+          window.QzoneAPI.getPhotoList(
+            { hostUin: friendUin, pageStart, pageNum },
+            { skipAuthCheck: true }
+          ),
+        { attempts: 3, delayMs: 400 }
       )
+      if (res?.code !== undefined && res.code !== 0) break
       const data = res?.data || {}
       let albums = []
       if (Array.isArray(data.albumListModeSort) && data.albumListModeSort.length) {
@@ -381,19 +387,29 @@ const fetchAllAlbumsForFriend = async (friendUin) => {
         albums = data.albumList
       }
 
-      let fresh = 0
       for (const a of albums) {
         if (a?.id && !seen.has(a.id)) {
           seen.add(a.id)
           collected.push(a)
-          fresh++
         }
       }
 
       const total = Number(data.albumsInUser) || 0
-      if (fresh === 0) break
-      if (total > 0 && collected.length >= total) break
-      pageStart = collected.length
+      const nextPageStartValue = Number(data.nextPageStartModeSort ?? data.nextPageStart)
+      const nextPageStart =
+        Number.isFinite(nextPageStartValue) && nextPageStartValue > pageStart
+          ? nextPageStartValue
+          : pageStart + albums.length
+      const hasMore = shouldContinuePagination({
+        serverHasMore: data.hasMore ?? data.hasmore,
+        cursorMoved: nextPageStart > pageStart,
+        itemCount: albums.length,
+        pageSize: pageNum,
+        nextOffset: nextPageStart,
+        total
+      })
+      if (!hasMore) break
+      pageStart = nextPageStart
       await new Promise((r) => setTimeout(r, 80))
     } catch (err) {
       console.error('[FriendDrawer] 拉取好友相册列表失败', friendUin, err)
@@ -425,9 +441,13 @@ const downloadFriendAllAlbums = async (friend) => {
 
     while (!batchCancelled.value) {
       try {
-        const detail = await window.QzoneAPI.getPhotoByTopicId(
-          { hostUin: friend.uin, topicId: album.id, pageStart, pageNum: batchSize },
-          { skipAuthCheck: true }
+        const detail = await retryPageRequest(
+          () =>
+            window.QzoneAPI.getPhotoByTopicId(
+              { hostUin: friend.uin, topicId: album.id, pageStart, pageNum: batchSize },
+              { skipAuthCheck: true }
+            ),
+          { attempts: 3, delayMs: 400 }
         )
         if (detail?.code !== undefined && detail.code !== 0) break
 
@@ -439,14 +459,14 @@ const downloadFriendAllAlbums = async (friend) => {
             ? nextPageStartValue
             : pageStart + batchSize
         const totalPhotos = Number(album.total)
-        const hasMore =
-          typeof photoData.hasMore === 'boolean'
-            ? photoData.hasMore
-            : totalPhotos > 0
-              ? nextPageStart < totalPhotos
-              : photoList.length === batchSize
-
-        if (nextPageStart <= pageStart && hasMore) break
+        const hasMore = shouldContinuePagination({
+          serverHasMore: photoData.hasMore,
+          cursorMoved: nextPageStart > pageStart,
+          itemCount: photoList.length,
+          pageSize: batchSize,
+          nextOffset: nextPageStart,
+          total: totalPhotos
+        })
 
         if (photoList.length > 0) {
           await window.QzoneAPI.download.addAlbum({

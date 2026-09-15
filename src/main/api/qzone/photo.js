@@ -7,6 +7,13 @@ const rawUin = (uin) => String(uin).replace(/^o/, '')
 
 const cleanArray = (items) => (Array.isArray(items) ? items : []).filter(Boolean)
 
+const hasMoreFlag = (value) => {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  if (typeof value === 'string') return ['1', 'true', 'yes'].includes(value.trim().toLowerCase())
+  return false
+}
+
 const extractHomeModuleData = (html = '') => {
   const match = String(html).match(/var\s+_feedsdata\s*=\s*({[\s\S]*?})\s*;\s*(?:for\s*\(|if\s*\()/)
   return parseObjectLiteral(match?.[1])
@@ -62,15 +69,19 @@ const normalizeHomeFeedsPayload = (payload, html = '', fallbackPager = {}) => {
   ])
   const withHtml = attachHomeFeedHtml(feeds, html)
   const start = Number(fallbackPager.start || 0)
+  const count = Number(fallbackPager.count || 10)
   const nextOffset = Number(main.offset)
+  const hasMore = hasMoreFlag(main.hasMoreFeeds) || hasMoreFlag(main.hasMoreFeeds_0)
   return {
     code: body.code === '' ? 0 : Number(body.code ?? 0),
     message: body.message || '',
-    hasMore: !!(main.hasMoreFeeds || main.hasMoreFeeds_0) && withHtml.length > 0,
+    hasMore,
     pager: {
       start:
-        Number.isFinite(nextOffset) && nextOffset > start ? nextOffset : start + withHtml.length,
-      count: Number(fallbackPager.count || 10)
+        Number.isFinite(nextOffset) && nextOffset > start
+          ? nextOffset
+          : start + Math.max(withHtml.length, hasMore ? count : 0),
+      count
     },
     feeds: withHtml
   }
@@ -523,12 +534,12 @@ export async function feeds3_html_more(uin, p_skey, hostUin, pager = {}) {
 
   return {
     code: body.code ?? 0,
-    hasMore: !!main.hasMoreFeeds,
+    hasMore: hasMoreFlag(main.hasMoreFeeds),
     pager: {
-      pagenum: main.pagenum ? Number(main.pagenum) : pagenum + 1,
-      begintime: main.begintime ? Number(main.begintime) : 0,
-      externparam: main.externparam || '',
-      dayspac: main.dayspac ? Number(main.dayspac) : 0
+      pagenum: Number.isFinite(Number(main.pagenum)) ? Number(main.pagenum) : pagenum + 1,
+      begintime: Number.isFinite(Number(main.begintime)) ? Number(main.begintime) : 0,
+      externparam: main.externparam ?? '',
+      dayspac: Number.isFinite(Number(main.dayspac)) ? Number(main.dayspac) : 0
     },
     feeds: list
   }
@@ -828,9 +839,12 @@ export async function feeds2_html_pav_all(uin, p_skey, hostUin, pager = {}) {
   const list = Array.isArray(inner.data) ? inner.data : []
   return {
     code: body.code ?? 0,
-    hasMore: !!main.hasMoreFeeds,
+    hasMore: hasMoreFlag(main.hasMoreFeeds),
     pager: {
-      offset: main.offset ? Number(main.offset) : offset + count,
+      offset:
+        Number.isFinite(Number(main.offset)) && Number(main.offset) > Number(offset)
+          ? Number(main.offset)
+          : Number(offset) + Number(count),
       hostMore: main.host_more || ''
     },
     feeds: list
@@ -919,7 +933,7 @@ export async function feeds2_html_today_lastyear(uin, p_skey, opts = {}) {
   ].filter((item) => item && typeof item === 'object' && item.html)
   return {
     code: body.code ?? 0,
-    hasMore: !!(main.hasMoreFeeds_0 || main.hasMoreFeeds_1) && list.length > 0,
+    hasMore: hasMoreFlag(main.hasMoreFeeds_0) || hasMoreFlag(main.hasMoreFeeds_1),
     emptyHint: main.friend_more || main.host_more || '',
     feeds: list
   }
