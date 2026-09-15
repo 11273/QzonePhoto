@@ -203,6 +203,15 @@
                 </div>
                 <div class="fc-card-actions">
                   <button
+                    class="fc-dl-btn fc-dl-btn-header"
+                    :disabled="isFeedCopying(feed.tid)"
+                    title="复制正文、原始媒体地址、点赞信息和完整评论"
+                    @click="copyFeedContent(feed)"
+                  >
+                    <ClipboardCopy :size="13" />
+                    {{ isFeedCopying(feed.tid) ? '提取中' : '复制' }}
+                  </button>
+                  <button
                     v-if="feed.media.length"
                     class="fc-dl-btn fc-dl-btn-header"
                     :disabled="isFeedDownloading(feed.tid)"
@@ -396,7 +405,8 @@ import {
   Bookmark,
   Home,
   MessagesSquare,
-  Play
+  Play,
+  ClipboardCopy
 } from '@lucide/vue'
 import FeedComment from '@renderer/components/FeedComment/index.vue'
 import RichText from '@renderer/components/RichText/index.vue'
@@ -405,8 +415,10 @@ import { usePrivacyStore } from '@renderer/store/privacy.store'
 import {
   createPaginationGuard,
   isNearScrollEnd,
+  retryPageRequest,
   shouldContinuePagination
 } from '@renderer/utils/paginationGuard'
+import { buildFeedExportText, countFeedComments } from '@renderer/utils/feedExport'
 import {
   normalizeQzoneUin,
   resolveQzoneHostUin,
@@ -613,6 +625,7 @@ const brokenThumbs = reactive(new Set())
 const thumbRetryIndexes = reactive({})
 const downloadingAll = ref(false)
 const downloadingFeedIds = ref(new Set())
+const copyingFeedIds = ref(new Set())
 // commentsByTid[tid]: { comments: [], loading: false, expanded: false, error: '' }
 //   expanded=false 时只显示 inlineComments（列表 HTML 内嵌的前几条）
 //   expanded=true  时显示二次拉到的完整评论列表
@@ -2107,9 +2120,10 @@ const expandMoreComments = async (feed) => {
     commentsByTid[feed.tid] = reactive({ loading: false, expanded: false, comments: [], error: '' })
   }
   const slot = commentsByTid[feed.tid]
-  if (slot.loading || slot.expanded) return
+  if (slot.loading || slot.expanded) return slot.comments || feed.inlineComments || []
   slot.loading = true
   slot.error = ''
+  let comments = mergeCommentRoots(feed.inlineComments || [], slot.comments || [])
   try {
     // hostUin = feed 作者 uin；topicId = feeds3 返回的 data-topicid（<uin>_<tid>__1）
     // feedsType=8 固定（PC 实测也接受 100，但 8 是 PC 网页默认值）
@@ -2119,50 +2133,97 @@ const expandMoreComments = async (feed) => {
         ? { skipAuthCheck: true }
         : undefined
     const pageSize = Math.max(30, Math.min(100, feed.cmtCount || 50))
-    const maxPages = Math.max(1, Math.min(8, Math.ceil((feed.cmtCount || pageSize) / pageSize) + 1))
-    let comments = []
-    let previousCount = 0
+    const expectedPages = Math.ceil((feed.cmtCount || pageSize) / pageSize)
+    // 按接口统计量完整翻页，多留两页容纳统计延迟；1000 页仅用于防御异常数据。
+    const maxPages = Math.min(1000, Math.max(2, expectedPages + 2))
+    let previousCount = countCommentTree(comments)
+    let completed = false
 
     for (let page = 0; page < maxPages; page += 1) {
-      const res = await window.QzoneAPI.getFeedComments(
-        {
-          topicId,
-          hostUin: feed.uin,
-          feedsType: 8,
-          start: page * pageSize,
-          num: pageSize,
-          sort: 1
+      const res = await retryPageRequest(
+        async () => {
+          const result = await window.QzoneAPI.getFeedComments(
+            {
+              topicId,
+              hostUin: feed.uin,
+              feedsType: 8,
+              start: page * pageSize,
+              num: pageSize,
+              sort: 1
+            },
+            authOption
+          )
+          if (result?.code !== 0) {
+            throw new Error(result?.message || `加载第 ${page + 1} 页评论失败`)
+          }
+          return result
         },
-        authOption
+        { attempts: 2, delayMs: 300 }
       )
-      if (res?.code !== 0) {
-        if (!comments.length) slot.error = res?.message || '加载评论失败'
-        break
-      }
       const parsed = parseCommentsHtml(res.feedsHtml)
       comments = mergeCommentRoots(comments, parsed)
       const nextCount = countCommentTree(comments)
-      if (
-        !parsed.length ||
-        nextCount === previousCount ||
-        nextCount >= (feed.cmtCount || nextCount)
-      )
+      const reportedTotal = Number(feed.cmtCount) || 0
+      if (reportedTotal > 0 && nextCount >= reportedTotal) {
+        completed = true
         break
+      }
+      if (!parsed.length || nextCount === previousCount) {
+        completed = reportedTotal === 0 || nextCount >= reportedTotal
+        break
+      }
       previousCount = nextCount
     }
 
     // 接口返回的 feeds HTML 是整条 feed 的 HTML（含评论 li）；如果意外为空就保留内嵌评论
     slot.comments = comments.length ? comments : feed.inlineComments || []
-    slot.expanded = true
+    slot.expanded = completed
+    if (!completed) slot.error = '评论数量仍未达到接口统计值，可再次点击重试'
   } catch (e) {
+    slot.comments = comments.length ? comments : feed.inlineComments || []
+    slot.expanded = false
     slot.error = e.message || String(e)
   } finally {
     slot.loading = false
   }
+  return slot.comments
 }
 
 const onCommentAuthorClick = (target) => {
   if (target?.uin) openQzoneProfile(target)
+}
+
+// ============= 完整内容提取 =============
+const isFeedCopying = (tid) => copyingFeedIds.value.has(tid)
+const setFeedCopying = (tid, copying) => {
+  const next = new Set(copyingFeedIds.value)
+  if (copying) next.add(tid)
+  else next.delete(tid)
+  copyingFeedIds.value = next
+}
+
+const copyFeedContent = async (feed) => {
+  if (!feed || isFeedCopying(feed.tid)) return
+  setFeedCopying(feed.tid, true)
+  try {
+    let comments = visibleComments(feed)
+    if (remainingCmtCount(feed) > 0) comments = await expandMoreComments(feed)
+    const text = buildFeedExportText(feed, comments)
+    await navigator.clipboard.writeText(text)
+
+    const extracted = countFeedComments(comments)
+    const expected = Number(feed.cmtCount) || extracted
+    if (extracted < expected) {
+      ElMessage.warning(`已复制动态，但评论仅提取到 ${extracted}/${expected} 条，可稍后重试`)
+    } else {
+      ElMessage.success(`已复制完整动态（${feed.media.length} 个媒体，${extracted} 条评论）`)
+    }
+  } catch (e) {
+    console.error('[FeedsModule] 复制完整动态失败', e)
+    ElMessage.error(`复制失败：${e.message || e}`)
+  } finally {
+    setFeedCopying(feed.tid, false)
+  }
 }
 
 // ============= 下载 =============
@@ -3118,6 +3179,7 @@ defineExpose({ refresh: handleRefresh })
 .fc-card-actions {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   flex-shrink: 0;
 }
 
