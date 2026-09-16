@@ -130,8 +130,8 @@ const cleanName = (value) =>
 
 const cleanComment = (item) => ({
   ...item,
-  author: cleanName(item?.author),
-  targetNick: cleanName(item?.targetNick),
+  author: cleanName(item?.author) || String(item?.uin || ''),
+  targetNick: cleanName(item?.targetNick) || (item?.targetUin ? `QQ ${item.targetUin}` : ''),
   text: cleanCommentText(item?.text),
   responses: Array.isArray(item?.responses) ? item.responses.map(cleanComment) : []
 })

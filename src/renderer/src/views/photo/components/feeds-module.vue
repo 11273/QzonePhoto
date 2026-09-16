@@ -2059,57 +2059,64 @@ const parseCommentsHtml = (html) => {
     cloned.querySelectorAll('a.nickname, .comments-op, .comments-user').forEach((el) => el.remove())
     return htmlToPlainText(cloned).replace(/^[:：\s]+/, '')
   }
-  const flat = items
+  const entries = items
     .map((li) => {
       const type = li.getAttribute('data-type')
       const tid = li.getAttribute('data-tid')
       const uin = li.getAttribute('data-uin') || ''
       const nick = li.getAttribute('data-nick') || ''
-      const targetUin = li.getAttribute('data-targetuin') || ''
-      const targetNick = li.getAttribute('data-targetnick') || ''
       const contentEl = li.querySelector('.comments-content') || li
-      const text = extractCommentText(contentEl)
+      const replyTarget = type === 'replyroot' ? contentEl.querySelectorAll('a.nickname')[1] : null
+      const targetUin =
+        li.getAttribute('data-targetuin') ||
+        (replyTarget?.getAttribute('href') || '').match(/user\.qzone\.qq\.com\/(\d+)/)?.[1] ||
+        ''
+      const targetNick =
+        li.getAttribute('data-targetnick') || replyTarget?.textContent?.trim() || ''
+      const extractedText = extractCommentText(contentEl)
+      const text = replyTarget
+        ? extractedText.replace(/^回复(?:\s+|[:：]\s*|$)/, '')
+        : extractedText
       const timeText = li.querySelector('.comments-op .state, .state')?.textContent?.trim() || ''
       return {
-        type,
-        id: tid,
-        uin,
-        author: nick,
-        text,
-        time: timeText,
-        targetUin,
-        targetNick,
-        responses: []
+        li,
+        comment: {
+          type,
+          // 网页的 data-tid 可以在根评论与回复之间重复，不能单独用它去重。
+          id: [type, tid, uin, timeText, text].join('\u001f'),
+          uin,
+          author: nick,
+          text,
+          time: timeText,
+          targetUin,
+          targetNick,
+          responses: []
+        }
       }
     })
-    .filter((comment) => comment.text || comment.author || comment.uin)
+    .filter(({ comment }) => comment.text || comment.author || comment.uin)
   const roots = []
-  const byId = new Map()
-  const rootById = new Map()
-  const findParent = (reply) => {
-    if (!reply.id) return roots[roots.length - 1]
-    const candidates = [...byId.entries()]
-      .filter(([id]) => id && reply.id.startsWith(`${id}_`))
-      .sort((a, b) => b[0].length - a[0].length)
-    return candidates[0]?.[1] || roots[roots.length - 1]
-  }
-
-  for (const c of flat) {
-    if (c.type === 'commentroot' || !roots.length) {
-      if (!byId.has(c.id)) roots.push(c)
-      byId.set(c.id, c)
-      rootById.set(c.id, c)
-    } else if (c.type === 'replyroot') {
-      const parent = findParent(c)
-      const root = rootById.get(parent?.id) || parent
-      if (parent && parent !== root && !c.targetNick) {
-        c.targetNick = parent.author
-        c.targetUin = parent.uin
+  const rootByElement = new Map()
+  let lastRoot = null
+  for (const { li, comment } of entries) {
+    let ancestor = li.parentElement?.closest('li.comments-item')
+    let root = null
+    while (ancestor) {
+      root = rootByElement.get(ancestor) || root
+      ancestor = ancestor.parentElement?.closest('li.comments-item')
+    }
+    if (!root && comment.type === 'replyroot') root = lastRoot
+    if (root && comment.type === 'replyroot') {
+      if (!comment.targetNick && !comment.targetUin) {
+        comment.targetNick = root.author
+        comment.targetUin = root.uin
       }
-      if (root) root.responses.push(c)
-      else roots.push(c)
-      byId.set(c.id, c)
-      rootById.set(c.id, root || c)
+      root.responses.push(comment)
+      rootByElement.set(li, root)
+    } else {
+      roots.push(comment)
+      lastRoot = comment
+      rootByElement.set(li, comment)
     }
   }
   return roots
