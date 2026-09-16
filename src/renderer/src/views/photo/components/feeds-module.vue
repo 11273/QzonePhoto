@@ -226,8 +226,8 @@
 
               <div v-if="feed.actionText" class="fc-action">
                 <component
-                  v-if="feed.actionIcon"
                   :is="feed.actionIcon"
+                  v-if="feed.actionIcon"
                   :size="13"
                   class="fc-action-icon"
                 />
@@ -282,9 +282,9 @@
               </div>
 
               <!-- 点赞者头像行 -->
-              <div v-if="feed.likers?.length" class="fc-likers">
+              <div v-if="feed.likers?.length || feed.likeCount" class="fc-likers">
                 <ThumbsUp :size="11" class="fc-likers-icon" />
-                <div class="fc-likers-avatars">
+                <div v-if="feed.likers?.length" class="fc-likers-avatars">
                   <el-tooltip
                     v-for="liker in feed.likers.slice(0, 8)"
                     :key="liker.uin"
@@ -301,12 +301,50 @@
                     </button>
                   </el-tooltip>
                 </div>
-                <span
-                  v-if="feed.likeCount > Math.min(feed.likers.length, 8)"
-                  class="fc-likers-rest"
+                <button
+                  v-if="(feed.likers || []).length > 8"
+                  type="button"
+                  class="fc-likers-toggle"
+                  :aria-expanded="!!likesExpandedByTid[feed.tid]"
+                  @click="toggleLikers(feed.tid)"
                 >
-                  等 {{ feed.likeCount }} 人
+                  {{
+                    likesExpandedByTid[feed.tid]
+                      ? '收起'
+                      : `查看已返回的 ${feed.likers.length} 位点赞者`
+                  }}
+                </button>
+                <span v-else-if="feed.likers?.length" class="fc-likers-rest">
+                  {{ feed.likers.length }} 位点赞者
                 </span>
+                <span v-if="feed.likeCount > (feed.likers || []).length" class="fc-likers-rest">
+                  接口仅返回 {{ (feed.likers || []).length }}/{{ feed.likeCount }} 位
+                </span>
+              </div>
+              <div v-if="likesExpandedByTid[feed.tid]" class="fc-likers-detail">
+                <button
+                  v-for="liker in visibleLikers(feed)"
+                  :key="liker.uin"
+                  type="button"
+                  class="fc-liker-detail"
+                  @click="openQzoneProfile(liker)"
+                >
+                  <img
+                    :src="avatarUrl(liker.uin)"
+                    :alt="liker.name || liker.uin"
+                    referrerpolicy="no-referrer"
+                    @error="onAvatarError"
+                  />
+                  <span>{{ liker.name || liker.uin }}</span>
+                </button>
+                <button
+                  v-if="visibleLikers(feed).length < (feed.likers || []).length"
+                  type="button"
+                  class="fc-likers-toggle"
+                  @click="showMoreLikers(feed.tid)"
+                >
+                  再显示 {{ Math.min(40, feed.likers.length - visibleLikers(feed).length) }} 位
+                </button>
               </div>
 
               <footer class="fc-footer">
@@ -333,7 +371,7 @@
                 </div>
               </footer>
 
-              <!-- 评论区：默认展示内嵌评论；剩余评论按需展开 -->
+              <!-- 评论区：内嵌评论预览；按页加载接口可返回的其余评论 -->
               <div
                 v-if="visibleComments(feed).length || canExpandMore(feed)"
                 class="fc-comments-wrap"
@@ -348,7 +386,8 @@
                   v-if="canExpandMore(feed)"
                   class="fc-cmt-more"
                   :disabled="commentsByTid[feed.tid]?.loading"
-                  @click="expandMoreComments(feed)"
+                  :aria-expanded="!!commentsByTid[feed.tid]?.open"
+                  @click="toggleComments(feed)"
                 >
                   <el-icon v-if="commentsByTid[feed.tid]?.loading" class="is-loading"
                     ><Loading
@@ -357,8 +396,20 @@
                   {{
                     commentsByTid[feed.tid]?.loading
                       ? '加载评论…'
-                      : `展开剩余 ${remainingCmtCount(feed)} 条评论`
+                      : commentsByTid[feed.tid]?.open
+                        ? remainingCmtCount(feed) > 0
+                          ? `加载更多评论（还差约 ${remainingCmtCount(feed)} 条）`
+                          : '收起评论'
+                        : `查看评论${feed.cmtCount ? `（${feed.cmtCount}）` : ''}`
                   }}
+                </button>
+                <button
+                  v-if="commentsByTid[feed.tid]?.open && remainingCmtCount(feed) > 0"
+                  type="button"
+                  class="fc-cmt-more"
+                  @click="collapseComments(feed.tid)"
+                >
+                  收起评论
                 </button>
                 <div v-if="commentsByTid[feed.tid]?.error" class="fc-cmt-error">
                   {{ commentsByTid[feed.tid].error }}
@@ -629,9 +680,17 @@ const thumbRetryIndexes = reactive({})
 const downloadingAll = ref(false)
 const downloadingFeedIds = ref(new Set())
 const copyingFeedIds = ref(new Set())
-// commentsByTid[tid]: { comments: [], loading: false, expanded: false, error: '' }
-//   expanded=false 时只显示 inlineComments（列表 HTML 内嵌的前几条）
-//   expanded=true  时显示二次拉到的完整评论列表
+const likesExpandedByTid = reactive({})
+const likesShownByTid = reactive({})
+const toggleLikers = (tid) => {
+  likesExpandedByTid[tid] = !likesExpandedByTid[tid]
+  if (!likesShownByTid[tid]) likesShownByTid[tid] = 40
+}
+const visibleLikers = (feed) => (feed.likers || []).slice(0, likesShownByTid[feed.tid] || 40)
+const showMoreLikers = (tid) => {
+  likesShownByTid[tid] = (likesShownByTid[tid] || 40) + 40
+}
+// 评论按动态缓存，收起时保留已加载结果；expanded 表示已拉到统计数或接口末尾。
 const commentsByTid = reactive({})
 const messageRepliesExpanded = reactive({})
 
@@ -2097,29 +2156,37 @@ const mergeCommentRoots = (base = [], incoming = []) => {
   return roots
 }
 
-// 列表 HTML 内嵌的评论已在 normalize 阶段解出（feed.inlineComments）
-// 这里只提供：什么时候要展示展开按钮 + 展开后如何拉全部评论
+// 列表 HTML 内嵌的评论已在 normalize 阶段解出（feed.inlineComments）。
+const loadedComments = (feed) => {
+  const slot = commentsByTid[feed.tid]
+  return slot?.comments?.length ? slot.comments : feed.inlineComments || []
+}
 const visibleComments = (feed) => {
   const slot = commentsByTid[feed.tid]
-  if (slot?.expanded && slot.comments?.length) return slot.comments
-  return feed.inlineComments || []
+  return slot?.open ? loadedComments(feed) : (feed.inlineComments || []).slice(0, 3)
 }
 
 const remainingCmtCount = (feed) => {
   const total = feed.cmtCount || 0
-  const shown = countCommentTree(visibleComments(feed))
+  const shown = countCommentTree(loadedComments(feed))
   return Math.max(0, total - shown)
 }
 
 const canExpandMore = (feed) => {
   const slot = commentsByTid[feed.tid]
-  if (slot?.expanded) return false // 已经展开过全部
-  return remainingCmtCount(feed) > 0 // 内嵌之外还有评论
+  if (slot?.open) return true
+  return (feed.inlineComments || []).length > 3 || remainingCmtCount(feed) > 0
 }
 
 const expandMoreComments = async (feed) => {
   if (!commentsByTid[feed.tid]) {
-    commentsByTid[feed.tid] = reactive({ loading: false, expanded: false, comments: [], error: '' })
+    commentsByTid[feed.tid] = reactive({
+      loading: false,
+      expanded: false,
+      open: false,
+      comments: [],
+      error: ''
+    })
   }
   const slot = commentsByTid[feed.tid]
   if (slot.loading || slot.expanded) return slot.comments || feed.inlineComments || []
@@ -2139,6 +2206,7 @@ const expandMoreComments = async (feed) => {
     // 按接口统计量完整翻页，多留两页容纳统计延迟；1000 页仅用于防御异常数据。
     const maxPages = Math.min(1000, Math.max(2, expectedPages + 2))
     let previousCount = countCommentTree(comments)
+    let stagnantPages = 0
     let completed = false
 
     for (let page = 0; page < maxPages; page += 1) {
@@ -2170,7 +2238,8 @@ const expandMoreComments = async (feed) => {
         completed = true
         break
       }
-      if (!parsed.length || nextCount === previousCount) {
+      stagnantPages = nextCount === previousCount ? stagnantPages + 1 : 0
+      if (!parsed.length || stagnantPages >= 2) {
         completed = reportedTotal === 0 || nextCount >= reportedTotal
         break
       }
@@ -2191,6 +2260,31 @@ const expandMoreComments = async (feed) => {
   return slot.comments
 }
 
+const collapseComments = (tid) => {
+  if (commentsByTid[tid]) commentsByTid[tid].open = false
+}
+
+const toggleComments = async (feed) => {
+  if (!commentsByTid[feed.tid]) {
+    commentsByTid[feed.tid] = reactive({
+      loading: false,
+      expanded: false,
+      open: false,
+      comments: [],
+      error: ''
+    })
+  }
+  const slot = commentsByTid[feed.tid]
+  if (slot.loading) return
+  if (!slot.open) {
+    slot.open = true
+  } else if (slot.expanded || remainingCmtCount(feed) === 0) {
+    slot.open = false
+    return
+  }
+  if (!slot.expanded && remainingCmtCount(feed) > 0) await expandMoreComments(feed)
+}
+
 const onCommentAuthorClick = (target) => {
   if (target?.uin) openQzoneProfile(target)
 }
@@ -2208,7 +2302,7 @@ const copyFeedContent = async (feed) => {
   if (!feed || isFeedCopying(feed.tid)) return
   setFeedCopying(feed.tid, true)
   try {
-    let comments = visibleComments(feed)
+    let comments = loadedComments(feed)
     if (remainingCmtCount(feed) > 0) comments = await expandMoreComments(feed)
     const text = buildFeedExportText(feed, comments)
     await navigator.clipboard.writeText(text)
@@ -2329,6 +2423,8 @@ const resetFeedRuntime = (source) => {
   loadingMore.value = false
   brokenThumbs.clear()
   Object.keys(thumbRetryIndexes).forEach((key) => delete thumbRetryIndexes[key])
+  Object.keys(likesExpandedByTid).forEach((key) => delete likesExpandedByTid[key])
+  Object.keys(likesShownByTid).forEach((key) => delete likesShownByTid[key])
   Object.keys(commentsByTid).forEach((key) => delete commentsByTid[key])
   Object.keys(messageRepliesExpanded).forEach((key) => delete messageRepliesExpanded[key])
   pushStats()
@@ -3394,6 +3490,7 @@ defineExpose({ refresh: handleRefresh })
 .fc-likers {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 5px 8px;
   margin: 2px 0;
@@ -3440,6 +3537,59 @@ defineExpose({ refresh: handleRefresh })
 }
 .fc-likers-rest {
   color: rgba(255, 255, 255, 0.5);
+}
+.fc-likers-toggle {
+  padding: 5px 7px;
+  color: #93c5fd;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  &:hover {
+    background: rgba(96, 165, 250, 0.12);
+  }
+  &:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+  }
+}
+.fc-likers-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 3px 0 8px;
+}
+.fc-liker-detail {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 4px 7px;
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(96, 165, 250, 0.07);
+  border: 1px solid rgba(96, 165, 250, 0.12);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 11px;
+  &:hover {
+    background: rgba(96, 165, 250, 0.15);
+  }
+  &:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+  }
+  img {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 /* ========== 底部 footer ========== */
