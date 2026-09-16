@@ -15,6 +15,7 @@ import {
 } from '@main/utils/download-file-time.mjs'
 import { writeTaskMediaMetadata } from '@main/utils/media-metadata-writer.mjs'
 import { isVideoPhoto, mergeEnrichedImagesInOriginalOrder } from '@main/utils/photo-order.mjs'
+import { downloadFolderUin } from '@main/utils/download-directory.mjs'
 // 直接定义必要的默认配置，避免使用外部常量系统
 const DEFAULT_CONCURRENCY = 3
 const DEFAULT_PAGE_SIZE = 50
@@ -440,15 +441,15 @@ export class DownloadService {
     if (friendUin) {
       albumDir = path.join(
         this.downloadPath,
-        this.sanitizeFilename(userInfo.uin || 'unknown'),
+        downloadFolderUin(userInfo.uin),
         '好友相册',
-        this.sanitizeFilename(String(friendUin)),
+        downloadFolderUin(friendUin),
         this.sanitizeFilename(album.name || '未命名相册')
       )
     } else {
       albumDir = path.join(
         this.downloadPath,
-        this.sanitizeFilename(userInfo.uin || 'unknown'),
+        downloadFolderUin(userInfo.uin),
         this.sanitizeFilename(album.name || '未命名相册')
       )
     }
@@ -514,12 +515,12 @@ export class DownloadService {
     const rootDir = friendUin
       ? path.join(
           this.downloadPath,
-          this.sanitizeFilename(userInfo.uin || 'unknown'),
+          downloadFolderUin(userInfo.uin),
           '好友相册',
-          this.sanitizeFilename(String(friendUin)),
+          downloadFolderUin(friendUin),
           '说说'
         )
-      : path.join(this.downloadPath, this.sanitizeFilename(userInfo.uin || 'unknown'), '说说')
+      : path.join(this.downloadPath, downloadFolderUin(userInfo.uin), '说说')
 
     const allTaskIds = []
     const batchSize = 500
