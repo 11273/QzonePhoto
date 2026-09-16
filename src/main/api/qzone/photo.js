@@ -461,6 +461,105 @@ export async function emotion_cgi_ic_getcomments(uin, p_skey, feedRef = {}) {
   }
 }
 
+/** 读取一条动态的点赞者。unikey 只用于 QQ 空间官方点赞接口的查询参数。 */
+export async function get_like_list_app(uin, p_skey, feedRef = {}) {
+  const { hostUin, tid, appid, unikey, beginUin = '0', count = 60 } = feedRef
+  const owner = rawUin(hostUin)
+  const safeTid = String(tid || '')
+  const suppliedKey = String(unikey || '').replace(/&amp;/g, '&')
+  const key =
+    suppliedKey ||
+    (Number(appid) === 311 && /^\d+$/.test(owner) && /^[\w-]+$/.test(safeTid)
+      ? `http://user.qzone.qq.com/${owner}/mood/${safeTid}`
+      : '')
+  if (!/^https?:\/\/user\.qzone\.qq\.com\/\d+\//i.test(key)) {
+    return { code: -1, message: '缺少有效的动态标识', total: 0, likers: [] }
+  }
+
+  const queryCount = Math.min(60, Math.max(1, Number(count) || 60))
+  const cursor = String(beginUin || '0')
+  const response = await request.get(
+    'https://user.qzone.qq.com/proxy/domain/users.qzone.qq.com/cgi-bin/likes/get_like_list_app',
+    {
+      params: {
+        uin: rawUin(uin),
+        unikey: key,
+        begin_uin: cursor,
+        query_count: queryCount,
+        if_first_page: cursor === '0' ? 1 : 0,
+        g_tk: getGTK(p_skey)
+      },
+      headers: {
+        Cookie: `uin=${uin};p_skey=${p_skey}`,
+        Referer: `https://user.qzone.qq.com/${owner}`
+      }
+    }
+  )
+  const body = response.data || {}
+  const data = body.data || {}
+  const likers = cleanArray(data.like_uin_info)
+    .map((item) => ({
+      uin: String(item.fuin || item.uin || ''),
+      name: String(item.nick || item.name || '').trim()
+    }))
+    .filter((item) => /^\d+$/.test(item.uin))
+  return {
+    code: Number(body.code ?? body.ret ?? 0),
+    message: body.message || body.msg || '',
+    total: Number(data.total_number ?? body.total_number ?? 0) || 0,
+    likers,
+    nextCursor: likers.at(-1)?.uin || cursor,
+    hasMore: data.has_more ?? data.hasmore ?? data.is_more ?? null
+  }
+}
+
+/** 说说评论与楼中楼回复的分页列表。 */
+export async function emotion_cgi_getcmtreply_v6(uin, p_skey, feedRef = {}) {
+  const { hostUin, tid, start = 0, num = 30 } = feedRef
+  const owner = rawUin(hostUin)
+  if (!/^\d+$/.test(owner) || !/^[\w-]+$/.test(String(tid || ''))) {
+    return { code: -1, message: '缺少有效的说说标识', comments: [] }
+  }
+  const pageSize = Math.min(100, Math.max(1, Number(num) || 30))
+  const response = await request.get(
+    'https://user.qzone.qq.com/proxy/domain/taotao.qzone.qq.com/cgi-bin/emotion_cgi_getcmtreply_v6',
+    {
+      params: {
+        need_private_comment: 1,
+        uin: rawUin(uin),
+        hostUin: owner,
+        start: Math.max(0, Number(start) || 0),
+        num: pageSize,
+        order: 0,
+        topicId: `${owner}_${tid}`,
+        format: 'jsonp',
+        inCharset: 'utf-8',
+        outCharset: 'utf-8',
+        ref: 'qzone',
+        random: Math.random(),
+        g_tk: getGTK(p_skey)
+      },
+      headers: {
+        Cookie: `uin=${uin};p_skey=${p_skey}`,
+        Referer: `https://user.qzone.qq.com/${owner}`
+      }
+    }
+  )
+  const body = response.data || {}
+  const data = body.data || {}
+  const comments =
+    [body.commentlist, body.comments, data.commentList, data.commentlist, data.comments].find(
+      Array.isArray
+    ) || []
+  return {
+    code: Number(body.code ?? body.ret ?? 0),
+    message: body.message || body.msg || '',
+    comments,
+    total: Number(data.total ?? data.commentnum ?? body.total ?? 0) || 0,
+    hasMore: data.hasMore ?? data.has_more ?? data.hasmore ?? null
+  }
+}
+
 /**
  * 拉「好友动态」时间线（QQ 空间网页右上「动态」入口对应的接口）。
  *

@@ -221,6 +221,8 @@ export const createDemoQzoneAPI = (realApi) => ({
   getLastYearFeeds: async () => ({ code: 0, hasMore: false, feeds }),
   getFeedsCount: async () => ({ code: 0, counts: { myFeeds_new_cnt: 2, friendFeeds_new_cnt: 8 } }),
   getFeedComments: async () => ({ code: 0, comments: [] }),
+  getFeedLikers: async () => ({ code: 0, total: 0, likers: [], nextCursor: '0', hasMore: false }),
+  getShuoshuoComments: async () => ({ code: 0, comments: [], hasMore: false }),
   getShuoshuo: async () => ({ code: 0, msglist: [] }),
   getVideoList: async () => ({
     code: 0,

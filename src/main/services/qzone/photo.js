@@ -12,6 +12,8 @@ import {
   feeds2_html_picfeed,
   feeds3_html_more,
   emotion_cgi_ic_getcomments,
+  emotion_cgi_getcmtreply_v6,
+  get_like_list_app,
   cgi_get_feeds_count,
   feeds2_html_pav_all,
   feeds2_html_today_lastyear,
@@ -166,8 +168,18 @@ export class QzonePhotoService {
 
   // 拉「好友动态」（feeds3_html_more）—— 网页右上「动态」入口的接口
   //   scope=0: 好友动态；scope=7: 特别关心（同接口换 scope）
-  async getFriendFeeds({ hostUin, pagenum, begintime, externparam, count, dayspac, scope }, { uin, p_skey }) {
-    return await feeds3_html_more(uin, p_skey, hostUin, { pagenum, begintime, externparam, count, dayspac, scope })
+  async getFriendFeeds(
+    { hostUin, pagenum, begintime, externparam, count, dayspac, scope },
+    { uin, p_skey }
+  ) {
+    return await feeds3_html_more(uin, p_skey, hostUin, {
+      pagenum,
+      begintime,
+      externparam,
+      count,
+      dayspac,
+      scope
+    })
   }
 
   // 拉「我的主页 / 好友主页」时间线（官方主页 feeds_html_module + feeds_html_act_all）
@@ -177,7 +189,22 @@ export class QzonePhotoService {
 
   // 拉某条好友动态的评论列表（按需展开"剩余 N 条评论"时调用）
   async getFeedComments({ topicId, hostUin, feedsType, start, num, sort }, { uin, p_skey }) {
-    return await emotion_cgi_ic_getcomments(uin, p_skey, { topicId, hostUin, feedsType, start, num, sort })
+    return await emotion_cgi_ic_getcomments(uin, p_skey, {
+      topicId,
+      hostUin,
+      feedsType,
+      start,
+      num,
+      sort
+    })
+  }
+
+  async getFeedLikers(payload, { uin, p_skey }) {
+    return await get_like_list_app(uin, p_skey, payload)
+  }
+
+  async getShuoshuoComments(payload, { uin, p_skey }) {
+    return await emotion_cgi_getcmtreply_v6(uin, p_skey, payload)
   }
 
   // 顶部 5 类动态未读计数

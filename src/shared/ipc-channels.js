@@ -44,6 +44,8 @@ export const IPC_PHOTO = {
   GET_HOME_FEEDS: 'photo:getHomeFeeds',
   /** 拉好友动态某条 feed 的评论列表（emotion_cgi_ic_getcomments） */
   GET_FEED_COMMENTS: 'photo:getFeedComments',
+  GET_FEED_LIKERS: 'photo:getFeedLikers',
+  GET_SHUOSHUO_COMMENTS: 'photo:getShuoshuoComments',
   /** 顶部 5 类动态未读计数 */
   GET_FEEDS_COUNT: 'photo:getFeedsCount',
   /** 「与我相关」时间线（feeds2_html_pav_all） */

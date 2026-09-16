@@ -55,6 +55,12 @@ export function createPhotoHandlers(service) {
     [IPC_PHOTO.GET_FEED_COMMENTS]: async (_, { payload, headers }) => {
       return photoService.getFeedComments(payload, headers)
     },
+    [IPC_PHOTO.GET_FEED_LIKERS]: async (_, { payload, headers }) => {
+      return photoService.getFeedLikers(payload, headers)
+    },
+    [IPC_PHOTO.GET_SHUOSHUO_COMMENTS]: async (_, { payload, headers }) => {
+      return photoService.getShuoshuoComments(payload, headers)
+    },
     [IPC_PHOTO.GET_FEEDS_COUNT]: async (_, { payload, headers }) => {
       return photoService.getFeedsCount(payload, headers)
     },

@@ -84,6 +84,9 @@ try {
     getHomeFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_HOME_FEEDS, data, meta),
     // 拉某条好友动态的评论列表（顶层评论 + 子回复，预渲染 HTML）
     getFeedComments: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FEED_COMMENTS, data, meta),
+    getFeedLikers: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FEED_LIKERS, data, meta),
+    getShuoshuoComments: (data, meta) =>
+      ipcClient.call(IPC_PHOTO.GET_SHUOSHUO_COMMENTS, data, meta),
     // 顶部 5 类动态未读计数（动态 tab 角标）
     getFeedsCount: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FEEDS_COUNT, data, meta),
     // 「与我相关」时间线（feeds2_html_pav_all）

@@ -59,7 +59,6 @@ export const buildFeedExportText = (feed = {}, comments = []) => {
   const likers = Array.isArray(feed.likers) ? feed.likers : []
   const commentList = Array.isArray(comments) ? comments : []
   const loadedCommentCount = countFeedComments(commentList)
-  const reportedCommentCount = Number(feed.cmtCount) || loadedCommentCount
 
   lines.push(`作者：${author}`)
   if (time) lines.push(`时间：${time}`)
@@ -79,10 +78,11 @@ export const buildFeedExportText = (feed = {}, comments = []) => {
 
   lines.push('', `点赞：${Number(feed.likeCount) || 0}`)
   if (likers.length) {
-    lines.push(`接口已返回的点赞用户（${likers.length}）：${likers.map(personLabel).join('、')}`)
+    lines.push(`点赞者（${likers.length}）：${likers.map(personLabel).join('、')}`)
   }
+  if (Number(feed.viewCount) > 0) lines.push(`浏览：${Number(feed.viewCount)}`)
 
-  lines.push('', `评论（已提取 ${loadedCommentCount} / 接口统计 ${reportedCommentCount}）：`)
+  lines.push('', `评论与回复（${loadedCommentCount}）：`)
   lines.push(...(commentList.length ? commentLines(commentList) : ['（无）']))
 
   return lines.join('\n').trim()

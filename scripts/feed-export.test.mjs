@@ -18,8 +18,15 @@ test('feed export keeps complete text, original media and interaction details', 
       { type: 'photo', origin: 'https://example.com/original.jpg', thumb: 'thumb.jpg' },
       { type: 'video', url: 'https://example.com/video.mp4' }
     ],
-    likeCount: 3,
-    likers: [{ name: '点赞者', uin: '10003' }],
+    likeCount: 5,
+    likers: [
+      { name: '点赞者甲', uin: '10003' },
+      { name: '点赞者乙', uin: '10006' },
+      { name: '点赞者丙', uin: '10007' },
+      { name: '点赞者丁', uin: '10008' },
+      { name: '点赞者戊', uin: '10009' }
+    ],
+    viewCount: 24,
     cmtCount: 2
   }
   const comments = [
@@ -38,9 +45,11 @@ test('feed export keeps complete text, original media and interaction details', 
   assert.match(output, /正文 @好友/)
   assert.match(output, /\[图片\] https:\/\/example\.com\/original\.jpg/)
   assert.match(output, /\[视频\] https:\/\/example\.com\/video\.mp4/)
-  assert.match(output, /点赞：3/)
-  assert.match(output, /点赞者（QQ：10003）/)
-  assert.match(output, /评论（已提取 2 \/ 接口统计 2）/)
+  assert.match(output, /点赞：5/)
+  assert.match(output, /点赞者（5）：点赞者甲（QQ：10003）/)
+  assert.match(output, /浏览：24/)
+  assert.match(output, /评论与回复（2）/)
+  assert.doesNotMatch(output, /接口|0\/5/)
   assert.match(output, /回复者（QQ：10005） 回复 @评论者：收到/)
 })
 
