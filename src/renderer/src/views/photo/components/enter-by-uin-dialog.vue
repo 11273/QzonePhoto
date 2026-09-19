@@ -16,7 +16,7 @@
           <el-icon class="header-icon"><Search /></el-icon>
           <span>查找好友空间</span>
         </div>
-        <el-button text class="close-btn" @click="handleClose">
+        <el-button text class="close-btn" aria-label="关闭查找好友空间" @click="handleClose">
           <el-icon><Close /></el-icon>
         </el-button>
       </div>
@@ -113,7 +113,15 @@
                   {{ cardInfo.vipLevel }}
                 </span>
               </div>
-              <div class="hero-uin" @click="copyUin">
+              <div
+                class="hero-uin"
+                role="button"
+                tabindex="0"
+                aria-label="复制 QQ 号"
+                @click="copyUin"
+                @keydown.enter.prevent="copyUin"
+                @keydown.space.prevent="copyUin"
+              >
                 <span>QQ：{{ inputUin }}</span>
                 <el-icon class="copy-ico" title="复制"><DocumentCopy /></el-icon>
               </div>
@@ -576,7 +584,7 @@ const reset = () => {
 }
 
 .search-bar :deep(.el-input__wrapper.is-focus) {
-  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.5);
+  box-shadow: inset 0 0 0 1px var(--qz-active, #fb923c);
 }
 
 .search-bar :deep(.el-input__inner) {
@@ -585,14 +593,14 @@ const reset = () => {
 }
 
 .query-btn {
-  background: var(--ds-accent-blue, #60a5fa) !important;
+  background: var(--qz-action, #c2410c) !important;
   border: none !important;
   border-radius: 10px !important;
   padding: 0 22px !important;
   font-weight: 600 !important;
   box-shadow:
     var(--ds-shadow-md),
-    0 4px 12px rgba(96, 165, 250, 0.25);
+    0 4px 12px rgba(194, 65, 12, 0.25);
   transition: all 0.2s ease;
 }
 
@@ -600,7 +608,7 @@ const reset = () => {
   filter: brightness(1.08);
   box-shadow:
     var(--ds-shadow-md),
-    0 6px 16px rgba(96, 165, 250, 0.35);
+    0 6px 16px rgba(234, 88, 12, 0.32);
 }
 
 .query-btn:disabled {
@@ -769,6 +777,11 @@ const reset = () => {
 .hero-uin:hover {
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.85);
+}
+
+.hero-uin:focus-visible {
+  outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+  outline-offset: 2px;
 }
 
 .copy-ico {
@@ -954,23 +967,23 @@ const reset = () => {
 }
 
 .footer-link:hover {
-  color: #f87171 !important;
+  color: #93c5fd !important;
 }
 
 .enter-btn {
-  background: var(--ds-accent-blue, #60a5fa) !important;
+  background: var(--qz-action, #c2410c) !important;
   border: none !important;
   font-weight: 600 !important;
   box-shadow:
     var(--ds-shadow-md),
-    0 4px 12px rgba(96, 165, 250, 0.25);
+    0 4px 12px rgba(194, 65, 12, 0.25);
 }
 
 .enter-btn:hover:not(:disabled) {
   filter: brightness(1.08);
   box-shadow:
     var(--ds-shadow-md),
-    0 6px 16px rgba(96, 165, 250, 0.35);
+    0 6px 16px rgba(234, 88, 12, 0.32);
 }
 
 .enter-btn:disabled {

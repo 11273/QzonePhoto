@@ -243,6 +243,8 @@ export const createDemoQzoneAPI = (realApi) => ({
   getFeedLikers: async () => ({ code: 0, total: 0, likers: [], nextCursor: '0', hasMore: false }),
   getShuoshuoComments: async () => ({ code: 0, comments: [], hasMore: false }),
   getShuoshuo: async () => ({ code: 0, msglist: [] }),
+  getQQGroups: async () => ({ code: 0, data: { groupinfo: [] } }),
+  getQQGroupMembers: async () => ({ code: 0, data: { groupmeminfo: {} } }),
   getVideoList: async () => ({
     code: 0,
     data: {
@@ -276,6 +278,24 @@ export const createDemoQzoneAPI = (realApi) => ({
   },
   download: {
     ...realApi.download,
+    startContactBackup: async () => ({ taskId: 'demo-contact-backup' }),
+    updateContactBackup: noop,
+    finishContactBackup: async () => ({
+      directory: '/Users/demo/Pictures/企鹅相册/联系人备份/2026-09-19_08-09-10_全部联系人',
+      fileNames: [
+        '联系人总览_2026-09-19_08-09-10.html',
+        '备份说明_2026-09-19_08-09-10.txt',
+        '联系人数据_2026-09-19_08-09-10.json',
+        '联系人汇总_12条.csv',
+        '好友/好友名单_2026-09-19_08-09-10.html',
+        '好友/好友分组_3组.csv',
+        '群/群与成员_2026-09-19_08-09-10.html',
+        '亲密度/亲密度名单_2026-09-19_08-09-10.html'
+      ],
+      warningCount: 0
+    }),
+    failContactBackup: noop,
+    openContactBackupOverview: async () => ({ success: true }),
     getTasks: async () => downloadTasks,
     getActiveTasks: async () => downloadTasks.filter((task) => task.status === 'downloading'),
     getStats: async () => ({

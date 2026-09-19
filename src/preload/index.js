@@ -103,6 +103,10 @@ try {
     getFriendList: (data, meta) => ipcClient.call(IPC_FRIEND.GET_FRIEND_LIST, data, meta),
     // 获取 QQ 好友及分组
     getQQFriends: (data, meta) => ipcClient.call(IPC_FRIEND.GET_QQ_FRIENDS, data, meta),
+    // 获取当前账号可见的 QQ 群
+    getQQGroups: (data, meta) => ipcClient.call(IPC_FRIEND.GET_QQ_GROUPS, data, meta),
+    // 获取指定 QQ 群成员
+    getQQGroupMembers: (data, meta) => ipcClient.call(IPC_FRIEND.GET_QQ_GROUP_MEMBERS, data, meta),
     // 获取好友个人名片（真实姓名、亲密度、星座等）
     getPersonalCard: (data, meta) => ipcClient.call(IPC_USER.PERSONAL_CARD, data, meta),
     // 获取访客在线状态
@@ -127,6 +131,10 @@ try {
       addTask: (options) => ipcClient.call(IPC_DOWNLOAD.ADD_TASK, options),
       addAlbum: (albumData) => ipcClient.call(IPC_DOWNLOAD.ADD_ALBUM, albumData),
       addFeeds: (feedsData) => ipcClient.call(IPC_DOWNLOAD.ADD_FEEDS, feedsData),
+      startContactBackup: (options) => ipcClient.call(IPC_DOWNLOAD.START_CONTACT_BACKUP, options),
+      updateContactBackup: (data) => ipcClient.call(IPC_DOWNLOAD.UPDATE_CONTACT_BACKUP, data),
+      finishContactBackup: (data) => ipcClient.call(IPC_DOWNLOAD.FINISH_CONTACT_BACKUP, data),
+      failContactBackup: (data) => ipcClient.call(IPC_DOWNLOAD.FAIL_CONTACT_BACKUP, data),
       getTasks: (params = {}) => ipcClient.call(IPC_DOWNLOAD.GET_TASKS, params),
       getActiveTasks: () => ipcClient.call(IPC_DOWNLOAD.GET_ACTIVE_TASKS),
       getStats: () => ipcClient.call(IPC_DOWNLOAD.GET_STATS),
@@ -145,6 +153,8 @@ try {
       // 文件操作
       selectDirectory: () => ipcClient.call(IPC_DOWNLOAD.SELECT_DIRECTORY),
       openFolder: (folderPath) => ipcClient.call(IPC_DOWNLOAD.OPEN_FOLDER, { folderPath }),
+      openContactBackupOverview: (taskId) =>
+        ipcClient.call(IPC_DOWNLOAD.OPEN_CONTACT_BACKUP_OVERVIEW, { taskId }),
       getDefaultPath: () => ipcClient.call(IPC_DOWNLOAD.GET_DEFAULT_PATH),
       setDefaultPath: (path) => ipcClient.call(IPC_DOWNLOAD.SET_DEFAULT_PATH, path),
 

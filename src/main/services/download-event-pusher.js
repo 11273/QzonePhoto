@@ -465,14 +465,14 @@ export class DownloadEventPusher {
   }
 
   // 推送分页任务列表（响应前端请求）
-  async pushTasksPage(mainWindow, page = 1, pageSize = 50, status = null) {
+  async pushTasksPage(mainWindow, page = 1, pageSize = 50, status = null, sort = null) {
     try {
       // 检查下载服务和数据库是否就绪
       if (!this.downloadService || !this.downloadService.dbInitialized) {
         return { tasks: [], pagination: { page: 1, pageSize, total: 0, totalPages: 0 } }
       }
 
-      const result = this.downloadService.getTasks(page, pageSize, status)
+      const result = this.downloadService.getTasks(page, pageSize, status, sort)
       mainWindow.webContents.send(IPC_DOWNLOAD.TASKS_PAGE, result)
       return result
     } catch (error) {
@@ -482,7 +482,7 @@ export class DownloadEventPusher {
   }
 
   // 请求分页任务列表（供IPC调用）
-  async requestTasksPage(page = 1, pageSize = 50, status = null) {
+  async requestTasksPage(page = 1, pageSize = 50, status = null, sort = null) {
     try {
       // 检查下载服务和数据库是否就绪
       if (!this.downloadService || !this.downloadService.dbInitialized) {
@@ -491,7 +491,7 @@ export class DownloadEventPusher {
 
       const mainWindow = windowManager.getMainWindow()
       if (mainWindow && !mainWindow.isDestroyed()) {
-        return await this.pushTasksPage(mainWindow, page, pageSize, status)
+        return await this.pushTasksPage(mainWindow, page, pageSize, status, sort)
       }
       return { tasks: [], pagination: { page: 1, pageSize, total: 0, totalPages: 0 } }
     } catch (error) {

@@ -2,15 +2,23 @@
   <div class="friend-drawer" :class="{ expanded: isExpanded }">
     <!-- 遮罩（展开时点击关闭） -->
     <transition name="overlay-fade">
-      <div v-if="isExpanded" class="drawer-overlay" @click="isExpanded = false"></div>
+      <button
+        v-if="isExpanded"
+        class="drawer-overlay"
+        type="button"
+        aria-label="关闭好友面板"
+        @click="closeDrawer"
+      ></button>
     </transition>
 
     <!-- 触发按钮 -->
-    <div class="drawer-trigger" @click="toggleDrawer">
+    <div class="drawer-trigger" :class="{ compact: activeFriend }">
       <div class="drawer-back-slot" :class="{ visible: activeFriend }">
         <button
           class="drawer-back-btn"
+          type="button"
           title="返回我的空间"
+          aria-label="直接返回我的空间"
           :aria-hidden="!activeFriend"
           :tabindex="activeFriend ? 0 : -1"
           :disabled="!activeFriend"
@@ -19,24 +27,119 @@
           <el-icon><ArrowLeft /></el-icon>
         </button>
       </div>
-      <div class="trigger-bar" :class="{ active: isExpanded }">
-        <svg class="trigger-heart" viewBox="0 0 16 16" fill="currentColor">
-          <path
-            d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"
-          />
-        </svg>
-        <span class="trigger-label">好友</span>
-        <el-icon class="trigger-arrow" :class="{ flipped: isExpanded }">
-          <ArrowUp />
-        </el-icon>
+      <div class="contact-trigger-group" role="group" aria-label="联系人">
+        <button
+          class="trigger-bar"
+          :class="{
+            active: isExpanded && friendStore.currentScope === CONTACT_SCOPE.FRIENDS
+          }"
+          type="button"
+          aria-label="好友"
+          title="好友"
+          :aria-expanded="isExpanded && friendStore.currentScope === CONTACT_SCOPE.FRIENDS"
+          aria-controls="friend-drawer-panel"
+          @click="toggleDrawer(CONTACT_SCOPE.FRIENDS)"
+        >
+          <Users :size="14" class="trigger-icon friend" />
+          <span class="trigger-label">好友</span>
+        </button>
+        <button
+          class="trigger-bar"
+          :class="{
+            active: isExpanded && friendStore.currentScope === CONTACT_SCOPE.GROUPS
+          }"
+          type="button"
+          aria-label="群"
+          title="群"
+          :aria-expanded="isExpanded && friendStore.currentScope === CONTACT_SCOPE.GROUPS"
+          aria-controls="friend-drawer-panel"
+          @click="toggleDrawer(CONTACT_SCOPE.GROUPS)"
+        >
+          <UsersRound :size="14" class="trigger-icon group" />
+          <span class="trigger-label">群</span>
+        </button>
+        <button
+          class="trigger-bar"
+          :class="{
+            active: isExpanded && friendStore.currentScope === CONTACT_SCOPE.INTIMACY
+          }"
+          type="button"
+          aria-label="亲密度"
+          title="亲密度"
+          :aria-expanded="isExpanded && friendStore.currentScope === CONTACT_SCOPE.INTIMACY"
+          aria-controls="friend-drawer-panel"
+          @click="toggleDrawer(CONTACT_SCOPE.INTIMACY)"
+        >
+          <HeartHandshake :size="14" class="trigger-icon intimacy" />
+          <span class="trigger-label">亲密度</span>
+        </button>
       </div>
     </div>
 
     <!-- 展开面板 — 绝对定位向上展开，不影响布局 -->
     <transition name="panel-slide">
-      <div v-show="isExpanded" class="drawer-panel">
+      <div
+        v-show="isExpanded"
+        id="friend-drawer-panel"
+        class="drawer-panel"
+        role="region"
+        :aria-label="drawerPanelLabel"
+      >
+        <div class="contact-panel-heading">
+          <span class="contact-panel-icon">
+            <Users v-if="friendStore.currentScope === CONTACT_SCOPE.FRIENDS" :size="15" />
+            <UsersRound v-else-if="friendStore.currentScope === CONTACT_SCOPE.GROUPS" :size="15" />
+            <HeartHandshake v-else :size="15" />
+          </span>
+          <div class="contact-panel-heading-text">
+            <strong>{{ contactScopeTitle }}</strong>
+            <span :title="contactScopeSummary">{{ contactScopeSummary }}</span>
+          </div>
+          <el-dropdown
+            placement="bottom-end"
+            trigger="click"
+            popper-class="contact-backup-popper"
+            :disabled="backupBusy"
+            @command="handleContactBackup"
+          >
+            <button
+              class="contact-backup-btn"
+              type="button"
+              :disabled="backupBusy"
+              aria-label="选择联系人名单备份范围"
+              title="备份好友、群成员或亲密度名单，不包含相册"
+            >
+              <el-icon v-if="backupBusy" class="is-loading"><Loading /></el-icon>
+              <DatabaseBackup v-else :size="13" />
+              <span>{{ backupButtonText }}</span>
+              <ChevronDown v-if="!backupBusy" :size="11" />
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-for="option in contactBackupOptions"
+                  :key="option.command"
+                  :command="option.command"
+                  :disabled="option.disabled"
+                  :divided="option.divided"
+                >
+                  <div class="contact-backup-option">
+                    <strong>{{ option.label }}</strong>
+                    <span>{{ option.description }}</span>
+                  </div>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+
         <!-- 批量下载分组进度条（贴顶，跨整个面板宽度） -->
-        <div v-if="batchActive" class="batch-progress-strip">
+        <div
+          v-if="batchActive && friendStore.currentScope === CONTACT_SCOPE.FRIENDS"
+          class="batch-progress-strip"
+          role="status"
+          aria-live="polite"
+        >
           <div class="batch-progress-info">
             <el-icon class="batch-spinner is-loading"><Loading /></el-icon>
             <div class="batch-progress-texts">
@@ -54,6 +157,7 @@
             </div>
             <button
               class="batch-cancel-btn"
+              type="button"
               :disabled="batchCancelling"
               @click="cancelBatchDownload"
             >
@@ -69,21 +173,21 @@
         </div>
 
         <!-- 顶层 Tab -->
-        <div class="drawer-sub-tabs">
-          <div
-            class="sub-tab"
-            :class="{ active: friendStore.currentTab === FRIEND_TAB.QQ_GROUP }"
-            @click="friendStore.switchTab(FRIEND_TAB.QQ_GROUP)"
-          >
-            <svg class="tab-heart" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M2 3h12v2H2V3zm0 4h12v2H2V7zm0 4h12v2H2v-2z" />
-            </svg>
-            <span>分组</span>
-          </div>
-          <div
+        <div
+          v-if="friendStore.currentScope === CONTACT_SCOPE.INTIMACY"
+          class="drawer-sub-tabs"
+          role="tablist"
+          aria-label="亲密度分类"
+        >
+          <button
             class="sub-tab"
             :class="{ active: friendStore.currentTab === FRIEND_TAB.CARE }"
+            type="button"
+            role="tab"
+            :aria-selected="friendStore.currentTab === FRIEND_TAB.CARE"
+            :tabindex="friendStore.currentTab === FRIEND_TAB.CARE ? 0 : -1"
             @click="friendStore.switchTab(FRIEND_TAB.CARE)"
+            @keydown="handleDrawerTabKeydown($event, 0)"
           >
             <svg class="tab-heart" viewBox="0 0 16 16" fill="currentColor">
               <path
@@ -91,11 +195,16 @@
               />
             </svg>
             <span>我在意谁</span>
-          </div>
-          <div
+          </button>
+          <button
             class="sub-tab"
             :class="{ active: friendStore.currentTab === FRIEND_TAB.CARE_BY }"
+            type="button"
+            role="tab"
+            :aria-selected="friendStore.currentTab === FRIEND_TAB.CARE_BY"
+            :tabindex="friendStore.currentTab === FRIEND_TAB.CARE_BY ? 0 : -1"
             @click="friendStore.switchTab(FRIEND_TAB.CARE_BY)"
+            @keydown="handleDrawerTabKeydown($event, 1)"
           >
             <svg class="tab-heart" viewBox="0 0 16 16" fill="currentColor">
               <path
@@ -103,16 +212,23 @@
               />
             </svg>
             <span>谁在意我</span>
-          </div>
+          </button>
         </div>
 
         <!-- 分组选择器（仅 QQ 分组 Tab 下显示） -->
-        <div v-if="friendStore.currentTab === FRIEND_TAB.QQ_GROUP" class="drawer-group-select">
+        <div
+          v-if="
+            friendStore.currentScope === CONTACT_SCOPE.FRIENDS &&
+            friendStore.currentTab === FRIEND_TAB.QQ_GROUP
+          "
+          class="drawer-group-select"
+        >
           <el-select
-            v-model="friendStore.selectedGroupId"
+            :model-value="friendStore.selectedGroupId"
             size="small"
             placement="bottom-start"
             popper-class="friend-group-popper"
+            @change="handleFriendGroupChange"
           >
             <el-option
               v-for="opt in friendStore.groupOptions"
@@ -122,55 +238,113 @@
             />
           </el-select>
           <el-tooltip
-            v-if="canBatchDownload"
-            :content="`下载分组「${currentGroupName}」全部好友相册（${batchScopeCount} 人）`"
+            :content="
+              canBatchDownload
+                ? `下载分组「${currentGroupName}」的好友相册（${batchScopeCount} 人）`
+                : '请先选择一个具体好友分组'
+            "
             placement="top"
             :show-after="300"
           >
             <button
               class="batch-group-btn"
+              type="button"
               :class="{ active: batchActive }"
-              :disabled="batchActive"
+              :disabled="!canBatchDownload || batchActive"
+              :aria-label="`下载分组 ${currentGroupName} 的全部好友相册`"
               @click="handleBatchDownload"
             >
-              <el-icon><Download /></el-icon>
+              <Images :size="13" />
+              <span>相册下载</span>
             </button>
           </el-tooltip>
+        </div>
+
+        <div v-if="friendStore.currentScope === CONTACT_SCOPE.GROUPS" class="drawer-group-select">
+          <el-select
+            :model-value="friendStore.selectedQQGroup?.id || ''"
+            size="small"
+            placement="bottom-start"
+            popper-class="friend-group-popper"
+            placeholder="选择群"
+            filterable
+            @change="friendStore.selectQQGroupById"
+          >
+            <el-option
+              v-for="group in friendStore.qqGroups"
+              :key="group.id"
+              :value="group.id"
+              :label="groupOptionLabel(group)"
+            />
+          </el-select>
         </div>
 
         <!-- 搜索 + 输入 QQ 号入口 -->
         <div class="drawer-search">
           <el-input
             v-model="friendStore.searchQuery"
-            placeholder="搜索备注/昵称/QQ号..."
+            :placeholder="searchPlaceholder"
             :prefix-icon="Search"
             size="small"
             clearable
+            @input="handleContactSearchInput"
           />
-          <el-tooltip content="输入 QQ 号进入任意空间" placement="top" :show-after="300">
-            <button class="enter-by-uin-btn" @click="enterByUinVisible = true">
-              <el-icon><Plus /></el-icon>
+          <el-tooltip content="查找 QQ 号并进入好友空间" placement="top" :show-after="300">
+            <button
+              class="enter-by-uin-btn"
+              type="button"
+              aria-label="查找 QQ 号并进入好友空间"
+              @click="enterByUinVisible = true"
+            >
+              <UserSearch :size="15" />
             </button>
           </el-tooltip>
         </div>
 
         <!-- 好友列表 -->
-        <div class="drawer-list">
-          <div v-if="friendStore.loading" class="drawer-loading">
+        <div
+          v-if="friendStore.currentScope !== CONTACT_SCOPE.GROUPS"
+          ref="contactListRef"
+          class="drawer-list"
+          @scroll.passive="handleContactListScroll"
+        >
+          <div
+            v-if="
+              friendStore.loading ||
+              (!friendStore.currentListLoaded && !friendStore.currentListError)
+            "
+            class="drawer-loading"
+            role="status"
+            aria-live="polite"
+          >
             <el-icon class="is-loading"><Loading /></el-icon>
-            <span>加载中...</span>
+            <span>正在加载名单...</span>
           </div>
           <template v-else>
-            <div v-if="friendStore.tabLoading" class="tab-loading-overlay">
+            <div
+              v-if="friendStore.tabLoading"
+              class="tab-loading-overlay"
+              role="status"
+              aria-label="正在加载好友列表"
+            >
               <el-icon class="is-loading"><Loading /></el-icon>
+            </div>
+            <div v-if="friendStore.currentListError" class="drawer-error" role="alert">
+              <span>{{ friendStore.currentListError }}</span>
+              <button type="button" @click="friendStore.retryCurrentList()">重试</button>
             </div>
             <div
               v-for="friend in friendStore.filteredList"
               :key="friend.uin"
               class="drawer-friend-item"
               :class="{ active: activeFriend?.uin === friend.uin }"
+              role="button"
+              tabindex="0"
+              :aria-current="activeFriend?.uin === friend.uin ? 'true' : undefined"
               :title="`${friend.name}（${friend.uin}）— 右键复制 QQ 号`"
               @click="handleEnter(friend)"
+              @keydown.enter.prevent="handleEnter(friend)"
+              @keydown.space.prevent="handleEnter(friend)"
               @contextmenu.prevent="copyToClipboard(friend.uin, 'QQ 号')"
             >
               <el-avatar :size="30" :src="avatarUrl(friend)">
@@ -203,11 +377,84 @@
                 <span class="score-value">{{ friend.score }}</span>
               </div>
             </div>
-            <div v-if="friendStore.filteredList.length === 0" class="drawer-empty">
-              暂无匹配好友
+            <div
+              v-if="friendStore.filteredList.length === 0 && !friendStore.currentListError"
+              class="drawer-empty"
+            >
+              {{ friendStore.currentScope === CONTACT_SCOPE.FRIENDS ? '暂无匹配好友' : '暂无记录' }}
             </div>
           </template>
         </div>
+
+        <template v-else>
+          <div
+            ref="contactListRef"
+            class="drawer-list group-list"
+            @scroll.passive="handleContactListScroll"
+          >
+            <div
+              v-if="friendStore.groupLoading || friendStore.groupMembersLoading"
+              class="drawer-loading"
+              role="status"
+              aria-live="polite"
+            >
+              <el-icon class="is-loading"><Loading /></el-icon>
+              <span>{{ friendStore.groupLoading ? '正在加载群...' : '正在加载群成员...' }}</span>
+            </div>
+            <template v-else>
+              <div v-if="friendStore.groupError" class="drawer-error" role="alert">
+                <span>{{ friendStore.groupError }}</span>
+                <button type="button" @click="friendStore.retryQQGroups()">重试</button>
+              </div>
+
+              <template v-if="friendStore.selectedQQGroup">
+                <div
+                  v-for="member in friendStore.visibleQQGroupMembers"
+                  :key="member.uin"
+                  class="drawer-friend-item"
+                  :class="{ active: activeFriend?.uin === member.uin }"
+                  role="button"
+                  tabindex="0"
+                  :aria-current="activeFriend?.uin === member.uin ? 'true' : undefined"
+                  :title="`${primaryName(member) || `QQ ${member.uin}`} — 进入空间`"
+                  @click="handleGroupMemberEnter(member)"
+                  @keydown.enter.prevent="handleGroupMemberEnter(member)"
+                  @keydown.space.prevent="handleGroupMemberEnter(member)"
+                  @contextmenu.prevent="copyToClipboard(member.uin, 'QQ 号')"
+                >
+                  <el-avatar :size="30" :src="avatarUrl(member)">
+                    {{ stripEmoji(primaryName(member))?.[0] || '?' }}
+                  </el-avatar>
+                  <div class="friend-detail">
+                    <div class="friend-name">
+                      {{ primaryName(member) || `QQ ${member.uin}` }}
+                    </div>
+                    <div v-if="secondaryName(member)" class="friend-sub">
+                      {{ secondaryName(member) }}
+                    </div>
+                  </div>
+                  <ChevronRight :size="13" class="qq-group-chevron" />
+                </div>
+                <div
+                  v-if="!friendStore.groupError && friendStore.filteredQQGroupMembers.length === 0"
+                  class="drawer-empty"
+                >
+                  暂无可见群成员
+                </div>
+                <button
+                  v-if="friendStore.hasMoreQQGroupMembers"
+                  class="group-load-more"
+                  type="button"
+                  @click="friendStore.loadMoreQQGroupMembers()"
+                >
+                  继续加载
+                  <span>{{ groupMemberProgress }}</span>
+                </button>
+              </template>
+              <div v-else-if="!friendStore.groupError" class="drawer-empty">暂无可见群</div>
+            </template>
+          </div>
+        </template>
       </div>
     </transition>
 
@@ -217,10 +464,20 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowUp, ArrowLeft, Search, Plus, Loading, Download } from '@element-plus/icons-vue'
-import { useFriendStore, FRIEND_TAB } from '@renderer/store/friend.store'
+import { ArrowLeft, Search, Loading } from '@element-plus/icons-vue'
+import {
+  ChevronDown,
+  ChevronRight,
+  DatabaseBackup,
+  HeartHandshake,
+  Images,
+  Users,
+  UserSearch,
+  UsersRound
+} from '@lucide/vue'
+import { useFriendStore, FRIEND_TAB, CONTACT_SCOPE } from '@renderer/store/friend.store'
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
 import { copyToClipboard, generateUniqueAlbumName } from '@renderer/utils'
@@ -239,8 +496,111 @@ const downloadStore = useDownloadStore()
 
 const isExpanded = ref(false)
 const enterByUinVisible = ref(false)
+const backupStarting = ref(false)
+const contactListRef = ref(null)
+
+const drawerPanelLabel = computed(() => {
+  if (friendStore.currentScope === CONTACT_SCOPE.GROUPS) return '群面板'
+  if (friendStore.currentScope === CONTACT_SCOPE.INTIMACY) return '亲密度面板'
+  return '好友面板'
+})
+
+const contactScopeTitle = computed(() => {
+  if (friendStore.currentScope === CONTACT_SCOPE.GROUPS) return '群成员'
+  if (friendStore.currentScope === CONTACT_SCOPE.INTIMACY) return '亲密度'
+  return '好友列表'
+})
+
+const contactScopeSummary = computed(() => {
+  if (friendStore.currentScope === CONTACT_SCOPE.GROUPS) {
+    return friendStore.selectedQQGroup
+      ? friendStore.qqGroups.length + ' 个群 · ' + friendStore.groupMembers.length + ' 位可见成员'
+      : friendStore.qqGroups.length + ' 个群'
+  }
+  if (friendStore.currentScope === CONTACT_SCOPE.INTIMACY) {
+    return '在意 ' + friendStore.careList.length + ' · 被在意 ' + friendStore.careByList.length
+  }
+  return friendStore.friends.length + ' 位好友'
+})
+
+const backupBusy = computed(() => backupStarting.value)
+const backupButtonText = computed(() => (backupStarting.value ? '备份中' : '名单备份'))
+const contactBackupOptions = computed(() => {
+  const allContacts = {
+    command: 'all',
+    label: '全部联系人资料',
+    description: '好友、群成员和亲密度，不含相册',
+    divided: true
+  }
+
+  if (friendStore.currentScope === CONTACT_SCOPE.GROUPS) {
+    return [
+      {
+        command: 'groups',
+        label: '全部群与成员',
+        description: '所有群列表和可见成员，不含相册'
+      },
+      {
+        command: 'current-group',
+        label: '当前群成员',
+        description: friendStore.selectedQQGroup
+          ? `仅备份「${friendStore.selectedQQGroup.name}」的可见成员`
+          : '请先选择一个群',
+        disabled: !friendStore.selectedQQGroup
+      },
+      allContacts
+    ]
+  }
+
+  if (friendStore.currentScope === CONTACT_SCOPE.INTIMACY) {
+    const currentLabel = friendStore.currentTab === FRIEND_TAB.CARE ? '我在意谁' : '谁在意我'
+    return [
+      {
+        command: 'intimacy',
+        label: '全部亲密度名单',
+        description: '包含「我在意谁」和「谁在意我」'
+      },
+      {
+        command: 'current-intimacy',
+        label: '当前亲密度名单',
+        description: `只备份「${currentLabel}」`
+      },
+      allContacts
+    ]
+  }
+
+  const selectedGroupIsSpecific = friendStore.selectedGroupId !== friendStore.ALL_GROUP_ID
+  return [
+    {
+      command: 'friends',
+      label: '全部好友名单',
+      description: '备份所有好友分组，不含相册'
+    },
+    {
+      command: 'current-friend-group',
+      label: '当前好友分组',
+      description: selectedGroupIsSpecific
+        ? `仅备份「${currentGroupName.value}」名单，不含相册`
+        : '请先选择一个具体分组',
+      disabled: !selectedGroupIsSpecific
+    },
+    allContacts
+  ]
+})
+const searchPlaceholder = computed(() =>
+  friendStore.currentScope === CONTACT_SCOPE.GROUPS
+    ? '搜索群成员昵称或 QQ 号...'
+    : '搜索备注、昵称或 QQ 号...'
+)
+const groupMemberProgress = computed(
+  () => friendStore.visibleQQGroupMembers.length + '/' + friendStore.filteredQQGroupMembers.length
+)
+
+const groupOptionLabel = (group) =>
+  Number.isFinite(group.memberCount) ? group.name + ' (' + group.memberCount + ')' : group.name
 
 const handleEnterFromUin = (friend) => {
+  rememberContactListPosition()
   emit('enter-friend', friend)
   isExpanded.value = false
 }
@@ -258,7 +618,10 @@ const batchProgress = ref({
   failedFriends: 0
 })
 
-const batchScopeCount = computed(() => friendStore.filteredList.length)
+const batchScopeFriends = computed(() =>
+  friendStore.friends.filter((friend) => friend.groupid === friendStore.selectedGroupId)
+)
+const batchScopeCount = computed(() => batchScopeFriends.value.length)
 
 const canBatchDownload = computed(
   () =>
@@ -280,7 +643,7 @@ const batchProgressPercent = computed(() => {
 
 const handleBatchDownload = async () => {
   if (!canBatchDownload.value || batchActive.value) return
-  const friends = friendStore.filteredList.slice()
+  const friends = batchScopeFriends.value.slice()
   if (!friends.length) return
 
   try {
@@ -521,21 +884,129 @@ const renderName = (name) => {
 }
 // 有备注：备注为主、昵称为辅；无备注：只显示昵称
 const primaryName = (f) => (f.remark?.trim() ? f.remark : f.name || '')
-const secondaryName = (f) => (f.remark?.trim() ? f.name || '' : '')
+const secondaryName = (f) =>
+  f.remark?.trim() && f.name?.trim() && f.remark.trim() !== f.name.trim() ? f.name : ''
 // QQ 接口返回 /30 小图，渲染时升级为 /100
 const avatarUrl = (friend) => (friend.img || '').replace(/\/30(\?|$)/, '/100$1')
 
-const toggleDrawer = () => {
-  isExpanded.value = !isExpanded.value
-  if (isExpanded.value && !friendStore.qqLoaded) {
-    // 等面板滑入动画完成后再加载，避免 loading 状态变化导致动画卡顿
-    setTimeout(() => friendStore.fetchQQFriends(), 350)
+const handleContactListScroll = (event) => {
+  const target = event.currentTarget
+  friendStore.setScopeScrollPosition(friendStore.currentScope, target.scrollTop)
+  if (friendStore.currentScope !== CONTACT_SCOPE.GROUPS) return
+  if (target.scrollTop + target.clientHeight >= target.scrollHeight - 72) {
+    friendStore.loadMoreQQGroupMembers()
   }
 }
 
+const rememberContactListPosition = () => {
+  if (!contactListRef.value) return
+  friendStore.setScopeScrollPosition(friendStore.currentScope, contactListRef.value.scrollTop)
+}
+
+const restoreContactListPosition = async (scope = friendStore.currentScope) => {
+  await nextTick()
+  if (!isExpanded.value || friendStore.currentScope !== scope || !contactListRef.value) return
+  contactListRef.value.scrollTop = friendStore.scopeScrollPositions[scope] || 0
+}
+
+const resetContactListPosition = async (scope = friendStore.currentScope) => {
+  friendStore.setScopeScrollPosition(scope, 0)
+  await nextTick()
+  if (friendStore.currentScope === scope && contactListRef.value) {
+    contactListRef.value.scrollTop = 0
+  }
+}
+
+const closeDrawer = () => {
+  rememberContactListPosition()
+  isExpanded.value = false
+}
+
+const handleContactSearchInput = (value) => {
+  const scope = friendStore.currentScope
+  friendStore.setScopeSearchQuery(scope, value)
+  if (scope === CONTACT_SCOPE.GROUPS) friendStore.resetQQGroupMemberPagination()
+  resetContactListPosition(scope)
+}
+
+const handleFriendGroupChange = (groupId) => {
+  friendStore.selectGroup(groupId)
+  resetContactListPosition(CONTACT_SCOPE.FRIENDS)
+}
+
+const toggleDrawer = async (scope = friendStore.currentScope) => {
+  if (isExpanded.value && friendStore.currentScope === scope) {
+    closeDrawer()
+    return
+  }
+
+  if (isExpanded.value) rememberContactListPosition()
+  isExpanded.value = true
+  await friendStore.switchScope(scope)
+  await restoreContactListPosition(scope)
+  if (scope === CONTACT_SCOPE.FRIENDS && !friendStore.qqLoaded) {
+    // 等面板滑入动画完成后再加载，避免 loading 状态变化导致动画卡顿
+    setTimeout(async () => {
+      await friendStore.fetchQQFriends()
+      await restoreContactListPosition(scope)
+    }, 350)
+  }
+}
+
+const drawerTabs = [FRIEND_TAB.CARE, FRIEND_TAB.CARE_BY]
+const handleDrawerTabKeydown = (event, currentIndex) => {
+  const key = event.key
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) return
+  event.preventDefault()
+
+  let nextIndex = currentIndex
+  if (key === 'Home') nextIndex = 0
+  else if (key === 'End') nextIndex = drawerTabs.length - 1
+  else if (key === 'ArrowLeft')
+    nextIndex = (currentIndex - 1 + drawerTabs.length) % drawerTabs.length
+  else nextIndex = (currentIndex + 1) % drawerTabs.length
+
+  friendStore.switchTab(drawerTabs[nextIndex])
+  event.currentTarget.parentElement?.querySelectorAll('[role="tab"]')?.[nextIndex]?.focus()
+}
+
 const handleEnter = (friend) => {
+  rememberContactListPosition()
   emit('enter-friend', friend)
   isExpanded.value = false
+}
+
+const handleGroupMemberEnter = (member) => {
+  handleEnter({
+    ...member,
+    name: member.name || member.remark || `QQ ${member.uin}`,
+    source: 'qq-group',
+    groupName: friendStore.selectedQQGroup?.name || ''
+  })
+}
+
+const handleContactBackup = async (scope = 'all') => {
+  if (backupBusy.value) return
+  backupStarting.value = true
+  try {
+    const result = await friendStore.startContactBackup(scope, {
+      onTaskCreated: () => downloadStore.showManager()
+    })
+    if (!result.success) {
+      ElMessage.error(result.message)
+      return
+    }
+    const fileCount = result?.fileNames?.length || 0
+    if (result?.warningCount) {
+      ElMessage.warning(
+        `已保存 ${fileCount} 个文件；${result.warningCount} 项暂时无法读取，其他可用内容已保留`
+      )
+    } else {
+      ElMessage.success(`已保存 ${fileCount} 个备份文件，可在下载管理中打开位置`)
+    }
+  } finally {
+    backupStarting.value = false
+  }
 }
 
 defineExpose({ toggleDrawer })
@@ -553,6 +1024,9 @@ defineExpose({ toggleDrawer })
   position: fixed;
   inset: 0;
   z-index: 90;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .overlay-fade-enter-active,
@@ -566,9 +1040,17 @@ defineExpose({ toggleDrawer })
 
 /* ===== 触发按钮 ===== */
 .drawer-trigger {
+  position: relative;
+  z-index: 101;
   padding: 6px 8px 8px;
   display: flex;
   align-items: center;
+  border-radius: var(--ds-radius-lg);
+}
+
+.drawer-trigger:focus-visible {
+  outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+  outline-offset: -2px;
 }
 
 .drawer-back-slot {
@@ -600,10 +1082,12 @@ defineExpose({ toggleDrawer })
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(96, 165, 250, 0.54);
   border-radius: var(--ds-radius-lg);
-  border: 1px solid rgba(96, 165, 250, 0.28);
-  background: linear-gradient(135deg, rgba(96, 165, 250, 0.08) 0%, rgba(96, 165, 250, 0.03) 100%);
-  color: rgba(255, 255, 255, 0.58);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.26), rgba(59, 130, 246, 0.1));
+  box-shadow: inset 3px 0 0 #60a5fa;
+  color: #bfdbfe;
   cursor: pointer;
   transition: var(--ds-transition-all);
 }
@@ -613,26 +1097,41 @@ defineExpose({ toggleDrawer })
 }
 
 .drawer-back-btn:hover {
-  color: #60a5fa;
-  border-color: rgba(96, 165, 250, 0.5);
-  background: linear-gradient(135deg, rgba(96, 165, 250, 0.16) 0%, rgba(96, 165, 250, 0.06) 100%);
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.06);
+  color: #fff;
+  border-color: rgba(96, 165, 250, 0.78);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.36), rgba(59, 130, 246, 0.16));
+  box-shadow:
+    inset 3px 0 0 #93c5fd,
+    0 0 0 3px rgba(96, 165, 250, 0.08);
 }
 
 .drawer-back-btn .el-icon {
-  font-size: 14px;
+  font-size: 15px;
+}
+
+.contact-trigger-group {
+  width: 100%;
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
 }
 
 .trigger-bar {
-  flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
+  justify-content: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 7px 6px;
+  appearance: none;
   border-radius: var(--ds-radius-lg);
   border: 1px solid rgba(96, 165, 250, 0.28);
   background: linear-gradient(135deg, rgba(96, 165, 250, 0.08) 0%, rgba(96, 165, 250, 0.03) 100%);
+  color: rgba(255, 255, 255, 0.58);
+  font: inherit;
   cursor: pointer;
   transition: var(--ds-transition-all);
   user-select: none;
@@ -640,41 +1139,42 @@ defineExpose({ toggleDrawer })
 
 .trigger-bar:hover,
 .trigger-bar.active {
-  border-color: rgba(96, 165, 250, 0.5);
-  background: linear-gradient(135deg, rgba(96, 165, 250, 0.16) 0%, rgba(96, 165, 250, 0.06) 100%);
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.06);
+  border-color: var(--qz-active-border, rgba(251, 146, 60, 0.38));
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.16) 0%, rgba(249, 115, 22, 0.06) 100%);
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.06);
 }
 
-.trigger-heart {
-  width: 12px;
-  height: 12px;
-  color: #f87171;
+.trigger-icon {
   flex-shrink: 0;
+}
+
+.trigger-icon.friend {
+  color: #f87171;
+}
+
+.trigger-icon.group {
+  color: #60a5fa;
+}
+
+.trigger-icon.intimacy {
+  color: #fb923c;
 }
 
 .trigger-label {
-  flex: 1;
-  font-size: 12px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.trigger-arrow {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.2);
-  flex-shrink: 0;
-  transition:
-    transform 0.3s ease,
-    color 0.2s ease;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  color: inherit;
 }
 
-.trigger-bar:hover .trigger-arrow {
-  color: rgba(96, 165, 250, 0.5);
+.drawer-trigger.compact .trigger-label {
+  display: none;
 }
 
-.trigger-arrow.flipped {
-  transform: rotate(180deg);
-  color: #60a5fa;
+.drawer-trigger.compact .trigger-bar {
+  padding-right: 4px;
+  padding-left: 4px;
 }
 
 /* ===== 展开面板 — 绝对定位向上弹出，覆盖整个菜单区域 ===== */
@@ -721,10 +1221,10 @@ defineExpose({ toggleDrawer })
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: 1px solid rgba(248, 113, 113, 0.3);
+  border: 1px solid var(--qz-active-border, rgba(251, 146, 60, 0.38));
   border-radius: 6px;
-  background: rgba(248, 113, 113, 0.08);
-  color: #f87171;
+  background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
+  color: var(--qz-active, #fb923c);
   cursor: pointer;
   transition: all 0.2s ease;
   padding: 0;
@@ -732,8 +1232,8 @@ defineExpose({ toggleDrawer })
 }
 
 .enter-by-uin-btn:hover {
-  background: rgba(248, 113, 113, 0.18);
-  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(249, 115, 22, 0.22);
+  border-color: var(--qz-active, #fb923c);
   transform: scale(1.05);
 }
 
@@ -761,11 +1261,27 @@ defineExpose({ toggleDrawer })
   padding: 7px 0;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.35);
+  appearance: none;
+  border: 0;
+  background: transparent;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s ease;
   font-weight: 500;
   white-space: nowrap;
+}
+
+.sub-tab:focus-visible,
+.trigger-bar:focus-visible,
+.contact-backup-btn:focus-visible,
+.group-load-more:focus-visible,
+.batch-group-btn:focus-visible,
+.enter-by-uin-btn:focus-visible,
+.batch-cancel-btn:focus-visible,
+.drawer-back-btn:focus-visible,
+.drawer-friend-item:focus-visible {
+  outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+  outline-offset: 2px;
 }
 
 .tab-heart {
@@ -778,8 +1294,8 @@ defineExpose({ toggleDrawer })
 }
 
 .sub-tab.active {
-  background: rgba(96, 165, 250, 0.12);
-  color: #60a5fa;
+  background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
+  color: var(--qz-active-text, #fed7aa);
   font-weight: 600;
 }
 
@@ -797,32 +1313,33 @@ defineExpose({ toggleDrawer })
   min-width: 0;
 }
 
-/* 批量下载分组按钮 */
+/* 当前好友分组相册下载 */
 .batch-group-btn {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  gap: 4px;
   height: 28px;
-  border: 1px solid rgba(248, 113, 113, 0.3);
+  padding: 0 8px;
+  border: 1px solid rgba(96, 165, 250, 0.3);
   border-radius: 6px;
-  background: rgba(248, 113, 113, 0.08);
-  color: #f87171;
+  background: rgba(96, 165, 250, 0.09);
+  color: #bfdbfe;
   cursor: pointer;
-  transition: all 0.2s ease;
-  padding: 0;
-  font-size: 13px;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    color 0.16s ease;
+  font: inherit;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .batch-group-btn:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.18);
-  border-color: rgba(248, 113, 113, 0.5);
-  transform: scale(1.05);
-}
-
-.batch-group-btn:active:not(:disabled) {
-  transform: scale(0.95);
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(96, 165, 250, 0.16);
+  color: #eff6ff;
 }
 
 .batch-group-btn:disabled,
@@ -835,8 +1352,8 @@ defineExpose({ toggleDrawer })
 .batch-progress-strip {
   flex-shrink: 0;
   padding: 8px 10px 6px;
-  background: rgba(248, 113, 113, 0.06);
-  border-bottom: 1px solid rgba(248, 113, 113, 0.18);
+  background: rgba(249, 115, 22, 0.06);
+  border-bottom: 1px solid var(--qz-active-border, rgba(251, 146, 60, 0.38));
 }
 
 .batch-progress-info {
@@ -847,7 +1364,7 @@ defineExpose({ toggleDrawer })
 
 .batch-spinner {
   font-size: 14px;
-  color: #f87171;
+  color: var(--qz-active, #fb923c);
   flex-shrink: 0;
 }
 
@@ -882,7 +1399,7 @@ defineExpose({ toggleDrawer })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #f87171;
+  color: var(--qz-active-text, #fed7aa);
 }
 
 .batch-progress-stat {
@@ -1065,7 +1582,7 @@ defineExpose({ toggleDrawer })
 }
 
 .drawer-friend-item.active {
-  background: rgba(248, 113, 113, 0.1);
+  background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
 }
 .drawer-friend-item.active::before {
   content: '';
@@ -1075,7 +1592,7 @@ defineExpose({ toggleDrawer })
   bottom: 8px;
   width: 3px;
   border-radius: 2px;
-  background: #f87171;
+  background: var(--qz-active, #fb923c);
 }
 
 .drawer-friend-item :deep(.el-avatar) {
@@ -1164,6 +1681,178 @@ defineExpose({ toggleDrawer })
   color: rgba(255, 255, 255, 0.18);
   font-size: 12px;
 }
+
+/* ===== 联系人面板标题 ===== */
+.contact-panel-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: 8px 10px 6px;
+  padding: 7px 8px;
+  border: 1px solid rgba(249, 115, 22, 0.12);
+  border-radius: 8px;
+  background: rgba(249, 115, 22, 0.04);
+}
+
+.contact-panel-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #93c5fd;
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.contact-panel-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.contact-panel-heading-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.contact-panel-heading-text strong {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-panel-heading-text span {
+  overflow: hidden;
+  margin-top: 1px;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 10px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-backup-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 4px;
+  min-width: 82px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--qz-active-border, rgba(251, 146, 60, 0.34));
+  border-radius: 7px;
+  color: var(--qz-active-text, #fed7aa);
+  background: var(--qz-active-soft, rgba(249, 115, 22, 0.12));
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.contact-backup-btn:hover:not(:disabled) {
+  border-color: var(--qz-active, #fb923c);
+  background: rgba(249, 115, 22, 0.2);
+}
+
+.contact-backup-btn:disabled {
+  opacity: 0.72;
+  cursor: progress;
+}
+
+.qq-group-chevron {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.drawer-friend-item:hover .qq-group-chevron {
+  color: var(--qz-active, #fb923c);
+}
+
+.group-load-more {
+  width: calc(100% - 8px);
+  min-height: 34px;
+  margin: 6px 4px 2px;
+  border: 1px solid rgba(96, 165, 250, 0.16);
+  border-radius: 7px;
+  color: rgba(255, 255, 255, 0.58);
+  background: rgba(96, 165, 250, 0.06);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.group-load-more span {
+  margin-left: 5px;
+  color: rgba(255, 255, 255, 0.3);
+  font-variant-numeric: tabular-nums;
+}
+
+.group-load-more:hover {
+  border-color: rgba(96, 165, 250, 0.35);
+  color: #bfdbfe;
+  background: rgba(96, 165, 250, 0.1);
+}
+
+.drawer-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 4px 6px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.58);
+  background: rgba(248, 113, 113, 0.08);
+  font-size: 11px;
+}
+
+.drawer-error button {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border: 1px solid rgba(248, 113, 113, 0.24);
+  border-radius: 5px;
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.08);
+  cursor: pointer;
+  font: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-overlay,
+  .drawer-back-slot,
+  .drawer-back-btn,
+  .trigger-bar,
+  .contact-backup-btn,
+  .drawer-panel,
+  .sub-tab,
+  .batch-group-btn,
+  .enter-by-uin-btn,
+  .drawer-friend-item,
+  .group-load-more,
+  .score-heart,
+  .score-value {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .batch-spinner {
+    animation: none !important;
+  }
+
+  .drawer-friend-item:hover,
+  .batch-group-btn:hover,
+  .enter-by-uin-btn:hover {
+    transform: none !important;
+  }
+}
 </style>
 
 <style>
@@ -1189,5 +1878,69 @@ defineExpose({ toggleDrawer })
   color: #f87171;
   font-weight: 600;
   background: rgba(248, 113, 113, 0.08);
+}
+
+.contact-backup-popper.el-popper {
+  min-width: 220px;
+  background: rgba(22, 22, 26, 0.98);
+  border: 1px solid rgba(96, 165, 250, 0.22);
+}
+
+.contact-backup-popper .el-dropdown-menu {
+  padding: 4px;
+  background: transparent;
+}
+
+.contact-backup-popper .el-dropdown-menu__item {
+  min-height: 44px;
+  padding: 5px 9px;
+  border-radius: 5px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+}
+
+.contact-backup-option {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.contact-backup-option strong,
+.contact-backup-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-backup-option strong {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.contact-backup-option span {
+  color: rgba(255, 255, 255, 0.36);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.contact-backup-popper .el-dropdown-menu__item.is-disabled .contact-backup-option strong,
+.contact-backup-popper .el-dropdown-menu__item.is-disabled .contact-backup-option span {
+  color: rgba(255, 255, 255, 0.22);
+}
+
+.contact-backup-popper .el-dropdown-menu__item:not(.is-disabled):focus,
+.contact-backup-popper .el-dropdown-menu__item:not(.is-disabled):hover {
+  color: #bfdbfe;
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.contact-backup-popper
+  .el-dropdown-menu__item:not(.is-disabled):hover
+  .contact-backup-option
+  strong {
+  color: #dbeafe;
 }
 </style>

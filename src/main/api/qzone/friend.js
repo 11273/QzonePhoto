@@ -54,3 +54,46 @@ export async function getQQFriends(uin, p_skey, hostUin) {
   })
   return response.data
 }
+
+/**
+ * 获取当前账号可见的 QQ 群列表，以及积分页已返回的首个群成员资料。
+ * 数据来自 QQ 空间「QQ群好友积分榜」页面使用的官方接口。
+ */
+export async function getQQGroups(uin, p_skey, hostUin) {
+  const url = 'https://h5.qzone.qq.com/proxy/domain/flower.qzone.qq.com/cgi-bin/getscoreorder'
+  const params = {
+    uin: hostUin,
+    random: Math.random(),
+    g_tk: getGTK(p_skey)
+  }
+
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${hostUin}/app/points`
+    }
+  })
+  return response.data
+}
+
+/** 获取指定 QQ 群中当前账号可见的成员资料与积分列表。 */
+export async function getQQGroupMembers(uin, p_skey, hostUin, groupId) {
+  const url = 'https://h5.qzone.qq.com/proxy/domain/flower.qzone.qq.com/cgi-bin/getgrouporder'
+  const params = {
+    groupid: groupId,
+    uin: hostUin,
+    random: Math.random(),
+    fupdate: 1,
+    g_tk: getGTK(p_skey)
+  }
+
+  const response = await request.get(url, {
+    params,
+    headers: {
+      Cookie: `uin=${uin};p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${hostUin}/app/points`
+    }
+  })
+  return response.data
+}

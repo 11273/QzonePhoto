@@ -16,6 +16,13 @@ import {
 import { writeTaskMediaMetadata } from '@main/utils/media-metadata-writer.mjs'
 import { isVideoPhoto, mergeEnrichedImagesInOriginalOrder } from '@main/utils/photo-order.mjs'
 import { downloadFolderUin } from '@main/utils/download-directory.mjs'
+import {
+  buildContactBackupFiles,
+  CONTACT_BACKUP_SCOPE_CATEGORIES,
+  CONTACT_BACKUP_SCOPE_LABELS,
+  contactBackupTimestamp
+} from '@shared/contact-backup'
+import { DOWNLOAD_TASK_SORT, sortDownloadTasks } from '@shared/download-task-sort'
 // 直接定义必要的默认配置，避免使用外部常量系统
 const DEFAULT_CONCURRENCY = 3
 const DEFAULT_PAGE_SIZE = 50
@@ -251,6 +258,14 @@ export class DownloadService {
       )
 
       activeTasks.forEach((task) => {
+        if (task.type === 'contact-backup') {
+          task.status = TASK_STATUS.ERROR
+          task.speed = 0
+          task.error = '上次备份被中断，请重新备份'
+          task.backup_detail = task.error
+          this.updateTaskInDB(task)
+          return
+        }
         // 重置下载中的任务状态
         if (task.status === TASK_STATUS.DOWNLOADING) {
           task.status = TASK_STATUS.WAITING
@@ -423,6 +438,140 @@ export class DownloadService {
     this.processQueue()
 
     return task.id
+  }
+
+  async startContactBackupTask({ scope = 'all' } = {}) {
+    const normalizedScope = Object.hasOwn(CONTACT_BACKUP_SCOPE_LABELS, scope) ? scope : 'all'
+    const now = new Date()
+    const timestamp = contactBackupTimestamp(now)
+    const scopeLabel = CONTACT_BACKUP_SCOPE_LABELS[normalizedScope]
+    const category = CONTACT_BACKUP_SCOPE_CATEGORIES[normalizedScope]
+    const directory = path.join(this.downloadPath, downloadFolderUin(this.currentUin), '联系人备份')
+    const baseFolderName = `${timestamp}_${scopeLabel}`
+    let folderName = baseFolderName
+    let suffix = 2
+    while (
+      fs.existsSync(path.join(directory, folderName)) ||
+      this.db.data.tasks.some(
+        (item) =>
+          item.type === 'contact-backup' && item.directory === directory && item.name === folderName
+      )
+    ) {
+      folderName = `${baseFolderName}_${suffix}`
+      suffix += 1
+    }
+    const task = this.createTask({
+      url: '',
+      filename: folderName,
+      directory,
+      total: 100,
+      type: 'contact-backup',
+      thumbnailUrl: ''
+    })
+    task.status = TASK_STATUS.DOWNLOADING
+    task.backup_scope = normalizedScope
+    task.backup_category = category
+    task.backup_title = `${scopeLabel}备份`
+    task.backup_detail = '正在整理数据'
+
+    this.db.data.tasks.push(task)
+    this.activeTasks.set(task.id, task)
+    await this.db.write()
+    this.triggerUpdate([task.id])
+    return { taskId: task.id }
+  }
+
+  async updateContactBackupTask({ taskId, progress = 0, detail = '' } = {}) {
+    const task = this.activeTasks.get(taskId) || this.getTaskFromDB(taskId)
+    if (!task || task.type !== 'contact-backup') return { success: false }
+    if ([TASK_STATUS.COMPLETED, TASK_STATUS.ERROR].includes(task.status)) {
+      return { success: false }
+    }
+
+    task.status = TASK_STATUS.DOWNLOADING
+    task.progress = Math.max(0, Math.min(99, Math.round(Number(progress) || 0)))
+    task.downloaded = task.progress
+    task.total = 100
+    task.speed = 0
+    task.backup_detail = String(detail || '正在整理数据').slice(0, 80)
+    this.activeTasks.set(task.id, task)
+    await this.updateTaskInDB(task)
+    this.triggerUpdate([task.id])
+    return { success: true }
+  }
+
+  async finishContactBackupTask({ taskId, snapshot = {} } = {}) {
+    const task = this.activeTasks.get(taskId) || this.getTaskFromDB(taskId)
+    if (!task || task.type !== 'contact-backup') {
+      return { error: '联系人备份任务不存在' }
+    }
+
+    try {
+      task.progress = 90
+      task.backup_detail = '正在写入备份文件'
+      await this.updateTaskInDB(task)
+      this.triggerUpdate([task.id])
+
+      const outputDirectory = path.join(task.directory, task.filename)
+      await fs.promises.mkdir(outputDirectory, { recursive: true })
+      const files = buildContactBackupFiles(
+        { ...snapshot, scope: task.backup_scope },
+        new Date(task.create_time)
+      )
+      await Promise.all(
+        Object.entries(files).map(async ([name, content]) => {
+          const relativeParts = String(name).replace(/\\/g, '/').split('/').filter(Boolean)
+          const targetPath = path.resolve(outputDirectory, ...relativeParts)
+          const outputRoot = path.resolve(outputDirectory)
+          if (targetPath !== outputRoot && !targetPath.startsWith(outputRoot + path.sep)) {
+            throw new Error('invalid-contact-backup-path')
+          }
+          await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
+          await fs.promises.writeFile(targetPath, content, 'utf8')
+        })
+      )
+
+      const fileNames = Object.keys(files)
+      const warningCount = Array.isArray(snapshot.warnings) ? snapshot.warnings.length : 0
+      const groupCount = Array.isArray(snapshot.groups) ? snapshot.groups.length : 0
+      const recordCount =
+        (Array.isArray(snapshot.friends) ? snapshot.friends.length : 0) +
+        (Array.isArray(snapshot.groupMembers) ? snapshot.groupMembers.length : 0) +
+        (Array.isArray(snapshot.care) ? snapshot.care.length : 0) +
+        (Array.isArray(snapshot.careBy) ? snapshot.careBy.length : 0)
+      task.status = TASK_STATUS.COMPLETED
+      task.progress = 100
+      task.speed = 0
+      task.downloaded = fileNames.length
+      task.total = fileNames.length
+      task.backup_file_count = fileNames.length
+      task.backup_detail = warningCount
+        ? `${fileNames.length} 个文件 · ${recordCount} 条记录 · ${warningCount} 项未读取（已保留可用内容）`
+        : `${fileNames.length} 个文件 · ${recordCount} 条记录`
+      task.output_path = outputDirectory
+      this.activeTasks.delete(task.id)
+      await this.updateTaskInDB(task)
+      await this.saveDatabase()
+      this.triggerUpdate([task.id])
+      return { directory: outputDirectory, fileNames, warningCount, groupCount, recordCount }
+    } catch (error) {
+      logger.error('联系人备份写入失败:', error)
+      await this.failContactBackupTask({ taskId, message: '联系人备份保存失败' })
+      return { error: '联系人备份保存失败' }
+    }
+  }
+
+  async failContactBackupTask({ taskId, message = '联系人备份失败' } = {}) {
+    const task = this.activeTasks.get(taskId) || this.getTaskFromDB(taskId)
+    if (!task || task.type !== 'contact-backup') return { success: false }
+    task.status = TASK_STATUS.ERROR
+    task.speed = 0
+    task.error = String(message || '联系人备份失败').slice(0, 120)
+    task.backup_detail = task.error
+    await this.updateTaskInDB(task)
+    await this.saveDatabase()
+    this.triggerUpdate([task.id])
+    return { success: true }
   }
 
   // 批量添加相册任务 - 优化大批量操作
@@ -751,7 +900,12 @@ export class DownloadService {
   }
 
   // 获取任务列表（分页）- 数据库分页优化版本
-  getTasks(page = 1, pageSize = this.pageSize, status = null) {
+  getTasks(
+    page = 1,
+    pageSize = this.pageSize,
+    status = null,
+    sort = DOWNLOAD_TASK_SORT.CREATED_DESC
+  ) {
     try {
       const offset = (page - 1) * pageSize
 
@@ -762,34 +916,7 @@ export class DownloadService {
         tasks = tasks.filter((task) => task.status === status)
       }
 
-      // 按状态优先级排序：downloading > waiting > paused > error > completed > cancelled
-      tasks.sort((a, b) => {
-        const statusPriority = {
-          [TASK_STATUS.DOWNLOADING]: 1,
-          [TASK_STATUS.WAITING]: 2,
-          [TASK_STATUS.PAUSED]: 3,
-          [TASK_STATUS.ERROR]: 4,
-          [TASK_STATUS.COMPLETED]: 5,
-          [TASK_STATUS.CANCELLED]: 6
-        }
-
-        const aPriority = statusPriority[a.status] || 7
-        const bPriority = statusPriority[b.status] || 7
-
-        // 如果状态优先级不同，按优先级排序
-        if (aPriority !== bPriority) {
-          return aPriority - bPriority
-        }
-
-        // 同状态内的排序逻辑
-        if (a.status === TASK_STATUS.DOWNLOADING || a.status === TASK_STATUS.WAITING) {
-          // 下载中和等待中：按创建时间正序（先创建的先下载）
-          return a.create_time - b.create_time
-        } else {
-          // 其他状态：按创建时间倒序（最新的在前，便于查看）
-          return b.create_time - a.create_time
-        }
-      })
+      tasks = sortDownloadTasks(tasks, sort)
 
       const totalCount = tasks.length
       const paginatedTasks = tasks.slice(offset, offset + pageSize)
@@ -932,7 +1059,7 @@ export class DownloadService {
 
     // 从内存中获取等待中的任务
     const waitingTasks = Array.from(this.activeTasks.values())
-      .filter((task) => task.status === TASK_STATUS.WAITING)
+      .filter((task) => task.status === TASK_STATUS.WAITING && task.type !== 'contact-backup')
       .sort((a, b) => {
         // 按优先级和创建时间排序
         if (a.priority !== b.priority) return a.priority - b.priority
@@ -947,7 +1074,12 @@ export class DownloadService {
     ) {
       try {
         const additionalTasks = this.db.data.tasks
-          .filter((task) => task.status === TASK_STATUS.WAITING && !this.activeTasks.has(task.id))
+          .filter(
+            (task) =>
+              task.status === TASK_STATUS.WAITING &&
+              task.type !== 'contact-backup' &&
+              !this.activeTasks.has(task.id)
+          )
           .sort((a, b) => {
             if (a.priority !== b.priority) return a.priority - b.priority
             return a.create_time - b.create_time
@@ -1357,7 +1489,11 @@ export class DownloadService {
       // 删除文件
       if (deleteFile && task.status === TASK_STATUS.COMPLETED) {
         const filePath = path.join(task.directory, task.filename)
-        fs.promises.unlink(filePath).catch(() => {})
+        if (task.type === 'contact-backup') {
+          fs.promises.rm(filePath, { recursive: true, force: true }).catch(() => {})
+        } else {
+          fs.promises.unlink(filePath).catch(() => {})
+        }
       }
 
       // 从内存和数据库中删除
@@ -1461,6 +1597,35 @@ export class DownloadService {
         logger.error('打开默认下载目录也失败:', fallbackError)
         throw fallbackError
       }
+    }
+  }
+
+  async openContactBackupOverview(taskId) {
+    try {
+      const task = this.getTaskFromDB(taskId)
+      if (!task || task.type !== 'contact-backup' || task.status !== TASK_STATUS.COMPLETED) {
+        return { error: '备份尚未完成' }
+      }
+      const expectedDirectory = path.resolve(task.directory, task.filename)
+      const outputDirectory = path.resolve(task.output_path || expectedDirectory)
+      if (outputDirectory !== expectedDirectory) {
+        return { error: '备份位置无效' }
+      }
+      const entries = await fs.promises.readdir(outputDirectory, { withFileTypes: true })
+      const htmlNames = entries
+        .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.html'))
+        .map((entry) => entry.name)
+        .sort((left, right) => {
+          const leftPriority = left.startsWith('联系人总览_') ? 0 : 1
+          const rightPriority = right.startsWith('联系人总览_') ? 0 : 1
+          return leftPriority - rightPriority || left.localeCompare(right, 'zh-CN')
+        })
+      if (!htmlNames.length) return { error: '没有找到可查看的备份页面' }
+      const result = await shell.openPath(path.join(outputDirectory, htmlNames[0]))
+      return result ? { error: '系统无法打开备份页面' } : { success: true }
+    } catch (error) {
+      logger.error('打开联系人备份总览失败:', error)
+      return { error: '备份页面暂时无法打开' }
     }
   }
 

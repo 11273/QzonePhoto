@@ -77,7 +77,11 @@ export const IPC_FRIEND = {
   /** 获取好友亲密度列表 */
   GET_FRIEND_LIST: 'friend:getFriendList',
   /** 获取 QQ 好友及分组 */
-  GET_QQ_FRIENDS: 'friend:getQQFriends'
+  GET_QQ_FRIENDS: 'friend:getQQFriends',
+  /** 获取当前账号可见的 QQ 群 */
+  GET_QQ_GROUPS: 'friend:getQQGroups',
+  /** 获取指定 QQ 群成员 */
+  GET_QQ_GROUP_MEMBERS: 'friend:getQQGroupMembers'
 }
 
 export const IPC_DOWNLOAD = {
@@ -87,6 +91,14 @@ export const IPC_DOWNLOAD = {
   ADD_ALBUM: 'download:addAlbum',
   /** 添加动态/说说图片批量下载（按动态聚合） */
   ADD_FEEDS: 'download:addFeeds',
+  /** 创建联系人备份任务 */
+  START_CONTACT_BACKUP: 'download:startContactBackup',
+  /** 更新联系人备份进度 */
+  UPDATE_CONTACT_BACKUP: 'download:updateContactBackup',
+  /** 写入并完成联系人备份 */
+  FINISH_CONTACT_BACKUP: 'download:finishContactBackup',
+  /** 标记联系人备份失败 */
+  FAIL_CONTACT_BACKUP: 'download:failContactBackup',
   /** 获取任务列表（分页） */
   GET_TASKS: 'download:getTasks',
   /** 获取活跃任务 */
@@ -109,6 +121,8 @@ export const IPC_DOWNLOAD = {
   CLEAR_TASKS: 'download:clearTasks',
   /** 打开下载文件夹 */
   OPEN_FOLDER: 'download:openFolder',
+  /** 直接打开联系人备份总览 */
+  OPEN_CONTACT_BACKUP_OVERVIEW: 'download:openContactBackupOverview',
   /** 选择下载目录 */
   SELECT_DIRECTORY: 'download:selectDirectory',
   /** 获取默认下载路径 */

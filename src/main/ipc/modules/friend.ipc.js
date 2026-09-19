@@ -13,6 +13,12 @@ export function createFriendHandlers(service) {
     },
     [IPC_FRIEND.GET_QQ_FRIENDS]: async (_, { payload, headers }) => {
       return friendService.getQQFriends(payload, headers)
+    },
+    [IPC_FRIEND.GET_QQ_GROUPS]: async (_, { payload, headers }) => {
+      return friendService.getQQGroups(payload, headers)
+    },
+    [IPC_FRIEND.GET_QQ_GROUP_MEMBERS]: async (_, { payload, headers }) => {
+      return friendService.getQQGroupMembers(payload, headers)
     }
   }
 }

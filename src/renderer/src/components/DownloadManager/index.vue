@@ -15,7 +15,12 @@
         <el-tooltip :content="`当前保存位置：${downloadPath}`" placement="bottom">
           <el-button size="small" @click="changeGlobalLocation">更改位置</el-button>
         </el-tooltip>
-        <el-button size="small" title="打开下载文件夹" @click="openGlobalFolder">
+        <el-button
+          size="small"
+          title="打开下载文件夹"
+          aria-label="打开下载文件夹"
+          @click="openGlobalFolder"
+        >
           <el-icon><Folder /></el-icon>
         </el-button>
 
@@ -44,7 +49,8 @@
               size="small"
               active-text=""
               inactive-text=""
-              active-color="#60a5fa"
+              aria-label="替换相同文件"
+              active-color="#c2410c"
               inactive-color="#DCDFE6"
               @change="handleReplaceSettingChange"
             />
@@ -65,7 +71,8 @@
                 size="small"
                 active-text=""
                 inactive-text=""
-                active-color="#60a5fa"
+                aria-label="保留动态信息"
+                active-color="#c2410c"
                 inactive-color="#DCDFE6"
                 @change="handleWriteFeedDescriptionChange"
               />
@@ -223,9 +230,22 @@
               <el-radio-button value="cancelled">已取消</el-radio-button>
             </el-radio-group>
           </div>
-          <div class="pagination-info">
-            {{ (currentPage - 1) * pageSize + 1 }} -
-            {{ Math.min(currentPage * pageSize, filteredTotalTasks) }} / {{ filteredTotalTasks }}
+          <div class="task-list-meta">
+            <el-select
+              v-model="sortOrder"
+              size="small"
+              class="task-sort-select"
+              aria-label="任务排序方式"
+            >
+              <el-option label="最新创建" :value="DOWNLOAD_TASK_SORT.CREATED_DESC" />
+              <el-option label="最早创建" :value="DOWNLOAD_TASK_SORT.CREATED_ASC" />
+              <el-option label="状态优先" :value="DOWNLOAD_TASK_SORT.STATUS_PRIORITY" />
+            </el-select>
+            <div class="pagination-info">
+              {{ (currentPage - 1) * pageSize + 1 }} -
+              {{ Math.min(currentPage * pageSize, filteredTotalTasks) }} /
+              {{ filteredTotalTasks }}
+            </div>
           </div>
         </div>
 
@@ -240,10 +260,21 @@
               <div class="task-container">
                 <!-- 左侧：缩略图 -->
                 <div class="task-thumbnail">
-                  <div v-if="privacyStore.privacyMode" class="privacy-overlay">
+                  <div
+                    v-if="privacyStore.privacyMode && task.type !== 'contact-backup'"
+                    class="privacy-overlay"
+                  >
                     <el-icon class="privacy-icon"><Hide /></el-icon>
                   </div>
+                  <div
+                    v-if="task.type === 'contact-backup'"
+                    class="thumbnail-placeholder backup-thumbnail"
+                    :title="task.backup_category || '联系人'"
+                  >
+                    <component :is="getContactBackupIcon(task.backup_category)" :size="19" />
+                  </div>
                   <el-image
+                    v-else
                     :key="`img_${task.id}`"
                     :src="task.thumbnail_url"
                     fit="cover"
@@ -279,7 +310,13 @@
                         :show-after="500"
                         popper-class="custom-tooltip"
                       >
-                        <div class="task-name">{{ formatTaskName(task.name) }}</div>
+                        <div class="task-name">
+                          {{
+                            task.type === 'contact-backup'
+                              ? task.backup_title || '联系人备份'
+                              : formatTaskName(task.name)
+                          }}
+                        </div>
                       </el-tooltip>
                     </div>
 
@@ -287,7 +324,7 @@
                       <div class="task-meta">
                         <span class="task-time">{{ formatSmartTime(task.create_time) }}</span>
                         <span class="task-status" :class="task.status">{{
-                          getTaskStatusText(task.status)
+                          getTaskStatusText(task.status, task.type)
                         }}</span>
                       </div>
 
@@ -295,10 +332,11 @@
                       <div class="task-actions">
                         <!-- 下载中：暂停 -->
                         <el-button
-                          v-if="task.status === 'downloading'"
+                          v-if="task.status === 'downloading' && task.type !== 'contact-backup'"
                           size="small"
                           text
                           title="暂停下载"
+                          aria-label="暂停下载"
                           @click="pauseTask(task)"
                         >
                           <el-icon><VideoPause /></el-icon>
@@ -306,10 +344,11 @@
 
                         <!-- 已暂停：继续 -->
                         <el-button
-                          v-else-if="task.status === 'paused'"
+                          v-else-if="task.status === 'paused' && task.type !== 'contact-backup'"
                           size="small"
                           text
                           title="继续下载"
+                          aria-label="继续下载"
                           @click="resumeTask(task)"
                         >
                           <el-icon><VideoPlay /></el-icon>
@@ -317,10 +356,11 @@
 
                         <!-- 等待中：暂停任务 -->
                         <el-button
-                          v-else-if="task.status === 'waiting'"
+                          v-else-if="task.status === 'waiting' && task.type !== 'contact-backup'"
                           size="small"
                           text
                           title="暂停任务"
+                          aria-label="暂停任务"
                           @click="pauseTask(task)"
                         >
                           <el-icon><VideoPause /></el-icon>
@@ -328,10 +368,23 @@
 
                         <!-- 出错：重试 -->
                         <el-button
+                          v-else-if="task.status === 'error' && task.type === 'contact-backup'"
+                          size="small"
+                          text
+                          :loading="isContactBackupRetrying(task.id)"
+                          :disabled="isContactBackupRetrying(task.id)"
+                          title="重新备份相同范围"
+                          aria-label="重新备份相同范围"
+                          @click="retryContactBackup(task)"
+                        >
+                          <el-icon><Refresh /></el-icon>
+                        </el-button>
+                        <el-button
                           v-else-if="task.status === 'error'"
                           size="small"
                           text
                           title="重试下载"
+                          aria-label="重试下载"
                           @click="retryTask(task)"
                         >
                           <el-icon><Refresh /></el-icon>
@@ -339,31 +392,54 @@
 
                         <!-- 已取消：重新开始 -->
                         <el-button
-                          v-else-if="task.status === 'cancelled'"
+                          v-else-if="task.status === 'cancelled' && task.type !== 'contact-backup'"
                           size="small"
                           text
                           title="重新开始"
+                          aria-label="重新开始下载"
                           @click="retryTask(task)"
                         >
                           <el-icon><VideoPlay /></el-icon>
                         </el-button>
 
-                        <!-- 已完成：删除选项 -->
-                        <el-dropdown v-else-if="task.status === 'completed'" trigger="click">
-                          <el-button size="small" text title="删除选项">
-                            <el-icon><Delete /></el-icon>
+                        <!-- 已完成：打开备份位置 / 删除选项 -->
+                        <template v-else-if="task.status === 'completed'">
+                          <el-button
+                            v-if="task.type === 'contact-backup'"
+                            size="small"
+                            text
+                            title="查看备份总览"
+                            aria-label="查看备份总览"
+                            @click="openContactBackupOverview(task)"
+                          >
+                            <FileText :size="15" />
                           </el-button>
-                          <template #dropdown>
-                            <el-dropdown-menu>
-                              <el-dropdown-item @click="handleDeleteConfirm(task, 'task')">
-                                仅删除任务
-                              </el-dropdown-item>
-                              <el-dropdown-item @click="handleDeleteConfirm(task, 'both')">
-                                删除任务和文件
-                              </el-dropdown-item>
-                            </el-dropdown-menu>
-                          </template>
-                        </el-dropdown>
+                          <el-button
+                            v-if="task.type === 'contact-backup'"
+                            size="small"
+                            text
+                            title="打开备份文件夹"
+                            aria-label="打开备份文件夹"
+                            @click="openTaskFolder(task)"
+                          >
+                            <el-icon><Folder /></el-icon>
+                          </el-button>
+                          <el-dropdown trigger="click">
+                            <el-button size="small" text title="删除选项" aria-label="打开删除选项">
+                              <el-icon><Delete /></el-icon>
+                            </el-button>
+                            <template #dropdown>
+                              <el-dropdown-menu>
+                                <el-dropdown-item @click="handleDeleteConfirm(task, 'task')">
+                                  仅删除任务
+                                </el-dropdown-item>
+                                <el-dropdown-item @click="handleDeleteConfirm(task, 'both')">
+                                  删除任务和文件
+                                </el-dropdown-item>
+                              </el-dropdown-menu>
+                            </template>
+                          </el-dropdown>
+                        </template>
                       </div>
                     </div>
                   </div>
@@ -385,17 +461,27 @@
 
                     <!-- 详细信息 -->
                     <div class="task-details">
-                      <span class="size-info"
-                        >{{ formatFileSize(task.downloaded) }}/{{
-                          formatFileSize(task.total)
-                        }}</span
+                      <span
+                        v-if="task.type === 'contact-backup'"
+                        class="backup-task-detail"
+                        :role="task.status === 'error' ? 'alert' : 'status'"
+                        aria-live="polite"
                       >
-                      <span v-if="task.speed > 0" class="speed-info">{{
-                        formatSpeed(task.speed)
-                      }}</span>
-                      <span v-if="task.status === 'downloading'" class="eta-info">{{
-                        getEstimatedTime(task)
-                      }}</span>
+                        {{ task.backup_detail || '正在整理联系人数据' }}
+                      </span>
+                      <template v-else>
+                        <span class="size-info"
+                          >{{ formatFileSize(task.downloaded) }}/{{
+                            formatFileSize(task.total)
+                          }}</span
+                        >
+                        <span v-if="task.speed > 0" class="speed-info">{{
+                          formatSpeed(task.speed)
+                        }}</span>
+                        <span v-if="task.status === 'downloading'" class="eta-info">{{
+                          getEstimatedTime(task)
+                        }}</span>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -407,7 +493,7 @@
           <EmptyState
             :icon="Archive"
             title="暂无下载任务"
-            description="在相册详情页点「下载相册」，任务会出现在这里"
+            description="照片、视频和联系人备份任务都会出现在这里"
             size="medium"
           />
         </div>
@@ -440,14 +526,26 @@ import {
   Loading,
   Hide
 } from '@element-plus/icons-vue'
-import { Image as LucideImage, Archive, Clapperboard, FileText } from '@lucide/vue'
+import {
+  Image as LucideImage,
+  Archive,
+  Clapperboard,
+  ContactRound,
+  FileText,
+  HeartHandshake,
+  Users,
+  UsersRound
+} from '@lucide/vue'
 import Pagination from '@renderer/components/Pagination/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
-
-const privacyStore = usePrivacyStore()
+import { useFriendStore } from '@renderer/store/friend.store'
 import { formatTaskCount, formatTaskName } from '@renderer/utils/formatters'
 import { APP_NAME } from '@shared/const'
+import { DOWNLOAD_TASK_SORT, normalizeDownloadTaskSort } from '@shared/download-task-sort'
+
+const privacyStore = usePrivacyStore()
+const friendStore = useFriendStore()
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false }
@@ -468,6 +566,9 @@ const totalPages = ref(0)
 
 // 筛选相关
 const statusFilter = ref('all')
+const sortOrder = ref(
+  normalizeDownloadTaskSort(localStorage.getItem('download-task-sort') || undefined)
+)
 
 // 下载路径和设置
 const downloadPath = ref('')
@@ -493,6 +594,7 @@ const taskStats = ref({
 // 加载状态
 const loading = ref(false)
 const clearingTasks = ref(false)
+const retryingContactBackupIds = ref(new Set())
 
 // 初始化下载路径
 const initDownloadPath = async () => {
@@ -602,7 +704,8 @@ const loadTasksPage = async () => {
     const result = await window.QzoneAPI.download.requestTasksPage({
       page: currentPage.value,
       pageSize: pageSize.value,
-      status: statusFilter.value === 'all' ? null : statusFilter.value
+      status: statusFilter.value === 'all' ? null : statusFilter.value,
+      sort: sortOrder.value
     })
 
     if (result && result.tasks) {
@@ -683,10 +786,17 @@ const handleActiveTasksUpdate = (...args) => {
   }
 
   // 更新当前页面中的活跃任务 - 只更新变化的字段
+  let orderMayHaveChanged = false
   activeTasks.forEach((activeTask) => {
     const index = currentPageTasks.value.findIndex((task) => task.id === activeTask.id)
     if (index !== -1) {
       const currentTask = currentPageTasks.value[index]
+      if (
+        sortOrder.value === DOWNLOAD_TASK_SORT.STATUS_PRIORITY &&
+        currentTask.status !== activeTask.status
+      ) {
+        orderMayHaveChanged = true
+      }
       // 只更新可能变化的字段，避免触发图片重新加载
       const updatedTask = {
         ...currentTask,
@@ -696,11 +806,15 @@ const handleActiveTasksUpdate = (...args) => {
         total: activeTask.total,
         speed: activeTask.speed,
         error: activeTask.error,
+        backup_detail: activeTask.backup_detail,
+        output_path: activeTask.output_path,
         update_time: activeTask.update_time
       }
       currentPageTasks.value.splice(index, 1, updatedTask)
     }
   })
+
+  if (orderMayHaveChanged) loadTasksPage()
 }
 
 // 处理任务变化
@@ -722,6 +836,12 @@ const handleTaskChanges = (...args) => {
     } else {
       const index = currentPageTasks.value.findIndex((task) => task.id === changedTask.id)
       if (index !== -1) {
+        if (
+          sortOrder.value === DOWNLOAD_TASK_SORT.STATUS_PRIORITY &&
+          currentPageTasks.value[index].status !== changedTask.status
+        ) {
+          needReload = true
+        }
         currentPageTasks.value.splice(index, 1, { ...changedTask })
       } else {
         needReload = true // 新任务可能需要重新加载分页
@@ -767,8 +887,17 @@ watch(visible, async (newVisible) => {
   }
 })
 
-// 监听分页和筛选变化
-watch([currentPage, pageSize, statusFilter], () => {
+// 翻页时直接加载；筛选、分页大小或排序变化时先回到第一页。
+watch(currentPage, () => {
+  loadTasksPage()
+})
+
+watch([pageSize, statusFilter, sortOrder], () => {
+  localStorage.setItem('download-task-sort', sortOrder.value)
+  if (currentPage.value !== 1) {
+    currentPage.value = 1
+    return
+  }
   loadTasksPage()
 })
 
@@ -859,7 +988,18 @@ const formatSmartTime = (date) => {
   return `${year}/${month}/${day} ${timeStr}`
 }
 
-const getTaskStatusText = (status) => {
+const getTaskStatusText = (status, type = '') => {
+  if (type === 'contact-backup') {
+    const backupStatusMap = {
+      waiting: '等待备份',
+      downloading: '备份中',
+      paused: '已暂停',
+      completed: '已备份',
+      error: '备份失败',
+      cancelled: '已取消'
+    }
+    return backupStatusMap[status] || '未知'
+  }
   const statusMap = {
     waiting: '等待中',
     downloading: '下载中',
@@ -876,9 +1016,17 @@ const getTaskIcon = (type) => {
     image: LucideImage,
     zip: Archive,
     video: Clapperboard,
-    document: FileText
+    document: FileText,
+    'contact-backup': ContactRound
   }
   return iconMap[type] || FileText
+}
+
+const getContactBackupIcon = (category) => {
+  if (category === '好友') return Users
+  if (category === '群') return UsersRound
+  if (category === '亲密度') return HeartHandshake
+  return ContactRound
 }
 
 const getTasksByStatus = (status) => {
@@ -971,6 +1119,31 @@ const retryTask = async (task) => {
     if (index !== -1) {
       currentPageTasks.value.splice(index, 1, { ...task })
     }
+  }
+}
+
+const isContactBackupRetrying = (taskId) => retryingContactBackupIds.value.has(taskId)
+
+const retryContactBackup = async (task) => {
+  if (isContactBackupRetrying(task.id)) return
+  retryingContactBackupIds.value = new Set(retryingContactBackupIds.value).add(task.id)
+  try {
+    const result = await friendStore.startContactBackup(task.backup_scope || 'all')
+    if (!result.success) {
+      ElMessage.error(result.message)
+      return
+    }
+    if (result.warningCount) {
+      ElMessage.warning(`重新备份完成；${result.warningCount} 项暂时无法读取，其他可用内容已保存`)
+    } else {
+      ElMessage.success('重新备份完成，可打开新任务的保存位置')
+    }
+  } finally {
+    const next = new Set(retryingContactBackupIds.value)
+    next.delete(task.id)
+    retryingContactBackupIds.value = next
+    await loadStats()
+    await loadTasksPage()
   }
 }
 
@@ -1069,6 +1242,28 @@ const openGlobalFolder = async () => {
   } catch (error) {
     console.error('打开文件夹失败:', error)
     ElMessage.error('打开文件夹失败')
+  }
+}
+
+const openTaskFolder = async (task) => {
+  const folderPath = task?.output_path || [task?.directory, task?.name].filter(Boolean).join('/')
+  try {
+    await window.QzoneAPI.download.openFolder(folderPath)
+  } catch (error) {
+    console.error('打开备份位置失败:', error)
+    ElMessage.error('打开备份位置失败')
+  }
+}
+
+const openContactBackupOverview = async (task) => {
+  try {
+    const result = await window.QzoneAPI.download.openContactBackupOverview(task.id)
+    if (result?.error) {
+      ElMessage.error(result.error)
+    }
+  } catch (error) {
+    console.error('打开备份总览失败:', error)
+    ElMessage.error('备份总览暂时无法打开')
   }
 }
 
@@ -1702,8 +1897,30 @@ const handleTimePreferenceChange = async (preference) => {
       .pagination-info {
         font-size: 12px;
         color: #999;
-        width: 100px;
+        min-width: 88px;
         text-align: right;
+      }
+
+      .task-list-meta {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+
+        .task-sort-select {
+          width: 104px;
+
+          :deep(.el-select__wrapper) {
+            min-height: 28px;
+            background: rgba(255, 255, 255, 0.06);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14) inset;
+          }
+
+          :deep(.el-select__selected-item) {
+            color: rgba(255, 255, 255, 0.86);
+            font-size: 12px;
+          }
+        }
       }
 
       @media (max-width: 768px) {
@@ -1721,6 +1938,10 @@ const handleTimePreferenceChange = async (preference) => {
               padding: 3px 6px;
             }
           }
+        }
+
+        .task-list-meta {
+          justify-content: space-between;
         }
       }
     }
@@ -1800,6 +2021,12 @@ const handleTimePreferenceChange = async (preference) => {
 
                   .loading-icon {
                     animation: spin 1s linear infinite;
+                  }
+
+                  &.backup-thumbnail {
+                    border: 1px solid rgba(96, 165, 250, 0.22);
+                    color: #93c5fd;
+                    background: rgba(96, 165, 250, 0.1);
                   }
                 }
 
@@ -1995,6 +2222,14 @@ const handleTimePreferenceChange = async (preference) => {
 
                     .eta-info {
                       color: #fbbf24;
+                      white-space: nowrap;
+                    }
+
+                    .backup-task-detail {
+                      max-width: 180px;
+                      overflow: hidden;
+                      color: #93c5fd;
+                      text-overflow: ellipsis;
                       white-space: nowrap;
                     }
                   }

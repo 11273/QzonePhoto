@@ -28,10 +28,26 @@ export function createDownloadHandlers(service) {
       return await downloadService.addFeedsTasks(context.payload, context.headers)
     },
 
+    [IPC_DOWNLOAD.START_CONTACT_BACKUP]: async (event, context) => {
+      return await downloadService.startContactBackupTask(context.payload)
+    },
+
+    [IPC_DOWNLOAD.UPDATE_CONTACT_BACKUP]: async (event, context) => {
+      return await downloadService.updateContactBackupTask(context.payload)
+    },
+
+    [IPC_DOWNLOAD.FINISH_CONTACT_BACKUP]: async (event, context) => {
+      return await downloadService.finishContactBackupTask(context.payload)
+    },
+
+    [IPC_DOWNLOAD.FAIL_CONTACT_BACKUP]: async (event, context) => {
+      return await downloadService.failContactBackupTask(context.payload)
+    },
+
     // 获取任务列表（分页）
     [IPC_DOWNLOAD.GET_TASKS]: async (event, context) => {
-      const { page = 1, pageSize = 50, status = null } = context?.payload || {}
-      return downloadService.getTasks(page, pageSize, status)
+      const { page = 1, pageSize = 50, status = null, sort = null } = context?.payload || {}
+      return downloadService.getTasks(page, pageSize, status, sort)
     },
 
     // 获取活跃任务
@@ -98,6 +114,10 @@ export function createDownloadHandlers(service) {
       return downloadService.openFolder(folderPath)
     },
 
+    [IPC_DOWNLOAD.OPEN_CONTACT_BACKUP_OVERVIEW]: async (event, context) => {
+      return downloadService.openContactBackupOverview(context?.payload?.taskId)
+    },
+
     // 获取默认下载路径
     [IPC_DOWNLOAD.GET_DEFAULT_PATH]: async () => {
       return downloadService.getDefaultPath()
@@ -155,8 +175,8 @@ export function createDownloadHandlers(service) {
 
     // 请求分页任务列表
     [IPC_DOWNLOAD.REQUEST_TASKS_PAGE]: async (event, context) => {
-      const { page = 1, pageSize = 50, status = null } = context?.payload || {}
-      return await downloadEventPusher.requestTasksPage(page, pageSize, status)
+      const { page = 1, pageSize = 50, status = null, sort = null } = context?.payload || {}
+      return await downloadEventPusher.requestTasksPage(page, pageSize, status, sort)
     },
 
     // 设置当前用户
