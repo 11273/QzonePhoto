@@ -117,16 +117,28 @@
                 <span class="label">相册数</span>
                 <span class="value">{{ friendAlbumCount }}</span>
               </div>
-              <el-tooltip :content="officialCapacityTooltip" placement="right" :show-after="250">
-                <div
-                  class="stat-item capacity-stat"
-                  tabindex="0"
-                  :aria-label="`已用容量：${friendDiskUsed}。${officialCapacityTooltip}`"
-                >
-                  <span class="label">已用容量</span>
-                  <span class="value storage">{{ friendDiskUsed }}</span>
-                </div>
-              </el-tooltip>
+              <div class="stat-item capacity-stat">
+                <span class="label capacity-label">
+                  已用容量
+                  <el-tooltip
+                    placement="bottom-start"
+                    :show-after="200"
+                    :hide-after="100"
+                    popper-class="capacity-help-popper"
+                  >
+                    <template #content>
+                      <div class="capacity-tooltip-content">
+                        <strong>QQ 空间官方统计</strong>
+                        <span>{{ officialCapacityTooltip }}</span>
+                      </div>
+                    </template>
+                    <button type="button" class="capacity-help" aria-label="查看已用容量说明">
+                      <el-icon><QuestionFilled /></el-icon>
+                    </button>
+                  </el-tooltip>
+                </span>
+                <span class="value storage">{{ friendDiskUsed }}</span>
+              </div>
               <div class="stat-item">
                 <span class="label">照片总数</span>
                 <span class="value">{{ friendPhotoTotal }}</span>
@@ -249,16 +261,28 @@
                 <span class="label">成长速度</span>
                 <span class="value speed">{{ formatSpeed(userStore.userInfo?.speed || 0) }}</span>
               </div>
-              <el-tooltip :content="officialCapacityTooltip" placement="right" :show-after="250">
-                <div
-                  class="stat-item capacity-stat"
-                  tabindex="0"
-                  :aria-label="`已用容量：${formatStorage()}。${officialCapacityTooltip}`"
-                >
-                  <span class="label">已用容量</span>
-                  <span class="value storage">{{ formatStorage() }}</span>
-                </div>
-              </el-tooltip>
+              <div class="stat-item capacity-stat">
+                <span class="label capacity-label">
+                  已用容量
+                  <el-tooltip
+                    placement="bottom-start"
+                    :show-after="200"
+                    :hide-after="100"
+                    popper-class="capacity-help-popper"
+                  >
+                    <template #content>
+                      <div class="capacity-tooltip-content">
+                        <strong>QQ 空间官方统计</strong>
+                        <span>{{ officialCapacityTooltip }}</span>
+                      </div>
+                    </template>
+                    <button type="button" class="capacity-help" aria-label="查看已用容量说明">
+                      <el-icon><QuestionFilled /></el-icon>
+                    </button>
+                  </el-tooltip>
+                </span>
+                <span class="value storage">{{ formatStorage() }}</span>
+              </div>
             </div>
           </div>
 
@@ -1056,8 +1080,7 @@ import { formatBytes } from '@renderer/utils/formatters'
 import { resolveQzoneHostUin, resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
 import { retryPageRequest } from '@renderer/utils/paginationGuard'
 
-const officialCapacityTooltip =
-  '此容量由 QQ 空间官方接口返回，是官方统计的空间使用量，不是本地电脑已下载文件的容量。'
+const officialCapacityTooltip = '仅代表空间使用量，不是本地已下载文件的大小。'
 
 const handleMenuSelect = (index) => {
   // 菜单选择处理由 selectAlbumItem 函数处理
@@ -2956,17 +2979,38 @@ defineExpose({
           align-items: flex-start;
 
           &.capacity-stat {
-            cursor: help;
-            border-radius: 4px;
-
-            .label {
-              text-decoration: underline dotted rgba(255, 255, 255, 0.32);
-              text-underline-offset: 3px;
+            .capacity-label {
+              display: inline-flex;
+              align-items: center;
+              gap: 3px;
             }
 
-            &:focus-visible {
-              outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
-              outline-offset: 2px;
+            .capacity-help {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              width: 15px;
+              height: 15px;
+              padding: 0;
+              border: 0;
+              border-radius: 50%;
+              color: rgba(255, 255, 255, 0.42);
+              background: transparent;
+              cursor: help;
+              transition:
+                color 0.16s ease,
+                background-color 0.16s ease;
+
+              &:hover,
+              &:focus-visible {
+                color: rgba(255, 255, 255, 0.78);
+                background: rgba(255, 255, 255, 0.08);
+              }
+
+              &:focus-visible {
+                outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+                outline-offset: 1px;
+              }
             }
           }
 
@@ -5375,6 +5419,30 @@ defineExpose({
 </style>
 
 <style lang="scss">
+.capacity-help-popper.el-popper {
+  max-width: 220px;
+  padding: 8px 10px;
+
+  .capacity-tooltip-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: normal;
+
+    strong {
+      color: rgba(255, 255, 255, 0.94);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    span {
+      color: rgba(255, 255, 255, 0.68);
+    }
+  }
+}
+
 .friend-info-popper.el-popper {
   .online-tooltip {
     font-size: 12px;
