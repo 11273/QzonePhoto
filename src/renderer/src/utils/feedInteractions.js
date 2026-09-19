@@ -22,13 +22,32 @@ const officialCommentKey = (item) => {
   return officialId && uin && time ? [officialId, uin, time].join('\u001f') : ''
 }
 
+const normalizedLikerUin = (value) => String(value || '').replace(/^o/, '')
+
+export const hasLikerDisplayName = (item) => {
+  const uin = normalizedLikerUin(item?.uin)
+  const name = String(item?.name || '').trim()
+  if (!name) return false
+  const fallbackName = name.replace(/^QQ\s*[:：]?\s*/i, '')
+  return fallbackName !== uin
+}
+
 export const mergeLikers = (base = [], incoming = []) => {
   const byUin = new Map()
   for (const item of [...base, ...incoming]) {
-    const uin = String(item?.uin || '').replace(/^o/, '')
+    const uin = normalizedLikerUin(item?.uin)
     if (!/^\d+$/.test(uin)) continue
     const previous = byUin.get(uin)
-    byUin.set(uin, { uin, name: String(item?.name || previous?.name || '').trim() })
+    const nextName = String(item?.name || '').trim()
+    const previousName = String(previous?.name || '').trim()
+    // 首屏 HTML 有时把 QQ 号放进姓名字段；后续官方名单返回昵称时应覆盖它。
+    // 反过来，空值或 QQ 号占位不能覆盖已经拿到的真实昵称。
+    const name = hasLikerDisplayName({ uin, name: nextName })
+      ? nextName
+      : hasLikerDisplayName({ uin, name: previousName })
+        ? previousName
+        : nextName || previousName
+    byUin.set(uin, { uin, name })
   }
   return [...byUin.values()]
 }

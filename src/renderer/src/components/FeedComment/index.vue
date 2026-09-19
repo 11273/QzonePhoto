@@ -48,9 +48,14 @@
         <div class="comment-content">
           <div class="comment-header">
             <el-tooltip :content="`QQ: ${comment.uin}`" placement="top">
-              <span class="comment-author" @click="emit('author-click', comment)">
+              <button
+                type="button"
+                class="comment-author"
+                :aria-label="`查看 ${comment.author} 的空间`"
+                @click="emit('author-click', comment)"
+              >
                 {{ comment.author }}
-              </span>
+              </button>
             </el-tooltip>
             <span v-if="comment.time" class="comment-time">{{ comment.time }}</span>
             <span
@@ -76,9 +81,14 @@
               <div class="response-content">
                 <div class="response-header">
                   <el-tooltip :content="`QQ: ${reply.uin}`" placement="top">
-                    <span class="response-author" @click="emit('author-click', reply)">
+                    <button
+                      type="button"
+                      class="response-author"
+                      :aria-label="`查看 ${reply.author} 的空间`"
+                      @click="emit('author-click', reply)"
+                    >
                       {{ reply.author }}
-                    </span>
+                    </button>
                   </el-tooltip>
                   <span v-if="reply.targetNick || reply.targetUin" class="response-target">
                     回复
@@ -218,6 +228,11 @@ const onAvatarError = (e) => {
 }
 
 .comment-author {
+  padding: 0;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
   color: #60a5fa;
   font-weight: 500;
   font-size: 12px;
@@ -226,6 +241,12 @@ const onAvatarError = (e) => {
 
   &:hover {
     color: #93c5fd;
+  }
+
+  &:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 }
 
@@ -297,12 +318,23 @@ const onAvatarError = (e) => {
 }
 
 .response-author {
+  padding: 0;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
   color: #60a5fa;
   font-weight: 500;
   cursor: pointer;
 
   &:hover {
     color: #93c5fd;
+  }
+
+  &:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 }
 
@@ -354,6 +386,19 @@ const onAvatarError = (e) => {
 
   :deep(.text-segment) {
     white-space: pre-line;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .comment-avatar-button,
+  .comment-author,
+  .response-author,
+  .target-name {
+    transition: none !important;
+  }
+
+  .comment-avatar-button:hover {
+    transform: none !important;
   }
 }
 </style>

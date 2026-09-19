@@ -7,6 +7,7 @@ import {
   collectAllComments,
   collectAllLikers,
   countCommentTree,
+  hasLikerDisplayName,
   interactionFailureHint,
   mergeCommentRoots,
   mergeLikers
@@ -61,6 +62,17 @@ test('like pagination crosses 60-person page and removes duplicates', async () =
   assert.equal(result.likers.length, 61)
   assert.equal(result.complete, true)
   assert.equal(mergeLikers(first, second).length, 61)
+})
+
+test('official nicknames replace QQ-number placeholders without regressing to placeholders', () => {
+  const placeholder = { uin: '21001', name: '21001' }
+  const resolved = { uin: '21001', name: '好友昵称' }
+
+  assert.equal(hasLikerDisplayName(placeholder), false)
+  assert.equal(hasLikerDisplayName({ uin: '21001', name: 'QQ 21001' }), false)
+  assert.equal(hasLikerDisplayName(resolved), true)
+  assert.equal(mergeLikers([placeholder], [resolved])[0].name, '好友昵称')
+  assert.equal(mergeLikers([resolved], [placeholder])[0].name, '好友昵称')
 })
 
 test('unavailable liker page is incomplete and can be retried', async () => {

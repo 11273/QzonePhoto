@@ -10,9 +10,14 @@
         :content="`QQ: ${segment.uin}`"
         placement="top"
       >
-        <span class="mention-segment" @click="handleMentionClick(segment)"
-          >@{{ segment.nick }}</span
+        <button
+          type="button"
+          class="mention-segment"
+          :aria-label="`查看 ${segment.nick} 的空间`"
+          @click="handleMentionClick(segment)"
         >
+          @{{ segment.nick }}
+        </button>
       </el-tooltip>
 
       <!-- 表情 -->
@@ -80,7 +85,12 @@ const handleEmojiError = (event) => {
 }
 
 .mention-segment {
+  display: inline;
+  appearance: none;
+  border: 0;
+  background: transparent;
   color: #60a5fa;
+  font: inherit;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -91,6 +101,17 @@ const handleEmojiError = (event) => {
 .mention-segment:hover {
   color: #93c5fd;
   background: rgba(96, 165, 250, 0.1);
+}
+
+.mention-segment:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mention-segment {
+    transition: none;
+  }
 }
 
 .emoji-segment {

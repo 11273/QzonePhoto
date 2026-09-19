@@ -9,14 +9,15 @@
       <div class="fm-top-right">
         <button
           v-if="totalMediaCount && activeSource.kind !== 'messageBoard'"
-          class="fm-tool-btn"
+          type="button"
+          class="fm-tool-btn fm-tool-btn-primary"
           :disabled="downloadingAll"
           @click="downloadAll"
         >
           <Download :size="14" />
           {{ downloadingAll ? '加入下载…' : `下载全部 ${totalMediaCount}` }}
         </button>
-        <button class="fm-tool-btn" :disabled="loading" @click="handleRefresh">
+        <button type="button" class="fm-tool-btn" :disabled="loading" @click="handleRefresh">
           <Refresh :size="14" />
           刷新
         </button>
@@ -24,15 +25,18 @@
     </header>
 
     <!-- 分类切换：好友动态 / 特别关心 / 与我相关 / 那年今日 -->
-    <nav class="fm-sources" role="tablist">
+    <nav class="fm-sources" role="tablist" aria-label="动态分类">
       <button
-        v-for="src in sources"
+        v-for="(src, sourceIndex) in sources"
         :key="src.key"
+        type="button"
         class="fm-source"
         :class="{ active: src.key === activeKey }"
         role="tab"
         :aria-selected="src.key === activeKey"
+        :tabindex="src.key === activeKey ? 0 : -1"
         @click="switchSource(src.key)"
+        @keydown="handleSourceKeydown($event, sourceIndex)"
       >
         <component :is="src.icon" :size="13" class="fm-source-icon" />
         <span class="fm-source-label">{{ src.label }}</span>
@@ -70,7 +74,12 @@
             :title="emptyStateTitle"
             :description="emptyStateDesc"
           />
-          <button v-if="loadError" type="button" class="fm-retry-btn" @click="handleRefresh">
+          <button
+            v-if="loadError && !loadPermissionDenied"
+            type="button"
+            class="fm-retry-btn"
+            @click="handleRefresh"
+          >
             重新加载
           </button>
         </div>
@@ -224,6 +233,7 @@
                 </div>
                 <div class="fc-card-actions">
                   <button
+                    type="button"
                     class="fc-dl-btn fc-dl-btn-header"
                     :disabled="isFeedCopying(feed.tid)"
                     title="复制正文、原始媒体地址、点赞信息和完整评论"
@@ -234,8 +244,10 @@
                   </button>
                   <button
                     v-if="feed.media.length"
+                    type="button"
                     class="fc-dl-btn fc-dl-btn-header"
                     :disabled="isFeedDownloading(feed.tid)"
+                    :aria-label="`下载这条动态的 ${feed.media.length} 个媒体`"
                     :title="`下载这条动态的 ${feed.media.length} 个媒体`"
                     @click="downloadFeed(feed)"
                   >
@@ -286,11 +298,13 @@
                 class="fc-media"
                 :class="`fc-media-n${Math.min(feed.media.length, 9)}`"
               >
-                <div
+                <button
                   v-for="(media, idx) in feed.media.slice(0, 9)"
                   :key="idx"
+                  type="button"
                   class="fc-media-item"
                   :class="{ 'is-video': isVideoMedia(media) }"
+                  :aria-label="`${isVideoMedia(media) ? '播放视频' : '查看图片'} ${idx + 1}，共 ${feed.media.length} 个媒体`"
                   @click="openPreview(feed, idx)"
                 >
                   <img
@@ -321,7 +335,7 @@
                   <span v-if="idx === 8 && feed.media.length > 9" class="fc-more-overlay">
                     +{{ feed.media.length - 9 }}
                   </span>
-                </div>
+                </button>
               </div>
 
               <!-- 少量点赞者直接展示姓名；长名单按需展开 -->
@@ -356,7 +370,10 @@
                     <span>{{ likerLabel(liker) }}</span>
                   </button>
                 </div>
-                <span v-if="likeState(feed)?.loading" class="fc-likers-rest" role="status">
+                <span v-if="likeState(feed)?.priming" class="fc-likers-rest" role="status">
+                  正在补全昵称…
+                </span>
+                <span v-else-if="likeState(feed)?.loading" class="fc-likers-rest" role="status">
                   正在加载点赞者…
                 </span>
                 <button
@@ -384,7 +401,7 @@
                         ? `查看已显示的 ${allLikers(feed).length} 位`
                         : !needsLikerDetails(feed)
                           ? `查看全部 ${likeTotal(feed)} 位点赞者`
-                          : allLikers(feed).length
+                          : likePreview(feed).length
                             ? '继续查看点赞者'
                             : '查看点赞者'
                   }}
@@ -546,6 +563,7 @@
       :visible="previewVisible"
       :items="previewItems"
       :initial-index="previewIndex"
+      :download-item="downloadPreviewItem"
       @update:visible="previewVisible = $event"
     />
   </div>
@@ -600,6 +618,7 @@ import {
   collectAllComments,
   collectAllLikers,
   countCommentTree,
+  hasLikerDisplayName,
   interactionFailureHint,
   mergeCommentRoots,
   mergeLikers
@@ -806,14 +825,22 @@ const activeSourceTitle = computed(() =>
 )
 const emptyStateTitle = computed(() =>
   loadError.value
-    ? `${activeSourceTitle.value}加载失败`
+    ? loadPermissionDenied.value
+      ? `暂时无法查看${activeSourceTitle.value}`
+      : `${activeSourceTitle.value}加载失败`
     : activeKey.value === 'fav' && favoriteType.value !== 0
       ? `还没有${activeFavoriteFilter.value.label}收藏`
       : activeSource.value.emptyTitle
 )
 const emptyStateDesc = computed(() =>
   loadError.value
-    ? loadError.value
+    ? loadPermissionDenied.value
+      ? /登录|未登录/.test(loadError.value)
+        ? '登录状态已失效，请重新登录后再试。'
+        : isFriendContext.value
+          ? '当前账号没有权限查看这部分内容，其他公开内容仍可继续浏览。'
+          : '当前账号暂时无法查看这部分内容。'
+      : '暂时没有成功读取内容，请稍后重新加载。'
     : activeKey.value === 'fav' && favoriteType.value !== 0
       ? '可以切换其他分类，或回到「全部」查看收藏'
       : activeSource.value.emptyDesc
@@ -854,13 +881,18 @@ const likesExpandedByTid = reactive({})
 const likesShownByTid = reactive({})
 const likersByKey = reactive({})
 const pendingLikers = new Map()
+const pendingLikerPrimers = new Map()
 let likerRequestQueue = Promise.resolve()
 const likeKey = (feed) => `${activeKey.value}:${feed.uin}:${feed.tid}`
 const likeState = (feed) => likersByKey[likeKey(feed)]
 const likerLabel = (liker) => liker.name || `QQ ${liker.uin}`
 const allLikers = (feed) => likeState(feed)?.likers || feed.likers || []
 const likeTotal = (feed) => likeState(feed)?.total ?? feed.likeCount ?? 0
-const likePreview = (feed) => allLikers(feed).slice(0, 8)
+const likePreview = (feed) => allLikers(feed).filter(hasLikerDisplayName).slice(0, 8)
+const hasUnresolvedLikerNames = (feed) =>
+  allLikers(feed)
+    .slice(0, 8)
+    .some((liker) => !hasLikerDisplayName(liker))
 const needsLikerDetails = (feed) =>
   feed?.likerFetchable !== false && likeTotal(feed) > 0 && allLikers(feed).length < likeTotal(feed)
 const enqueueLikerRequest = (requestPage) => {
@@ -870,56 +902,101 @@ const enqueueLikerRequest = (requestPage) => {
     .then(() => new Promise((resolve) => setTimeout(resolve, 350)))
   return task
 }
-const ensureLikers = async (feed, retry = false) => {
-  if (!feed?.likeCount && !feed?.likers?.length) return true
-  if (feed?.likerFetchable === false) return feed?.likeListComplete !== false
+const ensureLikerSlot = (feed) => {
   const key = likeKey(feed)
   if (!likersByKey[key]) {
     likersByKey[key] = reactive({
       loading: false,
+      priming: false,
       complete: false,
       error: '',
       total: feed.likeCount,
       likers: mergeLikers([], feed.likers)
     })
   }
-  const slot = likersByKey[key]
+  return likersByKey[key]
+}
+const fetchLikerPage = (feed, beginUin = '0') => {
+  const authOption =
+    normalizeQzoneUin(feed.uin) !== selfUin.value ? { skipAuthCheck: true } : undefined
+  return enqueueLikerRequest(() =>
+    retryPageRequest(
+      async () => {
+        const result = await window.QzoneAPI.getFeedLikers(
+          {
+            hostUin: feed.uin,
+            tid: feed.tid,
+            appid: feed.appid,
+            unikey: feed.likeUnikey,
+            beginUin,
+            count: 60
+          },
+          authOption
+        )
+        if (Number(result?.code) !== 0) {
+          throw new Error(result?.message || '点赞者加载失败')
+        }
+        return result
+      },
+      { attempts: 2, delayMs: 400 }
+    )
+  )
+}
+// 首屏 HTML 偶尔只带 QQ 号。卡片进入视口后用官方名单首屏补齐昵称，
+// 但不在后台一次拉完几百位点赞者，完整名单仍在用户展开时继续加载。
+const primeLikerNames = async (feed) => {
+  if (feed?.likerFetchable === false || !hasUnresolvedLikerNames(feed)) return true
+  const key = likeKey(feed)
+  const slot = ensureLikerSlot(feed)
+  if (pendingLikers.has(key)) return pendingLikers.get(key)
+  if (pendingLikerPrimers.has(key)) return pendingLikerPrimers.get(key)
+  const loadSeq = requestSeq.value
+  slot.priming = true
+  const load = (async () => {
+    try {
+      const response = await fetchLikerPage(feed, '0')
+      if (loadSeq !== requestSeq.value) return false
+      slot.likers = mergeLikers(slot.likers, response?.likers || [])
+      slot.total = Math.max(slot.total || 0, Number(response?.total) || 0, slot.likers.length)
+      feed.likers = slot.likers
+      const hasMore = response?.hasMore
+      const reachedEnd = hasMore === false || hasMore === 0 || hasMore === '0'
+      if (reachedEnd && slot.total > 0 && slot.likers.length >= slot.total) {
+        slot.complete = true
+        feed.likeListComplete = true
+      }
+      return !hasUnresolvedLikerNames(feed)
+    } catch {
+      // 背景补昵称失败时保留当前名单；展开名单仍会显示可理解的错误和重试入口。
+      return false
+    } finally {
+      if (loadSeq === requestSeq.value) slot.priming = false
+    }
+  })()
+  pendingLikerPrimers.set(key, load)
+  load.finally(() => {
+    if (pendingLikerPrimers.get(key) === load) pendingLikerPrimers.delete(key)
+  })
+  return load
+}
+const ensureLikers = async (feed, retry = false) => {
+  if (!feed?.likeCount && !feed?.likers?.length) return true
+  if (feed?.likerFetchable === false) return feed?.likeListComplete !== false
+  const key = likeKey(feed)
+  const slot = ensureLikerSlot(feed)
   if (slot.complete) return true
   if (pendingLikers.has(key)) return pendingLikers.get(key)
   if (slot.error && !retry) return false
+  if (pendingLikerPrimers.has(key)) await pendingLikerPrimers.get(key)
   slot.loading = true
   slot.error = ''
   const loadSeq = requestSeq.value
   const load = (async () => {
     try {
-      const authOption =
-        normalizeQzoneUin(feed.uin) !== selfUin.value ? { skipAuthCheck: true } : undefined
       const result = await collectAllLikers({
         initial: slot.likers,
         expected: slot.total,
-        requestPage: (beginUin) =>
-          enqueueLikerRequest(() =>
-            retryPageRequest(
-              async () => {
-                const result = await window.QzoneAPI.getFeedLikers(
-                  {
-                    hostUin: feed.uin,
-                    tid: feed.tid,
-                    appid: feed.appid,
-                    unikey: feed.likeUnikey,
-                    beginUin,
-                    count: 60
-                  },
-                  authOption
-                )
-                if (Number(result?.code) !== 0) {
-                  throw new Error(result?.message || '点赞者加载失败')
-                }
-                return result
-              },
-              { attempts: 2, delayMs: 400 }
-            )
-          ),
+        requestPage: (beginUin) => fetchLikerPage(feed, beginUin),
         onPage: (likers, total) => {
           if (loadSeq !== requestSeq.value) return
           slot.likers = likers
@@ -964,13 +1041,15 @@ const showMoreLikers = (tid) => {
 const vAutoLikers = {
   mounted(el, binding) {
     const feed = binding.value
-    if (feed?.likerFetchable === false || Number(feed?.likeCount) > 8 || !needsLikerDetails(feed))
-      return
+    const shouldPrimeNames = hasUnresolvedLikerNames(feed)
+    const shouldLoadSmallList = Number(feed?.likeCount) <= 8 && needsLikerDetails(feed)
+    if (feed?.likerFetchable === false || (!shouldPrimeNames && !shouldLoadSmallList)) return
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries[0]?.isIntersecting) return
         observer.disconnect()
-        ensureLikers(feed)
+        const primed = shouldPrimeNames ? primeLikerNames(feed) : Promise.resolve(true)
+        if (shouldLoadSmallList) primed.finally(() => ensureLikers(feed))
       },
       { rootMargin: '160px' }
     )
@@ -1516,7 +1595,26 @@ const normalize = (raw) => {
     .map((a) => {
       const href = a.getAttribute('href') || ''
       const m = href.match(/user\.qzone\.qq\.com\/(\d+)/)
-      return { uin: m ? m[1] : '', name: a.textContent?.trim() || '' }
+      const uin = m ? m[1] : ''
+      const nameCandidates = [
+        a.dataset?.nick,
+        a.dataset?.nickname,
+        a.getAttribute('title'),
+        a.querySelector('img')?.getAttribute('alt'),
+        a.textContent
+      ]
+        .map((value) => normalizePlainText(value || ''))
+        .filter(Boolean)
+      const name =
+        nameCandidates.find(
+          (candidate) =>
+            candidate !== uin &&
+            candidate !== `QQ ${uin}` &&
+            !/^(进入|访问|查看).*(空间|主页)$/.test(candidate)
+        ) ||
+        nameCandidates[0] ||
+        ''
+      return { uin, name }
     })
     .filter((l) => l.uin)
 
@@ -2697,6 +2795,18 @@ const downloadFeed = async (feed) => {
   }
 }
 
+const downloadPreviewItem = async (item) => {
+  const feed = item?._feed
+  const media = item?._media
+  if (!feed || !media) {
+    throw new Error('当前媒体暂时无法下载')
+  }
+  const ids = await addFeedDownloadTasks([{ ...feed, media: [media] }])
+  if (!ids.length) {
+    throw new Error('当前媒体缺少可用的下载地址')
+  }
+}
+
 // ============= 翻页 / 预览 =============
 const resetFeedRuntime = (source) => {
   requestSeq.value += 1
@@ -2729,6 +2839,7 @@ const isPermanentLoadError = (message) =>
   /保密|权限|没有权限|无权|主人设置|访问受限|仅主人|登录|请先登录|未登录/.test(
     String(message || '')
   )
+const loadPermissionDenied = computed(() => isPermanentLoadError(loadError.value))
 
 const notifyLoadErrorOnce = (source, message) => {
   const key = `${source.key}:${activeHostUin.value || ''}:${message}`
@@ -2936,6 +3047,25 @@ const switchSource = async (key) => {
   await ensureScrollable()
 }
 
+const handleSourceKeydown = (event, currentIndex) => {
+  let nextIndex = currentIndex
+  if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % sources.value.length
+  else if (event.key === 'ArrowLeft') {
+    nextIndex = (currentIndex - 1 + sources.value.length) % sources.value.length
+  } else if (event.key === 'Home') nextIndex = 0
+  else if (event.key === 'End') nextIndex = sources.value.length - 1
+  else return
+
+  event.preventDefault()
+  switchSource(sources.value[nextIndex].key)
+  nextTick(() => {
+    event.currentTarget
+      ?.closest('[role="tablist"]')
+      ?.querySelectorAll('[role="tab"]')
+      ?.[nextIndex]?.focus()
+  })
+}
+
 const switchFavoriteFilter = async (type) => {
   const nextType = favoriteFilterFor(type).type
   if (activeKey.value !== 'fav' || favoriteType.value === nextType) return
@@ -3009,7 +3139,9 @@ const openPreview = (feed, startIdx) => {
     fallbackSrcs: getMediaThumbCandidates(media),
     key: `${feed.tid}-${i}`,
     title: feed.name,
-    subtitle: feed.feedstime || formatTime(feed.abstime)
+    subtitle: feed.feedstime || formatTime(feed.abstime),
+    _feed: feed,
+    _media: media
   }))
   previewIndex.value = startIdx
   previewVisible.value = true
@@ -3092,8 +3224,8 @@ defineExpose({ refresh: handleRefresh })
 /* ========== 分类切换（sub-tab） ========== */
 .fm-sources {
   display: flex;
-  gap: 2px;
-  padding: 6px 16px 0;
+  gap: 0;
+  padding: 6px 12px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
   flex-wrap: nowrap;
@@ -3108,11 +3240,13 @@ defineExpose({ refresh: handleRefresh })
 .fm-source {
   position: relative;
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 1 0 96px;
   align-items: center;
+  justify-content: center;
   gap: 5px;
+  min-width: 0;
   min-height: 38px;
-  padding: 6px 10px 8px;
+  padding: 6px 8px 8px;
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
@@ -3163,21 +3297,21 @@ defineExpose({ refresh: handleRefresh })
   display: flex;
   flex-wrap: wrap;
   flex-shrink: 0;
-  gap: 8px;
-  padding: 12px 24px;
+  gap: 6px;
+  padding: 6px 20px;
   border-bottom: 1px solid var(--ds-border-light);
   background: var(--ds-bg-1);
 }
 
 .fm-fav-filter {
-  min-height: 38px;
-  padding: 0 14px;
+  min-height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--ds-border-light);
-  border-radius: var(--ds-radius-lg);
+  border-radius: 9px;
   background: var(--ds-bg-2);
   color: var(--ds-text-secondary);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   transition:
     background-color var(--ds-dur-fast) var(--ds-ease-soft),
@@ -3209,12 +3343,12 @@ defineExpose({ refresh: handleRefresh })
   padding: 16px 24px 32px;
 }
 
-/* ========== 单列流（瀑布流体验不佳，改回单列让卡片更舒展） ========== */
+/* ========== 内容优先的单列流：保留长文本可读性，同时给媒体更宽的展示空间 ========== */
 .fm-masonry {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-width: 820px;
+  gap: 14px;
+  max-width: 960px;
   margin: 0 auto;
 }
 
@@ -3222,17 +3356,29 @@ defineExpose({ refresh: handleRefresh })
 .fc-card {
   display: flex;
   flex-direction: column;
-  padding: 14px 18px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
+  padding: 18px 20px;
+  background:
+    linear-gradient(135deg, rgba(251, 146, 60, 0.035), transparent 34%), rgba(255, 255, 255, 0.026);
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 12px 34px rgba(0, 0, 0, 0.12);
   transition:
     background 0.18s,
-    border-color 0.18s;
+    border-color 0.18s,
+    box-shadow 0.18s,
+    transform 0.18s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.04);
-    border-color: rgba(96, 165, 250, 0.12);
+    background:
+      linear-gradient(135deg, rgba(251, 146, 60, 0.055), transparent 38%),
+      rgba(255, 255, 255, 0.038);
+    border-color: rgba(251, 146, 60, 0.18);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.035),
+      0 16px 40px rgba(0, 0, 0, 0.18);
+    transform: translateY(-1px);
   }
 }
 
@@ -3826,35 +3972,80 @@ defineExpose({ refresh: handleRefresh })
   }
 }
 
-/* ========== 媒体：固定 100px 密集排（朋友圈密度） ========== */
+/* ========== 媒体：按数量自动形成内容优先的拼图布局 ========== */
 .fc-media {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 100px);
-  gap: 4px;
-  margin: 4px 0 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-flow: dense;
+  grid-auto-rows: 112px;
+  gap: 6px;
+  width: min(100%, 640px);
+  margin: 6px 0 12px;
 
   .fc-media-item {
-    width: 100px;
-    height: 100px;
+    width: 100%;
+    height: 100%;
   }
 
-  /* 单图：300px 大图，避免一张图占满 */
   &.fc-media-n1 {
-    grid-template-columns: minmax(0, 300px);
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: auto;
+    width: min(100%, 420px);
+
     .fc-media-item {
       width: 100%;
       height: auto;
-      aspect-ratio: 16 / 11;
+      aspect-ratio: 16 / 10;
+    }
+  }
+
+  &.fc-media-n2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: auto;
+
+    .fc-media-item {
+      height: auto;
+      aspect-ratio: 4 / 3;
+    }
+  }
+
+  &.fc-media-n3 {
+    grid-template-columns: 1.35fr 1fr;
+    grid-template-rows: repeat(2, 134px);
+
+    .fc-media-item:first-child {
+      grid-row: span 2;
+    }
+  }
+
+  &.fc-media-n4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, 150px);
+  }
+
+  &.fc-media-n5,
+  &.fc-media-n6 {
+    .fc-media-item:first-child {
+      grid-column: span 2;
+      grid-row: span 2;
     }
   }
 }
 .fc-media-item {
   position: relative;
-  border-radius: 6px;
+  display: block;
+  padding: 0;
+  appearance: none;
+  border: 0;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 9px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.04);
   cursor: zoom-in;
-  transition: transform 0.2s;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
   img {
     width: 100%;
     height: 100%;
@@ -3863,6 +4054,16 @@ defineExpose({ refresh: handleRefresh })
   }
   &:hover img {
     transform: scale(1.04);
+  }
+
+  &:hover {
+    border-color: rgba(251, 146, 60, 0.34);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--qz-active, #fb923c);
+    outline-offset: 2px;
   }
 
   &.is-video {
@@ -3966,6 +4167,45 @@ defineExpose({ refresh: handleRefresh })
 }
 .fc-card:has(.fc-privacy) .fc-media-item img {
   filter: blur(var(--qz-privacy-media-blur));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-card,
+  .fc-media-item,
+  .fc-media-item img,
+  .fc-video-play {
+    transition: none !important;
+  }
+
+  .fc-media-item:hover img {
+    transform: none !important;
+  }
+
+  .fc-media-item.is-video:hover .fc-video-play {
+    transform: translate(-50%, -50%) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .fm-wrap {
+    padding-inline: 14px;
+  }
+
+  .fc-card {
+    padding: 15px;
+  }
+
+  .fc-media {
+    grid-auto-rows: 96px;
+
+    &.fc-media-n3 {
+      grid-template-rows: repeat(2, 112px);
+    }
+
+    &.fc-media-n4 {
+      grid-template-rows: repeat(2, 118px);
+    }
+  }
 }
 
 /* ========== 点赞者头像行 ========== */
