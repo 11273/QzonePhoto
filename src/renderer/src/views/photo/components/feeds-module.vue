@@ -3,7 +3,7 @@
     <!-- 顶部：标题 + 工具 + sub-tab -->
     <header class="fm-top">
       <div class="fm-top-left">
-        <h2 class="fm-title">{{ activeSource.label }}</h2>
+        <h2 class="fm-title">{{ activeSourceTitle }}</h2>
         <span class="fm-sub">{{ headerCountText }}</span>
       </div>
       <div class="fm-top-right">
@@ -42,20 +42,38 @@
       </button>
     </nav>
 
+    <nav v-if="activeKey === 'fav'" class="fm-fav-filters" aria-label="收藏分类">
+      <button
+        v-for="filter in FAVORITE_FILTERS"
+        :key="filter.type"
+        type="button"
+        class="fm-fav-filter"
+        :class="{ active: filter.type === favoriteType }"
+        :aria-pressed="filter.type === favoriteType"
+        @click="switchFavoriteFilter(filter.type)"
+      >
+        {{ filter.label }}
+      </button>
+    </nav>
+
     <!-- 主体：瀑布流卡片 -->
     <el-scrollbar ref="scrollbarRef" class="fm-scroll" @scroll="handleScroll">
       <div class="fm-wrap">
         <LoadingState
           v-if="loading && feeds.length === 0"
-          :text="`正在加载${activeSource.label}...`"
+          :text="`正在加载${activeSourceTitle}...`"
         />
 
-        <EmptyState
-          v-else-if="filteredFeeds.length === 0 && !loading"
-          :icon="MessageCircle"
-          :title="emptyStateTitle"
-          :description="emptyStateDesc"
-        />
+        <div v-else-if="filteredFeeds.length === 0 && !loading" class="fm-empty-wrap">
+          <EmptyState
+            :icon="MessageCircle"
+            :title="emptyStateTitle"
+            :description="emptyStateDesc"
+          />
+          <button v-if="loadError" type="button" class="fm-retry-btn" @click="handleRefresh">
+            重新加载
+          </button>
+        </div>
 
         <template v-else-if="activeSource.kind === 'messageBoard'">
           <div class="fm-message-list">
@@ -140,6 +158,9 @@
                     <button type="button" class="mb-reply-author" @click="openQzoneProfile(reply)">
                       {{ reply.author || reply.uin }}
                     </button>
+                    <span v-if="reply.targetName || reply.targetUin" class="mb-reply-target">
+                      回复 {{ reply.targetName || `QQ ${reply.targetUin}` }}
+                    </span>
                     <RichText
                       class="mb-reply-text"
                       :text="reply.text"
@@ -238,6 +259,28 @@
                 <RichText :text="feed.contentText" @mention-click="onCommentAuthorClick" />
               </div>
 
+              <button
+                v-if="feed.linkCard"
+                type="button"
+                class="fc-link-card"
+                :disabled="!feed.linkCard.url"
+                @click="openExternalLink(feed.linkCard.url)"
+              >
+                <img
+                  v-if="feed.linkCard.thumbnail"
+                  :src="feed.linkCard.thumbnail"
+                  :alt="feed.linkCard.title"
+                  loading="lazy"
+                  referrerpolicy="no-referrer"
+                />
+                <span class="fc-link-body">
+                  <strong>{{ feed.linkCard.title }}</strong>
+                  <span v-if="feed.linkCard.description">{{ feed.linkCard.description }}</span>
+                  <small v-if="feed.linkCard.source">{{ feed.linkCard.source }}</small>
+                </span>
+                <ExternalLink v-if="feed.linkCard.url" :size="16" aria-hidden="true" />
+              </button>
+
               <div
                 v-if="feed.media.length"
                 class="fc-media"
@@ -301,16 +344,16 @@
                     :key="liker.uin"
                     type="button"
                     class="fc-liker-detail"
-                    :aria-label="`查看 ${liker.name || liker.uin} 的空间`"
+                    :aria-label="`查看 ${likerLabel(liker)} 的空间`"
                     @click="openQzoneProfile(liker)"
                   >
                     <img
                       :src="avatarUrl(liker.uin)"
-                      :alt="liker.name || liker.uin"
+                      :alt="likerLabel(liker)"
                       referrerpolicy="no-referrer"
                       @error="onAvatarError"
                     />
-                    <span>{{ liker.name || liker.uin }}</span>
+                    <span>{{ likerLabel(liker) }}</span>
                   </button>
                 </div>
                 <span v-if="likeState(feed)?.loading" class="fc-likers-rest" role="status">
@@ -325,7 +368,10 @@
                   {{ likeState(feed).error }} · 重试
                 </button>
                 <button
-                  v-else-if="likeTotal(feed) > 8"
+                  v-else-if="
+                    likeTotal(feed) > 8 &&
+                    (allLikers(feed).length > 8 || feed.likerFetchable !== false)
+                  "
                   type="button"
                   class="fc-likers-toggle"
                   :aria-expanded="!!likesExpandedByTid[feed.tid]"
@@ -334,17 +380,31 @@
                   {{
                     likesExpandedByTid[feed.tid]
                       ? '收起名单'
-                      : `查看全部 ${likeTotal(feed)} 位点赞者`
+                      : feed.likeListComplete === false && feed.likerFetchable === false
+                        ? `查看已显示的 ${allLikers(feed).length} 位`
+                        : !needsLikerDetails(feed)
+                          ? `查看全部 ${likeTotal(feed)} 位点赞者`
+                          : allLikers(feed).length
+                            ? '继续查看点赞者'
+                            : '查看点赞者'
                   }}
                 </button>
                 <button
-                  v-else-if="allLikers(feed).length < likeTotal(feed)"
+                  v-else-if="
+                    feed.likerFetchable !== false && allLikers(feed).length < likeTotal(feed)
+                  "
                   type="button"
                   class="fc-likers-toggle"
                   @click="ensureLikers(feed, true)"
                 >
                   查看点赞者
                 </button>
+                <span
+                  v-if="feed.likeListComplete === false && feed.likerFetchable === false"
+                  class="fc-likers-rest"
+                >
+                  还有点赞者暂时无法显示
+                </span>
               </div>
               <div
                 v-if="likesExpandedByTid[feed.tid] && likeTotal(feed) > 8"
@@ -355,15 +415,16 @@
                   :key="liker.uin"
                   type="button"
                   class="fc-liker-detail"
+                  :aria-label="`查看 ${likerLabel(liker)} 的空间`"
                   @click="openQzoneProfile(liker)"
                 >
                   <img
                     :src="avatarUrl(liker.uin)"
-                    :alt="liker.name || liker.uin"
+                    :alt="likerLabel(liker)"
                     referrerpolicy="no-referrer"
                     @error="onAvatarError"
                   />
-                  <span>{{ liker.name || liker.uin }}</span>
+                  <span>{{ likerLabel(liker) }}</span>
                 </button>
                 <button
                   v-if="visibleLikers(feed).length < allLikers(feed).length"
@@ -372,6 +433,14 @@
                   @click="showMoreLikers(feed.tid)"
                 >
                   再显示 {{ Math.min(40, allLikers(feed).length - visibleLikers(feed).length) }} 位
+                </button>
+                <button
+                  v-if="likeState(feed)?.loading || likeState(feed)?.error"
+                  type="button"
+                  class="fc-likers-toggle"
+                  @click="toggleLikers(feed)"
+                >
+                  收起名单
                 </button>
               </div>
 
@@ -401,7 +470,11 @@
 
               <!-- 评论预览；展开后加载官网可见的评论和回复 -->
               <div
-                v-if="visibleComments(feed).length || canExpandMore(feed)"
+                v-if="
+                  visibleComments(feed).length ||
+                  canExpandMore(feed) ||
+                  feed.commentsComplete === false
+                "
                 class="fc-comments-wrap"
               >
                 <FeedComment
@@ -413,34 +486,48 @@
                 <button
                   v-if="canExpandMore(feed)"
                   class="fc-cmt-more"
-                  :disabled="commentsByTid[feed.tid]?.loading"
-                  :aria-expanded="!!commentsByTid[feed.tid]?.open"
+                  :disabled="commentsByTid[commentKey(feed)]?.loading"
+                  :aria-expanded="!!commentsByTid[commentKey(feed)]?.open"
                   @click="toggleComments(feed)"
                 >
-                  <el-icon v-if="commentsByTid[feed.tid]?.loading" class="is-loading"
+                  <el-icon v-if="commentsByTid[commentKey(feed)]?.loading" class="is-loading"
                     ><Loading
                   /></el-icon>
                   <ChevronDown v-else :size="13" />
                   {{
-                    commentsByTid[feed.tid]?.loading
+                    commentsByTid[commentKey(feed)]?.loading
                       ? '加载评论…'
-                      : commentsByTid[feed.tid]?.open
-                        ? commentsByTid[feed.tid]?.expanded
+                      : commentsByTid[commentKey(feed)]?.open
+                        ? commentsByTid[commentKey(feed)]?.expanded
                           ? '收起评论'
                           : '继续加载评论'
                         : `查看全部评论${feed.cmtCount ? `（${feed.cmtCount}）` : ''}`
                   }}
                 </button>
                 <button
-                  v-if="commentsByTid[feed.tid]?.open && !commentsByTid[feed.tid]?.expanded"
+                  v-if="
+                    commentsByTid[commentKey(feed)]?.open &&
+                    !commentsByTid[commentKey(feed)]?.expanded
+                  "
                   type="button"
                   class="fc-cmt-more"
-                  @click="collapseComments(feed.tid)"
+                  @click="collapseComments(feed)"
                 >
                   收起评论
                 </button>
-                <div v-if="commentsByTid[feed.tid]?.error" class="fc-cmt-error">
-                  {{ commentsByTid[feed.tid].error }}
+                <div
+                  v-if="commentsByTid[commentKey(feed)]?.error"
+                  class="fc-cmt-error"
+                  role="alert"
+                >
+                  {{ commentsByTid[commentKey(feed)].error }}
+                </div>
+                <div
+                  v-else-if="feed.commentsComplete === false && feed.commentsFetchable === false"
+                  class="fc-cmt-error"
+                  role="status"
+                >
+                  还有评论或回复暂时无法显示
                 </div>
               </div>
             </article>
@@ -487,6 +574,8 @@ import {
   Bookmark,
   Home,
   MessagesSquare,
+  Newspaper,
+  ExternalLink,
   Play,
   ClipboardCopy
 } from '@lucide/vue'
@@ -501,10 +590,17 @@ import {
   shouldContinuePagination
 } from '@renderer/utils/paginationGuard'
 import { buildFeedExportText, countFeedComments } from '@renderer/utils/feedExport'
+import { FAVORITE_FILTERS, favoriteFilterFor } from '@renderer/utils/favoriteFilters'
+import { normalizeBlogRecord, safeWebUrl } from '@renderer/utils/blogRecords'
+import { messageReplyTarget, mergeMessageBoardPages } from '@renderer/utils/messageBoardRecords'
+import { normalizeShuoshuoComments as normalizeShuoshuoCommentItems } from '@renderer/utils/feedShuoshuoComments'
 import {
+  areCommentRepliesComplete,
+  canExpandFeedComments,
   collectAllComments,
   collectAllLikers,
   countCommentTree,
+  interactionFailureHint,
   mergeCommentRoots,
   mergeLikers
 } from '@renderer/utils/feedInteractions'
@@ -526,6 +622,8 @@ const activeHostUin = computed(() => resolveQzoneHostUin(hostUinOverride?.value,
 const PAGE_SIZE = 10
 const LAST_YEAR_MIN = 2010
 const MESSAGE_REPLY_PREVIEW_COUNT = 4
+const favoriteType = ref(FAVORITE_FILTERS[0].type)
+const activeFavoriteFilter = computed(() => favoriteFilterFor(favoriteType.value))
 
 // ============= 数据源配置 =============
 //   key:     内部标识
@@ -640,8 +738,8 @@ const sources = computed(() =>
       countKey: null,
       emptyTitle: '收藏夹还是空的',
       emptyDesc: '在 QQ 空间网页端把好玩的说说 / 日志 / 分享加入收藏，会出现在这里',
-      // 官方收藏 type：0=全部 1=网页 2=本地图片 3=日志 4=相册/照片 5=说说 6=文字 7=分享
-      initialPager: () => ({ start: 0, type: 0 }),
+      // 这里是收藏分类筛选参数，不是 fav_list 条目自身的 type。
+      initialPager: () => ({ start: 0, type: favoriteType.value }),
       load: (p) =>
         window.QzoneAPI.getFavList(
           {
@@ -650,6 +748,27 @@ const sources = computed(() =>
             num: PAGE_SIZE
           },
           { skipAuthCheck: true }
+        )
+    },
+    {
+      key: 'blog',
+      label: isFriendContext.value ? '好友日志' : '我的日志',
+      icon: Newspaper,
+      countKey: null,
+      emptyTitle: isFriendContext.value ? '暂时看不到好友日志' : '还没有日志',
+      emptyDesc: isFriendContext.value
+        ? '可能是权限限制，或 TA 没有公开日志'
+        : '在 QQ 空间发布的日志会在这里展示摘要',
+      kind: 'blog',
+      initialPager: () => ({ pos: 0, num: 15, total: 0 }),
+      load: (p) =>
+        window.QzoneAPI.getBlogList(
+          {
+            hostUin: activeHostUin.value,
+            pos: p.pos ?? 0,
+            num: p.num ?? 15
+          },
+          isFriendContext.value ? { skipAuthCheck: true } : undefined
         )
     },
     {
@@ -673,22 +792,38 @@ const sources = computed(() =>
     }
   ].filter((source) => {
     if (!isFriendContext.value) return true
-    return source.key === 'home' || source.key === 'messageBoard'
+    return source.key === 'home' || source.key === 'blog' || source.key === 'messageBoard'
   })
 )
 const activeKey = ref('home')
 const activeSource = computed(
   () => sources.value.find((s) => s.key === activeKey.value) || sources.value[0]
 )
+const activeSourceTitle = computed(() =>
+  activeKey.value === 'fav' && favoriteType.value !== 0
+    ? `${activeFavoriteFilter.value.label}收藏`
+    : activeSource.value.label
+)
 const emptyStateTitle = computed(() =>
-  loadError.value ? `${activeSource.value.label}加载失败` : activeSource.value.emptyTitle
+  loadError.value
+    ? `${activeSourceTitle.value}加载失败`
+    : activeKey.value === 'fav' && favoriteType.value !== 0
+      ? `还没有${activeFavoriteFilter.value.label}收藏`
+      : activeSource.value.emptyTitle
 )
 const emptyStateDesc = computed(() =>
-  loadError.value ? loadError.value : activeSource.value.emptyDesc
+  loadError.value
+    ? loadError.value
+    : activeKey.value === 'fav' && favoriteType.value !== 0
+      ? '可以切换其他分类，或回到「全部」查看收藏'
+      : activeSource.value.emptyDesc
 )
 
 const feeds = ref([])
+const messageBoardRawRecords = ref([])
 const messageBoardTotal = ref(0)
+const favoriteTotal = ref(0)
+const blogTotal = ref(0)
 const pager = ref(activeSource.value.initialPager())
 const feedsCounts = reactive({}) // { friendFeeds_new_cnt, specialCareFeeds_new_cnt, ... }
 const badgeCount = (key) => {
@@ -722,12 +857,12 @@ const pendingLikers = new Map()
 let likerRequestQueue = Promise.resolve()
 const likeKey = (feed) => `${activeKey.value}:${feed.uin}:${feed.tid}`
 const likeState = (feed) => likersByKey[likeKey(feed)]
+const likerLabel = (liker) => liker.name || `QQ ${liker.uin}`
 const allLikers = (feed) => likeState(feed)?.likers || feed.likers || []
 const likeTotal = (feed) => likeState(feed)?.total ?? feed.likeCount ?? 0
 const likePreview = (feed) => allLikers(feed).slice(0, 8)
 const needsLikerDetails = (feed) =>
-  likeTotal(feed) > 0 &&
-  (allLikers(feed).length < likeTotal(feed) || allLikers(feed).some((person) => !person.name))
+  feed?.likerFetchable !== false && likeTotal(feed) > 0 && allLikers(feed).length < likeTotal(feed)
 const enqueueLikerRequest = (requestPage) => {
   const task = likerRequestQueue.catch(() => {}).then(requestPage)
   likerRequestQueue = task
@@ -737,6 +872,7 @@ const enqueueLikerRequest = (requestPage) => {
 }
 const ensureLikers = async (feed, retry = false) => {
   if (!feed?.likeCount && !feed?.likers?.length) return true
+  if (feed?.likerFetchable === false) return feed?.likeListComplete !== false
   const key = likeKey(feed)
   if (!likersByKey[key]) {
     likersByKey[key] = reactive({
@@ -798,11 +934,13 @@ const ensureLikers = async (feed, retry = false) => {
         feed.likers = result.likers
         feed.likeCount = result.total
       } else {
-        slot.error = '暂时无法查看全部点赞者'
+        slot.error = result.likers.length
+          ? '还有点赞者暂时无法显示'
+          : '点赞人数可见，名单暂不可查看'
       }
       return result.complete
-    } catch {
-      if (loadSeq === requestSeq.value) slot.error = '点赞者加载失败'
+    } catch (error) {
+      if (loadSeq === requestSeq.value) slot.error = interactionFailureHint('点赞者', error)
       return false
     } finally {
       if (loadSeq === requestSeq.value) slot.loading = false
@@ -826,7 +964,8 @@ const showMoreLikers = (tid) => {
 const vAutoLikers = {
   mounted(el, binding) {
     const feed = binding.value
-    if (Number(feed?.likeCount) > 8 || !needsLikerDetails(feed)) return
+    if (feed?.likerFetchable === false || Number(feed?.likeCount) > 8 || !needsLikerDetails(feed))
+      return
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries[0]?.isIntersecting) return
@@ -845,6 +984,7 @@ const vAutoLikers = {
 // 评论按动态缓存，收起时保留已加载结果；expanded 表示已拉到统计数或接口末尾。
 const commentsByTid = reactive({})
 const pendingComments = new Map()
+const commentKey = (feed) => `${activeKey.value}:${feed.uin}:${feed.tid}`
 const messageRepliesExpanded = reactive({})
 
 // ============= 访客 =============
@@ -852,6 +992,8 @@ const MOD_NAME = { 0: '空间', 2: '相册', 8: '动态', 10: '日志', 43: '个
 
 const visitor = reactive({
   loaded: false,
+  loading: false,
+  error: '',
   count: 0,
   recent: [],
   blockedCount: 0,
@@ -863,11 +1005,17 @@ const visitor = reactive({
 })
 
 const fetchVisitor = async () => {
+  if (visitor.loading) return
+  visitor.loading = true
+  visitor.error = ''
+  pushVisitorStats()
   try {
-    const [albumRes, allModsRes] = await Promise.all([
+    const [albumResult, allModsResult] = await Promise.allSettled([
       window.QzoneAPI.getVisitorDetail({ mask: 2, mod: 2 }),
       window.QzoneAPI.getVisitorDetail({ mask: 1, mod: 1 })
     ])
+    const albumRes = albumResult.status === 'fulfilled' ? albumResult.value : null
+    const allModsRes = allModsResult.status === 'fulfilled' ? allModsResult.value : null
     const album = albumRes?.data
     const all = allModsRes?.data
     if (album) {
@@ -894,10 +1042,15 @@ const fetchVisitor = async () => {
     const mod0 = mods.find((m) => m.mod === 0)
     visitor.totalViews = mod0?.total || 0
     visitor.todayViews = mod0?.today || 0
-    visitor.loaded = true
-    pushVisitorStats()
+    visitor.loaded = !!(album || all) || visitor.loaded
+    if (!album && !all) visitor.error = '访客记录暂时无法加载'
+    else if (!album) visitor.error = '最近访客暂时无法加载'
+    else if (!all) visitor.error = '访客统计暂时无法加载'
   } catch {
-    /* silent */
+    visitor.error = '访客记录暂时无法加载'
+  } finally {
+    visitor.loading = false
+    pushVisitorStats()
   }
 }
 
@@ -1651,101 +1804,7 @@ const normalizeFav = (raw) => {
   }
 }
 
-const toArray = (value) => {
-  if (Array.isArray(value)) return value
-  if (value && typeof value === 'object') return Object.values(value)
-  return []
-}
-
-const getReplyItems = (item) =>
-  [
-    ...toArray(item?.replylist),
-    ...toArray(item?.reply_list),
-    ...toArray(item?.list_3),
-    ...toArray(item?.children),
-    ...toArray(item?.subcomments),
-    ...toArray(item?.sub_comment),
-    ...toArray(item?.commentlist).filter((reply) => reply !== item)
-  ].filter((reply) => reply && typeof reply === 'object')
-
-const normalizeCommentAuthor = (item) =>
-  cleanMentionNick(
-    item?.name ||
-      item?.nick ||
-      item?.nickname ||
-      item?.user?.nickname ||
-      item?.userinfo?.nickname ||
-      ''
-  )
-
-const cleanMentionNick = (nick) =>
-  String(nick || '')
-    .replace(/\[em\]e\d+\[\/em\]/g, '')
-    .trim()
-
-const takeLeadingMention = (text) => {
-  const source = String(text || '').trim()
-  const match = source.match(/^@\{uin:([\w-]+)(?:,nick:([^,}]*))?(?:,[^}]*)?\}/)
-  if (!match) return { text: source, targetUin: '', targetNick: '' }
-  return {
-    text: source.slice(match[0].length).trim(),
-    targetUin: match[1],
-    targetNick: cleanMentionNick(match[2]) || match[1]
-  }
-}
-
-const normalizeShuoshuoReply = (item, parent) => {
-  const leading = takeLeadingMention(item.content || item.reply_content || item.text || '')
-  return {
-    id:
-      item.tid ||
-      item.id ||
-      item.commentid ||
-      item.replyid ||
-      `${item.uin || ''}-${item.create_time || ''}-${item.content || ''}`,
-    uin: String(item.uin || item.owner_uin || item.user?.uin || ''),
-    author: normalizeCommentAuthor(item),
-    text: leading.text,
-    time: item.create_time ? formatTime(item.create_time) : '',
-    deviceName: item.source_name || item.source || '',
-    targetUin: String(
-      item.touin || item.targetuin || item.target_uin || leading.targetUin || parent?.uin || ''
-    ),
-    targetNick:
-      item.toname ||
-      item.targetnick ||
-      item.target_nick ||
-      leading.targetNick ||
-      parent?.author ||
-      '',
-    responses: []
-  }
-}
-
-const flattenShuoshuoReplies = (items, parent) => {
-  const replies = []
-  for (const item of items) {
-    const reply = normalizeShuoshuoReply(item, parent)
-    replies.push(reply)
-    replies.push(...flattenShuoshuoReplies(getReplyItems(item), reply))
-  }
-  return replies
-}
-
-const normalizeShuoshuoComments = (items = []) =>
-  toArray(items).map((item) => {
-    const comment = {
-      id: item.tid || item.id || item.commentid || `${item.uin}-${item.create_time}`,
-      uin: String(item.uin || item.owner_uin || ''),
-      author: normalizeCommentAuthor(item),
-      text: item.content || item.text || '',
-      time: item.create_time ? formatTime(item.create_time) : '',
-      deviceName: item.source_name || item.source || '',
-      responses: []
-    }
-    comment.responses = flattenShuoshuoReplies(getReplyItems(item), comment)
-    return comment
-  })
+const normalizeShuoshuoComments = (items = []) => normalizeShuoshuoCommentItems(items, formatTime)
 
 const normalizeShuoshuo = (raw) => {
   const uin = String(raw.uin || raw.owner_uin || activeHostUin.value || '')
@@ -1903,12 +1962,15 @@ const normalizeMessageReply = (reply, parentId) => {
       time
     }
   )
+  const target = messageReplyTarget(reply)
   return {
     id: reply?.id || `${parentId}-${reply?.uin || ''}-${reply?.time || reply?.pubtime || ''}`,
     uin: String(reply?.uin || reply?.owner_uin || ''),
     author: decodeHtmlText(reply?.nickname || reply?.nick || reply?.name || ''),
     text: content.text,
-    time: time ? formatTime(time) : ''
+    time: time ? formatTime(time) : '',
+    targetUin: target.uin,
+    targetName: decodeHtmlText(target.name)
   }
 }
 
@@ -1964,6 +2026,7 @@ const normalizeMessageBoard = (raw, meta = {}) => {
     )
   }
 }
+
 // ============= 时间 / 数字 =============
 const pad = (n) => String(n).padStart(2, '0')
 const formatTime = (sec) => {
@@ -2061,12 +2124,29 @@ const openQzoneProfile = (profile, fallbackUrl = '') => {
   })
 }
 
+const openExternalLink = async (url) => {
+  const target = safeWebUrl(url)
+  if (!target) return
+  try {
+    await window.QzoneAPI.shell.openExternal(target)
+  } catch (error) {
+    console.error('[FeedsModule] 打开链接失败', error)
+    ElMessage.error('暂时无法打开这个链接')
+  }
+}
+
 // ============= 统计 =============
 // sub-tab 已经是分类切换主入口，二级 appType 过滤已移除
 const filteredFeeds = computed(() => feeds.value)
 const headerCountText = computed(() => {
   if (activeSource.value?.kind === 'messageBoard' && messageBoardTotal.value) {
     return `${feeds.value.length} / ${messageBoardTotal.value} 条留言`
+  }
+  if (activeKey.value === 'fav' && favoriteTotal.value > filteredFeeds.value.length) {
+    return `${filteredFeeds.value.length} / ${favoriteTotal.value} 条`
+  }
+  if (activeKey.value === 'blog' && blogTotal.value > filteredFeeds.value.length) {
+    return `${filteredFeeds.value.length} / ${blogTotal.value} 篇`
   }
   return `${filteredFeeds.value.length} 条`
 })
@@ -2156,7 +2236,7 @@ const pushStats = () => {
   leftRef.value.updateFeedsStats({
     loaded: feeds.value.length,
     activeSourceKey: activeSource.value.key,
-    activeSourceLabel: activeSource.value.label,
+    activeSourceLabel: activeSourceTitle.value,
     mediaCount,
     imageCount,
     videoCount,
@@ -2171,9 +2251,9 @@ const pushStats = () => {
     downloadableFeedCount,
     typeCounts,
     actionCounts,
-    topAuthors: [...authorMap.values()]
-      .sort((a, b) => b.count - a.count || b.mediaCount - a.mediaCount || b.likeCount - a.likeCount)
-      .slice(0, 6),
+    topAuthors: [...authorMap.values()].sort(
+      (a, b) => b.count - a.count || b.mediaCount - a.mediaCount || b.likeCount - a.likeCount
+    ),
     uniqueAuthorCount: authorMap.size,
     oldestTime: times.length ? Math.min(...times) : 0,
     latestTime: times.length ? Math.max(...times) : 0,
@@ -2186,7 +2266,11 @@ const pushStats = () => {
           blockedCount: 0,
           mods: [],
           trend: [],
-          recentVisitors: []
+          recentVisitors: [],
+          visitorLoaded: false,
+          visitorLoading: false,
+          visitorError: '',
+          retryVisitors: null
         }
       : {})
   })
@@ -2204,7 +2288,11 @@ const pushVisitorStats = () => {
     blockedCount: visitor.blockedCount,
     mods: visitor.mods,
     trend: visitor.trend,
-    recentVisitors: visitor.recent
+    recentVisitors: visitor.recent,
+    visitorLoaded: visitor.loaded,
+    visitorLoading: visitor.loading,
+    visitorError: visitor.error,
+    retryVisitors: fetchVisitor
   })
 }
 
@@ -2283,27 +2371,26 @@ const parseCommentsHtml = (html) => {
 
 // 列表 HTML 内嵌的评论已在 normalize 阶段解出（feed.inlineComments）。
 const loadedComments = (feed) => {
-  const slot = commentsByTid[feed.tid]
+  const slot = commentsByTid[commentKey(feed)]
   return slot?.comments?.length ? slot.comments : feed.inlineComments || []
 }
 const visibleComments = (feed) => {
-  const slot = commentsByTid[feed.tid]
+  const slot = commentsByTid[commentKey(feed)]
   return slot?.open ? loadedComments(feed) : (feed.inlineComments || []).slice(0, 3)
 }
 
-const canExpandMore = (feed) => {
-  const slot = commentsByTid[feed.tid]
-  if (slot?.open) return true
-  return (feed.inlineComments || []).length > 3 || Number(feed.cmtCount) > 0
-}
+const canExpandMore = (feed) =>
+  feed?.commentsFetchable !== false && canExpandFeedComments(feed, commentsByTid[commentKey(feed)])
 
 const isShuoshuoFeed = (feed) => Number(feed.appid) === 311 && /^[\w-]+$/.test(String(feed.tid))
 const shouldLoadComments = (feed) =>
-  isShuoshuoFeed(feed) || Number(feed.cmtCount) > 0 || (feed.inlineComments || []).length > 0
+  feed?.commentsFetchable !== false &&
+  (isShuoshuoFeed(feed) || Number(feed.cmtCount) > 0 || (feed.inlineComments || []).length > 0)
 
 const loadShuoshuoComments = async (feed, initial, authOption, onPage) => {
   return collectAllComments({
     initial,
+    expected: feed.cmtCount,
     pageSize: 30,
     onPage,
     requestPage: async (start, num) => {
@@ -2331,8 +2418,10 @@ const loadShuoshuoComments = async (feed, initial, authOption, onPage) => {
 const loadHtmlFeedComments = async (feed, initial, authOption, onPage) => {
   const topicId = feed.topicId || `${feed.uin}_${feed.tid}__1`
   const pageSize = 50
+  const expected = Math.max(0, Number(feed.cmtCount) || 0)
   let comments = mergeCommentRoots([], initial)
   let previousSignature = ''
+  let stagnantPages = 0
   for (let page = 0; page < 1000; page += 1) {
     const response = await retryPageRequest(
       async () => {
@@ -2355,24 +2444,30 @@ const loadHtmlFeedComments = async (feed, initial, authOption, onPage) => {
     const parsed = parseCommentsHtml(response.feedsHtml)
     const signature = parsed.map((item) => item.id).join('\u001e')
     if (page > 0 && parsed.length && signature === previousSignature) {
-      return { comments, complete: countCommentTree(comments) >= Number(feed.cmtCount || 0) }
+      return { comments, complete: false }
     }
+    const before = countCommentTree(comments)
     comments = mergeCommentRoots(comments, parsed)
     onPage?.(comments)
-    if (Number(feed.cmtCount) > 0 && countCommentTree(comments) >= Number(feed.cmtCount)) {
-      return { comments, complete: true }
-    }
+    const enough =
+      (expected === 0 || countCommentTree(comments) >= expected) &&
+      areCommentRepliesComplete(comments)
     if (!parsed.length) {
-      return { comments, complete: Number(feed.cmtCount) === 0 && comments.length === 0 }
+      // 已看到的评论不应因第一次分页返回空白而被误判为已全部加载。
+      return { comments, complete: enough && !(page === 0 && before > 0) }
     }
+    if (parsed.length < pageSize && enough) return { comments, complete: true }
+    stagnantPages = countCommentTree(comments) === before ? stagnantPages + 1 : 0
+    if (stagnantPages >= 2) return { comments, complete: false }
     previousSignature = signature
   }
   return { comments, complete: false }
 }
 
 const expandMoreComments = async (feed) => {
-  if (!commentsByTid[feed.tid]) {
-    commentsByTid[feed.tid] = reactive({
+  const key = commentKey(feed)
+  if (!commentsByTid[key]) {
+    commentsByTid[key] = reactive({
       loading: false,
       expanded: false,
       open: false,
@@ -2380,8 +2475,8 @@ const expandMoreComments = async (feed) => {
       error: ''
     })
   }
-  const slot = commentsByTid[feed.tid]
-  if (pendingComments.has(feed.tid)) return pendingComments.get(feed.tid)
+  const slot = commentsByTid[key]
+  if (pendingComments.has(key)) return pendingComments.get(key)
   if (slot.expanded) return slot.comments?.length ? slot.comments : feed.inlineComments || []
   const task = (async () => {
     slot.loading = true
@@ -2402,11 +2497,16 @@ const expandMoreComments = async (feed) => {
           })
         } catch {
           usedHtmlFallback = true
-          result = await loadHtmlFeedComments(feed, comments, authOption, (items) => {
+          // 主分页可能在后续页失败；保留前面已取得的评论再尝试官网 HTML 入口。
+          const visible = mergeCommentRoots(comments, slot.comments || [])
+          result = await loadHtmlFeedComments(feed, visible, authOption, (items) => {
             if (loadSeq === requestSeq.value) slot.comments = items
           })
         }
-        if (!usedHtmlFallback && countCommentTree(result.comments) < Number(feed.cmtCount || 0)) {
+        if (
+          !usedHtmlFallback &&
+          (!result.complete || countCommentTree(result.comments) < Number(feed.cmtCount || 0))
+        ) {
           result = await loadHtmlFeedComments(feed, result.comments, authOption, (items) => {
             if (loadSeq === requestSeq.value) slot.comments = items
           })
@@ -2421,30 +2521,32 @@ const expandMoreComments = async (feed) => {
       slot.comments = comments
       slot.expanded = result.complete
       if (!result.complete) slot.error = '还有评论暂时无法显示'
-    } catch {
+    } catch (error) {
       if (loadSeq === requestSeq.value) {
         slot.comments = slot.comments?.length ? slot.comments : comments
         slot.expanded = false
-        slot.error = '评论加载失败，请重试'
+        slot.error = `${interactionFailureHint('评论', error)}，请重试`
       }
     } finally {
       if (loadSeq === requestSeq.value) slot.loading = false
     }
     return slot.comments
   })()
-  pendingComments.set(feed.tid, task)
+  pendingComments.set(key, task)
   return task.finally(() => {
-    if (pendingComments.get(feed.tid) === task) pendingComments.delete(feed.tid)
+    if (pendingComments.get(key) === task) pendingComments.delete(key)
   })
 }
 
-const collapseComments = (tid) => {
-  if (commentsByTid[tid]) commentsByTid[tid].open = false
+const collapseComments = (feed) => {
+  const key = commentKey(feed)
+  if (commentsByTid[key]) commentsByTid[key].open = false
 }
 
 const toggleComments = async (feed) => {
-  if (!commentsByTid[feed.tid]) {
-    commentsByTid[feed.tid] = reactive({
+  const key = commentKey(feed)
+  if (!commentsByTid[key]) {
+    commentsByTid[key] = reactive({
       loading: false,
       expanded: false,
       open: false,
@@ -2452,7 +2554,7 @@ const toggleComments = async (feed) => {
       error: ''
     })
   }
-  const slot = commentsByTid[feed.tid]
+  const slot = commentsByTid[key]
   if (slot.loading) return
   if (!slot.open) {
     slot.open = true
@@ -2481,13 +2583,19 @@ const copyFeedContent = async (feed) => {
   if (!feed || isFeedCopying(feed.tid)) return
   setFeedCopying(feed.tid, true)
   try {
+    if (feed.likeListComplete === false && feed.likerFetchable === false) {
+      throw new Error('还有点赞者暂时无法显示，当前内容不能作为完整记录复制')
+    }
+    if (feed.commentsComplete === false && feed.commentsFetchable === false) {
+      throw new Error('还有评论或回复暂时无法显示，当前内容不能作为完整记录复制')
+    }
     if (Number(feed.likeCount) > 0 && !(await ensureLikers(feed, true))) {
       throw new Error('点赞者暂时无法全部加载，请重试后复制')
     }
     let comments = loadedComments(feed)
-    if (shouldLoadComments(feed) && !commentsByTid[feed.tid]?.expanded) {
+    if (shouldLoadComments(feed) && !commentsByTid[commentKey(feed)]?.expanded) {
       comments = await expandMoreComments(feed)
-      if (!commentsByTid[feed.tid]?.expanded) {
+      if (!commentsByTid[commentKey(feed)]?.expanded) {
         throw new Error('评论暂时无法全部加载，请重试后复制')
       }
     }
@@ -2593,7 +2701,10 @@ const downloadFeed = async (feed) => {
 const resetFeedRuntime = (source) => {
   requestSeq.value += 1
   feeds.value = []
+  messageBoardRawRecords.value = []
   messageBoardTotal.value = 0
+  favoriteTotal.value = 0
+  blogTotal.value = 0
   pager.value = source.initialPager()
   hasMore.value = true
   loadError.value = ''
@@ -2693,15 +2804,23 @@ const loadPage = async ({ reset = false } = {}) => {
       const previousStart = Number(pager.value.start || 0)
       const start = Number(res.start ?? previousStart)
       messageBoardTotal.value = Number(res.total) || messageBoardTotal.value || comments.length
-      appendUniqueFeeds(
-        comments.map((item, index) =>
-          normalizeMessageBoard(item, {
-            index,
-            start,
-            total: messageBoardTotal.value
-          })
-        )
+      const previousSnapshot = JSON.stringify(messageBoardRawRecords.value)
+      messageBoardRawRecords.value = mergeMessageBoardPages(
+        messageBoardRawRecords.value,
+        comments.map((item, index) => ({
+          ...item,
+          __pageStart: start,
+          __pageIndex: index
+        }))
       )
+      feeds.value = messageBoardRawRecords.value.map((item) =>
+        normalizeMessageBoard(item, {
+          index: item.__pageIndex,
+          start: item.__pageStart,
+          total: messageBoardTotal.value
+        })
+      )
+      const pageProgressed = JSON.stringify(messageBoardRawRecords.value) !== previousSnapshot
       pager.value = {
         ...pager.value,
         start: start + comments.length,
@@ -2709,16 +2828,44 @@ const loadPage = async ({ reset = false } = {}) => {
       }
       hasMore.value = shouldContinuePagination({
         serverHasMore: res.hasMore,
-        cursorMoved: Number(pager.value.start) > previousStart,
+        cursorMoved: Number(pager.value.start) > previousStart && pageProgressed,
         itemCount: comments.length,
         pageSize: PAGE_SIZE,
         nextOffset: pager.value.start,
         total: messageBoardTotal.value
       })
+    } else if (source.kind === 'blog') {
+      const blogs = Array.isArray(res.blogs) ? res.blogs : []
+      const previousPos = Number(pager.value.pos || 0)
+      const added = appendUniqueFeeds(
+        blogs.map((item) =>
+          normalizeBlogRecord(item, {
+            hostUin: activeHostUin.value,
+            name: isFriendContext.value ? '' : userStore.userInfo?.nick,
+            avatarUrl,
+            formatTime
+          })
+        )
+      )
+      blogTotal.value = Math.max(Number(res.total) || 0, feeds.value.length)
+      pager.value = {
+        ...pager.value,
+        pos: previousPos + blogs.length,
+        total: blogTotal.value
+      }
+      hasMore.value = shouldContinuePagination({
+        serverHasMore: res.hasMore,
+        cursorMoved: Number(pager.value.pos) > previousPos && added > 0,
+        itemCount: blogs.length,
+        pageSize: Number(pager.value.num) || 15,
+        nextOffset: pager.value.pos,
+        total: blogTotal.value
+      })
     } else if (source.key === 'fav') {
       // 收藏：fav_list 结构不同，单独 normalize
       const favList = res.favList || []
       appendUniqueFeeds(favList.map(normalizeFav))
+      favoriteTotal.value = Math.max(Number(res.total) || 0, feeds.value.length)
       const previousStart = Number(pager.value.start || 0)
       pager.value = {
         ...pager.value,
@@ -2787,6 +2934,17 @@ const switchSource = async (key) => {
   activeKey.value = key
   await loadPage({ reset: true })
   await ensureScrollable()
+}
+
+const switchFavoriteFilter = async (type) => {
+  const nextType = favoriteFilterFor(type).type
+  if (activeKey.value !== 'fav' || favoriteType.value === nextType) return
+  favoriteType.value = nextType
+  scrollbarRef.value?.setScrollTop?.(0)
+  const load = loadPage({ reset: true })
+  const loadId = requestSeq.value
+  await load
+  if (loadId === requestSeq.value && activeKey.value === 'fav') await ensureScrollable()
 }
 
 watch(
@@ -2934,20 +3092,30 @@ defineExpose({ refresh: handleRefresh })
 /* ========== 分类切换（sub-tab） ========== */
 .fm-sources {
   display: flex;
-  gap: 4px;
-  padding: 10px 24px 0;
+  gap: 2px;
+  padding: 6px 16px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 .fm-source {
   position: relative;
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px 10px;
+  gap: 5px;
+  min-height: 38px;
+  padding: 6px 10px 8px;
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   color: rgba(255, 255, 255, 0.55);
   background: transparent;
   border: none;
@@ -2989,6 +3157,48 @@ defineExpose({ refresh: handleRefresh })
   border-radius: 999px;
   font-variant-numeric: tabular-nums;
   line-height: 1;
+}
+
+.fm-fav-filters {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--ds-border-light);
+  background: var(--ds-bg-1);
+}
+
+.fm-fav-filter {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--ds-border-light);
+  border-radius: var(--ds-radius-lg);
+  background: var(--ds-bg-2);
+  color: var(--ds-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background-color var(--ds-dur-fast) var(--ds-ease-soft),
+    border-color var(--ds-dur-fast) var(--ds-ease-soft),
+    color var(--ds-dur-fast) var(--ds-ease-soft);
+
+  &:hover:not(.active) {
+    background: var(--ds-bg-4);
+    color: var(--ds-text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--ds-accent-blue);
+    outline-offset: 2px;
+  }
+
+  &.active {
+    border-color: var(--ds-accent-blue-border);
+    background: var(--ds-accent-blue-soft);
+    color: var(--ds-accent-blue);
+  }
 }
 
 .fm-scroll {
@@ -3321,12 +3531,18 @@ defineExpose({ refresh: handleRefresh })
 .mb-reply {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(54px, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(54px, auto) auto minmax(0, 1fr) auto;
   align-items: baseline;
   gap: 8px;
   color: rgba(255, 255, 255, 0.76);
   font-size: 12.5px;
   line-height: 1.55;
+}
+
+.mb-reply-target {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .mb-reply-author {
@@ -3525,6 +3741,88 @@ defineExpose({ refresh: handleRefresh })
     width: 1em;
     height: 1em;
     vertical-align: -0.12em;
+  }
+}
+
+.fc-link-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  margin: 2px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(96, 165, 250, 0.14);
+  border-radius: 10px;
+  background: rgba(96, 165, 250, 0.055);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+
+  &:hover:not(:disabled) {
+    border-color: rgba(96, 165, 250, 0.3);
+    background: rgba(96, 165, 250, 0.1);
+  }
+
+  &:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+
+  > img {
+    width: 58px;
+    height: 58px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  > svg {
+    color: rgba(147, 197, 253, 0.72);
+  }
+}
+
+.fc-link-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  strong,
+  span,
+  small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  strong {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 13px;
+    line-height: 1.35;
+    white-space: nowrap;
+  }
+
+  span {
+    display: -webkit-box;
+    color: rgba(255, 255, 255, 0.54);
+    font-size: 12px;
+    line-height: 1.45;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  small {
+    color: rgba(147, 197, 253, 0.62);
+    font-size: 10px;
+    white-space: nowrap;
   }
 }
 
@@ -3860,5 +4158,26 @@ defineExpose({ refresh: handleRefresh })
   padding: 16px 0 8px;
   color: rgba(255, 255, 255, 0.4);
   font-size: 12px;
+}
+
+.fm-retry-btn {
+  display: block;
+  min-height: 38px;
+  margin: 12px auto 0;
+  padding: 0 16px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 9px;
+  background: rgba(96, 165, 250, 0.1);
+  color: #bfdbfe;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(96, 165, 250, 0.16);
+  }
+
+  &:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+  }
 }
 </style>

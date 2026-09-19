@@ -952,7 +952,8 @@ export async function feeds2_html_pav_all(uin, p_skey, hostUin, pager = {}) {
 
 /**
  * 「我的收藏」列表（fav.qzone.qq.com/cgi-bin/get_fav_list）
- *   - type: 0=全部 / 1=网页 / 2=本地图片 / 3=日志 / 4=相册照片 / 5=说说 / 6=文字 / 7=分享
+ *   - 分类筛选 type：0=全部 / 1=日志 / 2=照片 / 3=说说 / 4=分享 / 5=文字 / 6=网页
+ *   - 这个筛选编号与 fav_list 条目自身的 type 不同，不要用条目的 type 反推筛选参数。
  *   - 返回结构：{ total_num, fav_list: [{ id, type, create_time, title, abstract, desp,
  *                                       img_list[], origin_img_list[], shuoshuo_info{owner_uin,owner_nam,...},
  *                                       user_agent, ... }] }
@@ -1087,5 +1088,60 @@ export async function get_msgb(uin, p_skey, hostUin, opts = {}) {
     num,
     hasMore: start + comments.length < (Number(data.total) || 0),
     comments
+  }
+}
+
+/**
+ * 「日志」摘要列表（b.qzone.qq.com/cgi-bin/blognew/get_abs）。
+ * 官方列表只保证标题、摘要、发布时间等列表字段；正文仍交给官网页面展示。
+ */
+export async function get_blog_list(uin, p_skey, hostUin, opts = {}) {
+  const pos = Math.max(0, Number(opts.pos) || 0)
+  const num = Math.min(50, Math.max(1, Number(opts.num) || 15))
+  const targetUin = rawUin(hostUin || uin)
+  const url = 'https://user.qzone.qq.com/proxy/domain/b.qzone.qq.com/cgi-bin/blognew/get_abs'
+  const params = {
+    hostUin: targetUin,
+    uin: rawUin(uin),
+    blogType: 0,
+    cateName: '',
+    cateHex: '',
+    statYear: '',
+    reqInfo: 1,
+    pos,
+    num,
+    sortType: 0,
+    absType: 0,
+    startTime: '',
+    endTime: '',
+    source: 0,
+    ref: 'qzone',
+    verbose: 1,
+    callback: '_Callback',
+    rand: Math.random(),
+    g_tk: getGTK(p_skey)
+  }
+  const response = await request.get(url, {
+    params,
+    telemetry: false,
+    headers: {
+      Cookie: `uin=${uin};p_uin=${uin};p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${targetUin}/myhome/blog`
+    }
+  })
+  const body = extractJSONFromCallback(response.data) || {}
+  const data = body.data && typeof body.data === 'object' ? body.data : {}
+  const list = Array.isArray(data.list) ? data.list : []
+  const total = Number(data.blog_num ?? data.total ?? data.totalNum) || 0
+  return {
+    code: Number(body.code ?? 0),
+    message: body.message || '',
+    total,
+    pos,
+    num,
+    hasMore: total > 0 ? pos + list.length < total : list.length >= num,
+    blogs: list,
+    categories: Array.isArray(data.cateInfo) ? data.cateInfo : [],
+    months: Array.isArray(data.month_num) ? data.month_num : []
   }
 }

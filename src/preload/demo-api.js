@@ -73,6 +73,17 @@ const feeds = [
   }
 ]
 
+const demoBlogs = [
+  {
+    blogId: 'demo-blog-1',
+    hostUin: '100012026',
+    nickname: '时光收藏夹',
+    title: '给照片留一点文字',
+    abstract: '照片记录光线，文字记录当时的心情。',
+    pubTime: now - 172800
+  }
+]
+
 const photoFeeds = [
   {
     skey: 'demo-photo-feed-1',
@@ -219,6 +230,14 @@ export const createDemoQzoneAPI = (realApi) => ({
   getFriendFeeds: async () => ({ code: 0, hasMore: false, feeds }),
   getAboutMeFeeds: async () => ({ code: 0, hasMore: false, feeds }),
   getLastYearFeeds: async () => ({ code: 0, hasMore: false, feeds }),
+  getBlogList: async () => ({
+    code: 0,
+    total: demoBlogs.length,
+    pos: 0,
+    num: 15,
+    hasMore: false,
+    blogs: demoBlogs
+  }),
   getFeedsCount: async () => ({ code: 0, counts: { myFeeds_new_cnt: 2, friendFeeds_new_cnt: 8 } }),
   getFeedComments: async () => ({ code: 0, comments: [] }),
   getFeedLikers: async () => ({ code: 0, total: 0, likers: [], nextCursor: '0', hasMore: false }),

@@ -55,7 +55,9 @@ export const IPC_PHOTO = {
   /** 「我的收藏」列表（get_fav_list） */
   GET_FAV_LIST: 'photo:getFavList',
   /** 「留言板」列表（get_msgb） */
-  GET_MESSAGE_BOARD: 'photo:getMessageBoard'
+  GET_MESSAGE_BOARD: 'photo:getMessageBoard',
+  /** 日志摘要列表（blognew/get_abs） */
+  GET_BLOG_LIST: 'photo:getBlogList'
 }
 
 export const IPC_USER = {

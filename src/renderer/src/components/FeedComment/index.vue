@@ -80,8 +80,20 @@
                       {{ reply.author }}
                     </span>
                   </el-tooltip>
-                  <span v-if="reply.targetNick" class="response-target">
-                    回复 <span class="target-name">@{{ reply.targetNick }}</span>
+                  <span v-if="reply.targetNick || reply.targetUin" class="response-target">
+                    回复
+                    <button
+                      v-if="reply.targetUin"
+                      type="button"
+                      class="target-name"
+                      :aria-label="`查看回复对象 ${replyTargetLabel(reply)} 的空间`"
+                      @click="
+                        emit('mention-click', { uin: reply.targetUin, name: reply.targetNick })
+                      "
+                    >
+                      {{ reply.targetNick ? `@${reply.targetNick}` : `QQ：${reply.targetUin}` }}
+                    </button>
+                    <span v-else class="target-name">@{{ reply.targetNick }}</span>
                   </span>
                   <span v-if="reply.time" class="response-time">{{ reply.time }}</span>
                 </div>
@@ -103,6 +115,10 @@
 import { computed } from 'vue'
 import RichText from '@renderer/components/RichText/index.vue'
 import { getQQAvatarUrl } from '@renderer/utils/formatters'
+import {
+  normalizeCommentDisplayName,
+  normalizeCommentDisplayText
+} from '@renderer/utils/feedCommentText'
 import { Smartphone } from '@lucide/vue'
 
 const props = defineProps({
@@ -114,25 +130,13 @@ const props = defineProps({
 
 const emit = defineEmits(['mention-click', 'author-click'])
 
-const cleanCommentText = (value) =>
-  String(value || '')
-    .replace(/\u00a0/g, ' ')
-    .replace(/[\t\r\n]+/g, ' ')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/^(?:回复\s*)?[:：]\s*/, '')
-    .trim()
-
-const cleanName = (value) =>
-  String(value || '')
-    .replace(/\[em\]e\d+\[\/em\]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+const replyTargetLabel = (reply) => reply.targetNick || `QQ ${reply.targetUin}`
 
 const cleanComment = (item) => ({
   ...item,
-  author: cleanName(item?.author) || String(item?.uin || ''),
-  targetNick: cleanName(item?.targetNick) || (item?.targetUin ? `QQ ${item.targetUin}` : ''),
-  text: cleanCommentText(item?.text),
+  author: normalizeCommentDisplayName(item?.author) || String(item?.uin || ''),
+  targetNick: normalizeCommentDisplayName(item?.targetNick),
+  text: normalizeCommentDisplayText(item?.text),
   responses: Array.isArray(item?.responses) ? item.responses.map(cleanComment) : []
 })
 
@@ -251,12 +255,12 @@ const onAvatarError = (e) => {
   line-height: 1.55;
   word-break: break-word;
   text-align: left;
-  white-space: normal !important;
+  white-space: pre-line !important;
 
   :deep(.rich-text) {
     display: block;
     text-align: left;
-    white-space: normal;
+    white-space: pre-line;
   }
 }
 
@@ -308,6 +312,24 @@ const onAvatarError = (e) => {
   .target-name {
     color: #60a5fa;
   }
+
+  button.target-name {
+    border: 0;
+    padding: 0;
+    background: none;
+    font: inherit;
+    cursor: pointer;
+
+    &:hover {
+      color: #93c5fd;
+    }
+
+    &:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+  }
 }
 
 .response-time {
@@ -322,16 +344,16 @@ const onAvatarError = (e) => {
   text-align: left;
   width: 100%;
   word-break: break-word;
-  white-space: normal !important;
+  white-space: pre-line !important;
 
   :deep(.rich-text) {
     display: block;
     text-align: left;
-    white-space: normal;
+    white-space: pre-line;
   }
 
   :deep(.text-segment) {
-    white-space: normal;
+    white-space: pre-line;
   }
 }
 </style>

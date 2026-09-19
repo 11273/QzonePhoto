@@ -27,7 +27,13 @@ test('feed export keeps complete text, original media and interaction details', 
       { name: '点赞者戊', uin: '10009' }
     ],
     viewCount: 24,
-    cmtCount: 2
+    cmtCount: 2,
+    linkCard: {
+      title: '关联页面',
+      description: '页面摘要',
+      source: '示例站点',
+      url: 'https://example.com/post'
+    }
   }
   const comments = [
     {
@@ -48,6 +54,8 @@ test('feed export keeps complete text, original media and interaction details', 
   assert.match(output, /点赞：5/)
   assert.match(output, /点赞者（5）：点赞者甲（QQ：10003）/)
   assert.match(output, /浏览：24/)
+  assert.match(output, /标题：关联页面/)
+  assert.match(output, /地址：https:\/\/example\.com\/post/)
   assert.match(output, /评论与回复（2）/)
   assert.doesNotMatch(output, /接口|0\/5/)
   assert.match(output, /回复者（QQ：10005） 回复 @评论者：收到/)

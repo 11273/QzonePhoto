@@ -75,6 +75,9 @@ export function createPhotoHandlers(service) {
     },
     [IPC_PHOTO.GET_MESSAGE_BOARD]: async (_, { payload, headers }) => {
       return photoService.getMessageBoard(payload, headers)
+    },
+    [IPC_PHOTO.GET_BLOG_LIST]: async (_, { payload, headers }) => {
+      return photoService.getBlogList(payload, headers)
     }
   }
 }

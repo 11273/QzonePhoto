@@ -66,6 +66,18 @@ export const buildFeedExportText = (feed = {}, comments = []) => {
   if (action) lines.push(`动态：${action}`)
   lines.push('', '内容：', content || '（无文字内容）')
 
+  if (feed.linkCard) {
+    const linkTitle = compactText(feed.linkCard.title)
+    const linkDescription = compactText(feed.linkCard.description)
+    const linkSource = compactText(feed.linkCard.source)
+    const linkUrl = compactText(feed.linkCard.url)
+    lines.push('', '链接：')
+    if (linkTitle) lines.push(`标题：${linkTitle}`)
+    if (linkDescription) lines.push(`摘要：${linkDescription}`)
+    if (linkSource) lines.push(`来源：${linkSource}`)
+    if (linkUrl) lines.push(`地址：${linkUrl}`)
+  }
+
   lines.push('', `媒体（${media.length}）：`)
   if (!media.length) {
     lines.push('（无）')

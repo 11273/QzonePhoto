@@ -6,18 +6,24 @@
         <div class="user-card friend-card">
           <div class="card-header">
             <el-tooltip
-              v-if="friendCardInfo"
+              v-if="
+                friendCardInfo?.realname ||
+                friendCardInfo?.astroText ||
+                friendCardInfo?.location ||
+                friendLastActiveText ||
+                friendDeviceName
+              "
               placement="bottom"
               :show-after="200"
               popper-class="friend-info-popper"
             >
               <template #content>
                 <div class="online-tooltip">
-                  <div v-if="friendCardInfo.realname" class="online-tooltip-row">
+                  <div v-if="friendCardInfo?.realname" class="online-tooltip-row">
                     {{ friendCardInfo.realname }}
                   </div>
                   <div
-                    v-if="friendCardInfo.astroText || friendCardInfo.location"
+                    v-if="friendCardInfo?.astroText || friendCardInfo?.location"
                     class="online-tooltip-sub"
                   >
                     {{
@@ -39,6 +45,8 @@
                 :size="32"
                 :src="currentFriend.img?.replace('/50', '/100')"
                 class="user-avatar friend-avatar"
+                tabindex="0"
+                aria-label="查看好友公开资料"
               >
                 {{ stripEmoji(currentFriend.name)?.[0] || '?' }}
               </el-avatar>
@@ -754,11 +762,31 @@
           <section v-if="feedsStats.topAuthors && feedsStats.topAuthors.length" class="fd-panel">
             <div class="fd-panel-head">
               <span>常出现的人</span>
-              <em>{{ feedsUniqueAuthorCount }} 人</em>
-            </div>
-            <div class="fd-people-stack">
               <button
-                v-for="author in feedsStats.topAuthors.slice(0, 5)"
+                v-if="feedsStats.topAuthors.length > 5"
+                type="button"
+                class="fd-panel-toggle"
+                :aria-expanded="feedsPeopleExpanded"
+                aria-controls="fd-people-list"
+                :aria-label="
+                  feedsPeopleExpanded
+                    ? '收起常出现的人列表'
+                    : `查看全部 ${feedsUniqueAuthorCount} 人`
+                "
+                @click="feedsPeopleExpanded = !feedsPeopleExpanded"
+              >
+                {{ feedsPeopleExpanded ? '收起' : `查看全部 ${feedsUniqueAuthorCount} 人` }}
+                <el-icon :class="{ 'is-expanded': feedsPeopleExpanded }"><ArrowDown /></el-icon>
+              </button>
+              <em v-else>{{ feedsUniqueAuthorCount }} 人</em>
+            </div>
+            <div
+              id="fd-people-list"
+              class="fd-people-stack"
+              :class="{ 'is-expanded': feedsPeopleExpanded }"
+            >
+              <button
+                v-for="author in visibleFeedsAuthors"
                 :key="author.uin || author.name"
                 type="button"
                 class="fd-person"
@@ -831,14 +859,24 @@
           </section>
 
           <section
-            v-if="feedsStats.recentVisitors && feedsStats.recentVisitors.length"
+            v-if="
+              feedsStats.visitorLoading ||
+              feedsStats.visitorLoaded ||
+              feedsStats.visitorError ||
+              feedsStats.recentVisitors?.length
+            "
             class="fd-panel fd-visitors"
           >
             <div class="fd-panel-head">
               <span>最近来过</span>
-              <em>{{ feedsStats.recentVisitors.length }}</em>
+              <em v-if="feedsStats.recentVisitors?.length">{{
+                feedsStats.recentVisitors.length
+              }}</em>
             </div>
-            <div class="mn-avatars">
+            <p v-if="feedsStats.visitorLoading" class="fd-visitor-state" role="status">
+              正在读取访客记录…
+            </p>
+            <div v-if="feedsStats.recentVisitors?.length" class="mn-avatars">
               <button
                 v-for="v in feedsStats.recentVisitors.slice(0, 12)"
                 :key="v.uin"
@@ -852,6 +890,19 @@
                 <span v-if="v.haveNewFeeds" class="mn-avatar-dot"></span>
               </button>
             </div>
+            <div v-if="feedsStats.visitorError" class="fd-visitor-state is-error" role="alert">
+              <span>{{ feedsStats.visitorError }}</span>
+              <button type="button" @click="feedsStats.retryVisitors?.()">重试</button>
+            </div>
+            <p
+              v-else-if="feedsStats.visitorLoaded && !feedsStats.recentVisitors?.length"
+              class="fd-visitor-state"
+            >
+              当前没有可见的最近访客
+            </p>
+            <p v-if="feedsStats.visitorLoaded" class="fd-visitor-note">
+              仅展示当前账号有权限看到的记录
+            </p>
           </section>
         </div>
       </el-scrollbar>
@@ -905,6 +956,7 @@ import {
   Hide,
   Key,
   View,
+  ArrowDown,
   QuestionFilled,
   ChatLineRound
 } from '@element-plus/icons-vue'
@@ -2448,8 +2500,13 @@ const feedsStats = reactive({
   blockedCount: 0,
   mods: [],
   trend: [],
-  recentVisitors: []
+  recentVisitors: [],
+  visitorLoaded: false,
+  visitorLoading: false,
+  visitorError: '',
+  retryVisitors: null
 })
+const feedsPeopleExpanded = ref(false)
 const updateFeedsStats = (stats) => {
   if (!stats) return
   Object.assign(feedsStats, stats)
@@ -2474,6 +2531,16 @@ const feedsUniqueAuthorCount = computed(() =>
   feedsStats.topAuthors?.length
     ? Math.max(feedsStats.topAuthors.length, Number(feedsStats.uniqueAuthorCount || 0))
     : Number(feedsStats.uniqueAuthorCount || 0)
+)
+const visibleFeedsAuthors = computed(() =>
+  feedsPeopleExpanded.value ? feedsStats.topAuthors : feedsStats.topAuthors.slice(0, 5)
+)
+
+watch(
+  () => feedsStats.activeSourceKey,
+  () => {
+    feedsPeopleExpanded.value = false
+  }
 )
 
 const toPercentText = (value, total) => {
@@ -3945,6 +4012,50 @@ defineExpose({
     white-space: nowrap;
   }
 }
+.fd-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: -3px -4px -3px 0;
+  padding: 3px 4px;
+  border: 0;
+  border-radius: 4px;
+  color: rgba(147, 197, 253, 0.78);
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.18s ease,
+    background-color 0.18s ease;
+
+  &:hover {
+    color: rgba(191, 219, 254, 0.98);
+    background: rgba(96, 165, 250, 0.08);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(96, 165, 250, 0.72);
+    outline-offset: 2px;
+  }
+
+  .el-icon {
+    font-size: 11px;
+    transition: transform 0.18s ease;
+
+    &.is-expanded {
+      transform: rotate(180deg);
+    }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fd-panel-toggle,
+  .fd-panel-toggle .el-icon {
+    transition: none;
+  }
+}
 .fd-mix-track {
   display: flex;
   height: 8px;
@@ -4037,6 +4148,24 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 6px;
+
+  &.is-expanded {
+    max-height: 248px;
+    padding-right: 4px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-color: rgba(96, 165, 250, 0.35) transparent;
+    scrollbar-width: thin;
+  }
+
+  &.is-expanded::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  &.is-expanded::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(96, 165, 250, 0.35);
+  }
 }
 .fd-person {
   display: grid;
@@ -4124,6 +4253,43 @@ defineExpose({
 }
 .fd-visitors {
   padding-bottom: 12px;
+}
+
+.fd-visitor-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 11px;
+  line-height: 1.45;
+
+  &.is-error {
+    color: rgba(252, 165, 165, 0.9);
+  }
+
+  button {
+    min-height: 28px;
+    padding: 0 9px;
+    border: 1px solid rgba(96, 165, 250, 0.24);
+    border-radius: 7px;
+    background: rgba(96, 165, 250, 0.09);
+    color: rgba(191, 219, 254, 0.92);
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 2px solid #60a5fa;
+      outline-offset: 2px;
+    }
+  }
+}
+
+.fd-visitor-note {
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, 0.28);
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .mn-section {
