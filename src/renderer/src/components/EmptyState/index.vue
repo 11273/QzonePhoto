@@ -1,5 +1,5 @@
 <template>
-  <div class="empty-state" :class="[size, variant]">
+  <div class="empty-state" :class="[size, variant]" :role="semanticRole" :aria-live="ariaLive">
     <div class="empty-content">
       <div v-if="icon" class="empty-icon">
         <Icon :icon="icon" :size="iconSize" />
@@ -43,6 +43,16 @@ const props = defineProps({
     type: String,
     default: 'default',
     validator: (value) => ['default', 'minimal', 'card'].includes(value)
+  },
+  semanticRole: {
+    type: String,
+    default: 'status',
+    validator: (value) => ['status', 'alert'].includes(value)
+  },
+  ariaLive: {
+    type: String,
+    default: 'polite',
+    validator: (value) => ['off', 'polite', 'assertive'].includes(value)
   }
 })
 

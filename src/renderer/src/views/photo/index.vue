@@ -63,8 +63,9 @@ const handleEnterFriend = ({ friend, module, photoType }) => {
   })
 }
 
+// “返回我的空间”始终直接回到当前账号主页，不让用户逐层退出好友空间。
 const handleExitFriend = () => {
-  spaceStack.value.pop()
+  spaceStack.value = []
 }
 
 let taskUpdateListener = null

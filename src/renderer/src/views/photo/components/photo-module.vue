@@ -28,7 +28,7 @@
           <el-button
             v-if="downloadableMediaCount > 0"
             text
-            class="action-btn download-page-btn"
+            class="action-btn download-page-btn qz-primary-action"
             :loading="downloadingPage"
             :disabled="loading || downloadingPage"
             @click="downloadCurrentPageFeeds"
@@ -58,14 +58,25 @@
         @scroll="handleTimelineScroll"
       >
         <div class="timeline-container">
-          <LoadingState v-if="loading" text="正在加载动态..." />
+          <LoadingState v-if="loading && feeds.length === 0" text="正在加载照片..." />
 
           <EmptyState
             v-else-if="feeds.length === 0"
-            :icon="ImageIcon"
-            :title="isFriendPhotos ? '好友照片' : '我的照片'"
-            :description="isFriendPhotos ? '好友还没有发布照片~' : '还没有动态，快去发表一条吧~'"
-          />
+            :icon="photoPlaceholderIcon"
+            :title="photoPlaceholderState.title"
+            :description="photoPlaceholderState.description"
+            :semantic-role="loadFailureState ? 'alert' : 'status'"
+            :aria-live="loadFailureState ? 'assertive' : 'polite'"
+          >
+            <el-button
+              v-if="photoPlaceholderState.retryable"
+              type="primary"
+              plain
+              @click="handleRefresh"
+            >
+              重新加载
+            </el-button>
+          </EmptyState>
 
           <!-- ========== 好友照片：网格卡片布局 ========== -->
           <div v-else-if="isFriendPhotos" class="friend-photos-grid">
@@ -74,10 +85,15 @@
               :key="feed.id"
               class="friend-photo-card"
               :class="{ 'privacy-mode': privacyStore.privacyMode }"
-              @click="previewMedia(feed.media, 0, feed)"
             >
               <!-- 照片主体 -->
-              <div class="card-image-wrapper">
+              <button
+                type="button"
+                class="card-image-wrapper card-preview-trigger"
+                aria-label="查看这条好友照片动态"
+                title="查看照片"
+                @click="previewMedia(feed.media, 0, feed)"
+              >
                 <el-image
                   v-if="feed.media && feed.media[0]"
                   :src="feed.media[0].url || feed.media[0].cover"
@@ -103,7 +119,7 @@
                   <el-icon class="privacy-icon qz-privacy-icon"><Hide /></el-icon>
                   <span class="privacy-text qz-privacy-text">隐私保护</span>
                 </div>
-              </div>
+              </button>
               <!-- 底部信息 -->
               <div class="card-info">
                 <button
@@ -126,7 +142,7 @@
                 </div>
                 <button
                   v-if="getDownloadableMedia(feed).length"
-                  class="card-download-btn"
+                  class="card-download-btn qz-compact-download"
                   :disabled="isFeedDownloading(feed.id)"
                   title="下载这条动态"
                   @click.stop="downloadSingleFeed(feed)"
@@ -181,15 +197,18 @@
                 </div>
 
                 <!-- 多选模式：选择框 -->
-                <div
+                <button
                   v-if="isSelectionMode"
+                  type="button"
                   class="selection-checkbox"
+                  :aria-pressed="selectedFeeds.has(feed.id)"
+                  :aria-label="selectedFeeds.has(feed.id) ? '取消选择这条动态' : '选择这条动态'"
                   @click.stop="toggleFeedSelection(feed)"
                 >
                   <el-icon v-if="selectedFeeds.has(feed.id)" class="selected-icon">
                     <Check />
                   </el-icon>
-                </div>
+                </button>
 
                 <!-- 右侧内容 -->
                 <div class="feed-content-wrapper tl-body">
@@ -203,7 +222,7 @@
                         v-if="getDownloadableMedia(feed).length"
                         text
                         size="small"
-                        class="feed-download-btn tl-action-btn"
+                        class="feed-download-btn tl-action-btn qz-compact-download"
                         :loading="isFeedDownloading(feed.id)"
                         :disabled="isFeedDownloading(feed.id)"
                         @click.stop="downloadSingleFeed(feed)"
@@ -227,15 +246,16 @@
                   <!-- 动态内容 -->
                   <div class="feed-body">
                     <!-- 相册标题（上传到相册类型） -->
-                    <div
+                    <button
                       v-if="feed.albumTitle"
+                      type="button"
                       class="feed-album-title"
                       @click="handleAlbumClick(feed)"
                     >
                       <el-icon class="album-icon"><Folder /></el-icon>
                       <span class="album-title-text">{{ feed.albumTitle }}</span>
                       <el-icon class="link-icon"><ArrowRight /></el-icon>
-                    </div>
+                    </button>
 
                     <!-- 文本内容 -->
                     <div v-if="feed.text" class="feed-text">
@@ -245,14 +265,17 @@
                     <!-- 媒体内容 -->
                     <div v-if="feed.media && feed.media.length > 0" class="media-container">
                       <div class="media-row tl-media">
-                        <div
+                        <button
                           v-for="(item, idx) in feed.media.slice(0, 8)"
                           :key="idx"
+                          type="button"
                           class="media-item tl-media-item"
                           :class="{
                             'is-video': item.type === 'video',
                             'privacy-mode': privacyStore.privacyMode
                           }"
+                          :aria-label="`${item.type === 'video' ? '播放视频' : '查看图片'} ${idx + 1}`"
+                          :title="item.type === 'video' ? '播放视频' : '查看图片'"
                           @click="previewMedia(feed.media, idx, feed)"
                         >
                           <!-- 视频 -->
@@ -292,14 +315,16 @@
                               <span class="privacy-text qz-privacy-text">隐私保护</span>
                             </div>
                           </div>
-                        </div>
-                        <div
+                        </button>
+                        <button
                           v-if="feed.photoTotal && feed.photoTotal > 8"
+                          type="button"
                           class="media-more tl-media-more"
+                          :aria-label="`查看其余 ${feed.photoTotal - 8} 个媒体`"
                           @click="previewMedia(feed.media, 8, feed)"
                         >
                           +{{ feed.photoTotal - 8 }}
-                        </div>
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -415,6 +440,7 @@
       :items="previewItems"
       :initial-index="previewIndex"
       :resolve-item="resolvePreviewItem"
+      :download-item="downloadPreviewItem"
       @update:visible="previewVisible = $event"
     />
 
@@ -434,7 +460,7 @@
               <CheckSquare :size="14" />{{ isAllSelected ? '取消全选' : '全选' }}
             </button>
             <button
-              class="tb-btn tb-btn-primary"
+              class="tb-btn tb-btn-primary qz-primary-action"
               :disabled="!selectedFeeds.size || downloadingSelected"
               @click="downloadSelectedFeeds"
             >
@@ -548,13 +574,13 @@
           </video>
 
           <!-- 加载状态 -->
-          <div v-if="videoLoading" class="video-loading-overlay">
+          <div v-if="videoLoading" class="video-loading-overlay" role="status" aria-live="polite">
             <el-icon class="loading-spinner"><Loading /></el-icon>
             <span>正在加载视频...</span>
           </div>
 
           <!-- 错误提示 -->
-          <div v-if="videoError" class="video-error-overlay">
+          <div v-if="videoError" class="video-error-overlay" role="alert">
             <el-icon><Warning /></el-icon>
             <span>{{ videoError }}</span>
             <div class="error-actions">
@@ -607,7 +633,9 @@ import {
   Trash2,
   X,
   Download as LucideDownload,
-  Link2
+  Link2,
+  ShieldX,
+  TriangleAlert
 } from '@lucide/vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { ElDialog, ElButton } from 'element-plus'
@@ -631,6 +659,11 @@ import {
   resolveQzoneHostUin,
   resolveSelfQzoneUin
 } from '@renderer/utils/qzone-identity'
+import {
+  CONTENT_LOAD_STATUS,
+  classifyContentLoadFailure,
+  createContentLoadState
+} from '@shared/content-load-state'
 import Hls from 'hls.js'
 
 const privacyStore = usePrivacyStore()
@@ -657,6 +690,24 @@ const leftRef = inject('leftRef', null)
 const effectiveHostUin = computed(() => resolveQzoneHostUin(hostUinOverride?.value, userStore))
 const isFriendContext = computed(() => !!hostUinOverride?.value)
 const friendMeta = computed(() => (isFriendContext.value ? { skipAuthCheck: true } : {}))
+const loadFailureState = ref(null)
+const photoPlaceholderState = computed(
+  () =>
+    loadFailureState.value ||
+    createContentLoadState(CONTENT_LOAD_STATUS.EMPTY, {
+      label: '照片',
+      friendMode: isFriendPhotos.value || isFriendContext.value,
+      emptyDescription:
+        isFriendPhotos.value || isFriendContext.value
+          ? '对方暂时没有向你公开的照片。'
+          : '这里还没有照片动态。'
+    })
+)
+const photoPlaceholderIcon = computed(() => {
+  if (photoPlaceholderState.value.status === CONTENT_LOAD_STATUS.FORBIDDEN) return ShieldX
+  if (photoPlaceholderState.value.status === CONTENT_LOAD_STATUS.ERROR) return TriangleAlert
+  return ImageIcon
+})
 
 // 动态数据
 const feeds = ref([])
@@ -1391,7 +1442,7 @@ const deleteFeed = async (feed) => {
 }
 
 // 预览媒体（图片/视频）—— 统一走 MediaPreview，图视频混合切换
-const previewMedia = async (media, index) => {
+const previewMedia = async (media, index, feed = null) => {
   if (!media || !Array.isArray(media) || media.length === 0) return
   previewItems.value = media.map((m) => ({
     type: m.type === 'video' ? 'video' : 'image',
@@ -1399,7 +1450,8 @@ const previewMedia = async (media, index) => {
     thumb: m.thumb || m.url,
     title: m.title || '',
     needsResolve: m.type === 'video',
-    _media: m
+    _media: m,
+    _feed: feed
   }))
   previewIndex.value = Math.max(0, index)
   previewVisible.value = true
@@ -1414,6 +1466,19 @@ const resolvePreviewItem = async (item, idx) => {
     return previewItems.value[idx]
   }
   return item
+}
+
+const downloadPreviewItem = async (item) => {
+  const feed = item?._feed
+  const media = item?._media
+  if (!feed || !media) {
+    throw new Error('当前媒体暂时无法下载')
+  }
+
+  const ids = await addFeedDownloadTasks([{ ...feed, media: [media] }])
+  if (!ids.length) {
+    throw new Error('当前媒体缺少可用的下载地址')
+  }
 }
 
 // 播放视频（自动选择播放方式）
@@ -1691,6 +1756,7 @@ const loadFeeds = async (isLoadMore = false) => {
     pageGuard.reset()
     feedPager.start = 0
     feedPager.begintime = 0
+    loadFailureState.value = null
   }
 
   const thisLoadId = ++currentLoadId
@@ -1752,6 +1818,7 @@ const loadFeeds = async (isLoadMore = false) => {
     if (thisLoadId !== currentLoadId) return
 
     if (response && response.code === 0 && response.data && transformedFeeds) {
+      loadFailureState.value = null
       pageGuard.succeed()
       const responseBegintime =
         Number(response.data.begintime || response.data.beginTime || response.data.nextBegintime) ||
@@ -1794,7 +1861,11 @@ const loadFeeds = async (isLoadMore = false) => {
         ElMessage.warning(response?.message || '加载更多失败，稍后可继续重试')
       } else {
         hasMore.value = false
-        ElMessage.error(response?.message || '加载动态失败')
+        loadFailureState.value = classifyContentLoadFailure(response, {
+          label: '照片',
+          friendMode: isFriendPhotos.value || isFriendContext.value
+        })
+        if (feeds.value.length > 0) ElMessage.error('照片刷新失败，请稍后重试')
       }
     }
   } catch (error) {
@@ -1805,7 +1876,11 @@ const loadFeeds = async (isLoadMore = false) => {
       ElMessage.warning('加载更多失败，稍后可继续重试')
     } else {
       hasMore.value = false
-      ElMessage.error('加载动态失败: ' + (error.message || '未知错误'))
+      loadFailureState.value = classifyContentLoadFailure(error, {
+        label: '照片',
+        friendMode: isFriendPhotos.value || isFriendContext.value
+      })
+      if (feeds.value.length > 0) ElMessage.error('照片刷新失败，请稍后重试')
     }
   } finally {
     if (thisLoadId === currentLoadId) {
@@ -1846,7 +1921,7 @@ const handleRefresh = async () => {
     await loadFeeds(false)
     // 重新设置观察器（使用防抖）
     debouncedSetupObserver()
-    ElMessage.success('刷新成功')
+    if (!loadFailureState.value) ElMessage.success('刷新成功')
   } catch (error) {
     console.error('刷新失败:', error)
     ElMessage.error('刷新失败')
@@ -2021,6 +2096,7 @@ const resetFeedsAndLoad = () => {
   // 切换照片来源或好友 host 时，旧分页结果必须作废，避免把上一个人的数据拼进来。
   currentLoadId++
   feeds.value = []
+  loadFailureState.value = null
   hasMore.value = true
   feedPager.start = 0
   feedPager.begintime = 0
@@ -2256,6 +2332,22 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.card-preview-trigger {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: zoom-in;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 3px var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+  }
+}
+
 .card-image {
   width: 100%;
   height: 100%;
@@ -2442,6 +2534,10 @@ onUnmounted(() => {
   width: 60px;
   height: 60px;
   flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  font: inherit;
 
   /* 隐私模式下禁用缩放 */
   &.privacy-mode:hover {
@@ -2527,6 +2623,8 @@ onUnmounted(() => {
   width: 60px;
   height: 60px;
   flex-shrink: 0;
+  padding: 0;
+  font: inherit;
 }
 
 .media-thumb {
@@ -2595,14 +2693,19 @@ onUnmounted(() => {
 
 /* 文本内容 */
 .feed-album-title {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
   margin-bottom: 8px;
+  appearance: none;
   background: rgba(59, 130, 246, 0.1);
   border: 1px solid rgba(59, 130, 246, 0.2);
   border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: all 0.2s ease;
 
@@ -2610,6 +2713,11 @@ onUnmounted(() => {
     background: rgba(59, 130, 246, 0.15);
     border-color: rgba(59, 130, 246, 0.3);
     transform: translateX(2px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline-offset: 2px;
   }
 
   .album-icon {
@@ -3040,6 +3148,8 @@ onUnmounted(() => {
   flex-shrink: 0;
   width: 24px;
   height: 24px;
+  padding: 0;
+  appearance: none;
   border: 2px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
   display: flex;
@@ -3053,12 +3163,17 @@ onUnmounted(() => {
   margin-top: 2px;
 
   &:hover {
-    border-color: rgba(64, 158, 255, 0.8);
-    background: rgba(64, 158, 255, 0.2);
+    border-color: var(--qz-active, #fb923c);
+    background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline-offset: 2px;
   }
 
   .selected-icon {
-    color: #409eff;
+    color: var(--qz-active, #fb923c);
     font-size: 18px;
   }
 }

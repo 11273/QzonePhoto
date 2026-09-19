@@ -7,11 +7,18 @@
       :active-module="currentModule"
       :photo-type="photoType"
       @album-selected="handleAlbumSelected"
+      @album-state-changed="handleAlbumStateChanged"
       @module-changed="handleModuleChanged"
       @enter-friend="enterFriend"
       @exit-friend="emit('exit-friend')"
     />
-    <Main v-if="currentModule === 'album'" ref="mainRef" class="flex-1" />
+    <Main
+      v-if="currentModule === 'album'"
+      ref="mainRef"
+      :album-load-state="albumLoadState"
+      class="flex-1"
+      @retry-albums="retryAlbums"
+    />
     <PhotoModule
       v-if="currentModule === 'photo'"
       :photo-type="photoType"
@@ -56,6 +63,7 @@ import Main from './main.vue'
 import PhotoModule from './photo-module.vue'
 import VideoModule from './video-module.vue'
 import FeedsModule from './feeds-module.vue'
+import { createAlbumLoadState } from '@shared/album-load-state'
 
 const props = defineProps({
   friend: { type: Object, default: null },
@@ -70,6 +78,7 @@ const leftRef = ref()
 const dialogMainRef = ref()
 const albumDialogVisible = ref(false)
 const currentDialogAlbum = ref(null)
+const albumLoadState = ref(createAlbumLoadState())
 const enterFriend = (friend) =>
   emit('enter-friend', { friend, module: currentModule.value, photoType: photoType.value })
 
@@ -81,6 +90,10 @@ provide(
 provide('leftRef', leftRef)
 
 const handleAlbumSelected = (album) => mainRef.value?.selectAlbum?.(album)
+const handleAlbumStateChanged = (state) => {
+  albumLoadState.value = state || createAlbumLoadState()
+}
+const retryAlbums = () => leftRef.value?.retryPhotoData?.()
 const handleModuleChanged = (module, type) => {
   currentModule.value = module
   if (type) photoType.value = type

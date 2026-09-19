@@ -67,14 +67,23 @@
                 <span
                   class="uin uin-copyable"
                   title="点击复制 QQ 号"
+                  role="button"
+                  tabindex="0"
                   @click="copyToClipboard(currentFriend.uin, 'QQ 号')"
+                  @keydown.enter.prevent="copyToClipboard(currentFriend.uin, 'QQ 号')"
+                  @keydown.space.prevent="copyToClipboard(currentFriend.uin, 'QQ 号')"
                 >
                   {{ showUin ? currentFriend.uin : maskUin(currentFriend.uin) }}
                 </span>
                 <el-icon
                   class="uin-toggle"
                   :title="showUin ? '隐藏' : '显示'"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="showUin ? '隐藏 QQ 号' : '显示 QQ 号'"
                   @click.stop="toggleUinDisplay"
+                  @keydown.enter.stop.prevent="toggleUinDisplay"
+                  @keydown.space.stop.prevent="toggleUinDisplay"
                 >
                   <component :is="showUin ? Hide : View" />
                 </el-icon>
@@ -108,10 +117,16 @@
                 <span class="label">相册数</span>
                 <span class="value">{{ friendAlbumCount }}</span>
               </div>
-              <div class="stat-item">
-                <span class="label">已用容量</span>
-                <span class="value storage">{{ friendDiskUsed }}</span>
-              </div>
+              <el-tooltip :content="officialCapacityTooltip" placement="right" :show-after="250">
+                <div
+                  class="stat-item capacity-stat"
+                  tabindex="0"
+                  :aria-label="`已用容量：${friendDiskUsed}。${officialCapacityTooltip}`"
+                >
+                  <span class="label">已用容量</span>
+                  <span class="value storage">{{ friendDiskUsed }}</span>
+                </div>
+              </el-tooltip>
               <div class="stat-item">
                 <span class="label">照片总数</span>
                 <span class="value">{{ friendPhotoTotal }}</span>
@@ -167,14 +182,23 @@
                 <span
                   class="uin uin-copyable"
                   title="点击复制 QQ 号"
+                  role="button"
+                  tabindex="0"
                   @click="copyToClipboard(profileUin, 'QQ 号')"
+                  @keydown.enter.prevent="copyToClipboard(profileUin, 'QQ 号')"
+                  @keydown.space.prevent="copyToClipboard(profileUin, 'QQ 号')"
                 >
                   {{ displayUin }}
                 </span>
                 <el-icon
                   class="uin-toggle"
                   :title="showUin ? '隐藏' : '显示'"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="showUin ? '隐藏 QQ 号' : '显示 QQ 号'"
                   @click.stop="toggleUinDisplay"
+                  @keydown.enter.stop.prevent="toggleUinDisplay"
+                  @keydown.space.stop.prevent="toggleUinDisplay"
                 >
                   <component :is="showUin ? Hide : View" />
                 </el-icon>
@@ -225,10 +249,16 @@
                 <span class="label">成长速度</span>
                 <span class="value speed">{{ formatSpeed(userStore.userInfo?.speed || 0) }}</span>
               </div>
-              <div class="stat-item">
-                <span class="label">已用容量</span>
-                <span class="value storage">{{ formatStorage() }}</span>
-              </div>
+              <el-tooltip :content="officialCapacityTooltip" placement="right" :show-after="250">
+                <div
+                  class="stat-item capacity-stat"
+                  tabindex="0"
+                  :aria-label="`已用容量：${formatStorage()}。${officialCapacityTooltip}`"
+                >
+                  <span class="label">已用容量</span>
+                  <span class="value storage">{{ formatStorage() }}</span>
+                </div>
+              </el-tooltip>
             </div>
           </div>
 
@@ -293,23 +323,37 @@
     </transition>
 
     <!-- 一级导航菜单 - TAB 样式 -->
-    <div class="main-navigation-tabs">
-      <div
-        v-for="tab in tabs"
+    <div class="main-navigation-tabs" role="tablist" aria-label="内容分类">
+      <button
+        v-for="(tab, tabIndex) in tabs"
         :key="tab.key"
+        type="button"
+        role="tab"
         class="nav-tab"
         :class="{ active: currentModule === tab.key }"
+        :aria-selected="currentModule === tab.key"
+        :tabindex="currentModule === tab.key ? 0 : -1"
         @click="handleModuleSelect(tab.key)"
+        @keydown="handleModuleKeydown($event, tabIndex)"
       >
         <el-icon class="tab-icon"><component :is="tab.icon" /></el-icon>
         <span class="tab-text">{{ tab.label }}</span>
-      </div>
+      </button>
     </div>
 
     <!-- 下载全部相册功能区 -->
-    <div v-if="currentModule === 'album' && !albumLoadError" class="download-all-section">
+    <div
+      v-if="currentModule === 'album' && albumLoadState.status === ALBUM_LOAD_STATUS.READY"
+      class="download-all-section"
+    >
       <div class="download-all-card">
-        <div class="download-all-button" @click="toggleDownloadAll">
+        <button
+          type="button"
+          class="download-all-button"
+          :aria-busy="isDownloadingAll || isCancelling"
+          :aria-label="downloadButtonText"
+          @click="toggleDownloadAll"
+        >
           <div class="button-content">
             <div class="button-icon">
               <el-icon v-if="!isDownloadingAll && !isCancelling">
@@ -337,7 +381,7 @@
           <div v-if="downloadProgress.visible" class="progress-overlay">
             <div class="progress-fill" :style="{ width: downloadProgress.percentage + '%' }"></div>
           </div>
-        </div>
+        </button>
       </div>
     </div>
 
@@ -346,7 +390,7 @@
       <el-scrollbar class="h-full">
         <!-- 相册模块 -->
         <el-menu
-          v-if="currentModule === 'album' && !loading && !albumLoadError"
+          v-if="currentModule === 'album' && albumLoadState.status === ALBUM_LOAD_STATUS.READY"
           :default-openeds="Array.from(openedKeys)"
           :default-active="selectedAlbumKey"
           mode="vertical"
@@ -475,20 +519,37 @@
         <section
           v-else-if="currentModule === 'album'"
           class="album-load-state"
-          :class="{ 'is-error': albumLoadError }"
-          :role="albumLoadError ? 'alert' : 'status'"
-          aria-live="polite"
+          :class="{
+            'is-error': [ALBUM_LOAD_STATUS.ERROR, ALBUM_LOAD_STATUS.FORBIDDEN].includes(
+              albumLoadState.status
+            )
+          }"
+          :role="
+            [ALBUM_LOAD_STATUS.ERROR, ALBUM_LOAD_STATUS.FORBIDDEN].includes(albumLoadState.status)
+              ? 'alert'
+              : 'status'
+          "
+          :aria-live="
+            [ALBUM_LOAD_STATUS.ERROR, ALBUM_LOAD_STATUS.FORBIDDEN].includes(albumLoadState.status)
+              ? 'assertive'
+              : 'polite'
+          "
         >
-          <el-icon v-if="loading" class="album-load-icon is-loading"><Loading /></el-icon>
-          <el-icon v-else class="album-load-icon"><WarningFilled /></el-icon>
-          <template v-if="loading">
-            <h3>正在读取相册</h3>
-            <p>请稍候，正在从 QQ 空间获取相册列表。</p>
-          </template>
-          <template v-else>
-            <h3>暂时无法获取相册</h3>
-            <p>{{ albumLoadError.message }}</p>
+          <el-icon
+            v-if="albumLoadState.status === ALBUM_LOAD_STATUS.LOADING"
+            class="album-load-icon is-loading"
+          >
+            <Loading />
+          </el-icon>
+          <el-icon v-else class="album-load-icon">
+            <Picture v-if="albumLoadState.status === ALBUM_LOAD_STATUS.EMPTY" />
+            <WarningFilled v-else />
+          </el-icon>
+          <template v-if="albumLoadState.status !== ALBUM_LOAD_STATUS.READY">
+            <h3>{{ albumLoadState.title }}</h3>
+            <p>{{ albumLoadState.description }}</p>
             <el-button
+              v-if="albumLoadState.retryable"
               type="primary"
               plain
               :icon="RefreshRight"
@@ -506,23 +567,27 @@
           <div class="filter-block">
             <div class="filter-title">来源</div>
             <div class="chip-row">
-              <div
+              <button
+                type="button"
                 class="chip"
                 :class="{ active: selectedPhotoType === 'my-photos' }"
+                :aria-pressed="selectedPhotoType === 'my-photos'"
                 @click="handlePhotoTypeSelect('my-photos')"
               >
                 <el-icon><User /></el-icon>
                 我的照片
-              </div>
-              <div
+              </button>
+              <button
                 v-if="!isFriendMode"
+                type="button"
                 class="chip"
                 :class="{ active: selectedPhotoType === 'friend-photos' }"
+                :aria-pressed="selectedPhotoType === 'friend-photos'"
                 @click="handlePhotoTypeSelect('friend-photos')"
               >
                 <el-icon><UserFilled /></el-icon>
                 好友照片
-              </div>
+              </button>
             </div>
           </div>
 
@@ -530,15 +595,17 @@
           <div v-if="selectedPhotoType === 'my-photos'" class="filter-block">
             <div class="filter-title">媒体</div>
             <div class="chip-row">
-              <div
+              <button
                 v-for="opt in PHOTO_MEDIA_OPTIONS"
                 :key="opt.key"
+                type="button"
                 class="chip"
                 :class="{ active: photoFilters.media === opt.key }"
+                :aria-pressed="photoFilters.media === opt.key"
                 @click="photoFilters.media = opt.key"
               >
                 {{ opt.label }}
-              </div>
+              </button>
             </div>
           </div>
 
@@ -551,22 +618,26 @@
           >
             <div class="filter-title">年份</div>
             <div class="chip-row chip-row-wrap">
-              <div
+              <button
+                type="button"
                 class="chip"
                 :class="{ active: photoFilters.year === 'all' }"
+                :aria-pressed="photoFilters.year === 'all'"
                 @click="photoFilters.year = 'all'"
               >
                 全部
-              </div>
-              <div
+              </button>
+              <button
                 v-for="y in photoStats.years"
                 :key="y"
+                type="button"
                 class="chip"
                 :class="{ active: photoFilters.year === y }"
+                :aria-pressed="photoFilters.year === y"
                 @click="photoFilters.year = y"
               >
                 {{ y }}
-              </div>
+              </button>
             </div>
           </div>
 
@@ -636,15 +707,17 @@
           <div class="filter-block">
             <div class="filter-title">时长</div>
             <div class="chip-row">
-              <div
+              <button
                 v-for="opt in DURATION_OPTIONS"
                 :key="opt.key"
+                type="button"
                 class="chip"
                 :class="{ active: videoFilters.duration === opt.key }"
+                :aria-pressed="videoFilters.duration === opt.key"
                 @click="videoFilters.duration = opt.key"
               >
                 {{ opt.label }}
-              </div>
+              </button>
             </div>
           </div>
 
@@ -652,22 +725,26 @@
           <div v-if="videoStats.years && videoStats.years.length > 0" class="filter-block">
             <div class="filter-title">年份</div>
             <div class="chip-row chip-row-wrap">
-              <div
+              <button
+                type="button"
                 class="chip"
                 :class="{ active: videoFilters.year === 'all' }"
+                :aria-pressed="videoFilters.year === 'all'"
                 @click="videoFilters.year = 'all'"
               >
                 全部
-              </div>
-              <div
+              </button>
+              <button
                 v-for="y in videoStats.years"
                 :key="y"
+                type="button"
                 class="chip"
                 :class="{ active: videoFilters.year === y }"
+                :aria-pressed="videoFilters.year === y"
                 @click="videoFilters.year = y"
               >
                 {{ y }}
-              </div>
+              </button>
             </div>
           </div>
 
@@ -675,15 +752,17 @@
           <div class="filter-block">
             <div class="filter-title">排序</div>
             <div class="chip-row">
-              <div
+              <button
                 v-for="opt in SORT_OPTIONS"
                 :key="opt.key"
+                type="button"
                 class="chip"
                 :class="{ active: videoFilters.sort === opt.key }"
+                :aria-pressed="videoFilters.sort === opt.key"
                 @click="videoFilters.sort = opt.key"
               >
                 {{ opt.label }}
-              </div>
+              </button>
             </div>
           </div>
         </div>
@@ -967,9 +1046,18 @@ import FriendDrawer from './friend-drawer.vue'
 import UploadManager from '@renderer/components/UploadManager/index.vue'
 import { generateUniqueAlbumName, copyToClipboard } from '@renderer/utils'
 import { QZONE_CONFIG } from '@shared/const'
+import {
+  ALBUM_LOAD_STATUS,
+  classifyAlbumLoadFailure,
+  createAlbumLoadState,
+  resolveAlbumResponseState
+} from '@shared/album-load-state'
 import { formatBytes } from '@renderer/utils/formatters'
 import { resolveQzoneHostUin, resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
 import { retryPageRequest } from '@renderer/utils/paginationGuard'
+
+const officialCapacityTooltip =
+  '此容量由 QQ 空间官方接口返回，是官方统计的空间使用量，不是本地电脑已下载文件的容量。'
 
 const handleMenuSelect = (index) => {
   // 菜单选择处理由 selectAlbumItem 函数处理
@@ -993,6 +1081,24 @@ const handleModuleSelect = (module) => {
       selectAlbum(clickItem.value)
     }, 200)
   }
+}
+
+const handleModuleKeydown = (event, currentIndex) => {
+  let nextIndex = currentIndex
+  if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length
+  else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length
+  else if (event.key === 'Home') nextIndex = 0
+  else if (event.key === 'End') nextIndex = tabs.length - 1
+  else return
+
+  event.preventDefault()
+  handleModuleSelect(tabs[nextIndex].key)
+  nextTick(() => {
+    event.currentTarget
+      ?.closest('[role="tablist"]')
+      ?.querySelectorAll('[role="tab"]')
+      ?.[nextIndex]?.focus()
+  })
 }
 
 // 处理照片类型选择
@@ -1133,7 +1239,13 @@ const props = defineProps({
   photoType: { type: String, default: 'my-photos' }
 })
 
-const emit = defineEmits(['album-selected', 'module-changed', 'enter-friend', 'exit-friend'])
+const emit = defineEmits([
+  'album-selected',
+  'album-state-changed',
+  'module-changed',
+  'enter-friend',
+  'exit-friend'
+])
 
 const userStore = useUserStore()
 const selfQzoneUin = computed(() => resolveSelfQzoneUin(userStore))
@@ -1148,26 +1260,12 @@ const userAvatarUrl = computed(() =>
 const downloadStore = useDownloadStore()
 const refreshAlbumCallback = inject('refreshAlbumCallback', null)
 const loading = ref(false)
-const albumLoadError = ref(null)
+const albumLoadState = ref(createAlbumLoadState())
 let albumLoadRequestId = 0
 
-const describeAlbumLoadError = (error) => {
-  const code = String(error?.code || '')
-  const message = String(error?.message || '')
-
-  if (code === '401' || /登录态|未登录|请先登录/i.test(message)) {
-    return '登录状态已失效，请重新登录后再试。'
-  }
-  if (code === '403' || /无权限|没有权限|访问受限/i.test(message)) {
-    return isFriendMode.value ? '对方空间暂不允许查看相册。' : '当前账号没有权限读取这些相册。'
-  }
-  if (code === '500' || /status code 5\d\d|服务器错误|服务异常/i.test(message)) {
-    return 'QQ 空间暂时没有返回相册数据，请稍后重新加载。'
-  }
-  if (/timeout|timed out|网络|network|ECONN/i.test(message)) {
-    return '网络连接不稳定，请检查网络后重新加载。'
-  }
-  return '暂时无法获取相册，请稍后重新加载。'
+const updateAlbumLoadState = (state) => {
+  albumLoadState.value = state
+  emit('album-state-changed', state)
 }
 
 const retryPhotoData = () => {
@@ -1890,7 +1988,9 @@ const findAlbumById = async (albumId) => {
 const fetchPhotoData = async () => {
   const requestId = ++albumLoadRequestId
   loading.value = true
-  albumLoadError.value = null
+  updateAlbumLoadState(
+    createAlbumLoadState(ALBUM_LOAD_STATUS.LOADING, { friendMode: isFriendMode.value })
+  )
   let allAlbumsData = []
 
   try {
@@ -1907,13 +2007,17 @@ const fetchPhotoData = async () => {
         ),
       { attempts: 3, delayMs: 400 }
     )
-    if (!initialRes || !initialRes.data) {
-      if (requestId === albumLoadRequestId) {
-        albumLoadError.value = {
-          message: 'QQ 空间没有返回相册数据，请稍后重新加载。'
-        }
-      }
-      console.error('[Left] 获取相册数据失败：未返回有效数据')
+    if (requestId !== albumLoadRequestId) return
+
+    const responseState = resolveAlbumResponseState(initialRes, {
+      friendMode: isFriendMode.value
+    })
+    if (responseState.status !== ALBUM_LOAD_STATUS.READY) {
+      updateAlbumLoadState(responseState)
+      console.error('[Left] 获取相册数据失败：响应不可用', {
+        status: responseState.status,
+        code: initialRes?.code
+      })
       return
     }
 
@@ -2120,6 +2224,9 @@ const fetchPhotoData = async () => {
       }
     } else {
       console.error('[Left] 未找到有效的相册数据格式')
+      updateAlbumLoadState(
+        createAlbumLoadState(ALBUM_LOAD_STATUS.ERROR, { friendMode: isFriendMode.value })
+      )
       return
     }
 
@@ -2129,6 +2236,11 @@ const fetchPhotoData = async () => {
     // 统计总相册数
     const totalAlbums = allAlbumsData.reduce((sum, cat) => sum + (cat.albumList?.length || 0), 0)
     console.log(`[Left] 所有相册加载完成，总计 ${totalAlbums} 个相册`)
+    updateAlbumLoadState(
+      createAlbumLoadState(totalAlbums > 0 ? ALBUM_LOAD_STATUS.READY : ALBUM_LOAD_STATUS.EMPTY, {
+        friendMode: isFriendMode.value
+      })
+    )
 
     // 设置默认选中第一个相册
     nextTick(() => {
@@ -2146,7 +2258,7 @@ const fetchPhotoData = async () => {
   } catch (error) {
     console.error('[Left] 加载相册数据失败:', error)
     if (requestId === albumLoadRequestId) {
-      albumLoadError.value = { message: describeAlbumLoadError(error) }
+      updateAlbumLoadState(classifyAlbumLoadFailure(error, { friendMode: isFriendMode.value }))
     }
   } finally {
     if (requestId === albumLoadRequestId) {
@@ -2445,6 +2557,9 @@ watch(
       selectedPhotoType.value = props.photoType || selectedPhotoType.value
       // 立即清空右侧相册内容，避免残留上一个好友的数据
       emit('album-selected', null)
+      updateAlbumLoadState(
+        createAlbumLoadState(ALBUM_LOAD_STATUS.LOADING, { friendMode: isFriendMode.value })
+      )
       nextTick(() => fetchPhotoData())
     }
   }
@@ -2670,6 +2785,7 @@ const formatRelativeTime = (sec) => {
 defineExpose({
   selectAlbumById,
   findAlbumById,
+  retryPhotoData,
   updateVideoStats,
   updatePhotoStats,
   updateFeedsStats, // FeedsModule 调用回填统计
@@ -2762,6 +2878,11 @@ defineExpose({
           &:active {
             background: rgba(255, 255, 255, 0.1);
           }
+
+          &:focus-visible {
+            outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+            outline-offset: 2px;
+          }
         }
 
         .uin-toggle {
@@ -2775,6 +2896,11 @@ defineExpose({
           &:hover {
             color: rgba(255, 255, 255, 0.7);
             background: rgba(255, 255, 255, 0.06);
+          }
+
+          &:focus-visible {
+            outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+            outline-offset: 2px;
           }
         }
       }
@@ -2828,6 +2954,21 @@ defineExpose({
           display: flex;
           flex-direction: column;
           align-items: flex-start;
+
+          &.capacity-stat {
+            cursor: help;
+            border-radius: 4px;
+
+            .label {
+              text-decoration: underline dotted rgba(255, 255, 255, 0.32);
+              text-underline-offset: 3px;
+            }
+
+            &:focus-visible {
+              outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+              outline-offset: 2px;
+            }
+          }
 
           .label {
             font-size: 12px;
@@ -3524,6 +3665,9 @@ defineExpose({
   font-size: 12px;
   font-weight: 500;
   position: relative;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
   border-radius: 6px;
   margin: 0 1px;
 
@@ -3646,7 +3790,14 @@ defineExpose({
       position: relative;
       cursor: pointer;
       overflow: hidden;
+      width: 100%;
       min-height: 56px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
       display: flex;
       align-items: center;
       transition: all 0.3s ease;
@@ -4932,6 +5083,9 @@ defineExpose({
     justify-content: center;
     gap: 4px;
     padding: 5px 8px;
+    appearance: none;
+    font-family: inherit;
+    line-height: 1.35;
     font-size: 11px;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.55);

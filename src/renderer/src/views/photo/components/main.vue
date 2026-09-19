@@ -6,13 +6,51 @@
     <div class="photo-container">
       <LoadingState v-if="loading" text="正在加载照片..." />
 
-      <EmptyState
-        v-else-if="!currentAlbum"
-        :icon="Picture"
-        title="选择一个相册"
-        description="从左侧选择一个相册来查看照片"
-      />
+      <template v-else-if="!currentAlbum">
+        <LoadingState
+          v-if="albumPlaceholderState.status === ALBUM_LOAD_STATUS.LOADING"
+          text="正在读取相册..."
+        />
+        <EmptyState
+          v-else
+          class="album-collection-state"
+          :class="`is-${albumPlaceholderState.status}`"
+          :icon="albumStateIcon"
+          :title="albumPlaceholderState.title"
+          :description="albumPlaceholderState.description"
+          :semantic-role="albumStateIsError ? 'alert' : 'status'"
+          :aria-live="albumStateIsError ? 'assertive' : 'polite'"
+        >
+          <el-button
+            v-if="albumPlaceholderState.retryable"
+            type="primary"
+            plain
+            @click="emit('retry-albums')"
+          >
+            重新加载
+          </el-button>
+        </EmptyState>
+      </template>
 
+      <EmptyState
+        v-else-if="photoLoadState && photoGroups.length === 0"
+        class="album-collection-state"
+        :class="`is-${photoLoadState.status}`"
+        :icon="photoLoadStateIcon"
+        :title="photoLoadState.title"
+        :description="photoLoadState.description"
+        semantic-role="alert"
+        aria-live="assertive"
+      >
+        <el-button
+          v-if="photoLoadState.retryable"
+          type="primary"
+          plain
+          @click="refreshCurrentAlbum"
+        >
+          重新加载
+        </el-button>
+      </EmptyState>
       <EmptyState
         v-else-if="photoGroups.length === 0 && !hasMore && total === 0"
         :icon="Inbox"
@@ -52,58 +90,89 @@
                   ),
                   'privacy-mode': privacyStore.privacyMode
                 }"
-                @click="handlePhotoClick(photo, $event, index)"
               >
-                <div class="photo-wrapper">
-                  <el-image :src="photo.pre" fit="cover" class="photo-image" lazy>
-                    <template #error>
-                      <div class="image-error">
-                        <el-icon><Picture /></el-icon>
-                        <span>加载失败</span>
-                      </div>
-                    </template>
-                    <template #placeholder>
-                      <div class="image-loading">
-                        <el-icon class="loading-icon"><Loading /></el-icon>
-                      </div>
-                    </template>
-                  </el-image>
+                <button
+                  type="button"
+                  class="photo-preview-trigger"
+                  :aria-label="`${photo.is_video ? '播放视频' : '查看图片'}${photo.name ? `：${photo.name}` : ''}`"
+                  :title="photo.is_video ? '播放视频' : '查看图片'"
+                  @click="handlePhotoClick(photo, $event, index)"
+                >
+                  <div class="photo-wrapper">
+                    <el-image :src="photo.pre" fit="cover" class="photo-image" lazy>
+                      <template #error>
+                        <div class="image-error">
+                          <el-icon><Picture /></el-icon>
+                          <span>加载失败</span>
+                        </div>
+                      </template>
+                      <template #placeholder>
+                        <div class="image-loading">
+                          <el-icon class="loading-icon"><Loading /></el-icon>
+                        </div>
+                      </template>
+                    </el-image>
 
-                  <!-- 隐私模式遮罩 -->
-                  <div v-if="privacyStore.privacyMode" class="privacy-overlay">
-                    <el-icon class="privacy-icon"><Hide /></el-icon>
-                    <div class="privacy-text">隐私保护</div>
-                  </div>
-
-                  <!-- 视频图标 -->
-                  <span v-if="photo.is_video" class="video-badge">
-                    <el-icon><VideoPlay /></el-icon>
-                  </span>
-
-                  <!-- 照片信息覆盖层 -->
-                  <div class="photo-overlay">
-                    <div class="photo-info">
-                      <span class="photo-time">{{ formatTime(photo.modifytime) }}</span>
-                      <!-- <span v-if="photo.is_video" class="video-badge">
-                        <el-icon><VideoPlay /></el-icon>
-                      </span> -->
+                    <!-- 隐私模式遮罩 -->
+                    <div v-if="privacyStore.privacyMode" class="privacy-overlay">
+                      <el-icon class="privacy-icon"><Hide /></el-icon>
+                      <div class="privacy-text">隐私保护</div>
                     </div>
 
-                    <!-- 选择框 -->
-                    <div class="selection-checkbox" @click.stop="selectPhoto(photo)">
-                      <el-icon
-                        v-if="
-                          selectedPhotos.has(
-                            photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
-                          )
-                        "
-                        class="selected-icon"
-                      >
-                        <Check />
-                      </el-icon>
+                    <!-- 视频图标 -->
+                    <span v-if="photo.is_video" class="video-badge">
+                      <el-icon><VideoPlay /></el-icon>
+                    </span>
+
+                    <!-- 照片信息覆盖层 -->
+                    <div class="photo-overlay">
+                      <div class="photo-info">
+                        <span class="photo-time">{{ formatTime(photo.modifytime) }}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </button>
+
+                <button
+                  type="button"
+                  class="selection-checkbox"
+                  :class="{
+                    checked: selectedPhotos.has(
+                      photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+                    )
+                  }"
+                  :aria-pressed="
+                    selectedPhotos.has(
+                      photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+                    )
+                  "
+                  :aria-label="
+                    selectedPhotos.has(
+                      photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+                    )
+                      ? '取消选择当前媒体'
+                      : '选择当前媒体'
+                  "
+                  :title="
+                    selectedPhotos.has(
+                      photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+                    )
+                      ? '取消选择'
+                      : '选择'
+                  "
+                  @click.stop="selectPhoto(photo)"
+                >
+                  <el-icon
+                    v-if="
+                      selectedPhotos.has(
+                        photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+                      )
+                    "
+                    class="selected-icon"
+                  >
+                    <Check />
+                  </el-icon>
+                </button>
               </div>
             </div>
           </div>
@@ -168,6 +237,7 @@
       :has-more="hasMore"
       :load-more="handlePreviewLoadMore"
       :resolve-item="resolvePreviewItem"
+      :download-item="downloadPreviewItem"
       :selectable="true"
       :is-item-selected="isPreviewItemSelected"
       @update:visible="previewVisible = $event"
@@ -212,10 +282,10 @@
         <h3 class="access-title">
           {{ accessDialogData.isQuestion ? '请回答问题' : '请输入密码' }}
         </h3>
-        <p class="access-desc" v-if="accessDialogData.isQuestion">
+        <p v-if="accessDialogData.isQuestion" class="access-desc">
           主人提问：<strong>{{ accessDialogData.question }}</strong>
         </p>
-        <p class="access-desc" v-else>该相册需要输入密码才能访问</p>
+        <p v-else class="access-desc">该相册需要输入密码才能访问</p>
         <el-input
           ref="accessInputRef"
           v-model="accessDialogData.inputValue"
@@ -228,12 +298,12 @@
         />
         <p v-if="accessDialogData.error" class="access-error">{{ accessDialogData.error }}</p>
         <div class="access-actions">
-          <el-button @click="handleAccessCancel" class="access-btn cancel-btn">取消</el-button>
+          <el-button class="access-btn cancel-btn" @click="handleAccessCancel">取消</el-button>
           <el-button
             type="primary"
-            @click="handleAccessConfirm"
             :loading="accessDialogData.loading"
             class="access-btn confirm-btn"
+            @click="handleAccessConfirm"
             >确定</el-button
           >
         </div>
@@ -250,7 +320,7 @@ import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { Loading, Picture, VideoPlay, Check, Hide } from '@element-plus/icons-vue'
-import { Inbox } from '@lucide/vue'
+import { ImageOff, Inbox, ShieldX, TriangleAlert } from '@lucide/vue'
 import { ElLoading, ElMessage, ElMessageBox } from 'element-plus'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
@@ -264,6 +334,16 @@ import {
 } from '@renderer/utils/paginationGuard'
 import { findCachedFeedMetadata } from '@renderer/utils/feed-description-cache'
 import { resolveQzoneHostUin, resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
+import { ALBUM_LOAD_STATUS, createAlbumLoadState } from '@shared/album-load-state'
+import { CONTENT_LOAD_STATUS, classifyContentLoadFailure } from '@shared/content-load-state'
+
+const props = defineProps({
+  albumLoadState: {
+    type: Object,
+    default: () => createAlbumLoadState()
+  }
+})
+const emit = defineEmits(['retry-albums'])
 
 const userStore = useUserStore()
 const downloadStore = useDownloadStore()
@@ -274,6 +354,27 @@ const effectiveHostUin = computed(() => resolveQzoneHostUin(hostUinOverride?.val
 // 好友上下文时跳过鉴权检查（避免好友相册权限码被误判为登录过期）
 const isFriendContext = computed(() => !!hostUinOverride?.value)
 const friendMeta = computed(() => (isFriendContext.value ? { skipAuthCheck: true } : {}))
+const albumLoadState = computed(() => props.albumLoadState || createAlbumLoadState())
+const albumPlaceholderState = computed(() =>
+  albumLoadState.value.status === ALBUM_LOAD_STATUS.READY
+    ? createAlbumLoadState()
+    : albumLoadState.value
+)
+const albumStateIsError = computed(() =>
+  [ALBUM_LOAD_STATUS.ERROR, ALBUM_LOAD_STATUS.FORBIDDEN].includes(
+    albumPlaceholderState.value.status
+  )
+)
+const albumStateIcon = computed(() => {
+  if (albumPlaceholderState.value.status === ALBUM_LOAD_STATUS.FORBIDDEN) return ShieldX
+  if (albumPlaceholderState.value.status === ALBUM_LOAD_STATUS.ERROR) return TriangleAlert
+  if (albumPlaceholderState.value.status === ALBUM_LOAD_STATUS.EMPTY) return ImageOff
+  return Picture
+})
+const photoLoadState = ref(null)
+const photoLoadStateIcon = computed(() =>
+  photoLoadState.value?.status === CONTENT_LOAD_STATUS.FORBIDDEN ? ShieldX : TriangleAlert
+)
 const privacyStore = usePrivacyStore()
 const loading = ref(false)
 const loadingMore = ref(false)
@@ -797,6 +898,7 @@ const handleScroll = () => {
 watch(currentAlbum, async (newAlbum) => {
   if (!newAlbum) {
     photoList.value = []
+    photoLoadState.value = null
     total.value = 0
     hasMore.value = true
     currentPageStart.value = 0
@@ -813,6 +915,7 @@ watch(currentAlbum, async (newAlbum) => {
   // 重置状态
   loading.value = true
   photoList.value = []
+  photoLoadState.value = null
   selectedPhotos.value.clear()
   hasMore.value = true
   currentPageStart.value = 0
@@ -835,6 +938,7 @@ watch(currentAlbum, async (newAlbum) => {
     const result = await fetchPhotosByTopicId(newAlbum.id, 0, pageSize.value)
 
     if (result.success) {
+      photoLoadState.value = null
       photoList.value = result.photos
       total.value = result.total > 0 ? result.total : newAlbum.total || 0
       currentPageStart.value = result.nextPageStart
@@ -850,6 +954,7 @@ watch(currentAlbum, async (newAlbum) => {
         if (answered) {
           const retry = await fetchPhotosByTopicId(newAlbum.id, 0, pageSize.value)
           if (retry.success) {
+            photoLoadState.value = null
             photoList.value = retry.photos
             total.value = retry.total > 0 ? retry.total : newAlbum.total || 0
             currentPageStart.value = retry.nextPageStart
@@ -858,19 +963,34 @@ watch(currentAlbum, async (newAlbum) => {
             ElMessage.error('回答错误')
             currentAlbum.value = null
           } else {
-            ElMessage.error(retry.error || '加载失败')
+            hasMore.value = false
+            total.value = 0
+            photoLoadState.value = classifyContentLoadFailure(
+              { code: retry.code, message: retry.error },
+              { label: '这个相册', friendMode: isFriendContext.value }
+            )
           }
         } else {
           currentAlbum.value = null
         }
       } else {
-        ElMessage.error(result.error || '加载相册照片失败')
+        hasMore.value = false
+        total.value = 0
+        photoLoadState.value = classifyContentLoadFailure(
+          { code: result.code, message: result.error },
+          { label: '这个相册', friendMode: isFriendContext.value }
+        )
       }
     }
   } catch (error) {
     console.error('加载相册照片失败:', error)
 
-    ElMessage.error('加载相册照片失败')
+    hasMore.value = false
+    total.value = 0
+    photoLoadState.value = classifyContentLoadFailure(error, {
+      label: '这个相册',
+      friendMode: isFriendContext.value
+    })
   } finally {
     loading.value = false
 
@@ -1117,6 +1237,7 @@ const refreshCurrentAlbum = async () => {
   // 重置状态
   loading.value = true
   photoList.value = []
+  photoLoadState.value = null
   selectedPhotos.value.clear()
   hasMore.value = true
   currentPageStart.value = 0
@@ -1127,6 +1248,7 @@ const refreshCurrentAlbum = async () => {
     const result = await fetchPhotosByTopicId(currentAlbum.value.id, 0, pageSize.value)
 
     if (result.success) {
+      photoLoadState.value = null
       photoList.value = result.photos
       total.value = result.total > 0 ? result.total : currentAlbum.value.total || 0
       currentPageStart.value = result.nextPageStart
@@ -1135,13 +1257,22 @@ const refreshCurrentAlbum = async () => {
       // ElMessage.success(`已刷新相册：${currentAlbum.value.name}`)
     } else {
       console.error('刷新相册失败:', result.error)
-
-      ElMessage.error(result.error || '刷新相册失败')
+      hasMore.value = false
+      total.value = 0
+      photoLoadState.value = classifyContentLoadFailure(
+        { code: result.code, message: result.error },
+        { label: '这个相册', friendMode: isFriendContext.value }
+      )
     }
   } catch (error) {
     console.error('刷新相册失败:', error)
 
-    ElMessage.error('刷新相册失败')
+    hasMore.value = false
+    total.value = 0
+    photoLoadState.value = classifyContentLoadFailure(error, {
+      label: '这个相册',
+      friendMode: isFriendContext.value
+    })
   } finally {
     loading.value = false
 
@@ -1302,6 +1433,33 @@ const downloadSelected = async () => {
     console.error('下载选中照片失败:', error)
 
     ElMessage.error('下载选中照片失败')
+  }
+}
+
+const downloadPreviewItem = async (item) => {
+  const photo = item?._photo
+  if (!photo || !currentAlbum.value) {
+    throw new Error('当前媒体暂时无法下载')
+  }
+
+  const cleanPhotos = cleanPhotoData([photo])
+  if (!cleanPhotos.length) {
+    throw new Error('当前媒体缺少可用的下载地址')
+  }
+
+  const result = await addDownloadTask({
+    album: {
+      id: currentAlbum.value.id,
+      name: generateUniqueAlbumName(currentAlbum.value),
+      total: 1,
+      desc: currentAlbum.value.desc || ''
+    },
+    photos: cleanPhotos,
+    uin: resolveSelfQzoneUin(userStore) || 'unknown'
+  })
+
+  if (!result.success) {
+    throw new Error(result.error || '加入下载失败')
   }
 }
 
@@ -1766,6 +1924,29 @@ onUnmounted(() => {
   }
 }
 
+.album-collection-state {
+  height: 100%;
+
+  :deep(.empty-content) {
+    width: min(390px, calc(100% - 40px));
+  }
+
+  &.is-forbidden,
+  &.is-error {
+    :deep(.empty-icon) {
+      color: #f59e0b;
+      opacity: 0.72;
+    }
+  }
+
+  &.is-empty {
+    :deep(.empty-icon) {
+      color: #93c5fd;
+      opacity: 0.78;
+    }
+  }
+}
+
 .photo-timeline {
   padding: 20px;
 }
@@ -1934,7 +2115,6 @@ onUnmounted(() => {
   aspect-ratio: 1;
   border-radius: 8px;
   overflow: hidden;
-  cursor: pointer;
   transition: all 0.2s ease;
 
   &:hover {
@@ -1968,17 +2148,35 @@ onUnmounted(() => {
       content: '';
       position: absolute;
       inset: 0;
-      border: 3px solid #409eff;
+      border: 3px solid var(--qz-active-strong, #f97316);
       border-radius: 8px;
       pointer-events: none;
       z-index: 4; // 确保选中边框在隐私遮罩之上
     }
 
     .selection-checkbox {
-      background: #409eff;
-      border-color: #409eff;
+      background: var(--qz-active-strong, #f97316);
+      border-color: var(--qz-active, #fb923c);
       color: white;
     }
+  }
+}
+
+.photo-preview-trigger {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: zoom-in;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 3px var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
   }
 }
 
@@ -2044,6 +2242,7 @@ onUnmounted(() => {
   flex-direction: column;
   justify-content: space-between;
   z-index: 4; // 确保photo-overlay在隐私遮罩之上
+  pointer-events: none;
 }
 
 .photo-info {
@@ -2068,6 +2267,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  background: rgba(12, 12, 14, 0.48);
   transition: all 0.2s ease;
   cursor: pointer;
   z-index: 5; // 确保选择复选框在隐私遮罩之上
@@ -2079,10 +2281,29 @@ onUnmounted(() => {
     transform: scale(1.1);
   }
 
+  &:focus-visible {
+    opacity: 1;
+    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline-offset: 2px;
+  }
+
   .selected-icon {
     font-size: 14px;
     color: white;
     font-weight: bold;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-item,
+  .selection-checkbox,
+  .photo-image :deep(.el-image__inner) {
+    transition: none !important;
+  }
+
+  .photo-item:hover,
+  .selection-checkbox:hover {
+    transform: none !important;
   }
 }
 

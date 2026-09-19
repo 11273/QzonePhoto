@@ -1,7 +1,14 @@
 <template>
-  <div class="loading-state" :class="[size, variant]">
+  <div
+    class="loading-state"
+    :class="[size, variant]"
+    role="status"
+    aria-live="polite"
+    aria-busy="true"
+    :aria-label="text || '正在加载'"
+  >
     <div class="loading-content">
-      <div class="loading-spinner" :class="spinnerType">
+      <div class="loading-spinner" :class="spinnerType" aria-hidden="true">
         <div v-if="spinnerType === 'ring'" class="spinner-ring"></div>
         <div v-else-if="spinnerType === 'dots'" class="spinner-dots">
           <div class="dot"></div>
@@ -215,6 +222,15 @@ const iconSize = computed(() => {
   40% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner-icon,
+  .spinner-ring,
+  .spinner-dots .dot,
+  .spinner-pulse {
+    animation: none !important;
   }
 }
 

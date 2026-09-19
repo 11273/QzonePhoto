@@ -51,7 +51,11 @@
                           v-if="currentAlbum.question"
                           class="priv-text copyable"
                           title="点击复制"
+                          role="button"
+                          tabindex="0"
                           @click="copyToClipboard(currentAlbum.question, '问题')"
+                          @keydown.enter.prevent="copyToClipboard(currentAlbum.question, '问题')"
+                          @keydown.space.prevent="copyToClipboard(currentAlbum.question, '问题')"
                           >{{ currentAlbum.question }}</span
                         >
                         <span v-else class="priv-text muted">...</span>
@@ -63,7 +67,11 @@
                           v-else-if="qaAnswer"
                           class="priv-text answer copyable"
                           title="点击复制"
+                          role="button"
+                          tabindex="0"
                           @click="copyToClipboard(qaAnswer, '答案')"
+                          @keydown.enter.prevent="copyToClipboard(qaAnswer, '答案')"
+                          @keydown.space.prevent="copyToClipboard(qaAnswer, '答案')"
                           >{{ qaAnswer }}</span
                         >
                         <span v-else class="priv-text muted">{{
@@ -97,7 +105,11 @@
                       <span
                         class="priv-text muted copyable mono"
                         title="点击复制相册 ID"
+                        role="button"
+                        tabindex="0"
                         @click="copyToClipboard(currentAlbum.id, '相册 ID')"
+                        @keydown.enter.prevent="copyToClipboard(currentAlbum.id, '相册 ID')"
+                        @keydown.space.prevent="copyToClipboard(currentAlbum.id, '相册 ID')"
                         >{{ currentAlbum.id }}</span
                       >
                     </div>
@@ -164,7 +176,15 @@
                 popper-class="album-visitors-popper"
               >
                 <template #reference>
-                  <div class="visitor-stat" @click.stop>
+                  <div
+                    class="visitor-stat"
+                    role="button"
+                    tabindex="0"
+                    aria-label="查看最近访客"
+                    @click.stop
+                    @keydown.enter.prevent="$event.currentTarget.click()"
+                    @keydown.space.prevent="$event.currentTarget.click()"
+                  >
                     <div class="stat-icon">
                       <Eye :size="16" />
                     </div>
@@ -186,7 +206,11 @@
                       :key="v.uin"
                       class="visitor-item"
                       :title="`点击复制 QQ 号 ${v.uin}`"
+                      role="button"
+                      tabindex="0"
                       @click="copyToClipboard(v.uin, 'QQ 号')"
+                      @keydown.enter.prevent="copyToClipboard(v.uin, 'QQ 号')"
+                      @keydown.space.prevent="copyToClipboard(v.uin, 'QQ 号')"
                     >
                       <el-avatar :size="28" :src="(v.img || '').replace('/50', '/100')">
                         {{ v.name?.[0] || '?' }}
@@ -248,9 +272,8 @@
         <!-- 上传照片按钮（好友空间不显示） -->
         <el-button
           v-if="!isFriendContext"
-          class="album-action-btn upload-btn"
+          class="album-action-btn upload-btn qz-secondary-action"
           size="default"
-          type="success"
           :disabled="!currentAlbum"
           @click="showUploadDialog"
         >
@@ -261,7 +284,7 @@
         <!-- 下载相册按钮 -->
         <el-button
           v-if="shouldShowDownloadButton"
-          class="album-action-btn download-btn"
+          class="album-action-btn download-btn qz-primary-action"
           size="default"
           type="primary"
           :disabled="!hasPhotos"
@@ -826,6 +849,12 @@ const refreshAlbum = async () => {
     opacity: 0.85;
   }
 
+  &:focus-visible {
+    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
   .stat-icon {
     font-size: 16px;
     opacity: 0.9;
@@ -1009,13 +1038,13 @@ const refreshAlbum = async () => {
       }
 
       .el-checkbox__input.is-checked .el-checkbox__inner {
-        background-color: #409eff;
-        border-color: #409eff;
+        background-color: var(--qz-action, #c2410c);
+        border-color: var(--qz-action, #c2410c);
       }
 
       .el-checkbox__input.is-indeterminate .el-checkbox__inner {
-        background-color: #409eff;
-        border-color: #409eff;
+        background-color: var(--qz-action, #c2410c);
+        border-color: var(--qz-action, #c2410c);
       }
 
       .el-checkbox__inner {
@@ -1025,7 +1054,7 @@ const refreshAlbum = async () => {
 
       &:hover {
         .el-checkbox__inner {
-          border-color: #409eff;
+          border-color: var(--qz-active, #fb923c);
         }
       }
     }
@@ -1165,8 +1194,8 @@ const refreshAlbum = async () => {
       }
 
       &.is-active .el-radio-button__inner {
-        background: #409eff;
-        border-color: #409eff;
+        background: var(--qz-action, #c2410c);
+        border-color: var(--qz-action, #c2410c);
         color: #fff;
       }
     }
@@ -1566,6 +1595,11 @@ const refreshAlbum = async () => {
         &:active {
           background: rgba(255, 255, 255, 0.1);
         }
+
+        &:focus-visible {
+          outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+          outline-offset: 2px;
+        }
       }
     }
   }
@@ -1612,6 +1646,11 @@ const refreshAlbum = async () => {
 
     &:hover {
       background: rgba(255, 255, 255, 0.06);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+      outline-offset: -2px;
     }
 
     .visitor-meta {

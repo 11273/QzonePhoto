@@ -3,8 +3,13 @@
     <transition name="mp-fade">
       <div
         v-if="visible"
+        ref="previewMaskRef"
         class="media-preview-mask"
         :class="{ 'is-mac': isMac }"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="current?.title ? `媒体预览：${current.title}` : '媒体预览'"
+        tabindex="-1"
         @click.self="close"
         @wheel.prevent="handleWheel"
       >
@@ -30,6 +35,7 @@
               type="button"
               role="checkbox"
               :aria-checked="isSelected"
+              :aria-label="isSelected ? '取消选中当前项' : '选中当前项'"
               :title="isSelected ? '取消选中' : '选中当前项'"
               @click="toggleSelect"
             >
@@ -45,13 +51,35 @@
               </svg>
             </button>
             <button
+              v-if="canDownloadCurrent"
+              class="mp-action mp-action-primary"
+              type="button"
+              :disabled="downloadingCurrent"
+              :aria-label="downloadingCurrent ? '正在加入下载' : '下载当前媒体'"
+              :title="downloadingCurrent ? '正在加入下载…' : '下载当前媒体'"
+              @click="downloadCurrent"
+            >
+              <el-icon :class="{ 'is-loading': downloadingCurrent }">
+                <Loading v-if="downloadingCurrent" />
+                <Download v-else />
+              </el-icon>
+            </button>
+            <button
               v-if="currentActionSrc"
               class="mp-action"
               type="button"
+              aria-label="复制当前媒体链接"
               title="复制链接"
               @click="copyLink"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
               </svg>
@@ -60,10 +88,18 @@
               v-if="currentActionSrc"
               class="mp-action"
               type="button"
+              aria-label="在浏览器中打开当前媒体"
               title="在浏览器中打开"
               @click="openExternal"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                 <polyline points="15 3 21 3 21 9" />
                 <line x1="10" y1="14" x2="21" y2="3" />
@@ -72,10 +108,18 @@
             <button
               class="mp-action mp-action-close"
               type="button"
+              aria-label="关闭媒体预览"
               title="关闭 (Esc)"
               @click="close"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -87,9 +131,12 @@
         <div class="mp-stage" @click.self="close">
           <!-- 左切换 -->
           <button
+            v-if="total > 1"
             class="mp-nav mp-nav-left"
-            :disabled="loadingMore"
-            :title="loadingMore ? '加载中…' : '上一个 (←)'"
+            type="button"
+            :disabled="loadingMore || currentIndex === 0"
+            aria-label="查看上一个媒体"
+            title="上一个 (←)"
             @click="prev"
           >
             <el-icon><ArrowLeft /></el-icon>
@@ -99,7 +146,7 @@
           <div class="mp-content" @click.stop>
             <template v-if="current?.type === 'image'">
               <img
-                :key="currentIndex + '-img'"
+                :key="`${currentIndex}-img-${reloadNonce}`"
                 :src="imageDisplaySrc"
                 :alt="current.title || ''"
                 class="mp-media mp-img"
@@ -137,19 +184,41 @@
             </div>
 
             <!-- 视频自带 loading，不再叠加全屏 spinner，避免「两个进度条」 -->
-            <div v-if="mediaLoading && current?.type !== 'video'" class="mp-loading">
+            <div
+              v-if="mediaLoading && current?.type !== 'video'"
+              class="mp-loading"
+              role="status"
+              aria-live="polite"
+            >
               <el-icon class="is-loading"><Loading /></el-icon>
+              <span>正在加载图片…</span>
             </div>
-            <div v-if="mediaError" class="mp-error">
+            <div v-if="mediaError" class="mp-error" role="alert">
               <el-icon><WarningFilled /></el-icon>
               <span>无法加载该媒体</span>
+              <div class="mp-error-actions">
+                <button type="button" class="mp-error-btn primary" @click="retryCurrentMedia">
+                  重试
+                </button>
+                <button
+                  v-if="currentActionSrc"
+                  type="button"
+                  class="mp-error-btn"
+                  @click="openExternal"
+                >
+                  浏览器打开
+                </button>
+              </div>
             </div>
           </div>
 
           <!-- 右切换 -->
           <button
+            v-if="total > 1 || hasMore"
             class="mp-nav mp-nav-right"
-            :disabled="loadingMore"
+            type="button"
+            :disabled="loadingMore || (currentIndex === total - 1 && !hasMore)"
+            :aria-label="loadingMore ? '正在加载更多媒体' : '查看下一个媒体'"
             :title="loadingMore ? '加载中…' : '下一个 (→)'"
             @click="next"
           >
@@ -159,56 +228,143 @@
 
           <!-- 边界提示 -->
           <transition name="mp-fade">
-            <div v-if="boundaryHint" class="mp-boundary-hint">{{ boundaryHint }}</div>
+            <div v-if="boundaryHint" class="mp-boundary-hint" role="status" aria-live="polite">
+              {{ boundaryHint }}
+            </div>
           </transition>
         </div>
 
         <!-- 底部工具栏 + 缩略图（独立安全区，不遮挡媒体和导航） -->
         <div class="mp-bottom" @click.stop>
           <!-- 图片工具栏：只在图片项显示 -->
-          <div v-if="current?.type === 'image'" class="mp-toolbar">
-            <div class="mp-tool" role="button" title="缩小 (-)" @click="zoom(-0.25)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg>
-            </div>
-            <div class="mp-tool mp-tool-zoom" role="button" title="实际大小（点击重置 100%）" @click="resetZoom">
-              {{ Math.round(scale * 100) }}%
-            </div>
-            <div class="mp-tool" role="button" title="放大 (+)" @click="zoom(0.25)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg>
-            </div>
-            <div class="mp-tool-sep"></div>
-            <div class="mp-tool" role="button" title="左旋转 90°" @click="rotate(-90)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-            </div>
-            <div class="mp-tool" role="button" title="右旋转 90°" @click="rotate(90)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            </div>
-            <div class="mp-tool-sep"></div>
-            <div
+          <div v-if="current?.type === 'image'" class="mp-toolbar" aria-label="图片查看工具">
+            <button
               class="mp-tool"
-              role="button"
+              type="button"
+              aria-label="缩小图片"
+              title="缩小 (-)"
+              @click="zoom(-0.25)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <line x1="8" y1="11" x2="14" y2="11" />
+                <line x1="20" y1="20" x2="16.5" y2="16.5" />
+              </svg>
+            </button>
+            <button
+              class="mp-tool mp-tool-zoom"
+              type="button"
+              aria-label="恢复图片到百分之百大小"
+              title="实际大小（点击重置 100%）"
+              @click="resetZoom"
+            >
+              {{ Math.round(scale * 100) }}%
+            </button>
+            <button
+              class="mp-tool"
+              type="button"
+              aria-label="放大图片"
+              title="放大 (+)"
+              @click="zoom(0.25)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <line x1="11" y1="8" x2="11" y2="14" />
+                <line x1="8" y1="11" x2="14" y2="11" />
+                <line x1="20" y1="20" x2="16.5" y2="16.5" />
+              </svg>
+            </button>
+            <div class="mp-tool-sep" aria-hidden="true"></div>
+            <button
+              class="mp-tool"
+              type="button"
+              aria-label="向左旋转图片九十度"
+              title="左旋转 90°"
+              @click="rotate(-90)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="1 4 1 10 7 10" />
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+              </svg>
+            </button>
+            <button
+              class="mp-tool"
+              type="button"
+              aria-label="向右旋转图片九十度"
+              title="右旋转 90°"
+              @click="rotate(90)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+            </button>
+            <div class="mp-tool-sep" aria-hidden="true"></div>
+            <button
+              class="mp-tool"
+              type="button"
+              aria-label="复位图片缩放旋转和位置"
               title="复位（缩放/旋转/位置归零，快捷键 0）"
               @click="resetAll"
             >
               <!-- 四角向中心收拢 —— 表示「适配窗口/复位」，与左/右旋转的弧形箭头明显不同 -->
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="4 14 10 14 10 20"/>
-                <polyline points="20 10 14 10 14 4"/>
-                <line x1="14" y1="10" x2="21" y2="3"/>
-                <line x1="3" y1="21" x2="10" y2="14"/>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
               </svg>
-            </div>
+            </button>
           </div>
 
           <!-- 缩略图条（去掉 scroll 监听 / loading thumb，
                加载状态统一由「顶部进度条 + 右切按钮 spinner」表达） -->
           <div v-if="items.length > 1" class="mp-thumbs">
-            <div class="mp-thumbs-inner" ref="thumbsRef">
-              <div
+            <div ref="thumbsRef" class="mp-thumbs-inner">
+              <button
                 v-for="(item, idx) in items"
                 :key="idx"
                 class="mp-thumb"
                 :class="{ active: idx === currentIndex }"
+                type="button"
+                :aria-current="idx === currentIndex ? 'true' : undefined"
+                :aria-label="`查看第 ${idx + 1} 个媒体${item.title ? `：${item.title}` : ''}`"
+                :title="`查看第 ${idx + 1} 个媒体`"
                 @click="jumpTo(idx)"
               >
                 <img v-if="item.thumb" :src="item.thumb" :alt="''" />
@@ -224,7 +380,7 @@
                 >
                   <el-icon class="qz-privacy-icon"><Hide /></el-icon>
                 </div>
-              </div>
+              </button>
             </div>
           </div>
         </div>
@@ -242,7 +398,8 @@ import {
   Picture,
   VideoPlay,
   WarningFilled,
-  Hide
+  Hide,
+  Download
 } from '@element-plus/icons-vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 
@@ -269,7 +426,9 @@ const props = defineProps({
   // 是否启用「联动选中」功能：右上角显示复选框，状态由 isItemSelected 决定，点击触发 toggle-select
   selectable: { type: Boolean, default: false },
   // 判定某 item 是否已被选中（外部传入回调，参数 item / idx）
-  isItemSelected: { type: Function, default: () => false }
+  isItemSelected: { type: Function, default: () => false },
+  // 下载当前项。传入时在右上角展示下载按钮，由业务页面负责加入自己的下载队列。
+  downloadItem: { type: Function, default: null }
 })
 
 const emit = defineEmits(['update:visible', 'index-change', 'toggle-select'])
@@ -282,6 +441,10 @@ const loadingMore = ref(false)
 const boundaryHint = ref('')
 const videoEl = ref(null)
 const thumbsRef = ref(null)
+const previewMaskRef = ref(null)
+const reloadNonce = ref(0)
+const downloadingCurrent = ref(false)
+let previousActiveElement = null
 
 // 缩放 / 旋转 / 平移 状态（仅对图片生效，切换 item / 重置时归零）
 const scale = ref(1)
@@ -349,19 +512,26 @@ const onImgMouseDown = (e) => {
 }
 
 // macOS 全屏弹层会覆盖左上角 traffic light（红黄绿按钮），需要让顶栏留出空间
-const isMac = /Mac|iPad|iPhone/i.test(navigator.platform || '') || /Mac/i.test(navigator.userAgent || '')
+const isMac =
+  /Mac|iPad|iPhone/i.test(navigator.platform || '') || /Mac/i.test(navigator.userAgent || '')
 
 const total = computed(() => props.items.length)
 const current = computed(() => props.items[currentIndex.value] || null)
-const uniqueSources = (sources = []) =>
-  [...new Set(sources.flat().filter((source) => typeof source === 'string' && source.trim()))]
+const uniqueSources = (sources = []) => [
+  ...new Set(sources.flat().filter((source) => typeof source === 'string' && source.trim()))
+]
 const imageSourceCandidates = computed(() => {
   if (current.value?.type !== 'image') return []
   return uniqueSources([current.value.src, current.value.thumb, current.value.fallbackSrcs || []])
 })
-const imageDisplaySrc = computed(() => imageFallbackSrc.value || imageSourceCandidates.value[0] || '')
+const imageDisplaySrc = computed(
+  () => imageFallbackSrc.value || imageSourceCandidates.value[0] || ''
+)
 const currentActionSrc = computed(() =>
   current.value?.type === 'image' ? imageDisplaySrc.value : current.value?.src || ''
+)
+const canDownloadCurrent = computed(
+  () => !!current.value && typeof props.downloadItem === 'function'
 )
 const nextImageCandidate = () => {
   const candidates = imageSourceCandidates.value
@@ -454,7 +624,6 @@ const maybePrefetch = () => {
   }
 }
 
-
 const setIndex = (i) => {
   currentIndex.value = i
   mediaLoading.value = true
@@ -504,7 +673,11 @@ const onMediaError = () => {
     }
   }
 
-  if (current.value?.type === 'image' && current.value?.thumb && imageDisplaySrc.value !== current.value.thumb) {
+  if (
+    current.value?.type === 'image' &&
+    current.value?.thumb &&
+    imageDisplaySrc.value !== current.value.thumb
+  ) {
     imageFallbackSrc.value = current.value.thumb
     mediaLoading.value = true
     mediaError.value = false
@@ -514,11 +687,49 @@ const onMediaError = () => {
   mediaError.value = true
 }
 
+const retryCurrentMedia = async () => {
+  if (!current.value) return
+  mediaError.value = false
+  mediaLoading.value = true
+  imageFallbackSrc.value = ''
+  reloadNonce.value += 1
+
+  if (current.value.needsResolve && typeof props.resolveItem === 'function') {
+    try {
+      await props.resolveItem(current.value, currentIndex.value)
+    } catch (error) {
+      console.warn('[MediaPreview] retry resolveItem 失败:', error)
+      mediaLoading.value = false
+      mediaError.value = true
+      return
+    }
+  }
+
+  await nextTick()
+  if (current.value?.type === 'video') {
+    videoEl.value?.load?.()
+  }
+}
+
 const isSelected = computed(() =>
   current.value ? !!props.isItemSelected(current.value, currentIndex.value) : false
 )
 const toggleSelect = () => {
   emit('toggle-select', current.value, currentIndex.value)
+}
+
+const downloadCurrent = async () => {
+  if (!canDownloadCurrent.value || downloadingCurrent.value) return
+  downloadingCurrent.value = true
+  try {
+    await props.downloadItem(current.value, currentIndex.value)
+    showBoundary('已加入下载队列')
+  } catch (error) {
+    console.error('[MediaPreview] download current failed:', error)
+    showBoundary(error?.message || '加入下载失败，请重试')
+  } finally {
+    downloadingCurrent.value = false
+  }
 }
 
 const copyLink = async () => {
@@ -562,7 +773,30 @@ const handleWheel = (e) => {
 
 const onKey = (e) => {
   if (!props.visible) return
-  if (e.key === 'Escape') {
+  if (e.key === 'Tab') {
+    const focusable = [
+      ...(previewMaskRef.value?.querySelectorAll(
+        'button:not(:disabled), video[controls], [href], [tabindex]:not([tabindex="-1"])'
+      ) || [])
+    ].filter((element) => !element.hidden && element.getClientRects().length > 0)
+    if (!focusable.length) {
+      e.preventDefault()
+      previewMaskRef.value?.focus()
+      return
+    }
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (
+      e.shiftKey &&
+      (document.activeElement === first || document.activeElement === previewMaskRef.value)
+    ) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  } else if (e.key === 'Escape') {
     close()
     e.preventDefault()
   } else if (e.key === 'ArrowLeft') {
@@ -590,6 +824,7 @@ watch(
   () => props.visible,
   (v) => {
     if (v) {
+      previousActiveElement = document.activeElement
       const initial = Math.max(0, Math.min(props.items.length - 1, props.initialIndex || 0))
       boundaryHint.value = ''
       window.addEventListener('keydown', onKey)
@@ -597,6 +832,7 @@ watch(
       // 通过 setIndex 走完整流程：触发 resolveItem（视频拉真实 URL）+ 预加载检测
       // 不能只赋值 currentIndex，否则第一个就是视频时永远停在「正在获取播放地址」
       setIndex(initial)
+      nextTick(() => previewMaskRef.value?.focus())
     } else {
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = ''
@@ -606,6 +842,7 @@ watch(
       } catch {
         // ignore
       }
+      nextTick(() => previousActiveElement?.focus?.())
     }
   },
   { immediate: true }
@@ -623,8 +860,7 @@ onUnmounted(() => {
   inset: 0;
   z-index: 9999;
   background:
-    radial-gradient(circle at 50% 42%, rgba(31, 41, 55, 0.26), transparent 42%),
-    rgba(0, 0, 0, 0.94);
+    radial-gradient(circle at 50% 42%, rgba(31, 41, 55, 0.26), transparent 42%), rgba(0, 0, 0, 0.94);
   backdrop-filter: blur(8px);
   display: flex;
   flex-direction: column;
@@ -691,6 +927,28 @@ onUnmounted(() => {
     transform: translateY(0) scale(0.96);
   }
 
+  &:focus-visible {
+    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  &.mp-action-primary {
+    color: #fff;
+    background: var(--qz-action, #c2410c);
+    border-color: var(--qz-active, #fb923c);
+
+    &:hover:not(:disabled) {
+      background: var(--qz-active, #fb923c);
+      border-color: #fdba74;
+    }
+  }
+
   &.mp-action-close:hover {
     background: rgba(239, 68, 68, 0.78);
     border-color: rgba(248, 113, 113, 0.92);
@@ -705,8 +963,8 @@ onUnmounted(() => {
     }
 
     &.checked {
-      background: rgba(96, 165, 250, 0.92);
-      border-color: rgba(96, 165, 250, 1);
+      background: var(--qz-active-strong, #f97316);
+      border-color: var(--qz-active, #fb923c);
       color: #fff;
     }
   }
@@ -792,9 +1050,15 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   color: rgba(255, 255, 255, 0.85);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
   cursor: pointer;
   border-radius: 999px;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
   font-size: 11px;
   font-weight: 600;
   -webkit-app-region: no-drag;
@@ -808,6 +1072,11 @@ onUnmounted(() => {
   &:hover {
     background: rgba(255, 255, 255, 0.12);
     color: #fff;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline-offset: 1px;
   }
 }
 
@@ -968,6 +1237,40 @@ onUnmounted(() => {
   }
 }
 
+.mp-error-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.mp-error-btn {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.08);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+
+  &:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.32);
+  }
+
+  &.primary {
+    color: #fff;
+    background: var(--qz-action, #c2410c);
+    border-color: var(--qz-active, #fb923c);
+  }
+}
+
 .mp-boundary-hint {
   position: absolute;
   bottom: 16px;
@@ -1016,7 +1319,11 @@ onUnmounted(() => {
   overflow: hidden;
   background: #000;
   cursor: pointer;
-  transition: outline-color 0.15s, opacity 0.15s;
+  padding: 0;
+  font: inherit;
+  transition:
+    outline-color 0.15s,
+    opacity 0.15s;
   border: none;
   opacity: 0.85;
   /* 默认浅灰 outline 描边 —— 用 outline 而不是 box-shadow inset，
@@ -1061,11 +1368,15 @@ onUnmounted(() => {
   }
   &.active {
     opacity: 1;
-    /* active 把默认 1px 灰 outline 升级为 2px 蓝 + 1px offset 让光晕外扩，
-       同时内部叠 2px 蓝 inset shadow，"当前正在看哪张"一眼可识别 */
-    outline: 2px solid #60a5fa;
+    /* 当前项沿用应用品牌橙，避免预览层重新回到蓝色选中态。 */
+    outline: 2px solid var(--qz-active, #fb923c);
     outline-offset: 1px;
-    box-shadow: inset 0 0 0 2px rgba(96, 165, 250, 0.9);
+    box-shadow: inset 0 0 0 2px var(--qz-active-border, rgba(251, 146, 60, 0.38));
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline-offset: 1px;
   }
 }
 
@@ -1178,5 +1489,22 @@ onUnmounted(() => {
 .mp-fade-enter-from,
 .mp-fade-leave-to {
   opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-action,
+  .mp-tool,
+  .mp-nav,
+  .mp-thumb,
+  .mp-media,
+  .mp-fade-enter-active,
+  .mp-fade-leave-active {
+    transition: none !important;
+  }
+
+  .mp-top-progress-bar,
+  .media-preview-mask .is-loading {
+    animation: none !important;
+  }
 }
 </style>
