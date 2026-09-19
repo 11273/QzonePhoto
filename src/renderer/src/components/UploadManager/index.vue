@@ -253,6 +253,8 @@
                   size="small"
                   type="warning"
                   text
+                  title="暂停上传"
+                  aria-label="暂停上传"
                   @click="pauseTask(task.id)"
                 >
                   <el-icon><VideoPause /></el-icon>
@@ -262,6 +264,8 @@
                   size="small"
                   type="success"
                   text
+                  title="继续上传"
+                  aria-label="继续上传"
                   @click="resumeTask(task.id)"
                 >
                   <el-icon><VideoPlay /></el-icon>
@@ -271,11 +275,20 @@
                   size="small"
                   type="primary"
                   text
+                  title="重试上传"
+                  aria-label="重试上传"
                   @click="retryTask(task.id)"
                 >
                   <el-icon><Refresh /></el-icon>
                 </el-button>
-                <el-button size="small" type="danger" text @click="deleteTask(task.id)">
+                <el-button
+                  size="small"
+                  type="danger"
+                  text
+                  title="删除上传任务"
+                  aria-label="删除上传任务"
+                  @click="deleteTask(task.id)"
+                >
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </div>

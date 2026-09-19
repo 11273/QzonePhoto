@@ -10,19 +10,19 @@
       <div v-if="isMac" class="mac-traffic-lights-space"></div>
 
       <el-tooltip v-if="!isMac && appHomepage" content="GitHub 项目" placement="bottom">
-        <button class="title-github-btn no-drag" type="button" tabindex="-1" @click="openGitHub">
+        <button
+          class="title-github-btn no-drag"
+          type="button"
+          aria-label="打开 GitHub 项目"
+          @click="openGitHub"
+        >
           <Icon icon="github" size="small" class="github-action-icon" />
         </button>
       </el-tooltip>
 
       <div v-if="!isMac && apiBaseUrl" class="title-side-actions">
         <el-tooltip :content="feedbackTooltip" placement="bottom">
-          <button
-            class="title-feedback-btn no-drag"
-            type="button"
-            tabindex="-1"
-            @click="openFeedback"
-          >
+          <button class="title-feedback-btn no-drag" type="button" @click="openFeedback">
             <span class="feedback-text">反馈</span>
           </button>
         </el-tooltip>
@@ -33,7 +33,7 @@
           class="version-container no-drag"
           :class="versionStateClass"
           type="button"
-          tabindex="-1"
+          :aria-label="getVersionTooltip()"
           :title="getVersionTooltip()"
           @click="handleVersionClick(false)"
           @contextmenu.prevent="copyToClipboard(appVersion, '版本号')"
@@ -57,7 +57,7 @@
                     v-if="updateState.downloading && updateState.canCancel"
                     class="version-progress-cancel"
                     type="button"
-                    tabindex="-1"
+                    aria-label="取消更新"
                     title="取消更新"
                     @click.stop="cancelUpdate"
                   >
@@ -156,7 +156,8 @@
             class="global-privacy-btn no-drag"
             size="small"
             text
-            tabindex="-1"
+            :aria-pressed="privacyStore.privacyMode"
+            :aria-label="privacyStore.privacyMode ? '关闭隐私模式' : '开启隐私模式'"
             :type="privacyStore.privacyMode ? 'warning' : 'info'"
             @click="privacyStore.togglePrivacyMode()"
           >
@@ -174,7 +175,7 @@
             class="global-refresh-btn no-drag"
             size="small"
             text
-            tabindex="-1"
+            aria-label="刷新当前页面"
             @click="refreshSystem"
           >
             <el-icon class="refresh-icon">
@@ -189,7 +190,7 @@
             class="global-feedback-btn no-drag"
             size="small"
             text
-            tabindex="-1"
+            aria-label="打开反馈"
             @click="openFeedback"
           >
             <el-icon class="feedback-icon">
@@ -204,7 +205,7 @@
             class="global-notice-btn no-drag"
             size="small"
             text
-            tabindex="-1"
+            aria-label="打开公告中心"
             @click="openNoticeCenter"
           >
             <span class="notice-icon-wrap">
@@ -220,7 +221,7 @@
             class="global-github-btn no-drag"
             size="small"
             text
-            tabindex="-1"
+            aria-label="打开 GitHub 项目"
             @click="openGitHub"
           >
             <Icon icon="github" size="small" class="github-action-icon" />
@@ -260,7 +261,7 @@
           class="title-bar-button minimize no-drag"
           title="最小化"
           type="button"
-          tabindex="-1"
+          aria-label="最小化窗口"
           @click="minimizeWindow"
         >
           <el-icon><SemiSelect /></el-icon>
@@ -270,7 +271,7 @@
           class="title-bar-button maximize no-drag"
           :title="isMaximized ? '还原' : '最大化'"
           type="button"
-          tabindex="-1"
+          :aria-label="isMaximized ? '还原窗口' : '最大化窗口'"
           @click="maximizeWindow"
         >
           <el-icon v-if="isMaximized"><ArrowDownBold /></el-icon>
@@ -281,7 +282,7 @@
           class="title-bar-button close no-drag"
           title="关闭"
           type="button"
-          tabindex="-1"
+          aria-label="关闭窗口"
           @click="closeWindow"
         >
           <el-icon><CloseBold /></el-icon>
@@ -1327,8 +1328,14 @@ watch([dialogVisible, noticeVisible], () => {
 .title-feedback-btn:focus-visible,
 .title-bar-button:focus-visible {
   outline: none;
-  border-color: rgba(96, 165, 250, 0.42);
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.24);
+  border-color: var(--qz-active-border, rgba(251, 146, 60, 0.38));
+  box-shadow: 0 0 0 2px var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+}
+
+.version-container:focus-visible,
+.global-controls :deep(.el-button:focus-visible) {
+  outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+  outline-offset: 2px;
 }
 
 .title-side-actions {

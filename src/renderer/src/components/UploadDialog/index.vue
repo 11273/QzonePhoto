@@ -23,9 +23,11 @@
           :show-arrow="false"
         >
           <template #reference>
-            <div
+            <button
               class="album-chip"
               :class="{ clickable: true, overridden: !!targetAlbumOverride }"
+              type="button"
+              :aria-label="`选择目标相册，当前为${effectiveAlbumName}`"
               :title="
                 effectiveAlbumId
                   ? `当前上传到相册：${effectiveAlbumName}（ID: ${effectiveAlbumId}）\n点击切换`
@@ -35,7 +37,7 @@
               <el-icon><FolderOpened /></el-icon>
               <span class="album-chip-name">{{ effectiveAlbumName }}</span>
               <el-icon class="album-chip-arrow"><ArrowDown /></el-icon>
-            </div>
+            </button>
           </template>
 
           <div class="album-picker">
@@ -51,11 +53,13 @@
               <div v-if="!availableAlbums.length" class="album-picker-empty">
                 未找到相册列表（请等待左侧加载完成或刷新）
               </div>
-              <div
+              <button
                 v-for="a in filteredAlbums"
                 :key="a.id"
                 class="album-picker-item"
                 :class="{ active: a.id === effectiveAlbumId }"
+                type="button"
+                :aria-current="a.id === effectiveAlbumId ? 'true' : undefined"
                 :title="`${a.name} · ${a.total || 0} 张 · ${a.className || ''}`"
                 @click="pickTargetAlbum(a)"
               >
@@ -67,8 +71,11 @@
                 <el-icon v-if="a.id === effectiveAlbumId" class="item-check">
                   <CircleCheck />
                 </el-icon>
-              </div>
-              <div v-if="availableAlbums.length && !filteredAlbums.length" class="album-picker-empty">
+              </button>
+              <div
+                v-if="availableAlbums.length && !filteredAlbums.length"
+                class="album-picker-empty"
+              >
                 没有匹配「{{ albumPickerQuery }}」的相册
               </div>
             </div>
@@ -152,12 +159,7 @@
             <el-icon><VideoPause /></el-icon>
             暂停全部
           </el-button>
-          <el-button
-            v-if="hasPausedTasks"
-            type="success"
-            size="default"
-            @click="resumeAllTasks"
-          >
+          <el-button v-if="hasPausedTasks" type="success" size="default" @click="resumeAllTasks">
             <el-icon><VideoPlay /></el-icon>
             继续全部
           </el-button>
@@ -168,12 +170,7 @@
         </template>
 
         <!-- 批次完成 -->
-        <el-button
-          v-else-if="batchCompleted"
-          type="primary"
-          size="default"
-          @click="startNewBatch"
-        >
+        <el-button v-else-if="batchCompleted" type="primary" size="default" @click="startNewBatch">
           <el-icon><Plus /></el-icon>
           新建批次
         </el-button>
@@ -189,17 +186,23 @@
           v-if="localFiles.length === 0"
           class="upload-drop-area"
           :class="{ 'is-dragover': isDragging }"
+          role="button"
+          tabindex="0"
+          aria-label="选择要上传的图片或视频，也可以将文件拖到这里"
           @dragover.prevent="handleDragOver"
           @dragleave.prevent="handleDragLeave"
           @drop.prevent="handleDrop"
           @click="triggerFileSelect"
+          @keydown.enter.prevent="triggerFileSelect"
+          @keydown.space.prevent="triggerFileSelect"
         >
           <div class="drop-icon">
             <el-icon :size="40"><Upload /></el-icon>
           </div>
           <p class="drop-text">将文件拖到此处 或 点击「选择文件」</p>
           <div class="drop-formats">
-            <span>JPG</span><span>PNG</span><span>GIF</span><span>WEBP</span><span>MP4</span><span>MOV</span><span>AVI</span>
+            <span>JPG</span><span>PNG</span><span>GIF</span><span>WEBP</span><span>MP4</span
+            ><span>MOV</span><span>AVI</span>
           </div>
           <div class="drop-rules">
             <el-icon><InfoFilled /></el-icon>
@@ -298,11 +301,16 @@
                       </el-tooltip>
                     </div>
                     <!-- 重试按钮 -->
-                    <div class="retry-btn-top" @click.stop="retryUpload(file)">
+                    <button
+                      class="retry-btn-top"
+                      type="button"
+                      aria-label="重试上传"
+                      @click.stop="retryUpload(file)"
+                    >
                       <el-tooltip content="重试上传" placement="top">
                         <el-icon :size="14"><Refresh /></el-icon>
                       </el-tooltip>
-                    </div>
+                    </button>
                   </div>
                   <div
                     v-else-if="file.uploadStatus === 'uploading'"
@@ -334,24 +342,28 @@
                   </div>
 
                   <!-- 暂停/继续按钮 -->
-                  <div
+                  <button
                     v-if="file.uploadStatus === 'uploading' || file.uploadStatus === 'waiting'"
                     class="pause-btn-top"
+                    type="button"
+                    aria-label="暂停上传"
                     @click.stop="pauseFileUpload(file)"
                   >
                     <el-tooltip content="暂停上传" placement="top">
                       <el-icon :size="14"><VideoPause /></el-icon>
                     </el-tooltip>
-                  </div>
-                  <div
+                  </button>
+                  <button
                     v-else-if="file.uploadStatus === 'paused'"
                     class="resume-btn-top"
+                    type="button"
+                    aria-label="继续上传"
                     @click.stop="resumeFileUpload(file)"
                   >
                     <el-tooltip content="继续上传" placement="top">
                       <el-icon :size="14"><VideoPlay /></el-icon>
                     </el-tooltip>
-                  </div>
+                  </button>
 
                   <!-- 上传进度显示 -->
                   <div
@@ -379,9 +391,14 @@
                   </div>
 
                   <!-- 删除按钮 -->
-                  <div class="delete-btn" @click.stop="removeFile(index)">
+                  <button
+                    class="delete-btn"
+                    type="button"
+                    aria-label="移除文件"
+                    @click.stop="removeFile(index)"
+                  >
                     <el-icon :size="16"><Close /></el-icon>
-                  </div>
+                  </button>
                 </div>
 
                 <!-- 文件信息 -->
@@ -410,7 +427,6 @@
             />
           </div>
         </div>
-
       </div>
 
       <!-- 右侧：统计区域 —— 空状态下隐藏整列（目标相册信息已经在顶部 tip 显示） -->
@@ -1978,7 +1994,11 @@ const handleTaskChanges = (tasks) => {
         // 这种情况主要发生在：任务刚创建，前端还没收到 taskId 时
         if (!file.taskId && file.name === task.filename && file.size === task.total) {
           // 再次确认是同一相册（防止不同相册的同名文件被误匹配）
-          if (props.contextMode === 'album' && effectiveAlbumId.value && task.albumId === effectiveAlbumId.value) {
+          if (
+            props.contextMode === 'album' &&
+            effectiveAlbumId.value &&
+            task.albumId === effectiveAlbumId.value
+          ) {
             return true
           }
           // 全局模式下，没有相册限制，可以匹配
@@ -2001,7 +2021,11 @@ const handleTaskChanges = (tasks) => {
       }
 
       // 相册模式：只处理当前相册的任务更新（非删除操作）
-      if (props.contextMode === 'album' && effectiveAlbumId.value && task.albumId !== effectiveAlbumId.value) {
+      if (
+        props.contextMode === 'album' &&
+        effectiveAlbumId.value &&
+        task.albumId !== effectiveAlbumId.value
+      ) {
         // console.log(
         //   `[UploadDialog] 跳过非当前相册的任务: ${task.filename} (任务相册: ${task.albumId}, 当前相册: ${effectiveAlbumId.value})`
         // )
@@ -2083,7 +2107,11 @@ watch(
         // console.log(`[UploadDialog] 打开弹窗 - 初始完成数: ${initialCompletedCount.value}`)
 
         // 在相册模式下，如果不是继续会话，则加载失败任务到localFiles
-        if (props.contextMode === 'album' && effectiveAlbumId.value && sessionMode.value !== 'continue') {
+        if (
+          props.contextMode === 'album' &&
+          effectiveAlbumId.value &&
+          sessionMode.value !== 'continue'
+        ) {
           await loadAlbumFailedTasks()
         }
 
@@ -2179,11 +2207,18 @@ onUnmounted(async () => {
   }
 
   .album-picker-item {
+    width: 100%;
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 7px 8px;
+    appearance: none;
+    border: 0;
     border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
     cursor: pointer;
     transition: background 0.15s;
 
@@ -2218,10 +2253,18 @@ onUnmounted(async () => {
     &:hover {
       background: rgba(255, 255, 255, 0.06);
     }
+    &:focus-visible {
+      outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+      outline-offset: -2px;
+    }
     &.active {
-      background: rgba(96, 165, 250, 0.14);
+      background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
       .item-name {
-        color: #60a5fa;
+        color: var(--qz-active-text, #fed7aa);
+      }
+      .item-icon,
+      .item-check {
+        color: var(--qz-active, #fb923c);
       }
     }
   }
@@ -2257,20 +2300,27 @@ onUnmounted(async () => {
     gap: 6px;
     padding: 5px 10px;
     height: 32px;
-    background: rgba(96, 165, 250, 0.1);
-    border: 1px solid rgba(96, 165, 250, 0.25);
+    background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
+    border: 1px solid var(--qz-active-border, rgba(251, 146, 60, 0.38));
     border-radius: 16px;
     font-size: 12px;
     color: rgba(255, 255, 255, 0.9);
     max-width: 240px;
+    appearance: none;
+    font: inherit;
     transition: all 0.2s ease;
 
     &.clickable {
       cursor: pointer;
 
       &:hover {
-        background: rgba(96, 165, 250, 0.18);
-        border-color: rgba(96, 165, 250, 0.45);
+        background: rgba(249, 115, 22, 0.2);
+        border-color: var(--qz-active, #fb923c);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+        outline-offset: 2px;
       }
     }
 
@@ -2285,13 +2335,13 @@ onUnmounted(async () => {
     }
 
     .el-icon {
-      color: #60a5fa;
+      color: var(--qz-active, #fb923c);
       flex-shrink: 0;
     }
 
     .album-chip-name {
       font-weight: 600;
-      color: #60a5fa;
+      color: var(--qz-active-text, #fed7aa);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -2389,11 +2439,11 @@ onUnmounted(async () => {
       }
 
       .el-radio-button__original-radio:checked + .el-radio-button__inner {
-        background: rgba(96, 165, 250, 0.2);
-        border-color: rgba(96, 165, 250, 0.5);
-        color: #60a5fa;
+        background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
+        border-color: var(--qz-active-border, rgba(251, 146, 60, 0.38));
+        color: var(--qz-active-text, #fed7aa);
         font-weight: 600;
-        box-shadow: -1px 0 0 0 rgba(96, 165, 250, 0.5) !important;
+        box-shadow: -1px 0 0 0 var(--qz-active-border, rgba(251, 146, 60, 0.38)) !important;
       }
     }
   }
@@ -2602,14 +2652,19 @@ onUnmounted(async () => {
   transition: all 0.2s ease;
   cursor: pointer;
 
+  &:focus-visible {
+    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline-offset: -4px;
+  }
+
   &:hover {
-    border-color: rgba(96, 165, 250, 0.4);
-    background: rgba(96, 165, 250, 0.04);
+    border-color: var(--qz-active-border, rgba(251, 146, 60, 0.38));
+    background: rgba(249, 115, 22, 0.04);
   }
 
   &.is-dragover {
-    border-color: #60a5fa;
-    background: rgba(96, 165, 250, 0.1);
+    border-color: var(--qz-active, #fb923c);
+    background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
     transform: scale(1.01);
   }
 
@@ -2619,9 +2674,9 @@ onUnmounted(async () => {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(96, 165, 250, 0.08);
+    background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
     border-radius: 50%;
-    color: #60a5fa;
+    color: var(--qz-active, #fb923c);
   }
 
   .drop-text {
@@ -3198,15 +3253,17 @@ onUnmounted(async () => {
       width: 22px;
       height: 22px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #34d399 0%, #52e3a8 100%);
-      border: 1px solid #34d399;
+      background: var(--qz-action, #c2410c);
+      border: 1px solid var(--qz-active, #fb923c);
+      padding: 0;
+      appearance: none;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       color: white;
-      box-shadow: 0 2px 8px rgba(52, 211, 153, 0.3);
+      box-shadow: 0 2px 8px rgba(194, 65, 12, 0.28);
 
       .el-icon {
         font-size: 12px;
@@ -3214,13 +3271,13 @@ onUnmounted(async () => {
 
       &:hover {
         transform: scale(1.15) translateY(-1px);
-        background: linear-gradient(135deg, #7aca52 0%, #95d373 100%);
-        box-shadow: 0 4px 12px rgba(52, 211, 153, 0.4);
+        background: var(--qz-action-hover, #ea580c);
+        box-shadow: 0 4px 12px rgba(234, 88, 12, 0.34);
       }
 
       &:active {
         transform: scale(1.05);
-        box-shadow: 0 2px 4px rgba(52, 211, 153, 0.3);
+        box-shadow: 0 2px 4px rgba(154, 52, 18, 0.3);
       }
     }
 
@@ -3243,6 +3300,8 @@ onUnmounted(async () => {
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
       z-index: 15;
       border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 0;
+      appearance: none;
       backdrop-filter: blur(8px);
 
       .el-icon {
@@ -3288,6 +3347,8 @@ onUnmounted(async () => {
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
       z-index: 15;
       border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 0;
+      appearance: none;
       backdrop-filter: blur(8px);
 
       .el-icon {
@@ -3318,6 +3379,23 @@ onUnmounted(async () => {
     .preview-overlay {
       opacity: 1;
     }
+  }
+
+  .file-thumbnail:focus-within {
+    .delete-btn,
+    .pause-btn-top,
+    .resume-btn-top {
+      opacity: 1;
+    }
+  }
+
+  .retry-btn-top:focus-visible,
+  .pause-btn-top:focus-visible,
+  .resume-btn-top:focus-visible,
+  .delete-btn:focus-visible {
+    opacity: 1;
+    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline-offset: 2px;
   }
 
   .file-info {
@@ -3670,6 +3748,31 @@ onUnmounted(async () => {
         }
       }
     }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .album-chip,
+  .album-picker-item,
+  .upload-drop-area,
+  .file-card,
+  .retry-btn-top,
+  .pause-btn-top,
+  .resume-btn-top,
+  .delete-btn,
+  .progress-fill,
+  .speed-value {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .upload-drop-area.is-dragover,
+  .file-card:hover,
+  .retry-btn-top:hover,
+  .pause-btn-top:hover,
+  .resume-btn-top:hover,
+  .delete-btn:hover {
+    transform: none !important;
   }
 }
 </style>

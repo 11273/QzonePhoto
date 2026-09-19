@@ -140,7 +140,12 @@
             </button>
           </div>
         </div>
-        <button class="feedback-toast-close" type="button" @click="closeFeedbackNotice">
+        <button
+          class="feedback-toast-close"
+          type="button"
+          aria-label="关闭反馈提示"
+          @click="closeFeedbackNotice"
+        >
           <el-icon><Close /></el-icon>
         </button>
       </div>
@@ -622,9 +627,9 @@ onUnmounted(() => {
 }
 
 .fd-type-btn.active {
-  color: #dbeafe;
-  background: rgba(96, 165, 250, 0.16);
-  border-color: rgba(96, 165, 250, 0.42);
+  color: var(--qz-active-text, #fed7aa);
+  background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
+  border-color: var(--qz-active-border, rgba(251, 146, 60, 0.38));
 }
 
 :deep(.fd-content .el-textarea__inner),
@@ -646,7 +651,7 @@ onUnmounted(() => {
 :deep(.fd-content .el-textarea__inner:focus),
 :deep(.el-input__wrapper.is-focus) {
   background: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.62) inset;
+  box-shadow: 0 0 0 1px var(--qz-active, #fb923c) inset;
 }
 
 :deep(.fd-content .el-textarea__inner) {
@@ -683,7 +688,7 @@ onUnmounted(() => {
   width: 14px;
   height: 14px;
   margin: 1px 0 0;
-  accent-color: #60a5fa;
+  accent-color: var(--qz-action, #c2410c);
 }
 
 .fd-log-option strong,
@@ -854,9 +859,9 @@ onUnmounted(() => {
 }
 
 :deep(.feedback-dialog-v2) .fd-type-btn.active {
-  color: #dbeafe !important;
-  background: rgba(96, 165, 250, 0.18) !important;
-  border-color: rgba(96, 165, 250, 0.46) !important;
+  color: var(--qz-active-text, #fed7aa) !important;
+  background: var(--qz-active-soft, rgba(249, 115, 22, 0.14)) !important;
+  border-color: var(--qz-active-border, rgba(251, 146, 60, 0.38)) !important;
 }
 
 :deep(.feedback-dialog-v2) .fd-manual {

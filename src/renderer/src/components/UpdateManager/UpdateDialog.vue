@@ -814,9 +814,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape))
 
 .btn-primary {
   color: #fff;
-  background: var(--ds-accent-blue);
-  border-color: var(--ds-accent-blue);
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--ds-accent-blue) 24%, transparent);
+  background: var(--qz-action, #c2410c);
+  border-color: var(--qz-action, #c2410c);
+  box-shadow: 0 6px 16px rgba(194, 65, 12, 0.24);
 }
 
 .btn:hover {
@@ -825,7 +825,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape))
 }
 
 .btn-primary:hover {
-  background: var(--ds-accent-blue-hover);
+  background: var(--qz-action-hover, #ea580c);
+  border-color: var(--qz-active, #fb923c);
 }
 
 .btn:active {
@@ -836,7 +837,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape))
 .close-btn:focus-visible,
 .text-action:focus-visible,
 .release-notes-scroll:focus-visible {
-  outline: 2px solid var(--ds-accent-blue);
+  outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
   outline-offset: 2px;
 }
 

@@ -1,0 +1,265 @@
+/*
+ * 局部交互抛光
+ *
+ * 只统一选中态、主操作、悬停态和键盘焦点，不改变现有布局与尺寸。
+ * 橙色用于“当前选中”和产品主操作，蓝/绿/黄/红保留信息与状态语义。
+ */
+:root {
+  --qz-active: #fb923c;
+  --qz-active-strong: #ea580c;
+  --qz-active-soft: rgba(249, 115, 22, 0.14);
+  --qz-active-border: rgba(251, 146, 60, 0.38);
+  --qz-active-text: #fed7aa;
+  --qz-action: #c2410c;
+  --qz-action-hover: #ea580c;
+  --qz-focus-ring: rgba(251, 146, 60, 0.72);
+
+  /* Element Plus 的 primary 归入品牌色；语义状态色仍使用各自颜色。 */
+  --el-color-primary: var(--qz-action);
+  --el-color-primary-rgb: 194, 65, 12;
+  --el-color-primary-light-3: #ea580c;
+  --el-color-primary-light-5: #f97316;
+  --el-color-primary-light-7: #fb923c;
+  --el-color-primary-light-8: #fdba74;
+  --el-color-primary-light-9: rgba(249, 115, 22, 0.14);
+  --el-color-primary-dark-2: #9a3412;
+}
+
+/* 页面级主操作：下载是本产品的核心动作，使用高对比品牌橙。 */
+.qz-primary-action:not(:disabled):not(.is-disabled),
+.fm-tool-btn-primary:not(:disabled) {
+  color: #fff !important;
+  background: var(--qz-action) !important;
+  border-color: var(--qz-action) !important;
+  box-shadow: 0 4px 12px rgba(194, 65, 12, 0.2) !important;
+  transform: none !important;
+}
+
+.qz-primary-action:hover:not(:disabled):not(.is-disabled),
+.fm-tool-btn-primary:hover:not(:disabled) {
+  color: #fff !important;
+  background: var(--qz-action-hover) !important;
+  border-color: var(--qz-active) !important;
+  box-shadow: 0 5px 16px rgba(234, 88, 12, 0.26) !important;
+  transform: none !important;
+}
+
+.qz-primary-action:active:not(:disabled):not(.is-disabled),
+.fm-tool-btn-primary:active:not(:disabled) {
+  background: #9a3412 !important;
+  box-shadow: 0 2px 7px rgba(154, 52, 18, 0.24) !important;
+}
+
+/* 次操作保持中性，避免上传与下载同时抢占视觉焦点。 */
+.qz-secondary-action:not(:disabled):not(.is-disabled) {
+  color: var(--ds-text-primary) !important;
+  background: var(--ds-bg-4) !important;
+  border-color: var(--ds-border-medium) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.qz-secondary-action:hover:not(:disabled):not(.is-disabled) {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: var(--ds-border-strong) !important;
+  transform: none !important;
+}
+
+/* 卡片级下载不使用实心大按钮，以免盖过内容本身。 */
+.qz-compact-download:not(:disabled):not(.is-disabled) {
+  color: var(--qz-active-text) !important;
+  background: var(--qz-active-soft) !important;
+  border-color: var(--qz-active-border) !important;
+  box-shadow: none !important;
+}
+
+.qz-compact-download:hover:not(:disabled):not(.is-disabled) {
+  color: #fff !important;
+  background: rgba(249, 115, 22, 0.22) !important;
+  border-color: var(--qz-active) !important;
+}
+
+/* 左侧“一键下载”是下载主入口，使用品牌色而不是成功态绿色。 */
+.download-all-section .download-all-card {
+  border-color: var(--qz-active-border) !important;
+  background: linear-gradient(135deg, var(--qz-active-soft), rgba(249, 115, 22, 0.05)) !important;
+}
+
+.download-all-section .download-all-card:hover {
+  border-color: var(--qz-active) !important;
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.2), rgba(249, 115, 22, 0.08)) !important;
+  box-shadow: 0 6px 16px rgba(194, 65, 12, 0.2) !important;
+  transform: none !important;
+}
+
+.download-all-section .download-all-button .button-icon {
+  background: var(--qz-active-soft) !important;
+  border-color: var(--qz-active-border) !important;
+}
+
+.download-all-section .download-all-button .button-icon .el-icon:not(.cancel-icon),
+.download-all-section .download-all-button .button-text .main-text {
+  color: var(--qz-active) !important;
+}
+
+.download-all-section .download-all-button .button-text .sub-text {
+  color: var(--qz-active-text) !important;
+}
+
+.download-all-section .download-all-button .loading-ring {
+  border-color: var(--qz-active-border) !important;
+  border-top-color: var(--qz-active) !important;
+}
+
+.download-all-section .download-all-button .progress-overlay {
+  background: var(--qz-active-soft) !important;
+}
+
+.download-all-section .download-all-button .progress-fill {
+  background: linear-gradient(90deg, var(--qz-action), var(--qz-active)) !important;
+}
+
+/* 键盘操作时使用与当前项一致的品牌色焦点环。 */
+*:focus-visible {
+  outline-color: var(--qz-focus-ring);
+}
+
+/* 左侧一级模块 Tab：保留原尺寸，只降低蓝色渐变和浮动感。 */
+.main-navigation-tabs .nav-tab {
+  transition:
+    color var(--ds-dur-fast) var(--ds-ease-soft),
+    background-color var(--ds-dur-fast) var(--ds-ease-soft),
+    box-shadow var(--ds-dur-fast) var(--ds-ease-soft);
+}
+
+.main-navigation-tabs .nav-tab:hover:not(.active) {
+  background: var(--ds-bg-3) !important;
+  transform: none !important;
+}
+
+.main-navigation-tabs .nav-tab.active {
+  background: var(--qz-active-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--qz-active-border) !important;
+}
+
+.main-navigation-tabs .nav-tab.active .tab-icon {
+  color: var(--qz-active) !important;
+  transform: none !important;
+}
+
+.main-navigation-tabs .nav-tab.active::after {
+  width: 22px;
+  height: 2px;
+  background: var(--qz-active-strong) !important;
+  box-shadow: none !important;
+}
+
+/* 相册与照片菜单：橙色边线标识当前位置，悬停保持中性。 */
+.album-menu .el-sub-menu__title:hover,
+.album-menu .el-menu-item:hover,
+.photo-menu .el-menu-item:hover {
+  border-left-color: var(--ds-border-strong) !important;
+  transform: none !important;
+}
+
+.album-menu .el-sub-menu__title:hover .el-sub-menu__icon-arrow {
+  color: var(--ds-text-secondary) !important;
+}
+
+.album-menu.album-menu .el-menu-item.el-menu-item.is-active,
+.photo-menu.photo-menu .el-menu-item.el-menu-item.is-active {
+  color: #fff !important;
+  background: var(--qz-active-soft) !important;
+  border-left-color: var(--qz-active-strong) !important;
+  box-shadow: none !important;
+}
+
+.album-menu.album-menu .el-menu-item.el-menu-item.is-active .el-icon,
+.photo-menu.photo-menu .el-menu-item.el-menu-item.is-active .el-icon {
+  color: var(--qz-active) !important;
+}
+
+/* 侧栏筛选、好友子 Tab 与选中好友使用同一套轻量选中态。 */
+.photo-side .filter-block .chip.active,
+.video-side .filter-block .chip.active,
+.friend-sub-tabs .sub-tab.active {
+  color: var(--qz-active-text) !important;
+  background: var(--qz-active-soft) !important;
+  border-color: var(--qz-active-border) !important;
+  box-shadow: none !important;
+}
+
+.photo-side .filter-block .chip.active .chip-num,
+.video-side .filter-block .chip.active .chip-num {
+  color: var(--qz-active-text) !important;
+}
+
+.friend-list .friend-item.active {
+  background: var(--qz-active-soft) !important;
+  border-color: var(--qz-active-border) !important;
+}
+
+/* 动态分类和收藏筛选仅修改当前项，不影响红色数量徽标。 */
+.feeds-module .fm-source.active {
+  color: #fff !important;
+  border-bottom-color: var(--qz-active-strong) !important;
+}
+
+.feeds-module .fm-source.active .fm-source-icon {
+  color: var(--qz-active) !important;
+}
+
+.feeds-module .fm-fav-filter.active {
+  color: var(--qz-active-text) !important;
+  background: var(--qz-active-soft) !important;
+  border-color: var(--qz-active-border) !important;
+}
+
+.feeds-module .fm-fav-filter:focus-visible {
+  outline-color: var(--qz-focus-ring) !important;
+}
+
+/* 图片尺寸分段控件与其它选中态保持一致。 */
+.photo-size-controls .el-radio-button.is-active .el-radio-button__inner,
+.photo-size-controls .el-radio-button__original-radio:checked + .el-radio-button__inner {
+  color: #fff !important;
+  background: var(--qz-action) !important;
+  border-color: var(--qz-action) !important;
+  box-shadow: -1px 0 0 0 var(--qz-action) !important;
+}
+
+/* 多选状态与导航选中态使用同一语言，但不覆盖危险操作的红色。 */
+.photo-module .feed-card.selected {
+  background: var(--qz-active-soft) !important;
+  border-color: var(--qz-active-border) !important;
+}
+
+.photo-module .toolbar-left .check-icon {
+  color: var(--qz-active) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qz-primary-action,
+  .qz-secondary-action,
+  .qz-compact-download,
+  .download-all-card,
+  .download-all-button,
+  .main-navigation-tabs .nav-tab,
+  .main-navigation-tabs .nav-tab .tab-icon,
+  .album-menu .el-sub-menu__title,
+  .album-menu .el-menu-item,
+  .photo-menu .el-menu-item,
+  .filter-block .chip,
+  .friend-sub-tabs .sub-tab,
+  .friend-list .friend-item,
+  .feeds-module .fm-source,
+  .feeds-module .fm-fav-filter {
+    transition: none !important;
+  }
+
+  .download-all-button .loading-ring,
+  .download-all-button .progress-fill::after {
+    animation: none !important;
+  }
+}

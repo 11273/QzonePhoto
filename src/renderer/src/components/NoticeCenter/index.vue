@@ -45,6 +45,7 @@
           class="nc-list-item"
           :class="{ active: selectedId === notice.id, unread: !isDismissed(notice) }"
           type="button"
+          :aria-current="selectedId === notice.id ? 'true' : undefined"
           @click="selectNotice(notice)"
         >
           <span class="nc-level-dot" :class="notice.level"></span>
@@ -329,9 +330,13 @@ const formatTime = (value) => {
   cursor: pointer;
 }
 
-.nc-list-item:hover,
+.nc-list-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.95);
+}
+
 .nc-list-item.active {
-  background: rgba(96, 165, 250, 0.13);
+  background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
   color: rgba(255, 255, 255, 0.95);
 }
 
@@ -340,7 +345,11 @@ const formatTime = (value) => {
 }
 
 .nc-list-item.unread.active {
-  background: linear-gradient(90deg, rgba(251, 113, 133, 0.14), rgba(96, 165, 250, 0.13));
+  background: linear-gradient(
+    90deg,
+    rgba(251, 113, 133, 0.14),
+    var(--qz-active-soft, rgba(249, 115, 22, 0.14))
+  );
 }
 
 .nc-list-item.unread .nc-list-title {
