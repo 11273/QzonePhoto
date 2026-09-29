@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 216" role="img" aria-labelledby="title desc">
+  <title id="title">中式圆灯笼</title>
+  <desc id="desc">简化中国红圆灯笼，圆润灯身配金色竖向灯骨、上下灯帽与短流苏</desc>
+  <path d="M80 6v30" stroke="#CDA45C" stroke-width="3" stroke-linecap="round"/>
+  <ellipse cx="80" cy="96" rx="66" ry="59" fill="#D93632"/>
+  <g fill="none" stroke="#E8BC70" stroke-width="2" stroke-opacity=".8">
+    <ellipse cx="80" cy="96" rx="42" ry="58"/>
+    <ellipse cx="80" cy="96" rx="20" ry="58"/>
+  </g>
+  <rect x="58" y="32" width="44" height="9" rx="3" fill="#CDA45C"/>
+  <rect x="58" y="151" width="44" height="9" rx="3" fill="#CDA45C"/>
+  <path d="M80 160v17" stroke="#CDA45C" stroke-width="3"/>
+  <path d="M74 178v27m6-27v30m6-30v27" stroke="#D93632" stroke-width="4" stroke-linecap="round"/>
+  <rect x="72" y="174" width="16" height="7" rx="2" fill="#CDA45C"/>
+</svg>

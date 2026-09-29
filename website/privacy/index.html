@@ -16,6 +16,7 @@
     <link rel="icon" href="../assets/icons/app.png" />
     <meta name="application-name" content="企鹅相册 · QzonePhoto" />
     <meta name="theme-color" content="#fbfbfd" />
+    <script src="../holiday-theme.js?v=20260929-performance"></script>
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="企鹅相册 · QzonePhoto" />
@@ -36,7 +37,7 @@
       name="twitter:image"
       content="https://qzonephoto.getgit.one/assets/screenshots/album.png"
     />
-    <link rel="stylesheet" href="../styles.css?v=20260725-motion" />
+    <link rel="stylesheet" href="../styles.css?v=20260929-material" />
   </head>
   <body data-page="privacy">
     <a class="skip-link" href="#main">跳到主要内容</a>
@@ -50,11 +51,12 @@
         type="button"
         aria-label="打开导航"
         aria-expanded="false"
+        aria-controls="site-navigation"
         data-nav-toggle
       >
         <span></span><span></span><span></span>
       </button>
-      <nav class="site-nav" aria-label="主导航" data-nav>
+      <nav id="site-navigation" class="site-nav" aria-label="主导航" data-nav>
         <a href="../">首页</a>
         <a href="../features/">功能</a>
         <a aria-current="page" href="./">使用帮助</a>
@@ -249,6 +251,6 @@
       }
     </script>
     <script src="../download-core.js?v=20260725-motion" defer></script>
-    <script src="../main.js?v=20260725-motion" defer></script>
+    <script src="../main.js?v=20260929-usability" defer></script>
   </body>
 </html>

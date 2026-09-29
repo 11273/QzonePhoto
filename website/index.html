@@ -21,6 +21,7 @@
     <meta name="application-name" content="企鹅相册 · QzonePhoto" />
     <meta name="apple-mobile-web-app-title" content="企鹅相册" />
     <meta name="theme-color" content="#fbfbfd" />
+    <script src="./holiday-theme.js?v=20260929-performance"></script>
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="企鹅相册 · QzonePhoto" />
@@ -47,7 +48,7 @@
       name="twitter:image"
       content="https://qzonephoto.getgit.one/assets/screenshots/album.png"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260725-motion" />
+    <link rel="stylesheet" href="./styles.css?v=20260929-material" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -99,11 +100,12 @@
         type="button"
         aria-label="打开导航"
         aria-expanded="false"
+        aria-controls="site-navigation"
         data-nav-toggle
       >
         <span></span><span></span><span></span>
       </button>
-      <nav class="site-nav" aria-label="主导航" data-nav>
+      <nav id="site-navigation" class="site-nav" aria-label="主导航" data-nav>
         <a aria-current="page" href="./">首页</a>
         <a href="./features/">功能</a>
         <a href="./privacy/">使用帮助</a>
@@ -135,7 +137,9 @@
         <div class="hero-copy">
           <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> 开源 · 本地处理</p>
           <h1 id="hero-title">
-            把 QQ 空间相册里的回忆，<span><em>稳稳</em>带回本地。</span>
+            <span class="hero-line"
+              >把 <strong class="hero-subject">QQ 空间相册</strong>里的回忆，</span
+            ><span class="hero-outcome"><em>稳稳</em>带回本地。</span>
           </h1>
           <p class="hero-lead">
             把相册、原图、视频和动态，一次保存到自己的电脑。无需注册，也不需要加入群聊。
@@ -447,7 +451,10 @@
       <section class="section showcase">
         <div class="showcase-copy reveal">
           <p class="eyebrow">看得见，也管得住</p>
-          <h2>熟悉的空间内容，变成清楚的本地资料库。</h2>
+          <h2>
+            <span>熟悉的空间内容，</span>
+            <span>变成清楚的本地资料库。</span>
+          </h2>
           <p>按相册、照片、视频和动态切换；下载进度、失败重试和保存位置都有明确反馈。</p>
           <a class="text-link" href="./features/"
             >了解全部功能
@@ -466,6 +473,7 @@
               width="1440"
               height="1000"
               loading="lazy"
+              decoding="async"
               alt="企鹅相册 · QzonePhoto 的 QQ 空间动态浏览界面"
             />
           </figure>
@@ -480,6 +488,7 @@
               width="1440"
               height="1000"
               loading="lazy"
+              decoding="async"
               alt="企鹅相册 · QzonePhoto 的批量下载任务管理界面"
             />
           </figure>
@@ -573,6 +582,6 @@
     </footer>
 
     <script src="./download-core.js?v=20260725-motion" defer></script>
-    <script src="./main.js?v=20260725-motion" defer></script>
+    <script src="./main.js?v=20260929-usability" defer></script>
   </body>
 </html>

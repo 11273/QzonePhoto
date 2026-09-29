@@ -48,6 +48,7 @@ html {
   background: var(--page);
 }
 body {
+  overflow-x: clip;
   margin: 0;
   color: var(--ink);
   font-family:
@@ -62,6 +63,7 @@ body {
   -webkit-font-smoothing: antialiased;
   font-optical-sizing: auto;
   text-rendering: optimizeLegibility;
+  line-break: strict;
 }
 a {
   color: inherit;
@@ -85,6 +87,8 @@ h2,
 h3,
 p {
   margin-top: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 h1,
 h2,
@@ -280,7 +284,7 @@ body.has-scrolled .site-header {
   width: min(calc(100% - var(--content-inset)), var(--container));
   min-height: min(720px, calc(100svh - 68px));
   display: grid;
-  grid-template-columns: minmax(0, 0.91fr) minmax(0, 1.09fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
   gap: clamp(42px, 6vw, 84px);
   margin: 0 auto;
@@ -325,6 +329,11 @@ main [id] {
 .hero h1 span {
   display: block;
   color: var(--ink);
+}
+.hero h1 .hero-subject {
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
 }
 .hero h1 em {
   color: var(--brand);
@@ -371,29 +380,6 @@ main [id] {
   isolation: isolate;
   max-width: 448px;
   margin-top: 28px;
-}
-.smart-download::before {
-  position: absolute;
-  inset: -18px 0;
-  z-index: -1;
-  border-radius: 24px;
-  pointer-events: none;
-  content: '';
-  opacity: 0;
-  background: radial-gradient(
-    180px circle at var(--material-x, 50%) var(--material-y, 44%),
-    rgba(237, 100, 31, 0.13),
-    rgba(237, 100, 31, 0) 68%
-  );
-  filter: blur(9px);
-  transition: opacity 0.24s var(--ease-fluid);
-}
-@media (hover: hover) and (pointer: fine) {
-  .smart-download:hover::before,
-  .smart-download:focus-within::before,
-  .smart-download.is-material-active::before {
-    opacity: 1;
-  }
 }
 .download-button {
   position: relative;
@@ -773,13 +759,7 @@ main [id] {
 }
 
 .hero-product {
-  --depth-x: 0px;
-  --depth-y: 0px;
-  --depth-rotate-x: 0deg;
-  --depth-rotate-y: 0deg;
   --frame-lift: 0px;
-  --spotlight-x: 50%;
-  --spotlight-y: 42%;
   position: relative;
   width: min(100%, 696px);
   justify-self: end;
@@ -797,32 +777,12 @@ main [id] {
   box-shadow:
     0 22px 52px rgba(20, 22, 25, 0.18),
     0 2px 0 rgba(255, 255, 255, 0.1) inset;
-  transform: perspective(1200px)
-    translate3d(var(--depth-x), calc(var(--depth-y) + var(--frame-lift)), 0)
-    rotateX(var(--depth-rotate-x)) rotateY(var(--depth-rotate-y));
-  transform-style: preserve-3d;
-  will-change: transform;
+  transform: translateY(var(--frame-lift));
+  transform-style: flat;
+  will-change: auto;
   transition:
     transform 0.18s var(--ease-fluid),
     box-shadow 0.28s var(--ease-fluid);
-}
-.product-frame::after {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  content: '';
-  opacity: 0;
-  background: radial-gradient(
-    290px circle at var(--spotlight-x) var(--spotlight-y),
-    rgba(255, 255, 255, 0.14),
-    rgba(255, 255, 255, 0) 67%
-  );
-  mix-blend-mode: screen;
-  transition: opacity 0.22s var(--ease-fluid);
-}
-.hero-product.is-depth-active .product-frame::after {
-  opacity: 1;
 }
 @media (hover: hover) and (pointer: fine) {
   .product-frame:hover {
@@ -832,6 +792,7 @@ main [id] {
       0 2px 0 rgba(255, 255, 255, 0.12) inset;
   }
 }
+
 .product-frame img {
   width: 100%;
   height: auto;
@@ -1655,10 +1616,10 @@ main [id] {
 }
 body.motion-ready .reveal {
   opacity: 0;
-  transform: translateY(16px) scale(0.985);
+  transform: translateY(12px);
   transition:
-    opacity 0.42s var(--ease-fluid),
-    transform 0.42s var(--ease-fluid);
+    opacity 0.3s var(--ease-fluid),
+    transform 0.3s var(--ease-fluid);
 }
 body.motion-ready .reveal.visible {
   opacity: 1;
@@ -1674,8 +1635,20 @@ body.motion-ready .reveal.visible {
 a:focus-visible,
 button:focus-visible,
 summary:focus-visible {
-  outline: 3px solid rgba(0, 113, 227, 0.42);
-  outline-offset: 3px;
+  outline: 2px solid rgba(0, 113, 227, 0.54);
+  outline-offset: 2px;
+}
+
+/* 下载选择区位于连续圆角容器中，外描边容易在角落被裁切或形成双框。 */
+body
+  :where(
+    .download-button,
+    .other-system-button,
+    .platform-tabs button,
+    .choice-option
+  ):focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(0, 113, 227, 0.62);
 }
 
 @media (max-width: 1120px) {
@@ -1907,6 +1880,72 @@ summary:focus-visible {
   }
 }
 
+body[data-page='not-found'] {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+body[data-page='not-found'] main {
+  width: 100%;
+  flex: 1 1 auto;
+  display: grid;
+  align-items: center;
+}
+
+body[data-page='not-found'] .not-found-hero {
+  width: min(calc(100% - var(--content-inset)), var(--container));
+  min-height: 0;
+}
+
+body[data-page='not-found'] .footer {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 860px) {
+  body[data-page='not-found'] .not-found-header {
+    gap: 12px;
+  }
+
+  body[data-page='not-found'] .not-found-header .brand {
+    flex: 1 1 auto;
+  }
+
+  body[data-page='not-found'] .brand-product {
+    display: none;
+  }
+
+  body[data-page='not-found'] .site-nav.not-found-nav {
+    position: static;
+    width: auto;
+    flex: 0 0 auto;
+    display: flex;
+    gap: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  body[data-page='not-found'] .site-nav.not-found-nav > a:first-child {
+    display: none;
+  }
+
+  body[data-page='not-found'] .site-nav.not-found-nav .nav-download {
+    min-height: 36px;
+    margin: 0;
+    padding: 0 14px;
+    border-radius: 999px;
+  }
+}
+
 @media (max-width: 360px) {
   :root {
     --content-inset: 40px;
@@ -2034,6 +2073,477 @@ summary:focus-visible {
   }
 }
 
+/* --------------------------------------------------------------------------
+   Holiday parity v4 — share the desktop application's brand and festival
+   language while keeping the public website on its familiar light canvas.
+   Structural surfaces and dividers stay neutral. Festival colour is reserved
+   for primary actions, active states and quiet decorative highlights.
+   -------------------------------------------------------------------------- */
+html[data-holiday-family='festival'] {
+  color-scheme: light;
+  --holiday-canvas: #fbfaf8;
+  --holiday-canvas-deep: #fbfaf8;
+  --holiday-surface: rgba(255, 255, 255, 0.62);
+  --holiday-surface-raised: #ffffff;
+  --holiday-surface-overlay: rgba(255, 255, 255, 0.8);
+  --holiday-text: #221f22;
+  --holiday-text-soft: #514b50;
+  --holiday-text-muted: #746c72;
+  --holiday-text-subtle: #746c72;
+  --holiday-border-subtle: rgba(54, 43, 48, 0.08);
+  --holiday-border: rgba(54, 43, 48, 0.14);
+  --holiday-border-strong: rgba(54, 43, 48, 0.22);
+  --holiday-link: #2563b8;
+  --holiday-success: #16825d;
+  --holiday-warning: #a86d00;
+  --holiday-danger: #c23b36;
+  --holiday-primary: #c43630;
+  --holiday-primary-hover: #de5545;
+  --holiday-primary-deep: #992b2d;
+  --holiday-accent: #9b6f1e;
+  --holiday-accent-text: #936616;
+  --holiday-accent-bright: #caa34d;
+  --holiday-primary-rgb: 196, 54, 48;
+  --holiday-accent-rgb: 226, 195, 113;
+  --holiday-stage: #251a1d;
+  --holiday-stage-deep: #171216;
+  --holiday-paper: var(--holiday-surface);
+  --page: var(--holiday-canvas);
+  --page-deep: var(--holiday-canvas-deep);
+  --surface: var(--holiday-surface);
+  --surface-strong: var(--holiday-surface-raised);
+  --ink: var(--holiday-text);
+  --ink-soft: var(--holiday-text-soft);
+  --muted: var(--holiday-text-muted);
+  --subtle: var(--holiday-text-subtle);
+  --line: var(--holiday-border-subtle);
+  --line-strong: var(--holiday-border);
+  --glass: rgba(248, 246, 243, 0.78);
+  --glass-strong: rgba(255, 253, 251, 0.92);
+  --brand: var(--holiday-primary);
+  --brand-dark: var(--holiday-primary-deep);
+  --brand-cta: var(--holiday-primary);
+  --brand-soft: rgba(var(--holiday-primary-rgb), 0.15);
+  --success: var(--holiday-success);
+}
+
+html[data-holiday-theme='new-year-dark'] {
+  --holiday-canvas: #f8fafc;
+  --holiday-canvas-deep: #f8fafc;
+  --holiday-surface: rgba(255, 255, 255, 0.62);
+  --holiday-surface-raised: #ffffff;
+  --holiday-surface-overlay: rgba(255, 255, 255, 0.8);
+  --holiday-text: #182535;
+  --holiday-text-soft: #435469;
+  --holiday-text-muted: #6e7c8c;
+  --holiday-text-subtle: #5f6f80;
+  --holiday-border-subtle: rgba(24, 42, 60, 0.08);
+  --holiday-border: rgba(24, 42, 60, 0.14);
+  --holiday-border-strong: rgba(24, 42, 60, 0.22);
+  --holiday-primary: #c87922;
+  --holiday-primary-hover: #df9439;
+  --holiday-primary-deep: #965414;
+  --holiday-accent: #94691f;
+  --holiday-accent-text: #8b5d15;
+  --holiday-accent-bright: #c99b43;
+  --holiday-primary-rgb: 200, 121, 34;
+  --holiday-accent-rgb: 240, 207, 131;
+  --holiday-stage: #17283c;
+  --holiday-stage-deep: #0d1724;
+}
+
+html[data-holiday-theme='spring-festival-dark'] {
+  --holiday-canvas: #fbf9f7;
+  --holiday-canvas-deep: #fbf9f7;
+  --holiday-surface: rgba(255, 255, 255, 0.62);
+  --holiday-surface-raised: #ffffff;
+  --holiday-surface-overlay: rgba(255, 255, 255, 0.8);
+  --holiday-text: #291f21;
+  --holiday-text-soft: #594a4d;
+  --holiday-text-muted: #796a6d;
+  --holiday-text-subtle: #796a6d;
+  --holiday-border-subtle: rgba(72, 45, 50, 0.08);
+  --holiday-border: rgba(72, 45, 50, 0.14);
+  --holiday-border-strong: rgba(72, 45, 50, 0.22);
+  --holiday-primary: #b8322e;
+  --holiday-primary-hover: #d04c42;
+  --holiday-primary-deep: #8c2629;
+  --holiday-accent: #9f701c;
+  --holiday-accent-text: #936214;
+  --holiday-accent-bright: #d0a446;
+  --holiday-primary-rgb: 184, 50, 46;
+  --holiday-accent-rgb: 234, 190, 99;
+  --holiday-stage: #2c171b;
+  --holiday-stage-deep: #180d11;
+}
+
+html[data-holiday-family='festival'] body {
+  color: var(--ink);
+  background:
+    radial-gradient(
+      1040px 620px at 92% -8%,
+      rgba(var(--holiday-primary-rgb), 0.05),
+      transparent 74%
+    ),
+    var(--page);
+}
+
+html[data-holiday-family='festival'] body::before {
+  opacity: 0.035;
+  background-size: min(1440px, 100vw) auto;
+  -webkit-mask-image: linear-gradient(180deg, #000 0 24%, transparent 68%);
+  mask-image: linear-gradient(180deg, #000 0 24%, transparent 68%);
+}
+
+html[data-holiday-family='festival'] body::after {
+  top: 76px;
+  right: clamp(16px, 3vw, 48px);
+  width: clamp(52px, 4.6vw, 72px);
+  opacity: 0.34;
+  filter: drop-shadow(0 12px 22px rgba(80, 36, 30, 0.12));
+}
+
+html[data-holiday-theme='new-year-dark'] body::after {
+  width: clamp(72px, 7vw, 108px);
+  opacity: 0.32;
+}
+
+html[data-holiday-family='festival'] .site-header,
+html[data-holiday-family='festival'] body.has-scrolled .site-header {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--holiday-canvas) 78%, transparent);
+  box-shadow: none;
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+}
+
+html[data-holiday-family='festival'] .site-header::before {
+  content: none;
+}
+
+html[data-holiday-family='festival'] :where(.brand, .site-nav > a:not(.nav-download)) {
+  color: var(--ink-soft);
+}
+
+html[data-holiday-family='festival'] :where(.brand, .site-nav > a:not(.nav-download)):hover,
+html[data-holiday-family='festival'] .site-nav > a[aria-current='page'] {
+  color: var(--ink);
+}
+
+html[data-holiday-family='festival'] .nav-toggle {
+  border-color: var(--line);
+  color: var(--ink);
+  background: var(--holiday-surface-overlay);
+}
+
+html[data-holiday-family='festival'] :where(.hero, .page-hero, .download-hero) {
+  overflow: visible;
+  padding-inline: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--ink);
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-holiday-family='festival'] :where(.hero, .page-hero, .download-hero, .hero-copy)::before,
+html[data-holiday-family='festival'] :where(.hero, .page-hero, .download-hero)::after,
+html[data-holiday-family='festival'] .section-heading::after,
+html[data-holiday-family='festival'] .section:nth-of-type(even)::before {
+  content: none;
+}
+
+html[data-holiday-family='festival'] :where(.hero h1 em, .eyebrow) {
+  color: var(--holiday-accent-text);
+}
+
+html[data-holiday-family='festival'] :where(.hero-lead, .page-hero p, .section-heading p) {
+  color: var(--muted);
+}
+
+html[data-holiday-family='festival']
+  :where(a:not(.brand):not(.download-button):not(.nav-download)) {
+  text-decoration-color: color-mix(in srgb, var(--holiday-link) 38%, transparent);
+}
+
+html[data-holiday-family='festival']
+  :where(
+    .text-link,
+    .github-release-link,
+    .choice-github-link,
+    .official-domain,
+    .faq a,
+    .faq-list a
+  ) {
+  color: var(--holiday-link);
+}
+
+html[data-holiday-family='festival'] .footer-brand .official-domain {
+  color: var(--holiday-link);
+}
+
+html[data-holiday-family='festival'] .site-nav .nav-download,
+html[data-holiday-family='festival'] .download-button,
+html[data-holiday-family='festival'] .primary-link,
+html[data-holiday-family='festival'] .final-cta .button-secondary {
+  border-color: transparent;
+  color: #fff;
+  background: var(--holiday-primary);
+  box-shadow: 0 10px 26px rgba(var(--holiday-primary-rgb), 0.22);
+}
+
+html[data-holiday-family='festival'] .site-nav .nav-download:hover,
+html[data-holiday-family='festival'] .download-button:hover,
+html[data-holiday-family='festival'] .primary-link:hover,
+html[data-holiday-family='festival'] .final-cta .button-secondary:hover {
+  border-color: transparent;
+  color: #fff;
+  background: var(--holiday-primary-hover);
+  box-shadow: 0 14px 30px rgba(var(--holiday-primary-rgb), 0.28);
+}
+
+html[data-holiday-family='festival']
+  .smart-download[data-manifest-state='loading']
+  .download-button {
+  background:
+    linear-gradient(100deg, transparent 18%, rgba(255, 255, 255, 0.12) 40%, transparent 64%) 0 0 /
+      220% 100%,
+    var(--holiday-primary);
+}
+
+html[data-holiday-family='festival'] :where(.other-system-button, .platform-choice) {
+  border-color: var(--line);
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--holiday-surface-raised) 88%, transparent);
+  box-shadow: none;
+}
+
+html[data-holiday-family='festival']
+  :where(.other-system-button:hover, .other-system-button[aria-expanded='true']) {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: var(--holiday-surface-raised);
+}
+
+html[data-holiday-family='festival'] .platform-tabs::before {
+  box-shadow:
+    0 1px 3px rgba(var(--holiday-primary-rgb), 0.14),
+    0 1px 0 rgba(255, 255, 255, 0.88) inset;
+}
+
+html[data-holiday-family='festival'] .platform-tabs {
+  background: var(--holiday-surface-overlay);
+}
+
+html[data-holiday-family='festival'] :where(.choice-option, .platform-tabs button) {
+  color: var(--muted);
+}
+
+html[data-holiday-family='festival'] .choice-option {
+  border-color: var(--line);
+  color: var(--ink-soft);
+  background: var(--holiday-surface-raised);
+}
+
+html[data-holiday-family='festival'] .choice-option small {
+  color: var(--muted);
+}
+
+html[data-holiday-family='festival']
+  :is(
+    .choice-option:hover,
+    .choice-option[aria-selected='true'],
+    .platform-tabs button[aria-selected='true']
+  ) {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--holiday-primary) 6%, var(--holiday-surface-raised));
+}
+
+html[data-holiday-family='festival'] :where(.product-frame, .window-frame, .shot-stack figure) {
+  border-color: var(--line-strong);
+  box-shadow: 0 24px 58px rgba(0, 0, 0, 0.22);
+}
+
+html[data-holiday-family='festival'] .hero-product::before {
+  inset: -42px -16px -36px;
+  background:
+    radial-gradient(circle at 82% 16%, rgba(var(--holiday-primary-rgb), 0.12), transparent 36%),
+    radial-gradient(circle at 18% 84%, rgba(var(--holiday-accent-rgb), 0.08), transparent 42%);
+  opacity: 0.42;
+}
+
+html[data-holiday-family='festival']
+  :is(
+    .benefit-card,
+    .showcase,
+    .privacy-grid article,
+    .capability-grid article,
+    .download-summary,
+    .release-panel,
+    .recommended-download,
+    .package-group,
+    .package-card,
+    .download-help
+  ) {
+  border-color: var(--line);
+  color: var(--ink);
+  background: var(--holiday-surface);
+  box-shadow: none;
+}
+
+html[data-holiday-family='festival'] :is(.benefit-card, .privacy-grid article)::after {
+  content: none;
+}
+
+html[data-holiday-family='festival']
+  :is(.benefit-card, .capability-grid article, .package-card):hover {
+  border-color: var(--line-strong);
+  background: var(--holiday-surface-raised);
+  box-shadow: 0 16px 34px rgba(54, 43, 48, 0.08);
+}
+
+html[data-holiday-family='festival'] :where(.benefit-icon, .trust-icon, .system-choice-icon) {
+  color: var(--holiday-accent);
+  background: rgba(var(--holiday-accent-rgb), 0.1);
+  box-shadow: none;
+}
+
+html[data-holiday-family='festival'] .feature-row {
+  border-color: transparent;
+  color: var(--ink);
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-holiday-family='festival'] :is(.faq-list details, .faq details) {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--ink);
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-holiday-family='festival'] :is(.faq-list details, .faq details)[open] {
+  border-color: var(--line-strong);
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-holiday-family='festival'] .faq-list {
+  border-top-color: var(--line);
+}
+
+html[data-holiday-family='festival'] .trust-strip {
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--ink);
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-holiday-family='festival'] :where(.security-panel, .final-cta) {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff;
+  background:
+    radial-gradient(520px 300px at 94% 8%, rgba(var(--holiday-accent-rgb), 0.11), transparent 74%),
+    linear-gradient(145deg, var(--holiday-stage-deep), var(--holiday-stage));
+  box-shadow: 0 24px 54px rgba(54, 43, 48, 0.14);
+}
+
+html[data-holiday-family='festival'] .trust-strip::after {
+  opacity: 0.06;
+}
+
+html[data-holiday-family='festival'] .final-cta::before {
+  opacity: 0.07;
+}
+
+html[data-holiday-family='festival'] .trust-item + .trust-item {
+  border-left-color: var(--line);
+}
+
+html[data-holiday-family='festival'] .trust-item strong {
+  color: var(--ink);
+}
+
+html[data-holiday-family='festival'] .trust-item small {
+  color: var(--muted);
+}
+
+html[data-holiday-family='festival'] :where(.security-panel h2, .final-cta h2) {
+  color: #fff;
+}
+
+html[data-holiday-family='festival'] :where(.security-panel p, .final-cta p) {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+html[data-holiday-family='festival']
+  :where(.package-group > header, .package-actions, .download-help li) {
+  border-color: var(--line);
+}
+
+html[data-holiday-family='festival'] :where(.recommended-tag, .platform-mark) {
+  color: var(--holiday-accent-bright);
+  background: rgba(var(--holiday-accent-rgb), 0.1);
+}
+
+html[data-holiday-family='festival'] :where(.check-list li::before, .status-success) {
+  color: var(--holiday-success);
+}
+
+html[data-holiday-family='festival'] .footer {
+  border-top-color: var(--line);
+  color: var(--muted);
+  background: transparent;
+}
+
+html[data-holiday-family='festival'] .footer::before {
+  background: var(--holiday-pattern) center bottom / min(1080px, 100vw) auto no-repeat;
+  opacity: 0.035;
+}
+
+html[data-holiday-family='festival'] :where(button, a, summary):focus-visible {
+  outline-color: var(--holiday-accent);
+}
+
+html[data-holiday-family='festival']
+  body
+  :where(
+    .download-button,
+    .other-system-button,
+    .platform-tabs button,
+    .choice-option
+  ):focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--holiday-accent) 72%, transparent);
+}
+
+@media (max-width: 720px) {
+  html[data-holiday-family='festival'] :where(.hero, .page-hero, .download-hero) {
+    padding-inline: 0;
+    border-radius: 0;
+  }
+
+  html[data-holiday-family='festival'] body::after {
+    width: 46px;
+    opacity: 0.28;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-holiday-family='festival']
+    :where(.site-header, .other-system-button, .platform-choice) {
+    background: var(--holiday-surface-overlay);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 /*
  * Apple material pass
  *
@@ -2050,7 +2560,7 @@ summary:focus-visible {
   --ink: #1d1d1f;
   --ink-soft: #333336;
   --muted: #6e6e73;
-  --subtle: #86868b;
+  --subtle: #6e6e73;
   --line: rgba(29, 29, 31, 0.14);
   --line-strong: rgba(29, 29, 31, 0.28);
   --brand: #f56300;
@@ -2071,8 +2581,7 @@ html {
 }
 body {
   background:
-    radial-gradient(900px 520px at 84% 0%, rgba(245, 99, 0, 0.05), transparent 68%),
-    linear-gradient(180deg, #fff 0, var(--page) 32rem);
+    radial-gradient(1000px 620px at 88% -10%, rgba(245, 99, 0, 0.042), transparent 72%), var(--page);
 }
 h1,
 h2,
@@ -2109,13 +2618,7 @@ h3 {
   -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 .site-header::before {
-  inset: auto 0 0;
-  z-index: 0;
-  width: 100%;
-  height: 1px;
-  border-radius: 0;
-  opacity: 1;
-  background: linear-gradient(90deg, transparent, rgba(245, 99, 0, 0.18), transparent);
+  content: none;
 }
 body.has-scrolled .site-header {
   border-bottom-color: rgba(29, 29, 31, 0.1);
@@ -2233,15 +2736,13 @@ body.has-scrolled .site-header {
    the canvas, not as another container around the content. */
 .hero {
   min-height: min(760px, calc(100svh - 52px));
-  gap: clamp(48px, 7vw, 104px);
+  gap: clamp(48px, 5vw, 72px);
   padding-top: clamp(86px, 10vw, 140px);
   border-radius: 0;
-  background:
-    radial-gradient(500px 360px at 93% 42%, rgba(245, 99, 0, 0.1), transparent 74%),
-    radial-gradient(420px 290px at 13% 94%, rgba(170, 195, 216, 0.09), transparent 72%);
+  background: transparent;
 }
 .hero-copy {
-  max-width: 564px;
+  max-width: 640px;
 }
 .eyebrow {
   min-height: 20px;
@@ -2264,9 +2765,9 @@ body.has-scrolled .site-header {
   box-shadow: 0 0 0 4px rgba(20, 125, 85, 0.09);
 }
 .hero h1 {
-  max-width: 570px;
+  max-width: 640px;
   margin-bottom: 18px;
-  font-size: clamp(3.25rem, 5vw, 5rem);
+  font-size: clamp(3.15rem, 4.3vw, 4rem);
   font-weight: 720;
   line-height: 1.02;
   letter-spacing: -0.07em;
@@ -2308,16 +2809,6 @@ body.has-scrolled .site-header {
 .recommended-actions {
   max-width: 438px;
   margin-top: 30px;
-}
-.smart-download::before {
-  inset: -12px -16px;
-  border-radius: 22px;
-  background: radial-gradient(
-    180px circle at var(--material-x, 50%) var(--material-y, 44%),
-    rgba(0, 113, 227, 0.1),
-    rgba(0, 113, 227, 0) 68%
-  );
-  filter: blur(12px);
 }
 .download-button {
   min-height: 60px;
@@ -2424,12 +2915,15 @@ body.has-scrolled .site-header {
   border: 0;
   border-radius: 24px;
   box-shadow:
-    0 30px 60px rgba(0, 0, 0, 0.2),
+    0 24px 54px rgba(0, 0, 0, 0.18),
     0 1px 0 rgba(255, 255, 255, 0.1) inset;
+  transform: translateY(var(--frame-lift));
+  transform-style: flat;
+  will-change: auto;
 }
 .product-caption {
   margin-top: 14px;
-  color: #86868b;
+  color: var(--subtle);
 }
 
 /* Content follows an Apple-like cadence: strong visual panels, quiet text
@@ -2478,9 +2972,9 @@ body.has-scrolled .site-header {
   min-height: 304px;
   overflow: visible;
   padding: 32px;
-  border: 0;
+  border: 1px solid var(--line);
   border-radius: 28px;
-  background: #f5f5f7;
+  background: rgba(255, 255, 255, 0.58);
   box-shadow: none;
   transition:
     background 220ms var(--ease-fluid),
@@ -2490,9 +2984,9 @@ body.has-scrolled .site-header {
   display: none;
 }
 .benefit-card:hover {
-  border: 0;
-  background: #eeeef0;
-  box-shadow: none;
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.055);
   transform: translateY(-2px);
 }
 .benefit-icon {
@@ -2505,15 +2999,19 @@ body.has-scrolled .site-header {
   box-shadow: none;
 }
 .showcase {
+  grid-template-columns: minmax(360px, 0.88fr) minmax(0, 1.12fr);
   gap: clamp(42px, 6vw, 84px);
-  padding: clamp(48px, 7vw, 88px);
-  border: 0;
+  padding: clamp(44px, 5vw, 68px);
+  border: 1px solid var(--line);
   border-radius: 34px;
-  background: #f5f5f7;
+  background: rgba(255, 255, 255, 0.58);
   box-shadow: none;
 }
 .showcase-copy h2 {
-  max-width: 490px;
+  max-width: 520px;
+}
+.showcase-copy h2 > span {
+  display: block;
 }
 .text-link {
   color: #0066cc;
@@ -2637,9 +3135,7 @@ body.has-scrolled .site-header {
   padding: clamp(88px, 11vw, 152px) 0 clamp(60px, 8vw, 98px);
   border: 0;
   border-radius: 0;
-  background:
-    radial-gradient(640px 390px at 92% 20%, rgba(245, 99, 0, 0.09), transparent 74%),
-    radial-gradient(440px 280px at 6% 84%, rgba(180, 204, 224, 0.1), transparent 74%);
+  background: transparent;
   box-shadow: none;
 }
 .page-hero.compact {
@@ -2695,9 +3191,9 @@ body.has-scrolled .site-header {
 .trust-list > div {
   min-height: 176px;
   padding: 28px;
-  border: 0;
+  border: 1px solid var(--line);
   border-radius: 24px;
-  background: #f5f5f7;
+  background: rgba(255, 255, 255, 0.58);
   box-shadow: none;
 }
 .capability-grid article {
@@ -2706,9 +3202,9 @@ body.has-scrolled .site-header {
     transform 180ms var(--ease-fluid);
 }
 .capability-grid article:hover {
-  border: 0;
-  background: #eeeef0;
-  box-shadow: none;
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.055);
   transform: translateY(-2px);
 }
 .privacy-index {
@@ -2724,8 +3220,8 @@ body.has-scrolled .site-header {
 }
 .footer {
   min-height: 176px;
-  border-top: 0;
-  background: #f5f5f7;
+  border-top: 1px solid var(--line);
+  background: transparent;
 }
 .footer nav a:hover {
   background: transparent;
@@ -2744,6 +3240,7 @@ body.has-scrolled .site-header {
     top: calc(100% + 8px);
     right: 12px;
     width: min(320px, calc(100vw - 24px));
+    display: grid;
     gap: 2px;
     padding: 10px;
     border: 1px solid rgba(255, 255, 255, 0.62);
@@ -2752,6 +3249,9 @@ body.has-scrolled .site-header {
     box-shadow: 0 18px 40px rgba(0, 0, 0, 0.17);
     backdrop-filter: saturate(180%) blur(24px);
     -webkit-backdrop-filter: saturate(180%) blur(24px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
     transform: translateY(-6px) scale(0.985);
     transform-origin: top right;
     transition:
@@ -2760,6 +3260,9 @@ body.has-scrolled .site-header {
       visibility 0s linear 260ms;
   }
   .site-nav.open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
     transform: translateY(0) scale(1);
     transition-delay: 0s;
   }
@@ -2817,9 +3320,6 @@ body.has-scrolled .site-header {
   }
   .hero-highlights li + li::before {
     margin: 0 7px;
-  }
-  .smart-download::before {
-    inset: -10px 0;
   }
   .download-button {
     min-height: 62px;
@@ -2941,5 +3441,1047 @@ body.has-scrolled .site-header {
   .download-note,
   .trust-item small {
     color: var(--ink-soft);
+  }
+}
+
+/* Final material and performance pass.
+   Large desktop surfaces follow macOS window proportions rather than pill-like
+   cards. Paint-heavy effects are kept static; motion stays on compositor-safe
+   transform/opacity properties. */
+.product-frame,
+.window-frame {
+  border-radius: 20px;
+}
+
+.shot-stack figure {
+  border-radius: 18px;
+}
+
+.benefit-card,
+.capability-grid article,
+.privacy-grid article,
+.trust-list > div {
+  border-radius: 20px;
+}
+
+.showcase,
+.security-panel {
+  border-radius: 28px;
+}
+
+.final-cta {
+  border-radius: 24px;
+}
+
+.product-frame,
+.shot-stack figure,
+.benefit-card,
+.capability-grid article {
+  transition: transform 180ms var(--ease-fluid);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .product-frame:hover,
+  .shot-stack figure:hover,
+  .benefit-card:hover,
+  .capability-grid article:hover {
+    transform: translateY(-2px);
+  }
+}
+
+html[data-holiday-family='festival'] body::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: min(760px, 82vh);
+  background-position: center top;
+  background-size: min(1280px, 100vw) auto;
+  opacity: 0.026;
+  filter: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+  contain: strict;
+}
+
+html[data-holiday-family='festival'] body::after,
+html[data-holiday-family='festival'] .hero-product::before {
+  contain: paint;
+}
+
+html[data-holiday-family='festival'] .site-header,
+html[data-holiday-family='festival'] body.has-scrolled .site-header {
+  backdrop-filter: saturate(135%) blur(12px);
+  -webkit-backdrop-filter: saturate(135%) blur(12px);
+}
+
+html[data-holiday-family='festival']
+  .smart-download[data-manifest-state='loading']
+  .download-button {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-frame,
+  .shot-stack figure,
+  .benefit-card,
+  .capability-grid article {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Holiday family v3 — legacy artwork declarations.
+   Kept in a low-priority layer for asset compatibility; the unlayered parity
+   rules above own all current material, colour and layout decisions.
+   -------------------------------------------------------------------------- */
+@layer holiday-legacy {
+  html[data-holiday-family='festival'] {
+    --holiday-primary: #b9342e;
+    --holiday-primary-hover: #d2493b;
+    --holiday-primary-deep: #84272a;
+    --holiday-accent: #b78731;
+    --holiday-accent-bright: #e3bd68;
+    --holiday-primary-rgb: 185, 52, 46;
+    --holiday-accent-rgb: 183, 135, 49;
+    --holiday-stage: #36191a;
+    --holiday-stage-deep: #1d1114;
+    --holiday-paper: #fff8f0;
+    --holiday-pattern: url('./assets/holiday/national-day-pattern.svg');
+    --holiday-decoration: url('./assets/holiday/national-day-lantern.svg');
+    --holiday-decoration-ratio: 160 / 216;
+    --brand: var(--holiday-primary);
+    --brand-dark: var(--holiday-primary-deep);
+    --brand-cta: var(--holiday-primary);
+    --brand-soft: rgba(var(--holiday-primary-rgb), 0.1);
+  }
+
+  html[data-holiday-theme='national-day-dark'] {
+    --page: #f7efe5;
+    --page-deep: #efe1d3;
+    --surface: #fffaf3;
+    --surface-strong: #fffdf8;
+    --ink: #251b19;
+    --ink-soft: #44332f;
+    --muted: #715f59;
+    --subtle: #8a746c;
+    --line: rgba(123, 78, 58, 0.2);
+    --line-strong: rgba(123, 78, 58, 0.34);
+    --holiday-primary: #b9342e;
+    --holiday-primary-hover: #d2493b;
+    --holiday-primary-deep: #84272a;
+    --holiday-accent: #b78731;
+    --holiday-accent-bright: #e3bd68;
+    --holiday-primary-rgb: 185, 52, 46;
+    --holiday-accent-rgb: 183, 135, 49;
+    --holiday-stage: #421c1c;
+    --holiday-stage-deep: #1e1114;
+    --holiday-paper: #fff8ef;
+    --holiday-pattern: url('./assets/holiday/national-day-pattern.svg');
+    --holiday-decoration: url('./assets/holiday/national-day-lantern.svg');
+    --holiday-decoration-ratio: 160 / 216;
+  }
+
+  html[data-holiday-theme='new-year-dark'] {
+    --page: #f1f5f8;
+    --page-deep: #e4ebf1;
+    --surface: #f9fbfd;
+    --surface-strong: #ffffff;
+    --ink: #152538;
+    --ink-soft: #30455b;
+    --muted: #607082;
+    --subtle: #788696;
+    --line: rgba(45, 77, 107, 0.18);
+    --line-strong: rgba(45, 77, 107, 0.3);
+    --holiday-primary: #285c8c;
+    --holiday-primary-hover: #3979b4;
+    --holiday-primary-deep: #153858;
+    --holiday-accent: #a8731f;
+    --holiday-accent-bright: #e6c675;
+    --holiday-primary-rgb: 40, 92, 140;
+    --holiday-accent-rgb: 168, 115, 31;
+    --holiday-stage: #173754;
+    --holiday-stage-deep: #0c1d30;
+    --holiday-paper: #f4f8fc;
+    --holiday-pattern: url('./assets/holiday/new-year-fireworks.svg');
+    --holiday-decoration: url('./assets/holiday/new-year-fireworks.svg');
+    --holiday-decoration-ratio: 1;
+  }
+
+  html[data-holiday-theme='spring-festival-dark'] {
+    --page: #f8eee5;
+    --page-deep: #efded0;
+    --surface: #fff9f2;
+    --surface-strong: #fffdf9;
+    --ink: #281a18;
+    --ink-soft: #4b302d;
+    --muted: #755b55;
+    --subtle: #8e726b;
+    --line: rgba(130, 71, 54, 0.2);
+    --line-strong: rgba(130, 71, 54, 0.34);
+    --holiday-primary: #ad2f2c;
+    --holiday-primary-hover: #ca4337;
+    --holiday-primary-deep: #792126;
+    --holiday-accent: #b77c24;
+    --holiday-accent-bright: #e7bb5f;
+    --holiday-primary-rgb: 173, 47, 44;
+    --holiday-accent-rgb: 183, 124, 36;
+    --holiday-stage: #4a1919;
+    --holiday-stage-deep: #230d12;
+    --holiday-paper: #fff7ed;
+    --holiday-pattern: url('./assets/holiday/spring-festival-pattern.svg');
+    --holiday-decoration: url('./assets/holiday/national-day-lantern.svg');
+    --holiday-decoration-ratio: 160 / 216;
+  }
+
+  html[data-holiday-family='festival'] body {
+    position: relative;
+    isolation: isolate;
+    background:
+      radial-gradient(
+        900px 540px at 96% 1%,
+        rgba(var(--holiday-primary-rgb), 0.16),
+        transparent 70%
+      ),
+      radial-gradient(
+        760px 480px at 2% 35%,
+        rgba(var(--holiday-accent-rgb), 0.13),
+        transparent 72%
+      ),
+      linear-gradient(116deg, #faf9f7 0%, var(--holiday-paper) 55%, #fbf7f3 100%);
+  }
+
+  html[data-holiday-family='festival'] body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background: var(--holiday-pattern) center top / cover no-repeat;
+    opacity: 0.28;
+    -webkit-mask-image: linear-gradient(180deg, #000 0 48%, transparent 88%);
+    mask-image: linear-gradient(180deg, #000 0 48%, transparent 88%);
+  }
+
+  html[data-holiday-family='festival'] body::after {
+    content: '';
+    position: absolute;
+    top: 72px;
+    right: clamp(18px, 4vw, 72px);
+    z-index: -1;
+    width: clamp(66px, 6.2vw, 94px);
+    aspect-ratio: var(--holiday-decoration-ratio);
+    pointer-events: none;
+    background: var(--holiday-decoration) center / contain no-repeat;
+    filter: drop-shadow(0 22px 34px rgba(55, 24, 20, 0.22));
+    opacity: 0.72;
+  }
+
+  html[data-holiday-theme='new-year-dark'] body::after {
+    width: clamp(94px, 9vw, 136px);
+    opacity: 0.6;
+  }
+
+  html[data-holiday-family='festival'] .site-header {
+    border-color: rgba(var(--holiday-accent-rgb), 0.18);
+    background: color-mix(in srgb, var(--holiday-paper) 76%, transparent);
+    box-shadow: 0 12px 34px rgba(62, 34, 24, 0.055);
+    backdrop-filter: blur(18px) saturate(146%);
+    -webkit-backdrop-filter: blur(18px) saturate(146%);
+  }
+
+  html[data-holiday-family='festival'] body.has-scrolled .site-header {
+    border-color: rgba(var(--holiday-accent-rgb), 0.3);
+    background: color-mix(in srgb, var(--holiday-paper) 88%, transparent);
+    box-shadow: 0 14px 36px rgba(62, 34, 24, 0.085);
+  }
+
+  html[data-holiday-family='festival'] .site-nav .nav-download,
+  html[data-holiday-family='festival'] .download-button {
+    border-color: var(--holiday-primary-deep);
+    background: linear-gradient(135deg, var(--holiday-primary-hover), var(--holiday-primary-deep));
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.22),
+      0 12px 28px rgba(var(--holiday-primary-rgb), 0.24);
+  }
+
+  html[data-holiday-family='festival'] .site-nav .nav-download:hover,
+  html[data-holiday-family='festival'] .download-button:hover {
+    background: linear-gradient(135deg, var(--holiday-primary-hover), var(--holiday-primary));
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.26),
+      0 16px 32px rgba(var(--holiday-primary-rgb), 0.3);
+  }
+
+  html[data-holiday-family='festival'] .hero,
+  html[data-holiday-family='festival'] :where(.page-hero, .download-hero) {
+    position: relative;
+    border-radius: 40px;
+    background:
+      radial-gradient(
+        620px 410px at 96% 24%,
+        rgba(var(--holiday-accent-rgb), 0.24),
+        transparent 72%
+      ),
+      radial-gradient(
+        520px 340px at 4% 88%,
+        rgba(var(--holiday-primary-rgb), 0.19),
+        transparent 72%
+      ),
+      linear-gradient(
+        112deg,
+        rgba(var(--holiday-primary-rgb), 0.055),
+        rgba(255, 255, 255, 0.42) 48%,
+        rgba(var(--holiday-accent-rgb), 0.08)
+      );
+  }
+
+  html[data-holiday-family='festival'] .hero::before,
+  html[data-holiday-family='festival'] :where(.page-hero, .download-hero)::before {
+    content: '';
+    position: absolute;
+    inset: 18px clamp(-96px, -5vw, -44px) 24px;
+    z-index: -1;
+    pointer-events: none;
+    border: 1px solid rgba(var(--holiday-accent-rgb), 0.14);
+    border-radius: 52px;
+    background:
+      linear-gradient(
+        106deg,
+        rgba(var(--holiday-primary-rgb), 0.055),
+        transparent 34% 64%,
+        rgba(var(--holiday-accent-rgb), 0.1)
+      ),
+      var(--holiday-pattern) center 24% / cover no-repeat;
+    opacity: 0.78;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 7% 93%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 7% 93%, transparent);
+  }
+
+  html[data-holiday-family='festival'] .hero::after {
+    content: '';
+    position: absolute;
+    top: -30px;
+    right: clamp(-152px, -8vw, -76px);
+    z-index: -1;
+    width: min(68vw, 900px);
+    height: 264px;
+    pointer-events: none;
+    border-radius: 50%;
+    background:
+      radial-gradient(
+        ellipse at 58% 72%,
+        transparent 0 56%,
+        rgba(var(--holiday-primary-rgb), 0.17) 57% 62%,
+        rgba(var(--holiday-accent-rgb), 0.16) 63%,
+        transparent 64%
+      ),
+      radial-gradient(
+        ellipse at 62% 68%,
+        transparent 0 67%,
+        rgba(var(--holiday-accent-rgb), 0.34) 67.5%,
+        transparent 68.4%
+      );
+    opacity: 0.9;
+    transform: rotate(4deg);
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 20% 94%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 20% 94%, transparent);
+  }
+
+  html[data-holiday-theme='new-year-dark'] .hero::after {
+    background: var(--holiday-decoration) right top / 72% auto no-repeat;
+    opacity: 0.38;
+    transform: none;
+  }
+
+  html[data-holiday-family='festival'] .hero h1 em,
+  html[data-holiday-family='festival'] .eyebrow {
+    color: var(--holiday-primary);
+  }
+
+  html[data-holiday-family='festival']
+    .smart-download[data-manifest-state='loading']
+    .download-button {
+    background:
+      linear-gradient(100deg, transparent 18%, rgba(255, 255, 255, 0.14) 40%, transparent 64%) 0 0 /
+        220% 100%,
+      linear-gradient(135deg, var(--holiday-primary), var(--holiday-primary-deep));
+    animation: holiday-download-loading 1.8s linear infinite;
+  }
+
+  html[data-holiday-family='festival'] .other-system-button {
+    border-color: rgba(var(--holiday-accent-rgb), 0.34);
+    background: color-mix(in srgb, var(--holiday-paper) 84%, transparent);
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.92),
+      0 8px 20px rgba(75, 46, 31, 0.06);
+  }
+
+  html[data-holiday-family='festival'] .other-system-button:hover,
+  html[data-holiday-family='festival'] .other-system-button[aria-expanded='true'] {
+    border-color: rgba(var(--holiday-accent-rgb), 0.56);
+    background: var(--holiday-paper);
+  }
+
+  html[data-holiday-family='festival'] .platform-choice {
+    border-color: rgba(var(--holiday-accent-rgb), 0.34);
+    background: color-mix(in srgb, var(--holiday-paper) 94%, transparent);
+  }
+
+  html[data-holiday-family='festival'] .platform-tabs::before {
+    box-shadow:
+      0 1px 3px rgba(var(--holiday-primary-rgb), 0.14),
+      0 1px 0 rgba(255, 255, 255, 0.88) inset;
+  }
+
+  html[data-holiday-family='festival'] .product-frame {
+    isolation: isolate;
+    border: 1px solid rgba(var(--holiday-accent-rgb), 0.42);
+    box-shadow:
+      0 30px 76px rgba(58, 32, 25, 0.2),
+      0 0 0 5px rgba(var(--holiday-accent-rgb), 0.06);
+  }
+
+  html[data-holiday-family='festival'] .hero-product::before {
+    content: '';
+    position: absolute;
+    inset: -74px -62px -58px -46px;
+    z-index: -1;
+    pointer-events: none;
+    border-radius: 42%;
+    background:
+      radial-gradient(circle at 84% 18%, rgba(var(--holiday-primary-rgb), 0.28), transparent 34%),
+      radial-gradient(circle at 18% 82%, rgba(var(--holiday-accent-rgb), 0.24), transparent 40%),
+      var(--holiday-pattern) center / cover no-repeat;
+    opacity: 0.88;
+    -webkit-mask-image: radial-gradient(ellipse at center, #000 22%, transparent 73%);
+    mask-image: radial-gradient(ellipse at center, #000 22%, transparent 73%);
+  }
+
+  html[data-holiday-family='festival'] :where(.benefit-card, .showcase) {
+    position: relative;
+    border: 1px solid rgba(var(--holiday-accent-rgb), 0.18);
+    background:
+      radial-gradient(
+        260px 180px at 100% 0,
+        rgba(var(--holiday-primary-rgb), 0.055),
+        transparent 74%
+      ),
+      color-mix(in srgb, var(--holiday-paper) 76%, #f5f5f7);
+  }
+
+  html[data-holiday-family='festival'] .benefit-icon,
+  html[data-holiday-family='festival'] .trust-icon {
+    color: var(--holiday-primary-deep);
+    background: rgba(var(--holiday-accent-rgb), 0.12);
+  }
+
+  html[data-holiday-family='festival'] .section-heading::after {
+    content: '';
+    display: block;
+    width: 92px;
+    height: 11px;
+    margin-top: 18px;
+    background:
+      linear-gradient(90deg, transparent, var(--holiday-accent)) left center / 38px 1px no-repeat,
+      linear-gradient(90deg, var(--holiday-accent), transparent) right center / 38px 1px no-repeat,
+      linear-gradient(45deg, transparent 34%, var(--holiday-accent) 35% 65%, transparent 66%)
+        center / 8px 8px no-repeat;
+    opacity: 0.72;
+  }
+
+  html[data-holiday-family='festival'] .security-panel {
+    background:
+      radial-gradient(620px 420px at 96% 4%, rgba(var(--holiday-accent-rgb), 0.3), transparent 74%),
+      linear-gradient(145deg, var(--holiday-stage-deep), var(--holiday-stage) 72%, #5b2b21);
+  }
+
+  html[data-holiday-theme='new-year-dark'] .security-panel {
+    background:
+      radial-gradient(620px 420px at 96% 4%, rgba(230, 198, 117, 0.24), transparent 74%),
+      linear-gradient(145deg, #091827, #173754 72%, #264f75);
+  }
+
+  html[data-holiday-family='festival'] .final-cta {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background:
+      radial-gradient(
+        440px 260px at 92% 12%,
+        rgba(var(--holiday-accent-rgb), 0.3),
+        transparent 74%
+      ),
+      linear-gradient(135deg, var(--holiday-stage-deep), var(--holiday-stage) 68%, #6c3026);
+  }
+
+  html[data-holiday-theme='new-year-dark'] .final-cta {
+    background:
+      radial-gradient(440px 260px at 92% 12%, rgba(230, 198, 117, 0.26), transparent 74%),
+      linear-gradient(135deg, #091827, #173754 68%, #285c8c);
+  }
+
+  html[data-holiday-family='festival'] .final-cta::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--holiday-pattern) 72% 38% / 880px auto no-repeat;
+    opacity: 0.24;
+  }
+
+  html[data-holiday-family='festival'] .footer {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-top-color: rgba(var(--holiday-accent-rgb), 0.22);
+  }
+
+  html[data-holiday-family='festival'] .footer::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, transparent, rgba(var(--holiday-accent-rgb), 0.05)),
+      var(--holiday-pattern) center bottom / 1040px auto no-repeat;
+    opacity: 0.42;
+  }
+
+  /* 节日官网不是单纯换按钮色：首屏、信息锚点、内容卡和收尾共同形成完整节奏。 */
+  html[data-holiday-family='festival'] .trust-strip {
+    position: relative;
+    overflow: hidden;
+    margin-top: 18px;
+    border: 1px solid rgba(var(--holiday-accent-rgb), 0.34);
+    border-radius: 18px;
+    background:
+      linear-gradient(100deg, transparent 0 58%, rgba(var(--holiday-accent-rgb), 0.1)),
+      linear-gradient(135deg, var(--holiday-stage-deep), var(--holiday-stage));
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.08),
+      0 20px 44px rgba(48, 24, 21, 0.12);
+  }
+
+  html[data-holiday-family='festival'] .trust-strip::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: var(--holiday-pattern) center 34% / 980px auto no-repeat;
+    opacity: 0.15;
+  }
+
+  html[data-holiday-family='festival'] .trust-item {
+    position: relative;
+    z-index: 1;
+  }
+
+  html[data-holiday-family='festival'] .trust-item + .trust-item {
+    border-left-color: rgba(var(--holiday-accent-rgb), 0.18);
+  }
+
+  html[data-holiday-family='festival'] .trust-item strong {
+    color: #fff9ed;
+  }
+
+  html[data-holiday-family='festival'] .trust-item small {
+    color: rgba(255, 249, 237, 0.62);
+  }
+
+  html[data-holiday-family='festival'] .trust-icon {
+    color: var(--holiday-accent-bright);
+    background: rgba(var(--holiday-accent-rgb), 0.12);
+    box-shadow: inset 0 0 0 1px rgba(var(--holiday-accent-rgb), 0.18);
+  }
+
+  html[data-holiday-family='festival'] :where(.benefit-card, .privacy-grid article) {
+    overflow: hidden;
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.82),
+      0 14px 36px rgba(62, 36, 27, 0.055);
+  }
+
+  html[data-holiday-family='festival'] :where(.benefit-card, .privacy-grid article)::after {
+    content: '';
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: 34px;
+    height: 18px;
+    pointer-events: none;
+    background:
+      linear-gradient(90deg, transparent, rgba(var(--holiday-accent-rgb), 0.48)) center / 100% 1px
+        no-repeat,
+      radial-gradient(circle, rgba(var(--holiday-primary-rgb), 0.62) 0 1.2px, transparent 1.8px)
+        right center / 8px 8px no-repeat;
+    opacity: 0.52;
+  }
+
+  html[data-holiday-family='festival'] .privacy-grid article {
+    position: relative;
+    border-color: rgba(var(--holiday-accent-rgb), 0.18);
+    background: color-mix(in srgb, var(--holiday-paper) 78%, #f6f3ef);
+  }
+
+  html[data-holiday-family='festival'] .feature-row {
+    border-color: rgba(var(--holiday-accent-rgb), 0.16);
+    background:
+      radial-gradient(
+        360px 220px at 100% 0,
+        rgba(var(--holiday-primary-rgb), 0.055),
+        transparent 76%
+      ),
+      color-mix(in srgb, var(--holiday-paper) 82%, #f5f3f0);
+  }
+
+  html[data-holiday-family='festival'] :where(.faq-list details, .faq details) {
+    border-color: rgba(var(--holiday-accent-rgb), 0.18);
+    background: color-mix(in srgb, var(--holiday-paper) 80%, #f5f3f0);
+  }
+
+  html[data-holiday-family='festival'] :where(.faq-list details, .faq details)[open] {
+    border-color: rgba(var(--holiday-primary-rgb), 0.24);
+    background: color-mix(in srgb, var(--holiday-paper) 92%, #ffffff);
+    box-shadow: 0 12px 30px rgba(62, 36, 27, 0.055);
+  }
+
+  html[data-holiday-family='festival'] .shot-stack figure {
+    border-color: rgba(var(--holiday-accent-rgb), 0.4);
+    box-shadow:
+      0 22px 48px rgba(51, 28, 24, 0.16),
+      0 0 0 4px rgba(var(--holiday-accent-rgb), 0.05);
+  }
+
+  /* 国庆以“暖纸、朱砂、鎏金、远山”为核心，不使用广告口号或大面积纯红。 */
+  html[data-holiday-theme='national-day-dark'] .hero,
+  html[data-holiday-theme='national-day-dark'] :where(.page-hero, .download-hero) {
+    overflow: hidden;
+    padding-top: clamp(68px, 7vw, 94px);
+    padding-inline: clamp(26px, 4vw, 58px);
+    border: 1px solid rgba(var(--holiday-accent-rgb), 0.3);
+    background:
+      radial-gradient(520px 300px at 94% 10%, rgba(185, 52, 46, 0.18), transparent 72%),
+      linear-gradient(112deg, rgba(255, 253, 248, 0.94) 0 54%, rgba(242, 219, 195, 0.76) 100%);
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.86),
+      0 32px 80px rgba(76, 37, 29, 0.1);
+  }
+
+  html[data-holiday-theme='national-day-dark'] .hero::before,
+  html[data-holiday-theme='national-day-dark'] :where(.page-hero, .download-hero)::before {
+    inset: 0;
+    border: 0;
+    border-radius: inherit;
+    background:
+      linear-gradient(100deg, transparent 0 62%, rgba(var(--holiday-primary-rgb), 0.09)),
+      var(--holiday-pattern) 62% 20% / cover no-repeat;
+    opacity: 0.84;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0 28%, #000 64% 100%);
+    mask-image: linear-gradient(90deg, transparent 0 28%, #000 64% 100%);
+  }
+
+  html[data-holiday-theme='national-day-dark'] .hero::after {
+    top: auto;
+    right: -5%;
+    bottom: -142px;
+    width: 72%;
+    height: 270px;
+    border-radius: 50%;
+    background:
+      radial-gradient(
+        ellipse at center,
+        transparent 0 54%,
+        rgba(var(--holiday-primary-rgb), 0.18) 55% 59%,
+        transparent 60%
+      ),
+      radial-gradient(
+        ellipse at center,
+        transparent 0 67%,
+        rgba(var(--holiday-accent-rgb), 0.3) 68%,
+        transparent 69%
+      );
+    opacity: 0.88;
+    transform: rotate(-3deg);
+  }
+
+  html[data-holiday-theme='national-day-dark'] .hero-copy {
+    position: relative;
+    z-index: 1;
+  }
+
+  html[data-holiday-theme='national-day-dark'] .hero-copy::before {
+    content: '';
+    display: block;
+    width: 74px;
+    height: 10px;
+    margin-bottom: 20px;
+    background:
+      linear-gradient(90deg, var(--holiday-primary), var(--holiday-accent)) left center / 58px 1px
+        no-repeat,
+      radial-gradient(circle, var(--holiday-accent) 0 1.5px, transparent 2px) right center / 10px
+        10px no-repeat;
+    opacity: 0.72;
+  }
+
+  html[data-holiday-theme='national-day-dark'] .hero-product {
+    z-index: 1;
+  }
+
+  html[data-holiday-theme='national-day-dark'] .product-frame {
+    border-color: rgba(225, 189, 104, 0.58);
+    box-shadow:
+      0 28px 68px rgba(70, 28, 26, 0.25),
+      0 0 0 5px rgba(225, 189, 104, 0.08);
+  }
+
+  html[data-holiday-theme='national-day-dark'] .benefit-card:nth-child(1) {
+    background:
+      radial-gradient(260px 180px at 100% 0, rgba(185, 52, 46, 0.07), transparent 74%), #fffaf4;
+  }
+
+  html[data-holiday-theme='national-day-dark'] .benefit-card:nth-child(2) {
+    background:
+      radial-gradient(260px 180px at 100% 0, rgba(183, 135, 49, 0.09), transparent 74%), #fffaf4;
+  }
+
+  html[data-holiday-theme='national-day-dark'] .benefit-card:nth-child(3) {
+    background:
+      radial-gradient(260px 180px at 100% 0, rgba(132, 39, 42, 0.055), transparent 74%), #fffaf4;
+  }
+
+  html[data-holiday-theme='national-day-dark'] .section:nth-of-type(even) {
+    position: relative;
+  }
+
+  html[data-holiday-theme='national-day-dark'] .section:nth-of-type(even)::before {
+    content: '';
+    position: absolute;
+    inset: 6% min(-6vw, -72px);
+    z-index: -1;
+    border-radius: 36px;
+    background: linear-gradient(112deg, rgba(185, 52, 46, 0.035), rgba(183, 135, 49, 0.055));
+  }
+
+  html[data-holiday-theme='national-day-dark'] .footer {
+    background:
+      linear-gradient(180deg, rgba(255, 248, 239, 0.78), rgba(239, 225, 211, 0.72)),
+      var(--holiday-pattern) center bottom / cover no-repeat;
+  }
+
+  @keyframes holiday-download-loading {
+    to {
+      background-position:
+        -220% 0,
+        0 0;
+    }
+  }
+
+  @media (max-width: 720px) {
+    html[data-holiday-family='festival'] body::after {
+      top: 70px;
+      right: 12px;
+      width: 54px;
+      opacity: 0.46;
+    }
+
+    html[data-holiday-theme='new-year-dark'] body::after {
+      width: 76px;
+    }
+
+    html[data-holiday-family='festival'] .hero,
+    html[data-holiday-family='festival'] :where(.page-hero, .download-hero) {
+      border-radius: 28px;
+    }
+
+    html[data-holiday-family='festival'] .hero::before,
+    html[data-holiday-family='festival'] :where(.page-hero, .download-hero)::before {
+      inset-inline: -16px;
+      border-radius: 32px;
+      -webkit-mask-image: linear-gradient(180deg, #000 0 72%, transparent);
+      mask-image: linear-gradient(180deg, #000 0 72%, transparent);
+    }
+
+    html[data-holiday-family='festival'] .hero::after {
+      top: 12px;
+      right: -116px;
+      width: 460px;
+      height: 150px;
+      opacity: 0.56;
+    }
+
+    html[data-holiday-family='festival'] .hero-product::before {
+      inset: -34px -18px -30px;
+      opacity: 0.46;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html[data-holiday-family='festival']
+      .smart-download[data-manifest-state='loading']
+      .download-button {
+      animation: none;
+    }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    html[data-holiday-family='festival'] body::before {
+      opacity: 0.08;
+    }
+
+    html[data-holiday-family='festival'] body::after,
+    html[data-holiday-family='festival'] .hero-product::before {
+      display: none;
+    }
+
+    html[data-holiday-family='festival'] .site-header,
+    html[data-holiday-family='festival'] .other-system-button,
+    html[data-holiday-family='festival'] .platform-choice {
+      background: var(--holiday-paper);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+  }
+}
+
+/* 次级页面保持内容优先：首页展示区不受影响。放在主题规则之后，避免节日材质再次撑高。 */
+@media (min-width: 721px) {
+  .page-hero,
+  .download-hero,
+  html[data-holiday-family='festival'] :where(.page-hero, .download-hero) {
+    min-height: 286px;
+    padding-top: clamp(48px, 5vw, 66px);
+    padding-bottom: clamp(24px, 3vw, 36px);
+  }
+
+  .page-hero.compact {
+    min-height: 270px;
+  }
+
+  .feature-story {
+    gap: clamp(72px, 9vw, 120px);
+    padding-top: 42px;
+  }
+
+  .privacy-grid.section {
+    padding-top: 44px;
+    padding-bottom: 56px;
+  }
+
+  .faq.section {
+    padding-top: 56px;
+  }
+}
+
+@media (max-width: 720px) {
+  .hero {
+    padding-top: 52px;
+  }
+
+  .hero h1 {
+    font-size: clamp(2.35rem, 10.8vw, 2.85rem);
+    line-height: 1.055;
+    letter-spacing: -0.052em;
+  }
+
+  .hero-lead {
+    line-height: 1.62;
+  }
+
+  .page-hero,
+  .download-hero {
+    padding-top: 56px;
+    padding-bottom: 38px;
+  }
+
+  .page-hero h1,
+  .download-hero h1 {
+    font-size: clamp(2.35rem, 10.8vw, 2.85rem);
+    line-height: 1.055;
+    letter-spacing: -0.052em;
+  }
+
+  body[data-page='features'] .page-hero h1 br {
+    display: none;
+  }
+
+  body[data-page='privacy'] .page-hero h1 {
+    font-size: clamp(2.25rem, 9.7vw, 2.55rem);
+  }
+
+  .feature-story {
+    gap: 64px;
+    padding-top: 54px;
+  }
+
+  .privacy-grid.section {
+    padding-top: 34px;
+    padding-bottom: 52px;
+  }
+
+  .faq.section {
+    padding-top: 52px;
+  }
+}
+
+/* 官网布局稳定性精调：内容永远先可见，动效只提供轻量位移反馈。 */
+body.motion-ready .reveal {
+  opacity: 1;
+  transform: translateY(8px);
+}
+
+body.motion-ready .reveal.visible {
+  transform: none;
+}
+
+@media (max-width: 860px) {
+  .site-header .site-nav:not(.not-found-nav) {
+    right: 12px;
+    left: auto;
+  }
+}
+
+.product-frame,
+.window-frame,
+.shot-stack figure,
+.product-frame img,
+.window-frame img,
+.shot-stack img {
+  aspect-ratio: 36 / 25;
+}
+
+.product-frame img,
+.window-frame img,
+.shot-stack img {
+  display: block;
+}
+
+/* 两张界面图保留上下文，但避免首页展示区被纵向拉得过长。 */
+@media (min-width: 721px) {
+  .showcase {
+    min-height: 0;
+  }
+
+  .shot-stack {
+    display: grid;
+    align-self: center;
+    gap: 0;
+    padding: 0 5% 12% 0;
+  }
+
+  .shot-stack figure {
+    grid-area: 1 / 1;
+  }
+
+  .shot-stack figure:first-child {
+    width: 90%;
+    justify-self: start;
+  }
+
+  .shot-stack figure:last-child {
+    z-index: 1;
+    width: 82%;
+    justify-self: end;
+    margin-top: 38%;
+  }
+}
+
+@media (max-width: 720px) {
+  body[data-page='features'] .page-hero h1 {
+    font-size: clamp(2.15rem, 9.35vw, 2.55rem);
+    line-height: 1.075;
+    letter-spacing: -0.045em;
+  }
+
+  body[data-page='features'] .page-hero h1 br {
+    display: initial;
+  }
+
+  body[data-page='features'] .feature-story {
+    gap: 56px;
+    padding-top: 42px;
+    padding-bottom: 72px;
+  }
+
+  body[data-page='features'] .feature-row {
+    gap: 24px;
+  }
+
+  body[data-page='features'] .feature-row h2 {
+    font-size: clamp(1.9rem, 8.8vw, 2.35rem);
+    line-height: 1.1;
+    letter-spacing: -0.04em;
+  }
+}
+
+/* 最后的响应式约束必须晚于桌面展示规则，避免 minmax 的桌面最小宽度撑破窄屏。 */
+@media (max-width: 1120px) {
+  .showcase {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :where(.showcase, .feature-row, .download-hero, .page-hero, .privacy-grid) > * {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .showcase {
+    width: calc(100% - var(--content-inset));
+    max-width: var(--container);
+    padding: clamp(24px, 7vw, 34px) clamp(18px, 6vw, 24px);
+  }
+
+  .showcase-copy {
+    width: auto;
+    max-width: 100%;
+  }
+
+  .hero-highlights {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, max-content));
+    gap: 5px 14px;
+  }
+
+  .hero-highlights li + li::before {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  :root {
+    --content-inset: 32px;
+    --footer-inset: 16px;
+  }
+
+  .site-header {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .brand {
+    max-width: calc(100% - 52px);
+    font-size: 13px;
+  }
+}
+
+/* 中等桌面宽度使用居中的单列展示，避免 1024px 下内容全部挤在左侧。 */
+@media (min-width: 861px) and (max-width: 1120px) {
+  .hero-copy {
+    width: min(100%, 760px);
+    justify-self: center;
+  }
+
+  .hero h1,
+  .hero-lead {
+    max-width: 760px;
+  }
+
+  .hero-product {
+    justify-self: center;
+  }
+
+  body[data-page='privacy'] .privacy-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

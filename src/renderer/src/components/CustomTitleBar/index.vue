@@ -132,12 +132,18 @@
 
     <!-- 中间标题区域 -->
     <div ref="titleCenterRef" class="title-bar-center">
-      <div class="title-content">
+      <button
+        class="title-content title-home-link no-drag"
+        type="button"
+        title="打开企鹅相册官网"
+        aria-label="打开企鹅相册官网"
+        @click="openOfficialWebsite"
+      >
         <div class="app-logo">
-          <Icon icon="qzone" size="large" color="#F15A24" />
+          <Icon icon="qzone" size="large" color="var(--brand-logo-color)" />
         </div>
         <span v-if="appDescription" class="app-title">{{ appDescription }}</span>
-      </div>
+      </button>
     </div>
 
     <!-- 右侧区域 -->
@@ -158,7 +164,7 @@
             text
             :aria-pressed="privacyStore.privacyMode"
             :aria-label="privacyStore.privacyMode ? '关闭隐私模式' : '开启隐私模式'"
-            :type="privacyStore.privacyMode ? 'warning' : 'info'"
+            :type="privacyStore.privacyMode ? 'warning' : undefined"
             @click="privacyStore.togglePrivacyMode()"
           >
             <el-icon class="privacy-icon">
@@ -339,7 +345,7 @@ import {
 } from '@element-plus/icons-vue'
 import { isMac as isMacPlatform } from '@renderer/utils/platform'
 import { IPC_APP, IPC_SHELL, IPC_WINDOW } from '@shared/ipc-channels'
-import { APP_DESCRIPTION, APP_HOMEPAGE } from '@shared/const'
+import { APP_DESCRIPTION, APP_HOMEPAGE, APP_WEBSITE } from '@shared/const'
 import { Bell } from '@lucide/vue'
 import UpdateDialog from '@renderer/components/UpdateManager/UpdateDialog.vue'
 import FeedbackDialog from '@renderer/components/FeedbackDialog/index.vue'
@@ -624,9 +630,13 @@ const applyDevUpdatePreview = (state = 'idle') => {
 
   if (state === 'checking') {
     updateState.checking = true
+    dialogState.value = 'checking'
+    dialogVisible.value = true
   } else if (state === 'available') {
     updateState.hasUpdate = true
     updateInfo.value = previewInfo
+    dialogState.value = 'available'
+    dialogVisible.value = true
   } else if (state === 'downloading') {
     updateState.downloading = true
     updateState.progress = 73.4
@@ -678,6 +688,10 @@ const openGitHub = () => {
   if (appHomepage.value) {
     window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, appHomepage.value)
   }
+}
+
+const openOfficialWebsite = () => {
+  window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, APP_WEBSITE)
 }
 
 const buildFallbackFeedbackIssue = () => {
@@ -1143,14 +1157,6 @@ const clearInitialTitlebarFocus = async () => {
   }
 }
 
-const handleTitlebarFocusIn = (event) => {
-  const target = event.target
-  if (!(target instanceof HTMLElement) || !titleBarRef.value?.contains(target)) return
-  if (target.matches('button, [role="button"], .el-button')) {
-    target.blur()
-  }
-}
-
 onMounted(async () => {
   // 获取应用信息
   await Promise.all([loadAppInfo(), loadApiConfig()])
@@ -1167,16 +1173,17 @@ onMounted(async () => {
   removeListeners.push(window.api.on(IPC_WINDOW.MAXIMIZED, handleWindowMaximized))
   resizeObserver = new ResizeObserver(() => scheduleActionDensity())
   if (titleBarRef.value) resizeObserver.observe(titleBarRef.value)
-  titleBarRef.value?.addEventListener('focusin', handleTitlebarFocusIn)
   // 监听更新相关事件
   if (window.QzoneAPI?.update) {
-    window.QzoneAPI.update.onUpdateChecking(handleUpdateChecking)
-    window.QzoneAPI.update.onUpdateAvailable(handleUpdateAvailable)
-    window.QzoneAPI.update.onUpdateNotAvailable(handleUpdateNotAvailable)
-    window.QzoneAPI.update.onDownloadProgress(handleDownloadProgress)
-    window.QzoneAPI.update.onUpdateDownloadFallback?.(handleUpdateDownloadFallback)
-    window.QzoneAPI.update.onUpdateDownloaded(handleUpdateDownloaded)
-    window.QzoneAPI.update.onUpdateError(handleUpdateError)
+    removeListeners.push(
+      window.QzoneAPI.update.onUpdateChecking(handleUpdateChecking),
+      window.QzoneAPI.update.onUpdateAvailable(handleUpdateAvailable),
+      window.QzoneAPI.update.onUpdateNotAvailable(handleUpdateNotAvailable),
+      window.QzoneAPI.update.onDownloadProgress(handleDownloadProgress),
+      window.QzoneAPI.update.onUpdateDownloadFallback?.(handleUpdateDownloadFallback),
+      window.QzoneAPI.update.onUpdateDownloaded(handleUpdateDownloaded),
+      window.QzoneAPI.update.onUpdateError(handleUpdateError)
+    )
   }
 
   if (import.meta.env.DEV) {
@@ -1193,14 +1200,9 @@ onUnmounted(() => {
   clearUpdateCheckUiTimer()
   if (densityFrame) cancelAnimationFrame(densityFrame)
   resizeObserver?.disconnect?.()
-  titleBarRef.value?.removeEventListener('focusin', handleTitlebarFocusIn)
   // 移除所有监听器
   removeListeners.forEach((remove) => remove && remove())
 
-  // 移除更新相关监听器
-  if (window.QzoneAPI?.update) {
-    window.QzoneAPI.update.removeAllListeners()
-  }
   if (import.meta.env.DEV && window.__QZONEPHOTO_UPDATE_PREVIEW__ === applyDevUpdatePreview) {
     delete window.__QZONEPHOTO_UPDATE_PREVIEW__
   }
@@ -1242,7 +1244,7 @@ watch([dialogVisible, noticeVisible], () => {
   column-gap: 10px;
   align-items: center;
   height: 36px;
-  color: #ffffff;
+  color: var(--theme-text-primary);
   font-size: 13px;
   user-select: none;
   position: relative;
@@ -1295,7 +1297,7 @@ watch([dialogVisible, noticeVisible], () => {
   align-items: center;
   justify-content: center;
   flex: 0 0 28px;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--theme-text-secondary);
   background: transparent;
   cursor: pointer;
   transition:
@@ -1305,9 +1307,9 @@ watch([dialogVisible, noticeVisible], () => {
 }
 
 .title-github-btn:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.065);
-  border-color: rgba(255, 255, 255, 0.075);
+  color: var(--theme-text-primary);
+  background: var(--theme-surface-hover);
+  border-color: var(--theme-border-subtle);
 }
 
 .title-github-btn :deep(.github-action-icon) {
@@ -1328,13 +1330,13 @@ watch([dialogVisible, noticeVisible], () => {
 .title-feedback-btn:focus-visible,
 .title-bar-button:focus-visible {
   outline: none;
-  border-color: var(--qz-active-border, rgba(251, 146, 60, 0.38));
-  box-shadow: 0 0 0 2px var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+  border-color: var(--theme-brand-border);
+  box-shadow: 0 0 0 2px var(--theme-focus-ring);
 }
 
 .version-container:focus-visible,
 .global-controls :deep(.el-button:focus-visible) {
-  outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+  outline: 2px solid var(--theme-focus);
   outline-offset: 2px;
 }
 
@@ -1362,7 +1364,7 @@ watch([dialogVisible, noticeVisible], () => {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  color: rgba(255, 255, 255, 0.66);
+  color: var(--theme-text-muted);
   background: transparent;
   cursor: pointer;
   transition:
@@ -1372,9 +1374,9 @@ watch([dialogVisible, noticeVisible], () => {
 }
 
 .title-feedback-btn:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.06);
+  color: var(--theme-text-primary);
+  background: var(--theme-surface-hover);
+  border-color: var(--theme-border-subtle);
 }
 
 .feedback-text {
@@ -1388,8 +1390,9 @@ watch([dialogVisible, noticeVisible], () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #f15a24;
-  filter: drop-shadow(0 2px 4px rgba(241, 90, 36, 0.3));
+  /* 品牌 Logo 是不可主题化资产：保持官方颜色，不跟随节日主题或状态色。 */
+  color: var(--brand-logo-color);
+  filter: var(--brand-logo-shadow);
 }
 
 /* 中间标题区域：不抢占左右命令区空间 */
@@ -1414,11 +1417,57 @@ watch([dialogVisible, noticeVisible], () => {
   pointer-events: auto;
 }
 
+.title-home-link {
+  appearance: none;
+  position: relative;
+  min-width: 0;
+  margin: 0;
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.title-home-link::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--theme-focus);
+  opacity: 0;
+  transform: translate(-50%, 2px) scale(0.6);
+  transition:
+    opacity var(--theme-duration-fast) var(--theme-ease),
+    transform var(--theme-duration-fast) var(--theme-ease);
+}
+
+.title-home-link:hover::after {
+  opacity: 0.32;
+}
+
+.title-home-link:focus,
+.title-home-link:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.title-home-link:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 2px) scale(1);
+}
+
 .app-title {
   font-weight: 600;
   font-size: 14px;
-  color: #ffffff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  color: var(--theme-text-primary);
+  text-shadow: 0 1px 3px color-mix(in srgb, var(--theme-canvas) 75%, transparent);
   max-width: min(320px, 28vw);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1470,7 +1519,7 @@ watch([dialogVisible, noticeVisible], () => {
   height: 26px;
   padding: 0 8px;
   border-radius: 8px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-text-secondary);
   font-size: 12px;
   font-weight: 500;
   line-height: 1;
@@ -1500,12 +1549,16 @@ watch([dialogVisible, noticeVisible], () => {
 .global-feedback-btn,
 .global-notice-btn,
 .global-github-btn {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-text-secondary);
   padding: 0 10px;
   border: 1px solid transparent;
   border-radius: 9px;
   background: transparent;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    color var(--theme-duration-fast) var(--theme-ease),
+    background-color var(--theme-duration-fast) var(--theme-ease),
+    border-color var(--theme-duration-fast) var(--theme-ease),
+    box-shadow var(--theme-duration-fast) var(--theme-ease);
   height: 28px;
   min-width: 0;
   display: inline-flex;
@@ -1526,19 +1579,19 @@ watch([dialogVisible, noticeVisible], () => {
 
   &:deep(.refresh-icon) {
     font-size: 14px;
-    color: rgba(255, 255, 255, 0.68);
-    transition: all 0.3s ease;
+    color: var(--theme-text-muted);
+    transition: color var(--theme-duration-fast) var(--theme-ease);
   }
 
   &:deep(.feedback-icon) {
     font-size: 14px;
-    color: rgba(255, 255, 255, 0.68);
-    transition: all 0.3s ease;
+    color: var(--theme-text-muted);
+    transition: color var(--theme-duration-fast) var(--theme-ease);
   }
 
   &:deep(.github-action-icon) {
-    color: rgba(255, 255, 255, 0.78);
-    transition: all 0.3s ease;
+    color: var(--theme-text-secondary);
+    transition: color var(--theme-duration-fast) var(--theme-ease);
   }
 
   .notice-icon-wrap {
@@ -1549,8 +1602,8 @@ watch([dialogVisible, noticeVisible], () => {
     flex: 0 0 14px;
     align-items: center;
     justify-content: center;
-    color: rgba(255, 255, 255, 0.68);
-    transition: all 0.3s ease;
+    color: var(--theme-text-muted);
+    transition: color var(--theme-duration-fast) var(--theme-ease);
   }
 
   .notice-icon {
@@ -1566,34 +1619,31 @@ watch([dialogVisible, noticeVisible], () => {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: #fb7185;
-    box-shadow: 0 0 0 2px rgba(24, 24, 27, 0.9);
+    background: var(--theme-danger);
+    box-shadow: 0 0 0 2px var(--theme-surface-overlay);
   }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.065);
-    border-color: rgba(255, 255, 255, 0.075);
-    color: rgba(255, 255, 255, 0.95);
+    background: var(--theme-surface-hover);
+    border-color: var(--theme-border-subtle);
+    color: var(--theme-text-primary);
     transform: none;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+    box-shadow: inset 0 1px 0 var(--theme-border-subtle);
 
     &:deep(.refresh-icon) {
-      color: #34d399;
-      transform: rotate(180deg);
+      color: var(--theme-text-primary);
     }
 
     &:deep(.feedback-icon) {
-      color: #93c5fd;
-      transform: translateY(-1px);
+      color: var(--theme-info-text);
     }
 
     .notice-icon-wrap {
-      color: #fbbf24;
-      transform: translateY(-1px);
+      color: var(--theme-warning);
     }
 
     &:deep(.github-action-icon) {
-      color: #ffffff;
+      color: var(--theme-text-primary);
       transform: translateY(-1px);
     }
   }
@@ -1616,41 +1666,50 @@ watch([dialogVisible, noticeVisible], () => {
     cursor: pointer;
   }
 
-  &.el-button--info {
+  &:not(.el-button--warning) {
+    color: var(--theme-text-secondary);
+    background: transparent;
+    border-color: transparent;
+
     &:deep(.privacy-icon) {
-      color: rgba(255, 255, 255, 0.68);
+      color: var(--theme-text-muted);
     }
 
     &:hover {
-      background: rgba(52, 211, 153, 0.075);
-      border-color: rgba(52, 211, 153, 0.16);
-      color: rgba(255, 255, 255, 0.95);
+      background: var(--theme-surface-hover);
+      border-color: var(--theme-border-subtle);
+      color: var(--theme-text-primary);
 
       &:deep(.privacy-icon) {
-        color: #85ce61;
+        color: var(--theme-text-primary);
       }
     }
   }
 
   &.el-button--warning {
-    color: #f6c56d;
+    color: var(--theme-warning-text);
     background: transparent;
     border-color: transparent;
 
     &:deep(.privacy-icon) {
-      color: #e6a23c;
+      color: var(--theme-warning);
     }
 
     &:hover {
-      background: rgba(255, 255, 255, 0.065);
-      border-color: rgba(255, 255, 255, 0.075);
-      color: rgba(255, 255, 255, 0.95);
+      background: var(--theme-warning-soft);
+      border-color: var(--theme-warning-border);
+      color: var(--theme-text-primary);
 
       &:deep(.privacy-icon) {
-        color: #ebb563;
+        color: var(--theme-warning-text);
       }
     }
   }
+}
+
+.global-controls .global-privacy-btn:not(.el-button--warning).el-button.is-text,
+.global-controls .global-privacy-btn:not(.el-button--warning) .privacy-text {
+  color: var(--theme-text-secondary);
 }
 
 .global-controls :deep(.privacy-text) {
@@ -1685,7 +1744,7 @@ watch([dialogVisible, noticeVisible], () => {
   top: 8px;
   bottom: 8px;
   width: 1px;
-  background: rgba(255, 255, 255, 0.075);
+  background: var(--theme-border-subtle);
 }
 
 .custom-title-bar:not(.is-mac) {
@@ -1829,7 +1888,7 @@ watch([dialogVisible, noticeVisible], () => {
   height: 32px; /* 匹配新的标题栏高度 */
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--theme-text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1839,13 +1898,13 @@ watch([dialogVisible, noticeVisible], () => {
 }
 
 .title-bar-button:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background-color: var(--theme-surface-hover);
+  color: var(--theme-text-primary);
 }
 
 .title-bar-button.close:hover {
-  background-color: #ff5252;
-  color: white;
+  background-color: var(--theme-danger);
+  color: var(--theme-text-inverse);
 }
 
 .title-bar-button svg {
@@ -1893,11 +1952,11 @@ watch([dialogVisible, noticeVisible], () => {
   justify-content: flex-start;
   padding: 3px 8px 3px 9px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.032);
-  border-color: rgba(255, 255, 255, 0.045);
+  background: var(--theme-surface-soft);
+  border-color: var(--theme-border-subtle);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.018);
+  box-shadow: inset 0 1px 0 var(--theme-border-subtle);
 }
 
 .app-version-content {
@@ -1940,11 +1999,11 @@ watch([dialogVisible, noticeVisible], () => {
 
 .version-check-feedback.is-success {
   color: var(--ds-state-success);
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.2);
+  text-shadow: 0 0 8px var(--theme-success-soft);
 }
 
 .version-check-feedback.is-info {
-  color: #93c5fd;
+  color: var(--theme-info-text);
 }
 
 .version-check-feedback.is-error {
@@ -1967,13 +2026,13 @@ watch([dialogVisible, noticeVisible], () => {
 }
 
 .version-container.downloading {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.07);
+  background: var(--theme-surface-hover);
+  border-color: var(--theme-border-subtle);
 }
 
 .version-container.downloaded {
-  background: rgba(52, 211, 153, 0.055);
-  border-color: rgba(52, 211, 153, 0.1);
+  background: var(--theme-success-soft);
+  border-color: var(--theme-success-border);
 }
 
 .version-update-block {
@@ -2006,7 +2065,7 @@ watch([dialogVisible, noticeVisible], () => {
   min-width: 0;
   font-size: 10px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.84);
+  color: var(--theme-text-primary);
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -2026,7 +2085,7 @@ watch([dialogVisible, noticeVisible], () => {
   max-width: 84px;
   font-size: 9px;
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.52);
+  color: var(--theme-text-muted);
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -2048,13 +2107,13 @@ watch([dialogVisible, noticeVisible], () => {
 .version-progress-track:deep(.progress-bar) {
   height: 2px !important;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--theme-border);
 }
 
 .version-progress-track:deep(.progress-fill) {
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(96, 165, 250, 0.94), rgba(45, 212, 191, 0.9)) !important;
-  box-shadow: 0 0 6px rgba(96, 165, 250, 0.1);
+  background: linear-gradient(90deg, var(--theme-brand), var(--theme-brand-accent)) !important;
+  box-shadow: 0 0 6px var(--theme-brand-border);
   transition: width 0.2s linear !important;
 }
 
@@ -2069,7 +2128,7 @@ watch([dialogVisible, noticeVisible], () => {
   border: none;
   border-radius: 999px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.34);
+  color: var(--theme-text-subtle);
   cursor: pointer;
   flex: 0 0 14px;
   transition:
@@ -2078,7 +2137,7 @@ watch([dialogVisible, noticeVisible], () => {
 }
 
 .version-progress-cancel:hover {
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--theme-text-secondary);
   transform: scale(1.02);
 }
 
@@ -2095,7 +2154,7 @@ watch([dialogVisible, noticeVisible], () => {
   justify-content: center;
   min-width: 36px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-text-muted);
   font-weight: 600;
   transition:
     color 0.18s var(--ds-ease-soft),
@@ -2110,12 +2169,12 @@ watch([dialogVisible, noticeVisible], () => {
 
 .app-version.has-update {
   color: var(--ds-state-success);
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.32);
+  text-shadow: 0 0 8px var(--theme-success-soft);
 }
 
 .app-version.checking {
   color: var(--ds-state-info);
-  text-shadow: 0 0 8px rgba(96, 165, 250, 0.32);
+  text-shadow: 0 0 8px var(--theme-info-soft);
 }
 
 .checking-indicator {
@@ -2147,7 +2206,7 @@ watch([dialogVisible, noticeVisible], () => {
 .checking-spinner {
   width: 9px;
   height: 9px;
-  border: 1.5px solid rgba(96, 165, 250, 0.2);
+  border: 1.5px solid var(--theme-info-border);
   border-top: 1.5px solid var(--ds-state-info);
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -2159,36 +2218,12 @@ watch([dialogVisible, noticeVisible], () => {
   width: 6px;
   height: 6px;
   margin-left: 1px;
-  background: linear-gradient(135deg, var(--ds-state-success) 0%, #85ce61 100%);
+  background: var(--theme-success);
   border-radius: 50%;
   box-shadow:
-    0 0 0 2px rgba(52, 211, 153, 0.16),
-    0 0 6px rgba(52, 211, 153, 0.34);
+    0 0 0 2px var(--theme-success-soft),
+    0 0 6px var(--theme-success-border);
   animation: pulse-dot 2s ease-in-out infinite;
-}
-
-/* 动画效果 */
-@keyframes pulse {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.05);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-@keyframes glow {
-  from {
-    box-shadow: 0 0 10px rgba(103, 194, 58, 0.3);
-  }
-  to {
-    box-shadow:
-      0 0 20px rgba(103, 194, 58, 0.6),
-      0 0 30px rgba(103, 194, 58, 0.4);
-  }
 }
 
 @keyframes pulse-dot {

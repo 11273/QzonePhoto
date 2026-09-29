@@ -1,0 +1,477 @@
+/*
+ * 节日主题只负责环境层、品牌操作和少量装饰。
+ * 媒体内容、语义状态色和 Logo 始终保持原样，避免节庆视觉污染照片与信息判断。
+ */
+:root[data-theme-family='festival'] {
+  --festival-primary: var(--theme-brand);
+  --festival-highlight: var(--theme-brand-hover);
+  --festival-accent: var(--theme-brand-accent);
+  --festival-primary-rgb: 196, 54, 48;
+  --festival-highlight-rgb: 222, 85, 69;
+  --festival-accent-rgb: 226, 195, 113;
+  --festival-shadow-rgb: 83, 17, 22;
+  --festival-pattern: none;
+  --festival-decoration: none;
+  --festival-decoration-size: 72px;
+  --festival-decoration-opacity: var(--theme-decoration-opacity, 0.44);
+}
+
+:root[data-theme='national-day-dark'] {
+  --el-color-primary-rgb: 196, 54, 48;
+  --festival-primary-rgb: 196, 54, 48;
+  --festival-highlight-rgb: 222, 85, 69;
+  --festival-accent-rgb: 226, 195, 113;
+  --festival-shadow-rgb: 83, 17, 22;
+  --festival-pattern: url('../../../../../website/assets/holiday/national-day-pattern.svg');
+  --festival-decoration: url('../../../../../website/assets/holiday/national-day-lantern.svg');
+}
+
+:root[data-theme='new-year-dark'] {
+  --el-color-primary-rgb: 200, 121, 34;
+  --festival-primary-rgb: 200, 121, 34;
+  --festival-highlight-rgb: 224, 147, 53;
+  --festival-accent-rgb: 240, 207, 131;
+  --festival-shadow-rgb: 11, 31, 54;
+  --festival-pattern: url('../../../../../website/assets/holiday/new-year-fireworks.svg');
+  --festival-decoration: url('../../../../../website/assets/holiday/new-year-fireworks.svg');
+  --festival-decoration-size: 104px;
+}
+
+:root[data-theme='spring-festival-dark'] {
+  --el-color-primary-rgb: 184, 50, 46;
+  --festival-primary-rgb: 184, 50, 46;
+  --festival-highlight-rgb: 215, 75, 61;
+  --festival-accent-rgb: 234, 190, 99;
+  --festival-shadow-rgb: 83, 17, 22;
+  --festival-pattern: url('../../../../../website/assets/holiday/spring-festival-pattern.svg');
+  --festival-decoration: url('../../../../../website/assets/holiday/national-day-lantern.svg');
+}
+
+/* 标题栏与内容区共享同一张画布，不用红线把窗口切成两层。 */
+:root[data-theme-family='festival'] .app-container::before {
+  background:
+    radial-gradient(
+      620px 260px at 50% -90px,
+      rgba(var(--festival-accent-rgb), 0.075),
+      transparent 74%
+    ),
+    linear-gradient(180deg, rgba(var(--festival-shadow-rgb), 0.15), transparent 34%),
+    var(--festival-pattern) center top / cover no-repeat,
+    var(--theme-canvas);
+}
+
+:root[data-theme-family='festival'] .app-container::after {
+  content: '';
+  position: fixed;
+  inset: 36px 0 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      circle at 79% 12%,
+      rgba(var(--festival-accent-rgb), 0.32) 0 1px,
+      transparent 1.6px
+    ),
+    radial-gradient(
+      circle at 81% 15%,
+      rgba(var(--festival-accent-rgb), 0.22) 0 1.2px,
+      transparent 1.8px
+    ),
+    radial-gradient(
+      circle at 77% 17%,
+      rgba(var(--festival-highlight-rgb), 0.18) 0 1px,
+      transparent 1.6px
+    );
+  opacity: 0.55;
+}
+
+:root[data-theme-family='festival'] .custom-title-bar {
+  overflow: visible;
+  border-bottom: 0;
+  background: color-mix(in srgb, var(--theme-canvas) 32%, transparent);
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(14px) saturate(124%);
+  backdrop-filter: blur(14px) saturate(124%);
+}
+
+:root[data-theme-family='festival'] .custom-title-bar::before {
+  content: none;
+}
+
+/* 登录页只用装饰营造氛围，不增加节庆口号或营销文案。 */
+:root[data-theme-family='festival'] .login {
+  background:
+    radial-gradient(circle at 20% 36%, rgba(var(--festival-primary-rgb), 0.08), transparent 30%),
+    radial-gradient(circle at 78% 78%, rgba(var(--festival-accent-rgb), 0.052), transparent 30%),
+    transparent;
+}
+
+:root[data-theme-family='festival'] .login::before {
+  content: '';
+  position: absolute;
+  top: 48px;
+  left: clamp(24px, 7vw, 104px);
+  z-index: 0;
+  width: var(--festival-decoration-size);
+  height: calc(var(--festival-decoration-size) * 1.34);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  pointer-events: none;
+  background: var(--festival-decoration) center / contain no-repeat;
+  filter: none;
+  opacity: calc(var(--festival-decoration-opacity) * 0.5);
+  transform: none;
+}
+
+:root[data-theme='new-year-dark'] .login::before {
+  height: var(--festival-decoration-size);
+  opacity: calc(var(--festival-decoration-opacity) * 0.58);
+  transform: none;
+}
+
+:root[data-theme-family='festival'] .login > * {
+  position: relative;
+  z-index: 1;
+}
+
+:root[data-theme-family='festival'] .login-box .content {
+  border-color: rgba(var(--festival-accent-rgb), 0.14);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.052), transparent 28%),
+    color-mix(in srgb, var(--theme-material-thick) 94%, transparent);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.065),
+    0 26px 66px rgba(0, 0, 0, 0.34);
+}
+
+:root[data-theme-family='festival'] .login-box .content::before {
+  content: '';
+  position: absolute;
+  top: 17px;
+  right: 22px;
+  width: 54px;
+  height: 18px;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent, rgba(var(--festival-accent-rgb), 0.42), transparent)
+      center / 100% 1px no-repeat,
+    radial-gradient(circle, rgba(var(--festival-accent-rgb), 0.68) 0 1.2px, transparent 1.8px) right
+      center / 8px 8px no-repeat;
+  opacity: 0.42;
+}
+
+:root[data-theme-family='festival'] .qrcode-container {
+  border-color: rgba(var(--festival-accent-rgb), 0.18);
+  box-shadow:
+    inset 0 1px rgba(255, 248, 222, 0.07),
+    0 14px 30px rgba(0, 0, 0, 0.22);
+}
+
+/* 结构区域保持中性；节日色只用于反光和局部边缘。 */
+:root[data-theme-family='festival'] .space-sidebar {
+  border-right-color: rgba(255, 255, 255, 0.075);
+  background:
+    radial-gradient(circle at 4% 0, rgba(var(--festival-primary-rgb), 0.045), transparent 25%),
+    linear-gradient(180deg, rgba(25, 23, 28, 0.9), rgba(18, 18, 21, 0.96) 58%);
+  box-shadow: inset -1px 0 rgba(255, 255, 255, 0.03);
+}
+
+:root[data-theme-family='festival'] :where(.content-module-header, .module-header, .date-header) {
+  border-color: rgba(255, 255, 255, 0.085);
+  background-image: none;
+}
+
+:root[data-theme-family='festival'] .date-header::before {
+  background: linear-gradient(180deg, var(--festival-highlight), var(--festival-accent));
+  box-shadow: none;
+}
+
+/* 个人概览是少数允许承载节日角饰的内容卡。 */
+:root[data-theme-family='festival'] .space-sidebar .user-section .user-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-color: rgba(var(--festival-accent-rgb), 0.12);
+  background:
+    radial-gradient(circle at 100% 0, rgba(var(--festival-accent-rgb), 0.045), transparent 34%),
+    rgba(25, 24, 29, 0.9);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.05),
+    0 9px 24px rgba(0, 0, 0, 0.15);
+}
+
+:root[data-theme-family='festival'] .space-sidebar .user-section .user-card::after {
+  content: '';
+  position: absolute;
+  top: 22px;
+  right: -9px;
+  z-index: 0;
+  width: 54px;
+  height: 74px;
+  pointer-events: none;
+  background: var(--festival-decoration) center / contain no-repeat;
+  filter: saturate(0.72);
+  opacity: calc(var(--festival-decoration-opacity) * 0.16);
+  transform: rotate(3deg);
+}
+
+:root[data-theme='new-year-dark'] .space-sidebar .user-section .user-card::after {
+  height: 54px;
+  opacity: calc(var(--festival-decoration-opacity) * 0.24);
+  transform: none;
+}
+
+:root[data-theme-family='festival'] .space-sidebar .user-section .user-card .card-actions {
+  background: rgba(255, 255, 255, 0.022);
+}
+
+/* 内容卡和媒体不叠加纹样或滤镜。 */
+:root[data-theme-family='festival']
+  :where(.feed-card, .tl-card, .mb-card, .fc-card, .file-card, .photo-card, .video-card) {
+  background-image: none;
+  box-shadow: none;
+}
+
+:root[data-theme-family='festival']
+  :where(.feed-card, .tl-card, .mb-card, .fc-card, .file-card):hover {
+  border-color: var(--theme-border);
+}
+
+:root[data-theme-family='festival']
+  :where(.photo-wrapper, .card-image-wrapper, .media-preview, .preview-stage, video, img) {
+  filter: none;
+}
+
+/* 管理器和任务弹层共享克制的金线角饰，不重复悬挂大装饰。 */
+:root[data-theme-family='festival']
+  :where(.download-manager-dialog, .upload-manager-dialog, .download-batch-message-box) {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-color: rgba(var(--festival-accent-rgb), 0.14);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.052), transparent 24%),
+    color-mix(in srgb, var(--theme-material-thick) 94%, transparent);
+}
+
+:root[data-theme-family='festival']
+  :where(.download-manager-dialog, .upload-manager-dialog, .download-batch-message-box)::after {
+  content: '';
+  position: absolute;
+  top: 20px;
+  right: 62px;
+  z-index: 0;
+  width: 92px;
+  height: 20px;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent, rgba(var(--festival-accent-rgb), 0.32), transparent)
+      center / 100% 1px no-repeat,
+    radial-gradient(circle, rgba(var(--festival-accent-rgb), 0.66) 0 1.2px, transparent 1.8px) right
+      center / 8px 8px no-repeat;
+  opacity: 0.52;
+}
+
+:root[data-theme-family='festival']
+  :where(.download-manager-dialog, .upload-manager-dialog, .download-batch-message-box)
+  > * {
+  position: relative;
+  z-index: 1;
+}
+
+:root[data-theme-family='festival']
+  .download-manager-dialog
+  .layout-columns
+  .left-column
+  :where(.progress-card, .speed-card, .status-card) {
+  border-color: rgba(var(--festival-accent-rgb), 0.09);
+  background: var(--theme-surface-soft);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.03);
+}
+
+/* 浮层使用薄材质，普通内容卡不做玻璃。 */
+:root[data-theme-family='festival']
+  :where(.drawer-panel, .el-popper, .floating-toolbar, .toolbar-pill, .group-pick-icon) {
+  background-color: color-mix(in srgb, var(--theme-material-regular) 92%, transparent);
+  -webkit-backdrop-filter: blur(var(--theme-material-blur)) saturate(136%);
+  backdrop-filter: blur(var(--theme-material-blur)) saturate(136%);
+}
+
+:root[data-theme-family='festival'] :where(.el-button--primary, .primary-action) {
+  box-shadow:
+    0 7px 20px rgba(var(--festival-primary-rgb), 0.2),
+    inset 0 1px rgba(255, 255, 255, 0.12);
+}
+
+:root[data-theme-family='festival'] :where(.el-button--primary, .primary-action):hover {
+  box-shadow:
+    0 9px 26px rgba(var(--festival-highlight-rgb), 0.24),
+    inset 0 1px rgba(255, 255, 255, 0.15);
+}
+
+:root[data-theme-family='festival'] .app-action-button.el-button:not(.is-primary) {
+  box-shadow: none;
+}
+
+:root[data-theme-family='festival']
+  .app-action-button.el-button:not(.is-primary):not(.is-danger):hover {
+  border-color: rgba(var(--festival-accent-rgb), 0.16);
+  background-image: none;
+}
+
+/* 通用加载使用主题强调色，但保留中性的正文和语义色。 */
+:root[data-theme-family='festival'] .loading-state .loading-spinner {
+  border-color: rgba(var(--festival-accent-rgb), 0.24);
+  background:
+    radial-gradient(circle at 35% 28%, rgba(var(--festival-accent-rgb), 0.15), transparent 42%),
+    rgba(var(--festival-primary-rgb), 0.09);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.06),
+    0 0 24px rgba(var(--festival-accent-rgb), 0.14);
+}
+
+:root[data-theme-family='festival'] .loading-state:not(.minimal) .loading-spinner::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  z-index: -1;
+  border: 1px solid rgba(var(--festival-accent-rgb), 0.18);
+  border-radius: 16px;
+  transform: rotate(45deg) scale(0.72);
+}
+
+:root[data-theme-family='festival'] .loading-state:not(.minimal) .loading-spinner::after {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: -4px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(var(--festival-accent-rgb), 0.82);
+  box-shadow:
+    -38px 10px 0 -0.5px rgba(var(--festival-accent-rgb), 0.46),
+    -8px 46px 0 -0.5px rgba(var(--festival-highlight-rgb), 0.38);
+}
+
+:root[data-theme-family='festival'] .el-loading-mask {
+  background-color: color-mix(in srgb, var(--theme-canvas) 78%, transparent);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+:root[data-theme-family='festival'] .el-loading-spinner .circular,
+:root[data-theme-family='festival'] .el-loading-spinner .path {
+  color: rgb(var(--festival-accent-rgb));
+  stroke: rgb(var(--festival-accent-rgb));
+}
+
+:root[data-theme-family='festival'] .login-progress-icon {
+  position: relative;
+  border-color: rgba(var(--festival-accent-rgb), 0.22);
+  background: rgba(var(--festival-primary-rgb), 0.1);
+}
+
+:root[data-theme-family='festival'] .login-progress-icon::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  right: -3px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(var(--festival-accent-rgb), 0.82);
+  box-shadow: -31px 35px 0 -0.5px rgba(var(--festival-accent-rgb), 0.38);
+}
+
+/* 分页保持桌面端熟悉的圆角矩形，不做装饰珠串。 */
+:root[data-theme-family='festival'] .el-pagination.is-background .el-pager {
+  display: flex;
+  gap: 4px;
+  padding-inline: 0;
+}
+
+:root[data-theme-family='festival'] .el-pagination.is-background .el-pager::before {
+  content: none;
+}
+
+:root[data-theme-family='festival'] .el-pagination.is-background .el-pager li,
+:root[data-theme-family='festival'] .el-pagination.is-background :where(.btn-prev, .btn-next) {
+  min-width: 28px;
+  height: 28px;
+  margin: 0;
+  border-color: var(--theme-border-subtle);
+  border-radius: var(--theme-radius-md);
+  background: var(--theme-surface-soft);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root[data-theme-family='festival'] .el-pagination.is-background .el-pager li.is-active {
+  color: var(--theme-text-inverse);
+  border-color: var(--theme-brand);
+  border-radius: var(--theme-radius-md);
+  background: var(--theme-brand);
+  box-shadow: none;
+}
+
+/* 点赞与收藏可使用节日主色，成功/警告/错误继续使用大众语义色。 */
+:root[data-theme-family='festival']
+  :where(
+    .like-button.is-active,
+    .favorite-button.is-active,
+    [aria-pressed='true'].is-brand-action
+  ) {
+  color: var(--theme-brand-text);
+  border-color: var(--theme-brand-border);
+  background: var(--theme-brand-soft);
+}
+
+@media (max-width: 900px), (max-height: 650px) {
+  :root[data-theme-family='festival'] .login::before {
+    width: 60px;
+    height: 82px;
+    opacity: calc(var(--festival-decoration-opacity) * 0.32);
+  }
+
+  :root[data-theme='new-year-dark'] .login::before {
+    height: 60px;
+  }
+
+  :root[data-theme-family='festival'] .app-container::after {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme-family='festival'] .app-container::before,
+  :root[data-theme-family='festival'] .app-container::after {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-theme-family='festival'] .login::before,
+  :root[data-theme-family='festival'] .app-container::after,
+  :root[data-theme-family='festival'] .space-sidebar .user-section .user-card::after,
+  :root[data-theme-family='festival']
+    :where(.download-manager-dialog, .upload-manager-dialog, .download-batch-message-box)::after {
+    display: none;
+  }
+
+  :root[data-theme-family='festival']
+    :where(
+      .space-sidebar,
+      .custom-title-bar,
+      .drawer-panel,
+      .el-popper,
+      .floating-toolbar,
+      .toolbar-pill
+    ) {
+    background-color: var(--theme-surface-overlay);
+    background-image: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

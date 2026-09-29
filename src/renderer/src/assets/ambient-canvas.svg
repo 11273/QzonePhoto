@@ -1,0 +1,38 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="cool" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(174 164) rotate(28) scale(520 390)">
+      <stop stop-color="#315A82" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#315A82" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="warm" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1420 760) rotate(-146) scale(520 380)">
+      <stop stop-color="#C2410C" stop-opacity=".13"/>
+      <stop offset="1" stop-color="#C2410C" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="arc" x1="160" y1="100" x2="1450" y2="830" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#79A7D3" stop-opacity="0"/>
+      <stop offset=".34" stop-color="#79A7D3" stop-opacity=".16"/>
+      <stop offset=".7" stop-color="#B87460" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#B87460" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="blur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="44"/>
+    </filter>
+  </defs>
+  <rect width="1600" height="900" fill="url(#cool)"/>
+  <rect width="1600" height="900" fill="url(#warm)"/>
+  <g opacity=".32" filter="url(#blur)">
+    <ellipse cx="520" cy="-36" rx="310" ry="74" fill="#567EA5" fill-opacity=".13"/>
+    <ellipse cx="1250" cy="930" rx="390" ry="86" fill="#B04A2F" fill-opacity=".11"/>
+  </g>
+  <g stroke="url(#arc)" stroke-linecap="round">
+    <path d="M-110 722C246 544 419 250 752 196C1048 148 1243 327 1710 222" stroke-opacity=".28"/>
+    <path d="M-138 746C229 575 426 287 760 228C1082 171 1291 359 1731 249" stroke-opacity=".16"/>
+    <path d="M-164 772C214 611 431 327 774 265C1112 204 1331 391 1752 278" stroke-opacity=".09"/>
+  </g>
+  <g fill="#D8E7F4" fill-opacity=".18">
+    <circle cx="334" cy="232" r="1.1"/>
+    <circle cx="1108" cy="196" r=".9"/>
+    <circle cx="1264" cy="584" r="1.1"/>
+    <circle cx="602" cy="710" r=".8"/>
+  </g>
+</svg>

@@ -4,50 +4,29 @@
  * 只统一选中态、主操作、悬停态和键盘焦点，不改变现有布局与尺寸。
  * 橙色用于“当前选中”和产品主操作，蓝/绿/黄/红保留信息与状态语义。
  */
-:root {
-  --qz-active: #fb923c;
-  --qz-active-strong: #ea580c;
-  --qz-active-soft: rgba(249, 115, 22, 0.14);
-  --qz-active-border: rgba(251, 146, 60, 0.38);
-  --qz-active-text: #fed7aa;
-  --qz-action: #c2410c;
-  --qz-action-hover: #ea580c;
-  --qz-focus-ring: rgba(251, 146, 60, 0.72);
-
-  /* Element Plus 的 primary 归入品牌色；语义状态色仍使用各自颜色。 */
-  --el-color-primary: var(--qz-action);
-  --el-color-primary-rgb: 194, 65, 12;
-  --el-color-primary-light-3: #ea580c;
-  --el-color-primary-light-5: #f97316;
-  --el-color-primary-light-7: #fb923c;
-  --el-color-primary-light-8: #fdba74;
-  --el-color-primary-light-9: rgba(249, 115, 22, 0.14);
-  --el-color-primary-dark-2: #9a3412;
-}
-
 /* 页面级主操作：下载是本产品的核心动作，使用高对比品牌橙。 */
 .qz-primary-action:not(:disabled):not(.is-disabled),
 .fm-tool-btn-primary:not(:disabled) {
-  color: #fff !important;
+  color: var(--theme-text-inverse) !important;
   background: var(--qz-action) !important;
   border-color: var(--qz-action) !important;
-  box-shadow: 0 4px 12px rgba(194, 65, 12, 0.2) !important;
+  box-shadow: var(--theme-shadow-brand) !important;
   transform: none !important;
 }
 
 .qz-primary-action:hover:not(:disabled):not(.is-disabled),
 .fm-tool-btn-primary:hover:not(:disabled) {
-  color: #fff !important;
+  color: var(--theme-text-inverse) !important;
   background: var(--qz-action-hover) !important;
   border-color: var(--qz-active) !important;
-  box-shadow: 0 5px 16px rgba(234, 88, 12, 0.26) !important;
+  box-shadow: var(--theme-shadow-brand) !important;
   transform: none !important;
 }
 
 .qz-primary-action:active:not(:disabled):not(.is-disabled),
 .fm-tool-btn-primary:active:not(:disabled) {
-  background: #9a3412 !important;
-  box-shadow: 0 2px 7px rgba(154, 52, 18, 0.24) !important;
+  background: var(--theme-brand-pressed) !important;
+  box-shadow: var(--theme-shadow-sm) !important;
 }
 
 /* 次操作保持中性，避免上传与下载同时抢占视觉焦点。 */
@@ -60,8 +39,8 @@
 }
 
 .qz-secondary-action:hover:not(:disabled):not(.is-disabled) {
-  color: #fff !important;
-  background: rgba(255, 255, 255, 0.12) !important;
+  color: var(--theme-text-primary) !important;
+  background: var(--theme-surface-hover) !important;
   border-color: var(--ds-border-strong) !important;
   transform: none !important;
 }
@@ -75,21 +54,21 @@
 }
 
 .qz-compact-download:hover:not(:disabled):not(.is-disabled) {
-  color: #fff !important;
-  background: rgba(249, 115, 22, 0.22) !important;
+  color: var(--theme-text-primary) !important;
+  background: var(--theme-brand-soft-hover) !important;
   border-color: var(--qz-active) !important;
 }
 
 /* 左侧“一键下载”是下载主入口，使用品牌色而不是成功态绿色。 */
 .download-all-section .download-all-card {
-  border-color: var(--qz-active-border) !important;
-  background: linear-gradient(135deg, var(--qz-active-soft), rgba(249, 115, 22, 0.05)) !important;
+  border-color: var(--theme-border-subtle) !important;
+  background: var(--theme-surface-soft) !important;
 }
 
 .download-all-section .download-all-card:hover {
-  border-color: var(--qz-active) !important;
-  background: linear-gradient(135deg, rgba(249, 115, 22, 0.2), rgba(249, 115, 22, 0.08)) !important;
-  box-shadow: 0 6px 16px rgba(194, 65, 12, 0.2) !important;
+  border-color: var(--theme-border-strong) !important;
+  background: var(--theme-surface-hover) !important;
+  box-shadow: none !important;
   transform: none !important;
 }
 
@@ -169,8 +148,8 @@
 
 .album-menu.album-menu .el-menu-item.el-menu-item.is-active,
 .photo-menu.photo-menu .el-menu-item.el-menu-item.is-active {
-  color: #fff !important;
-  background: var(--qz-active-soft) !important;
+  color: var(--theme-text-primary) !important;
+  background: color-mix(in srgb, var(--qz-active) 12%, transparent) !important;
   border-left-color: var(--qz-active-strong) !important;
   box-shadow: none !important;
 }
@@ -202,7 +181,7 @@
 
 /* 动态分类和收藏筛选仅修改当前项，不影响红色数量徽标。 */
 .feeds-module .fm-source.active {
-  color: #fff !important;
+  color: var(--theme-text-primary) !important;
   border-bottom-color: var(--qz-active-strong) !important;
 }
 
@@ -223,7 +202,7 @@
 /* 图片尺寸分段控件与其它选中态保持一致。 */
 .photo-size-controls .el-radio-button.is-active .el-radio-button__inner,
 .photo-size-controls .el-radio-button__original-radio:checked + .el-radio-button__inner {
-  color: #fff !important;
+  color: var(--theme-text-inverse) !important;
   background: var(--qz-action) !important;
   border-color: var(--qz-action) !important;
   box-shadow: -1px 0 0 0 var(--qz-action) !important;

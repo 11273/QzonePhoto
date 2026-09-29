@@ -1,0 +1,173 @@
+:root,
+:root[data-theme='qzone-dark'] {
+  color-scheme: dark;
+
+  --theme-canvas: #141418;
+  --theme-surface: #1c1c20;
+  --theme-surface-raised: #232329;
+  --theme-surface-overlay: #18181d;
+  --theme-surface-soft: rgba(255, 255, 255, 0.035);
+  --theme-surface-hover: rgba(255, 255, 255, 0.065);
+  --theme-surface-active: rgba(255, 255, 255, 0.095);
+  --theme-surface-disabled: #303036;
+
+  --theme-text-primary: #f5f5f7;
+  --theme-text-secondary: #c4c4cc;
+  --theme-text-muted: #91919c;
+  --theme-text-subtle: #898994;
+  --theme-text-disabled: #5e5e68;
+  --theme-text-inverse: #ffffff;
+
+  --theme-border-subtle: rgba(255, 255, 255, 0.065);
+  --theme-border: rgba(255, 255, 255, 0.12);
+  --theme-border-strong: rgba(255, 255, 255, 0.2);
+
+  /* 只用于浮动控件、菜单和弹窗；普通内容卡片保持实体表面。 */
+  --theme-material-thin: rgba(24, 24, 30, 0.68);
+  --theme-material-regular: rgba(24, 24, 30, 0.82);
+  --theme-material-thick: rgba(18, 18, 23, 0.92);
+  --theme-material-border: rgba(255, 255, 255, 0.13);
+  --theme-material-highlight: rgba(255, 255, 255, 0.07);
+  --theme-material-blur: 18px;
+  --theme-material-blur-strong: 28px;
+  --theme-material-saturation: 135%;
+
+  --theme-brand: #c2410c;
+  --theme-brand-hover: #d1480d;
+  --theme-brand-pressed: #9a3412;
+  --theme-brand-accent: #fb923c;
+  --theme-brand-text: #fed7aa;
+  --theme-brand-soft: rgba(249, 115, 22, 0.14);
+  --theme-brand-soft-hover: rgba(249, 115, 22, 0.21);
+  --theme-brand-border: rgba(251, 146, 60, 0.38);
+  --theme-focus: #fdba74;
+  --theme-focus-ring: rgba(251, 146, 60, 0.42);
+
+  --theme-info: #60a5fa;
+  --theme-info-strong: #3b82f6;
+  --theme-info-text: #bfdbfe;
+  --theme-info-soft: rgba(96, 165, 250, 0.13);
+  --theme-info-border: rgba(96, 165, 250, 0.34);
+  --theme-success: #34d399;
+  --theme-success-text: #a7f3d0;
+  --theme-success-soft: rgba(52, 211, 153, 0.13);
+  --theme-success-border: rgba(52, 211, 153, 0.34);
+  --theme-warning: #fbbf24;
+  --theme-warning-strong: #d97706;
+  --theme-warning-text: #fde68a;
+  --theme-warning-soft: rgba(251, 191, 36, 0.13);
+  --theme-warning-border: rgba(251, 191, 36, 0.34);
+  --theme-danger: #f87171;
+  --theme-danger-text: #fecaca;
+  --theme-danger-soft: rgba(248, 113, 113, 0.13);
+  --theme-danger-border: rgba(248, 113, 113, 0.34);
+
+  --theme-privacy-backdrop: rgba(7, 7, 10, 0.84);
+  --theme-privacy-icon: #fbbf24;
+  --theme-privacy-text: #fde68a;
+
+  --theme-backdrop: rgba(7, 7, 10, 0.72);
+  --theme-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.22);
+  --theme-shadow-md: 0 10px 28px rgba(0, 0, 0, 0.32);
+  --theme-shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.46);
+  --theme-shadow-brand: 0 8px 22px rgba(194, 65, 12, 0.28);
+
+  --theme-radius-xs: 4px;
+  --theme-radius-sm: 6px;
+  --theme-radius-md: 8px;
+  --theme-radius-lg: 12px;
+  --theme-radius-xl: 16px;
+  --theme-radius-pill: 999px;
+
+  --theme-space-1: 4px;
+  --theme-space-2: 8px;
+  --theme-space-3: 12px;
+  --theme-space-4: 16px;
+  --theme-space-5: 20px;
+  --theme-space-6: 24px;
+
+  --theme-control-sm: 28px;
+  --theme-control: 32px;
+  --theme-control-lg: 36px;
+  --theme-icon-sm: 14px;
+  --theme-icon: 16px;
+  --theme-icon-lg: 20px;
+
+  --theme-duration-fast: 140ms;
+  --theme-duration: 190ms;
+  --theme-duration-slow: 260ms;
+  --theme-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  --theme-z-content: 1;
+  --theme-z-sticky: 20;
+  --theme-z-popover: 2000;
+  --theme-z-modal: 3000;
+  --theme-z-toast: 4000;
+
+  --theme-background-image: url('../../assets/ambient-canvas.svg');
+  --theme-background-position: center;
+  --theme-decoration-image: none;
+  --theme-decoration-size: 0;
+  --theme-decoration-position: top right;
+  --theme-pattern-opacity: 0.44;
+  --theme-decoration-opacity: 0.72;
+
+  /* 兼容现有组件的设计令牌。 */
+  --ds-bg-0: var(--theme-surface-overlay);
+  --ds-bg-1: rgba(28, 28, 32, 0.97);
+  --ds-bg-2: var(--theme-surface-soft);
+  --ds-bg-3: var(--theme-surface-hover);
+  --ds-bg-4: var(--theme-surface-active);
+  --ds-bg-overlay: var(--theme-backdrop);
+  --ds-bg-overlay-strong: rgba(0, 0, 0, 0.86);
+  --ds-border-faint: var(--theme-border-subtle);
+  --ds-border-light: rgba(255, 255, 255, 0.085);
+  --ds-border-medium: var(--theme-border);
+  --ds-border-strong: var(--theme-border-strong);
+  --ds-material-thin: var(--theme-material-thin);
+  --ds-material-regular: var(--theme-material-regular);
+  --ds-material-thick: var(--theme-material-thick);
+  --ds-material-border: var(--theme-material-border);
+  --ds-material-highlight: var(--theme-material-highlight);
+  --ds-material-blur: var(--theme-material-blur);
+  --ds-material-blur-strong: var(--theme-material-blur-strong);
+  --ds-material-saturation: var(--theme-material-saturation);
+  --ds-text-primary: var(--theme-text-primary);
+  --ds-text-secondary: var(--theme-text-secondary);
+  --ds-text-tertiary: var(--theme-text-muted);
+  --ds-text-quaternary: var(--theme-text-subtle);
+  --ds-text-disabled: var(--theme-text-disabled);
+  --ds-accent-blue: var(--theme-info);
+  --ds-accent-blue-soft: var(--theme-info-soft);
+  --ds-accent-blue-border: rgba(96, 165, 250, 0.34);
+  --ds-accent-green: var(--theme-success);
+  --ds-accent-green-soft: var(--theme-success-soft);
+  --ds-accent-yellow: var(--theme-warning);
+  --ds-accent-yellow-soft: var(--theme-warning-soft);
+  --ds-accent-red: var(--theme-danger);
+  --ds-accent-red-soft: var(--theme-danger-soft);
+  --ds-radius-xs: var(--theme-radius-xs);
+  --ds-radius-sm: var(--theme-radius-sm);
+  --ds-radius-md: var(--theme-radius-md);
+  --ds-radius-lg: var(--theme-radius-lg);
+  --ds-radius-xl: var(--theme-radius-xl);
+  --ds-radius-pill: var(--theme-radius-pill);
+  --ds-shadow-sm: var(--theme-shadow-sm);
+  --ds-shadow-md: var(--theme-shadow-md);
+  --ds-shadow-lg: var(--theme-shadow-lg);
+  --ds-shadow-xl: var(--theme-shadow-lg);
+  --ds-ease-soft: var(--theme-ease);
+  --ds-ease-springy: cubic-bezier(0.16, 1, 0.3, 1);
+  --ds-dur-fast: var(--theme-duration-fast);
+  --ds-dur-base: var(--theme-duration);
+  --ds-dur-slow: var(--theme-duration-slow);
+
+  --qz-active: var(--theme-brand-accent);
+  --qz-active-strong: var(--theme-brand-hover);
+  --qz-active-soft: var(--theme-brand-soft);
+  --qz-active-border: var(--theme-brand-border);
+  --qz-active-text: var(--theme-brand-text);
+  --qz-action: var(--theme-brand);
+  --qz-action-hover: var(--theme-brand-hover);
+  --qz-focus-ring: var(--theme-focus-ring);
+}

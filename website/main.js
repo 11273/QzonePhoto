@@ -7,10 +7,11 @@
   const config = {
     apiBaseUrl: 'https://qzone.getgit.one',
     manifestUrls: manifestUrls(),
-    siteVersion: '2026.07.26'
+    siteVersion: '2026.09.29'
   }
   const MANIFEST_REQUEST_TIMEOUT_MS = 1800
   const MANIFEST_TOTAL_TIMEOUT_MS = 3400
+  const choiceReturnTargets = new WeakMap()
   const state = {
     sessionId: sessionId(),
     visitorId: visitorId(),
@@ -31,7 +32,6 @@
 
   setupNavigation()
   setupScrollChrome()
-  setupSurfaceMotion()
   setupReveal()
   setupChoices()
   setupDownloadLinks()
@@ -83,10 +83,11 @@
     const toggle = document.querySelector('[data-nav-toggle]')
     const nav = document.querySelector('[data-nav]')
     if (!toggle || !nav) return
-    const closeNavigation = () => {
+    const closeNavigation = (restoreFocus = false) => {
       nav.classList.remove('open')
       toggle.setAttribute('aria-expanded', 'false')
       toggle.setAttribute('aria-label', '打开导航')
+      if (restoreFocus) toggle.focus({ preventScroll: true })
     }
     toggle.addEventListener('click', () => {
       const open = !nav.classList.contains('open')
@@ -102,7 +103,7 @@
     })
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return
-      closeNavigation()
+      closeNavigation(nav.classList.contains('open'))
     })
     window.matchMedia('(max-width: 860px)').addEventListener('change', (event) => {
       if (!event.matches) closeNavigation()
@@ -141,72 +142,6 @@
     window.addEventListener('scroll', requestUpdate, { passive: true })
   }
 
-  function setupSurfaceMotion() {
-    if (
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
-      !window.matchMedia('(hover: hover) and (pointer: fine)').matches
-    ) {
-      return
-    }
-
-    const stage = document.querySelector('[data-hero-depth]')
-    const frame = stage?.querySelector('.product-frame')
-    if (stage && frame) {
-      let pendingPoint = null
-      let frameId = 0
-
-      const renderDepth = () => {
-        frameId = 0
-        if (!pendingPoint) return
-        const rect = frame.getBoundingClientRect()
-        const x = Math.max(0, Math.min(1, (pendingPoint.clientX - rect.left) / rect.width))
-        const y = Math.max(0, Math.min(1, (pendingPoint.clientY - rect.top) / rect.height))
-        stage.style.setProperty('--depth-x', `${((x - 0.5) * 9).toFixed(2)}px`)
-        stage.style.setProperty('--depth-y', `${((y - 0.5) * 7).toFixed(2)}px`)
-        stage.style.setProperty('--depth-rotate-x', `${((0.5 - y) * 1.1).toFixed(2)}deg`)
-        stage.style.setProperty('--depth-rotate-y', `${((x - 0.5) * 1.5).toFixed(2)}deg`)
-        stage.style.setProperty('--spotlight-x', `${(x * 100).toFixed(1)}%`)
-        stage.style.setProperty('--spotlight-y', `${(y * 100).toFixed(1)}%`)
-      }
-
-      frame.addEventListener('pointerenter', () => stage.classList.add('is-depth-active'))
-      frame.addEventListener('pointermove', (event) => {
-        pendingPoint = { clientX: event.clientX, clientY: event.clientY }
-        if (!frameId) frameId = requestAnimationFrame(renderDepth)
-      })
-      frame.addEventListener('pointerleave', () => {
-        pendingPoint = null
-        if (frameId) cancelAnimationFrame(frameId)
-        frameId = 0
-        stage.classList.remove('is-depth-active')
-        ;[
-          '--depth-x',
-          '--depth-y',
-          '--depth-rotate-x',
-          '--depth-rotate-y',
-          '--spotlight-x',
-          '--spotlight-y'
-        ].forEach((property) => stage.style.removeProperty(property))
-      })
-    }
-
-    document.querySelectorAll('[data-download-shell]').forEach((shell) => {
-      shell.addEventListener('pointerenter', () => shell.classList.add('is-material-active'))
-      shell.addEventListener('pointermove', (event) => {
-        const rect = shell.getBoundingClientRect()
-        const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
-        const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
-        shell.style.setProperty('--material-x', `${(x * 100).toFixed(1)}%`)
-        shell.style.setProperty('--material-y', `${(y * 100).toFixed(1)}%`)
-      })
-      shell.addEventListener('pointerleave', () => {
-        shell.classList.remove('is-material-active')
-        shell.style.removeProperty('--material-x')
-        shell.style.removeProperty('--material-y')
-      })
-    })
-  }
-
   function setupReveal() {
     const items = Array.from(document.querySelectorAll('.reveal'))
     if (
@@ -236,7 +171,10 @@
       const shell = button.closest('[data-download-shell]')
       const panel = shell?.querySelector('[data-platform-choice]')
       if (!panel) return
-      button.addEventListener('click', () => setChoiceOpen(button, panel, panel.hidden))
+      button.addEventListener('click', () => {
+        if (panel.hidden) choiceReturnTargets.set(panel, button)
+        setChoiceOpen(button, panel, panel.hidden)
+      })
     })
     document.querySelectorAll('[data-platform-tab]').forEach((tab) => {
       tab.addEventListener('click', () => {
@@ -264,7 +202,10 @@
       if (event.key !== 'Escape') return
       document.querySelectorAll('[data-platform-choice]:not([hidden])').forEach((panel) => {
         const button = panel.closest('[data-download-shell]')?.querySelector('[data-choice-toggle]')
-        if (button) setChoiceOpen(button, panel, false)
+        if (!button) return
+        const returnTarget = choiceReturnTargets.get(panel) || button
+        setChoiceOpen(button, panel, false)
+        returnTarget.focus({ preventScroll: true })
       })
     })
   }
@@ -337,6 +278,11 @@
           link.textContent.trim().slice(0, 48)
         )
       })
+      link.addEventListener('keydown', (event) => {
+        if (event.key !== ' ' || link.getAttribute('role') !== 'button') return
+        event.preventDefault()
+        link.click()
+      })
     })
   }
 
@@ -344,7 +290,14 @@
     const shell = link.closest('[data-download-shell]')
     const panel = shell?.querySelector('[data-platform-choice]')
     const button = shell?.querySelector('[data-choice-toggle]')
-    if (panel && button) setChoiceOpen(button, panel, true)
+    if (!panel || !button) return
+    choiceReturnTargets.set(panel, link)
+    setChoiceOpen(button, panel, true)
+    requestAnimationFrame(() => {
+      panel.querySelector('[data-platform-tab][aria-selected="true"]')?.focus({
+        preventScroll: true
+      })
+    })
   }
 
   async function copyDesktopAddress(link) {
@@ -396,14 +349,19 @@
     smartLinks.forEach((link) => {
       delete link.dataset.needsChoice
       delete link.dataset.mobileCopy
+      link.removeAttribute('role')
       if (platform.mobile) {
         link.dataset.mobileCopy = 'true'
+        link.href = `${location.origin}/`
+        link.setAttribute('role', 'button')
         setLinkCopy(link, '复制电脑端下载地址', '请在电脑浏览器中打开')
         setStatus(link, '手机无法运行桌面安装包，已为你准备复制入口')
         return
       }
       if (platform.os === 'macos' && !state.recommendedAsset) {
         link.dataset.needsChoice = 'true'
+        link.href = '#platform-choice'
+        link.setAttribute('role', 'button')
         setLinkCopy(link, '选择 Mac 芯片版本', 'Apple 芯片或 Intel')
         setStatus(link, '先选择你的 Mac 芯片类型，即可开始下载')
         return

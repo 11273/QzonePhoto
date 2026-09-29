@@ -1,0 +1,34 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="sky" cx="0" cy="0" r="1" gradientTransform="translate(1320 112) rotate(145) scale(560 430)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4E89C7" stop-opacity=".2"/>
+      <stop offset=".54" stop-color="#294E78" stop-opacity=".07"/>
+      <stop offset="1" stop-color="#17283C" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="gold" cx="0" cy="0" r="1" gradientTransform="translate(210 760) rotate(-28) scale(520 280)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F0CF83" stop-opacity=".13"/>
+      <stop offset="1" stop-color="#F0CF83" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <rect width="1600" height="900" fill="url(#gold)"/>
+  <g stroke-linecap="round" fill="none">
+    <g transform="translate(1288 158)" stroke="#F0CF83" opacity=".28">
+      <path d="M0-78v42M0 36v42M-78 0h42M36 0h42M-55-55l30 30M25 25l30 30M55-55 25-25M-25 25l-30 30"/>
+      <circle r="18" stroke-opacity=".62"/>
+      <circle r="58" stroke-dasharray="1 17" stroke-width="3"/>
+    </g>
+    <g transform="translate(1110 318)" stroke="#7FB2E0" opacity=".16">
+      <path d="M0-48v26M0 22v26M-48 0h26M22 0h26M-34-34l19 19M15 15l19 19M34-34 15-15M-15 15l-19 19"/>
+      <circle r="34" stroke-dasharray="1 12" stroke-width="2"/>
+    </g>
+    <path d="M-84 736c238-86 416-54 566 66 128 103 270 106 438 31 169-75 371-69 758 70" stroke="#F0CF83" stroke-opacity=".075"/>
+    <path d="M-84 758c238-86 416-54 566 66 128 103 270 106 438 31 169-75 371-69 758 70" stroke="#7FB2E0" stroke-opacity=".07"/>
+  </g>
+  <g fill="#F0CF83">
+    <circle cx="1184" cy="84" r="1.6" opacity=".4"/>
+    <circle cx="1390" cy="286" r="1.4" opacity=".34"/>
+    <circle cx="1016" cy="220" r="1.2" opacity=".3"/>
+    <circle cx="276" cy="748" r="1.5" opacity=".28"/>
+  </g>
+</svg>

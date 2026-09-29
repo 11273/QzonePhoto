@@ -15,44 +15,58 @@
  *   --ds-dur-*      过渡时长
  */
 :root {
+  /* 品牌资产常量：不属于主题令牌，节日主题不得覆盖。 */
+  --brand-logo-color: #f15a24;
+  --brand-logo-shadow: drop-shadow(0 2px 4px rgba(241, 90, 36, 0.3));
+
   /* === 背景层级（黑色系，半透明叠加） === */
-  --ds-bg-0: rgba(20, 20, 24, 0.97); /* 主体最深底（弹层） */
-  --ds-bg-1: rgba(28, 28, 32, 0.95); /* 次级底（卡片大块） */
-  --ds-bg-2: rgba(255, 255, 255, 0.03); /* 卡片轻底 */
-  --ds-bg-3: rgba(255, 255, 255, 0.05); /* hover 轻提亮 */
-  --ds-bg-4: rgba(255, 255, 255, 0.08); /* hover 强提亮 */
-  --ds-bg-overlay: rgba(0, 0, 0, 0.65); /* 遮罩 */
-  --ds-bg-overlay-strong: rgba(0, 0, 0, 0.85); /* 强遮罩 */
+  --ds-bg-0: var(--theme-surface-overlay); /* 主体最深底（弹层） */
+  --ds-bg-1: var(--theme-surface); /* 次级底（卡片大块） */
+  --ds-bg-2: var(--theme-surface-soft); /* 卡片轻底 */
+  --ds-bg-3: var(--theme-surface-hover); /* hover 轻提亮 */
+  --ds-bg-4: var(--theme-surface-active); /* hover 强提亮 */
+  --ds-bg-overlay: var(--theme-backdrop); /* 遮罩 */
+  --ds-bg-overlay-strong: rgba(7, 7, 10, 0.86); /* 强遮罩 */
 
   /* === 边框层级（白色系，半透明） === */
-  --ds-border-faint: rgba(255, 255, 255, 0.05);
-  --ds-border-light: rgba(255, 255, 255, 0.08);
-  --ds-border-medium: rgba(255, 255, 255, 0.12);
-  --ds-border-strong: rgba(255, 255, 255, 0.2);
+  --ds-border-faint: var(--theme-border-subtle);
+  --ds-border-light: rgba(255, 255, 255, 0.085);
+  --ds-border-medium: var(--theme-border);
+  --ds-border-strong: var(--theme-border-strong);
+
+  /* === 材质层级：仅供悬浮控件、菜单和弹窗使用 === */
+  --ds-material-thin: var(--theme-material-thin);
+  --ds-material-regular: var(--theme-material-regular);
+  --ds-material-thick: var(--theme-material-thick);
+  --ds-material-border: var(--theme-material-border);
+  --ds-material-highlight: var(--theme-material-highlight);
+  --ds-material-blur: var(--theme-material-blur);
+  --ds-material-blur-strong: var(--theme-material-blur-strong);
+  --ds-material-saturation: var(--theme-material-saturation);
 
   /* === 文本色（多档灰） === */
-  --ds-text-primary: rgba(255, 255, 255, 0.92);
-  --ds-text-secondary: rgba(255, 255, 255, 0.7);
-  --ds-text-tertiary: rgba(255, 255, 255, 0.5);
-  --ds-text-quaternary: rgba(255, 255, 255, 0.35);
-  --ds-text-disabled: rgba(255, 255, 255, 0.2);
+  --ds-text-primary: var(--theme-text-primary);
+  --ds-text-secondary: var(--theme-text-secondary);
+  --ds-text-tertiary: var(--theme-text-muted);
+  --ds-text-quaternary: var(--theme-text-subtle);
+  --ds-text-disabled: var(--theme-text-disabled);
 
   /* === 主题强调色 === */
-  --ds-accent-blue: #60a5fa;
-  --ds-accent-blue-soft: rgba(96, 165, 250, 0.12);
-  --ds-accent-blue-border: rgba(96, 165, 250, 0.35);
+  --ds-accent-blue: var(--theme-info);
+  --ds-accent-blue-soft: var(--theme-info-soft);
+  --ds-accent-blue-border: var(--theme-info-border);
 
-  --ds-accent-green: #34d399;
-  --ds-accent-green-soft: rgba(52, 211, 153, 0.12);
-  --ds-accent-green-border: rgba(52, 211, 153, 0.35);
+  --ds-accent-green: var(--theme-success);
+  --ds-accent-green-soft: var(--theme-success-soft);
+  --ds-accent-green-border: var(--theme-success-border);
 
-  --ds-accent-yellow: #fbbf24;
-  --ds-accent-yellow-soft: rgba(251, 191, 36, 0.12);
-  --ds-accent-yellow-border: rgba(251, 191, 36, 0.35);
+  --ds-accent-yellow: var(--theme-warning);
+  --ds-accent-yellow-soft: var(--theme-warning-soft);
+  --ds-accent-yellow-border: var(--theme-warning-border);
 
-  --ds-accent-red: #f87171;
-  --ds-accent-red-soft: rgba(248, 113, 113, 0.12);
-  --ds-accent-red-border: rgba(248, 113, 113, 0.35);
+  --ds-accent-red: var(--theme-danger);
+  --ds-accent-red-soft: var(--theme-danger-soft);
+  --ds-accent-red-border: var(--theme-danger-border);
 
   /* === 语义状态色 === */
   --ds-state-success: var(--ds-accent-green);
@@ -61,25 +75,25 @@
   --ds-state-info: var(--ds-accent-blue);
 
   /* === 圆角 === */
-  --ds-radius-xs: 3px;
-  --ds-radius-sm: 4px;
-  --ds-radius-md: 6px;
-  --ds-radius-lg: 8px;
-  --ds-radius-xl: 10px;
-  --ds-radius-pill: 999px;
+  --ds-radius-xs: var(--theme-radius-xs);
+  --ds-radius-sm: var(--theme-radius-sm);
+  --ds-radius-md: var(--theme-radius-md);
+  --ds-radius-lg: var(--theme-radius-lg);
+  --ds-radius-xl: var(--theme-radius-xl);
+  --ds-radius-pill: var(--theme-radius-pill);
 
   /* === 阴影 === */
-  --ds-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
-  --ds-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
-  --ds-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.35);
-  --ds-shadow-xl: 0 16px 40px rgba(0, 0, 0, 0.4);
+  --ds-shadow-sm: var(--theme-shadow-sm);
+  --ds-shadow-md: var(--theme-shadow-md);
+  --ds-shadow-lg: var(--theme-shadow-lg);
+  --ds-shadow-xl: var(--theme-shadow-lg);
 
   /* === 过渡 === */
-  --ds-ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+  --ds-ease-soft: var(--theme-ease);
   --ds-ease-springy: cubic-bezier(0.16, 1, 0.3, 1);
-  --ds-dur-fast: 0.15s;
-  --ds-dur-base: 0.2s;
-  --ds-dur-slow: 0.3s;
+  --ds-dur-fast: var(--theme-duration-fast);
+  --ds-dur-base: var(--theme-duration);
+  --ds-dur-slow: var(--theme-duration-slow);
 
   /* === 复合：常用过渡组合（直接用即可） === */
   --ds-transition-bg: background-color var(--ds-dur-fast) var(--ds-ease-soft);
@@ -120,11 +134,16 @@
 
 /* === 暗色对话框（任意 el-dialog 加 popper-class="ds-dialog" 即可生效） === */
 .ds-dialog.el-dialog {
-  background: var(--ds-bg-1);
-  backdrop-filter: blur(20px);
-  border: 1px solid var(--ds-border-light);
+  background:
+    linear-gradient(145deg, var(--ds-material-highlight), transparent 32%), var(--ds-material-thick);
+  -webkit-backdrop-filter: blur(var(--ds-material-blur-strong))
+    saturate(var(--ds-material-saturation));
+  backdrop-filter: blur(var(--ds-material-blur-strong)) saturate(var(--ds-material-saturation));
+  border: 1px solid var(--ds-material-border);
   border-radius: var(--ds-radius-xl);
-  box-shadow: var(--ds-shadow-xl);
+  box-shadow:
+    inset 0 1px 0 var(--ds-material-highlight),
+    var(--ds-shadow-xl);
   overflow: hidden;
 }
 
@@ -170,5 +189,6 @@
 /* 暗色对话框遮罩 */
 .ds-dialog-overlay {
   background: var(--ds-bg-overlay);
-  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
 }

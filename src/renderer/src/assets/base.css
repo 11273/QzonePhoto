@@ -1,19 +1,19 @@
 :root {
-  --ev-c-white: #ffffff;
-  --ev-c-white-soft: #f8f8f8;
-  --ev-c-white-mute: #f2f2f2;
+  --ev-c-white: var(--theme-text-inverse);
+  --ev-c-white-soft: var(--theme-text-primary);
+  --ev-c-white-mute: var(--theme-text-secondary);
 
-  --ev-c-black: #1b1b1f;
-  --ev-c-black-soft: #222222;
-  --ev-c-black-mute: #282828;
+  --ev-c-black: var(--theme-canvas);
+  --ev-c-black-soft: var(--theme-surface);
+  --ev-c-black-mute: var(--theme-surface-raised);
 
-  --ev-c-gray-1: #515c67;
-  --ev-c-gray-2: #414853;
-  --ev-c-gray-3: #32363f;
+  --ev-c-gray-1: var(--theme-text-muted);
+  --ev-c-gray-2: var(--theme-surface-active);
+  --ev-c-gray-3: var(--theme-surface-hover);
 
-  --ev-c-text-1: rgba(255, 255, 245, 0.86);
-  --ev-c-text-2: rgba(235, 235, 245, 0.6);
-  --ev-c-text-3: rgba(235, 235, 245, 0.38);
+  --ev-c-text-1: var(--theme-text-primary);
+  --ev-c-text-2: var(--theme-text-secondary);
+  --ev-c-text-3: var(--theme-text-muted);
 
   --ev-button-alt-border: transparent;
   --ev-button-alt-text: var(--ev-c-text-1);
@@ -44,7 +44,7 @@ ul {
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100%;
   color: var(--color-text);
   background: var(--color-background);
   line-height: 1.6;

@@ -6,68 +6,6 @@
    只放对所有页面都生效的视觉/交互改进，不要在这里做组件级样式。
    ============================================================= */
 
-/* === 滚动条统一（暗色细滚动条，hover 时高亮） === */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/* Element Plus 内嵌 el-scrollbar 自定义 thumb 同步 */
-.el-scrollbar__bar {
-  opacity: 0.4;
-  transition: opacity 0.2s ease;
-}
-.el-scrollbar:hover .el-scrollbar__bar {
-  opacity: 0.85;
-}
-.el-scrollbar__thumb {
-  background-color: rgba(255, 255, 255, 0.18) !important;
-}
-.el-scrollbar__thumb:hover {
-  background-color: rgba(255, 255, 255, 0.32) !important;
-}
-
-/* === 全局可访问性 focus ring（键盘 Tab 才显示，鼠标点击不显示） === */
-*:focus {
-  outline: none;
-}
-*:focus-visible {
-  outline: 2px solid rgba(96, 165, 250, 0.65);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-/* === Element Plus 按钮微交互：hover 微抬升，active 回弹 === */
-.el-button:not(.is-text):not(.is-disabled) {
-  transition: transform 0.12s ease, box-shadow 0.15s ease, background-color 0.15s ease,
-    border-color 0.15s ease;
-}
-.el-button:not(.is-text):not(.is-disabled):hover {
-  transform: translateY(-1px);
-}
-.el-button:not(.is-text):not(.is-disabled):active {
-  transform: translateY(0);
-}
-
-/* text 类按钮 hover 时给浅色背景（之前部分页面没统一） */
-.el-button.is-text:not(.is-disabled):hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
 /* === 全局过渡：路由/弹层级别 fade === */
 .fade-enter-active,
 .fade-leave-active {
@@ -80,7 +18,9 @@
 
 .fade-slide-enter-active,
 .fade-slide-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 .fade-slide-enter-from {
   opacity: 0;
@@ -99,19 +39,13 @@ img {
   transition: opacity 0.2s ease;
 }
 
-/* === 选区颜色统一 === */
-::selection {
-  background: rgba(96, 165, 250, 0.35);
-  color: #fff;
-}
-
 /* === 隐私保护遮罩统一：大图显示文字，小缩略图只保留图标 === */
 :root {
   --qz-privacy-media-blur: 14px;
   --qz-privacy-backdrop-blur: 2px;
-  --qz-privacy-bg: rgba(0, 0, 0, 0.8);
-  --qz-privacy-icon-color: #e6a23c;
-  --qz-privacy-text-color: rgba(230, 162, 60, 0.86);
+  --qz-privacy-bg: var(--theme-privacy-backdrop);
+  --qz-privacy-icon-color: var(--theme-privacy-icon);
+  --qz-privacy-text-color: var(--theme-privacy-text);
 }
 
 :where(.qz-privacy-overlay, .privacy-overlay, .tl-privacy-overlay, .mp-thumb-privacy, .fc-privacy) {
@@ -124,14 +58,24 @@ img {
   align-items: center;
   justify-content: center;
   gap: 5px;
-  color: rgba(255, 255, 255, 0.78);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 5%, transparent);
+  border-radius: inherit;
+  color: var(--theme-text-secondary);
   background: var(--qz-privacy-bg) !important;
   backdrop-filter: blur(var(--qz-privacy-backdrop-blur)) !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-text-inverse) 3%, transparent);
   pointer-events: none;
 }
 
 :where(.file-thumbnail, .task-thumbnail, .mp-thumb, .photo-wrapper, .card-image-wrapper):has(
-    > :where(.qz-privacy-overlay, .privacy-overlay, .tl-privacy-overlay, .mp-thumb-privacy, .fc-privacy)
+    > :where(
+      .qz-privacy-overlay,
+      .privacy-overlay,
+      .tl-privacy-overlay,
+      .mp-thumb-privacy,
+      .fc-privacy
+    )
   )
   :where(img, video, .thumbnail-image, .thumbnail-video, .el-image__inner) {
   filter: blur(var(--qz-privacy-media-blur));
@@ -179,10 +123,16 @@ img {
   }
 }
 
+/* 连续媒体列表由顶部隐私状态统一说明，卡片仅保留图标，避免重复文案形成噪声。 */
+:where(.photo-main, .photo-module, .video-module, .feeds-module, .mp-thumbs)
+  :where(.qz-privacy-text, .privacy-text) {
+  display: none !important;
+}
+
 /* === 通用骨架屏（暗色背景） === */
 .skeleton {
   position: relative;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--theme-surface-soft);
   overflow: hidden;
   border-radius: 6px;
 }
@@ -193,7 +143,7 @@ img {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.06) 50%,
+    var(--theme-surface-hover) 50%,
     transparent 100%
   );
   animation: skeleton-shimmer 1.4s infinite;
@@ -209,21 +159,21 @@ img {
 
 /* === el-popover 在暗色主题下统一深色背景 === */
 .el-popover.el-popper {
-  background: rgba(28, 28, 32, 0.98) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: var(--theme-surface-overlay) !important;
+  border-color: var(--theme-border) !important;
 }
 .el-popper__arrow::before {
-  background: rgba(28, 28, 32, 0.98) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: var(--theme-surface-overlay) !important;
+  border-color: var(--theme-border) !important;
 }
 
 /* === el-tooltip 同样深色统一 === */
 .el-popper.is-dark {
-  background: rgba(0, 0, 0, 0.92) !important;
-  color: rgba(255, 255, 255, 0.95) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: var(--theme-surface-overlay) !important;
+  color: var(--theme-text-primary) !important;
+  border: 1px solid var(--theme-border) !important;
 }
 .el-popper.is-dark .el-popper__arrow::before {
-  background: rgba(0, 0, 0, 0.92) !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: var(--theme-surface-overlay) !important;
+  border-color: var(--theme-border) !important;
 }
