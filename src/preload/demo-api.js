@@ -295,6 +295,24 @@ export const createDemoQzoneAPI = (realApi) => ({
   getFeedLikers: async () => ({ code: 0, total: 0, likers: [], nextCursor: '0', hasMore: false }),
   getShuoshuoComments: async () => ({ code: 0, comments: [], hasMore: false }),
   getShuoshuo: async () => ({ code: 0, msglist: [] }),
+  getVisitorStatus: async () => ({
+    code: 0,
+    data: { module_3: { data: { items: [] } } }
+  }),
+  getVisitorDetail: async ({ mod = 2 } = {}) => ({
+    code: 0,
+    data: {
+      count: mod === 2 ? 12 : 0,
+      items: [],
+      calvisitcount: Array(30).fill(0),
+      modvisitcount: [
+        { mod: 0, todaycount: 18, totalcount: 8642 },
+        { mod: 2, todaycount: 6, totalcount: 3126 }
+      ],
+      visitor_to_blk_count: 0,
+      max_show_visitor_num: 12
+    }
+  }),
   getQQGroups: async () => ({ code: 0, data: { groupinfo: [] } }),
   getQQGroupMembers: async () => ({ code: 0, data: { groupmeminfo: {} } }),
   getVideoList: async () => ({

@@ -53,9 +53,10 @@ function normalizeUndefinedLiteral(input) {
 }
 
 export function getGTK(p_skey) {
+  const skey = typeof p_skey === 'string' ? p_skey : ''
   let n = 5381
-  for (let i = 0; i < p_skey.length; i++) {
-    n += (n << 5) + p_skey.charCodeAt(i)
+  for (let i = 0; i < skey.length; i++) {
+    n += (n << 5) + skey.charCodeAt(i)
   }
 
   return n & 2147483647
