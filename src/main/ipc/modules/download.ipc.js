@@ -60,6 +60,14 @@ export function createDownloadHandlers(service) {
       return downloadService.getTaskStats()
     },
 
+    [IPC_DOWNLOAD.GET_BATCHES]: async (event, context) => {
+      return downloadService.getDownloadBatches(context?.payload?.limit)
+    },
+
+    [IPC_DOWNLOAD.FINISH_BATCH]: async (event, context) => {
+      return downloadService.finishDownloadBatch(context?.payload)
+    },
+
     // 暂停任务
     [IPC_DOWNLOAD.PAUSE_TASK]: async (event, context) => {
       downloadService.pauseTask(context.payload)

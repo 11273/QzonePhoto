@@ -3,11 +3,13 @@
     :model-value="visible"
     :title="dialogTitle"
     :close-on-click-modal="false"
-    :close-on-press-escape="false"
+    :close-on-press-escape="true"
     :append-to-body="true"
     :lock-scroll="false"
     :modal-append-to-body="false"
+    :before-close="handleUploadDialogBeforeClose"
     class="upload-manager-dialog dark-theme ds-dialog"
+    :class="{ 'is-empty-upload': localFiles.length === 0 }"
     @update:model-value="handleDialogChange"
   >
     <!-- 紧凑工具栏：相册信息 + 并发 | 主操作 -->
@@ -82,40 +84,66 @@
           </div>
         </el-popover>
 
-        <el-tooltip placement="bottom" :show-after="300">
-          <template #content>
-            <div style="line-height: 1.5">
-              同时上传几个文件<br />
-              <span style="color: #fbbf24">≥2 时上传完成顺序会乱</span><br />
-              单文件带宽充足建议 1，小文件批量建议 3-5
-            </div>
-          </template>
-          <div class="concurrency-chip">
-            <span class="chip-label">并发</span>
-            <el-input-number
-              v-model="uploadConcurrency"
-              :min="1"
-              :max="10"
+        <el-popover
+          v-model:visible="uploadSettingsVisible"
+          placement="bottom-start"
+          trigger="click"
+          :width="380"
+          popper-class="upload-settings-popover"
+          @after-enter="focusUploadSettings"
+          @after-leave="restoreUploadSettingsFocus"
+        >
+          <template #reference>
+            <el-button
+              ref="uploadSettingsTriggerRef"
+              class="upload-settings-trigger"
               size="small"
-              controls-position="right"
-              class="chip-input"
-              @change="handleConcurrencyChange"
-            />
-          </div>
-        </el-tooltip>
+              plain
+            >
+              <el-icon><Setting /></el-icon>
+              上传设置
+            </el-button>
+          </template>
 
-        <!-- 卡片大小选择器：默认最小，文件多时不会出现外层滚动 -->
-        <el-tooltip content="调整文件卡片大小" placement="bottom" :show-after="300">
-          <div class="size-chip">
-            <span class="chip-label">大小</span>
-            <el-radio-group v-model="cardSize" size="small" class="size-radio">
-              <el-radio-button label="mini">最小</el-radio-button>
-              <el-radio-button label="sm">小</el-radio-button>
-              <el-radio-button label="md">中</el-radio-button>
-              <el-radio-button label="lg">大</el-radio-button>
-            </el-radio-group>
-          </div>
-        </el-tooltip>
+          <section
+            ref="uploadSettingsPanelRef"
+            class="upload-settings-panel"
+            aria-label="上传设置"
+            @keydown.esc.capture.stop.prevent="closeUploadSettingsWithFocus"
+          >
+            <header class="upload-settings-heading">
+              <strong>上传设置</strong>
+              <span>当前批次生效</span>
+            </header>
+            <div class="upload-settings-row">
+              <div class="upload-settings-copy">
+                <label>并发数</label>
+                <span>大文件建议 1，小文件批量建议 3–5</span>
+              </div>
+              <AppNumberStepper
+                v-model="uploadConcurrency"
+                :min="1"
+                :max="10"
+                size="small"
+                aria-label="上传并发数"
+                class="upload-settings-number"
+                @change="handleConcurrencyChange"
+              />
+            </div>
+            <div class="upload-settings-row is-size-row">
+              <div class="upload-settings-copy">
+                <label>卡片大小</label>
+                <span>只影响当前文件列表显示</span>
+              </div>
+              <el-radio-group v-model="cardSize" size="small" class="upload-settings-size">
+                <el-radio-button value="mini">最小</el-radio-button>
+                <el-radio-button value="sm">小</el-radio-button>
+                <el-radio-button value="md">中</el-radio-button>
+                <el-radio-button value="lg">大</el-radio-button>
+              </el-radio-group>
+            </div>
+          </section>
+        </el-popover>
       </div>
 
       <!-- 右：主操作（根据状态切换） -->
@@ -141,7 +169,13 @@
             <el-icon><Delete /></el-icon>
             清空
           </el-button>
-          <el-button type="success" size="default" :disabled="uploading" @click="startUploadAll">
+          <el-button
+            type="primary"
+            size="default"
+            :loading="uploading"
+            :disabled="uploading"
+            @click="startUploadAll"
+          >
             <el-icon><Upload /></el-icon>
             开始上传
           </el-button>
@@ -159,7 +193,7 @@
             <el-icon><VideoPause /></el-icon>
             暂停全部
           </el-button>
-          <el-button v-if="hasPausedTasks" type="success" size="default" @click="resumeAllTasks">
+          <el-button v-if="hasPausedTasks" type="primary" size="default" @click="resumeAllTasks">
             <el-icon><VideoPlay /></el-icon>
             继续全部
           </el-button>
@@ -181,9 +215,24 @@
     <div class="layout-columns" :class="{ 'has-files': localFiles.length > 0 }">
       <!-- 左侧：文件列表区域 -->
       <div class="left-column">
+        <div v-if="sessionLoadError" class="upload-session-alert" role="alert">
+          <el-icon><Warning /></el-icon>
+          <span>{{ sessionLoadError }}</span>
+          <button type="button" :disabled="checkingSession" @click="checkAndHandlePendingTasks">
+            {{ checkingSession ? '重试中…' : '重试' }}
+          </button>
+        </div>
+
+        <LoadingState
+          v-if="checkingSession"
+          class="upload-session-loading"
+          text="正在检查未完成的上传任务…"
+          spinner-type="ring"
+        />
+
         <!-- 拖拽上传区域 -->
         <div
-          v-if="localFiles.length === 0"
+          v-else-if="localFiles.length === 0"
           class="upload-drop-area"
           :class="{ 'is-dragover': isDragging }"
           role="button"
@@ -214,18 +263,20 @@
         <div v-else class="file-list">
           <!-- 文件网格 -->
           <div class="file-grid-container">
-            <div class="file-grid" :class="`size-${cardSize}`">
-              <div
+            <div class="file-grid" :class="`size-${cardSize}`" role="list" aria-label="待上传文件">
+              <article
                 v-for="(file, index) in currentPageFiles"
                 :key="file.uid"
                 class="file-card"
+                role="listitem"
                 :class="{
+                  'is-selected': selectedFile?.uid === file.uid,
                   'upload-failed': file.uploadStatus === 'failed' || file.uploadStatus === 'error',
                   'upload-uploading': file.uploadStatus === 'uploading',
                   'upload-waiting': file.uploadStatus === 'waiting',
                   'upload-completed': file.uploadStatus === 'completed'
                 }"
-                @click="handleCardClick(file)"
+                :aria-label="`上传文件：${file.name}`"
               >
                 <!-- 缩略图（隐私模式打码） -->
                 <div class="file-thumbnail">
@@ -256,20 +307,26 @@
                       </div>
                     </template>
                   </el-image>
-                  <!-- 视频缩略图：优先用 videoCover（真实视频帧 JPEG）显示，不去解码整个视频文件 -->
+                  <video
+                    v-else-if="isVideoFile(file.name) && file.preview"
+                    :src="file.preview"
+                    :poster="file.videoCover || undefined"
+                    class="thumbnail-video"
+                    preload="metadata"
+                    muted
+                    loop
+                    playsinline
+                    @mouseenter="startLocalVideoPreview"
+                    @mouseleave="stopLocalVideoPreview"
+                    @error="(event) => handleVideoError(event, file)"
+                  ></video>
+                  <!-- 预览地址尚未生成时，先用抽取的视频帧保持卡片稳定。 -->
                   <img
                     v-else-if="isVideoFile(file.name) && file.videoCover"
                     :src="file.videoCover"
                     :alt="file.name"
                     class="thumbnail-image"
                   />
-                  <video
-                    v-else-if="isVideoFile(file.name) && file.preview"
-                    :src="file.preview"
-                    class="thumbnail-video"
-                    preload="metadata"
-                    @error="(event) => handleVideoError(event, file)"
-                  ></video>
                   <div v-else-if="isVideoFile(file.name)" class="video-icon">
                     <el-icon :size="32"><VideoPlay /></el-icon>
                   </div>
@@ -403,7 +460,21 @@
 
                 <!-- 文件信息 -->
                 <div class="file-info">
-                  <el-input v-model="file.title" size="small" placeholder="输入标题" @click.stop />
+                  <div class="file-title-row">
+                    <button
+                      type="button"
+                      class="file-select-button"
+                      :class="{ 'is-selected': selectedFile?.uid === file.uid }"
+                      :aria-pressed="selectedFile?.uid === file.uid"
+                      :aria-label="
+                        selectedFile?.uid === file.uid ? `已选中 ${file.name}` : `选中 ${file.name}`
+                      "
+                      @click="handleCardClick(file)"
+                    >
+                      <el-icon><CircleCheck /></el-icon>
+                    </button>
+                    <el-input v-model="file.title" size="small" placeholder="输入标题" />
+                  </div>
                   <div class="file-meta">
                     <span class="file-size">{{ formatFileSize(file.size) }}</span>
                     <span v-if="file.createTime" class="create-time">
@@ -411,7 +482,7 @@
                     </span>
                   </div>
                 </div>
-              </div>
+              </article>
             </div>
           </div>
 
@@ -544,11 +615,14 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getVideoMetadata } from '@renderer/utils/video-helper'
 import { copyToClipboard } from '@renderer/utils'
+import { uploadErrorDetail, uploadErrorMessage } from '@renderer/utils/upload-error'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
+import LoadingState from '@renderer/components/LoadingState/index.vue'
+import AppNumberStepper from '@renderer/components/AppNumberStepper/index.vue'
 
 const privacyStore = usePrivacyStore()
 import {
@@ -570,6 +644,7 @@ import {
   Picture,
   InfoFilled,
   ArrowDown,
+  Setting,
   Hide
 } from '@element-plus/icons-vue'
 
@@ -707,6 +782,42 @@ watch(
 // 相册选择 popover
 const albumPickerVisible = ref(false)
 const albumPickerQuery = ref('')
+const uploadSettingsVisible = ref(false)
+const uploadSettingsTriggerRef = ref(null)
+const uploadSettingsPanelRef = ref(null)
+const shouldRestoreUploadSettingsFocus = ref(false)
+const uploadSettingsFocusableSelector =
+  'input:not([disabled]), button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+const focusUploadSettings = async () => {
+  await nextTick()
+  uploadSettingsPanelRef.value?.querySelector(uploadSettingsFocusableSelector)?.focus()
+}
+
+const closeUploadSettingsWithFocus = () => {
+  shouldRestoreUploadSettingsFocus.value = true
+  uploadSettingsVisible.value = false
+}
+
+const restoreUploadSettingsFocus = async () => {
+  if (!shouldRestoreUploadSettingsFocus.value || !props.visible) return
+  shouldRestoreUploadSettingsFocus.value = false
+  await nextTick()
+  uploadSettingsTriggerRef.value?.$el?.focus?.()
+}
+
+const clearUploadPopovers = () => {
+  shouldRestoreUploadSettingsFocus.value = false
+  uploadSettingsVisible.value = false
+  albumPickerVisible.value = false
+}
+
+const handleUploadDialogBeforeClose = async (done) => {
+  clearUploadPopovers()
+  await nextTick()
+  done()
+}
+
 const filteredAlbums = computed(() => {
   const q = albumPickerQuery.value.trim().toLowerCase()
   const list = props.availableAlbums || []
@@ -768,6 +879,7 @@ const sessionAlbumId = ref(null)
 const sessionMode = ref('new')
 // 是否正在检查会话
 const checkingSession = ref(false)
+const sessionLoadError = ref('')
 // 弹窗打开时的完成数（用于判断是否有新的上传成功）
 const initialCompletedCount = ref(0)
 
@@ -840,7 +952,7 @@ const formatTime = (timestamp) => {
 
 // 获取文件错误详细提示
 const getFileErrorTooltip = (file) => {
-  let tooltip = `错误: ${file.errorMessage}`
+  let tooltip = uploadErrorDetail(file.errorMessage)
   if (file.retryCount > 0) {
     tooltip += `\n已重试 ${file.retryCount} 次`
   }
@@ -887,6 +999,24 @@ const isVideoFile = (filename) => {
   const videoExt = ['mp4', 'mov', 'avi', 'wmv', 'flv', 'mkv']
   const ext = filename.split('.').pop().toLowerCase()
   return videoExt.includes(ext)
+}
+const startLocalVideoPreview = (event) => {
+  const video = event.currentTarget
+  if (
+    !(video instanceof HTMLVideoElement) ||
+    privacyStore.privacyMode ||
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  ) {
+    return
+  }
+  video.muted = true
+  video.play().catch(() => {})
+}
+const stopLocalVideoPreview = (event) => {
+  const video = event.currentTarget
+  if (!(video instanceof HTMLVideoElement)) return
+  video.pause()
+  video.currentTime = 0
 }
 
 // 改进的图片加载错误处理
@@ -961,7 +1091,7 @@ const triggerFileSelect = async () => {
     }
   } catch (error) {
     console.error('文件选择失败:', error)
-    ElMessage.error(`文件选择失败：${error.message}`)
+    ElMessage.error('文件选择失败，请重试。')
   }
 }
 
@@ -974,7 +1104,7 @@ const startNewBatch = async () => {
     await triggerFileSelect()
   } catch (error) {
     console.error('新建批次失败:', error)
-    ElMessage.error(`新建批次失败：${error.message}`)
+    ElMessage.error('新建批次失败，请重试。')
   }
 }
 
@@ -985,7 +1115,7 @@ const addFileByPath = async (filePath) => {
     const fileInfo = response
 
     if (!fileInfo) {
-      ElMessage.error(`无法获取文件信息：${filePath}`)
+      ElMessage.error('无法读取所选文件，请重新选择。')
       return
     }
 
@@ -1075,7 +1205,7 @@ const addFileByPath = async (filePath) => {
     // 不在这里立即生成，避免大量文件时卡顿
   } catch (error) {
     console.error('添加文件失败:', error)
-    ElMessage.error(`添加文件失败：${error.message}`)
+    ElMessage.error(uploadErrorDetail(error))
   }
 }
 
@@ -1238,7 +1368,7 @@ const clearAllFiles = async () => {
     sessionAlbumId.value = null
     sessionMode.value = 'new'
     uploadLocked.value = false
-    ElMessage.error(`清空列表失败：${error.message}`)
+    ElMessage.error('列表已在本地清空，但部分后台任务未能同步删除。')
   }
 }
 
@@ -1313,7 +1443,7 @@ const startUploadAll = async () => {
     // 用户可以看到实时的上传进度，完成后会自动移除
   } catch (error) {
     console.error('添加上传任务失败:', error)
-    ElMessage.error(`添加上传任务失败：${error.message}`)
+    ElMessage.error(uploadErrorDetail(error))
 
     // 恢复文件状态并解除锁定
     uploadLocked.value = false
@@ -1399,8 +1529,8 @@ const retryUpload = async (file) => {
   } catch (error) {
     console.error('重试上传失败:', error)
     file.uploadStatus = 'failed'
-    file.errorMessage = error.message || '重试失败'
-    ElMessage.error('重试上传失败')
+    file.errorMessage = uploadErrorMessage(error)
+    ElMessage.error(uploadErrorDetail(error))
   }
 }
 
@@ -1502,8 +1632,10 @@ const generateSessionId = () => {
  * 检查并处理未完成任务
  */
 const checkAndHandlePendingTasks = async () => {
+  sessionLoadError.value = ''
   // 只在相册模式下检查
   if (props.contextMode !== 'album' || !effectiveAlbumId.value) {
+    checkingSession.value = false
     if (!currentSessionId.value) {
       currentSessionId.value = generateSessionId()
       sessionAlbumId.value = null
@@ -1577,6 +1709,7 @@ const checkAndHandlePendingTasks = async () => {
     }
   } catch (error) {
     console.error('[UploadDialog] 检查未完成任务失败:', error)
+    sessionLoadError.value = '暂时无法检查未完成的上传任务。'
     // 失败时保持现有会话或创建新会话
     if (!currentSessionId.value) {
       sessionMode.value = 'new'
@@ -1651,7 +1784,7 @@ const loadPendingTasksToLocal = async (pendingTasks) => {
       uploadStatus: task.status || 'waiting',
       progress: task.progress || 0,
       speed: task.speed || 0,
-      errorMessage: task.error || '',
+      errorMessage: task.error ? uploadErrorMessage(task.error) : '',
       retryCount: task.retryCount || 0
     }))
 
@@ -1721,15 +1854,19 @@ const getFileTypeFromName = (filename) => {
 }
 
 // 设置事件监听器
+const uploadListenerCleanups = []
 const setupEventListeners = () => {
-  window.QzoneAPI.upload.onStatsUpdate(handleStatsUpdate)
-  window.QzoneAPI.upload.onDetailedStatusUpdate(handleDetailedStatusUpdate)
-  window.QzoneAPI.upload.onTaskChanges(handleTaskChanges)
+  cleanupEventListeners()
+  uploadListenerCleanups.push(
+    window.QzoneAPI.upload.onStatsUpdate(handleStatsUpdate),
+    window.QzoneAPI.upload.onDetailedStatusUpdate(handleDetailedStatusUpdate),
+    window.QzoneAPI.upload.onTaskChanges(handleTaskChanges)
+  )
 }
 
 // 清理事件监听器
 const cleanupEventListeners = () => {
-  window.QzoneAPI.upload.removeAllListeners()
+  uploadListenerCleanups.splice(0).forEach((cleanup) => cleanup?.())
 }
 
 // 处理统计信息更新（仅全局模式使用）
@@ -1780,7 +1917,7 @@ const loadAlbumFailedTasks = async () => {
           type: task.type || 'image/jpeg',
           path: task.filePath,
           uploadStatus: 'failed',
-          errorMessage: task.error || '上传失败',
+          errorMessage: uploadErrorMessage(task.error),
           preview: null,
           previewLoading: false, // 预览加载状态
           previewError: false, // 预览错误状态
@@ -1891,7 +2028,7 @@ const handleDetailedStatusUpdate = (status) => {
             type: failedTask.type || 'image/jpeg',
             path: failedTask.filePath,
             uploadStatus: 'failed',
-            errorMessage: failedTask.error || '上传失败',
+            errorMessage: uploadErrorMessage(failedTask.error),
             preview: null,
             previewLoading: false, // 预览加载状态
             previewError: false, // 预览错误状态
@@ -1960,7 +2097,7 @@ const handleDetailedStatusUpdate = (status) => {
         } else if (existingFile.uploadStatus !== 'failed') {
           // 更新现有文件的状态（只有在状态不是已失败时才更新）
           existingFile.uploadStatus = 'failed'
-          existingFile.errorMessage = failedTask.error || '上传失败'
+          existingFile.errorMessage = uploadErrorMessage(failedTask.error)
           existingFile.createTime = failedTask.create_time || existingFile.createTime
           existingFile.retryCount = failedTask.retryCount || 0
         }
@@ -2051,7 +2188,7 @@ const handleTaskChanges = (tasks) => {
           file.speed = Math.max(0, task.speed)
         }
         if (task.error !== undefined) {
-          file.errorMessage = task.error || ''
+          file.errorMessage = task.error ? uploadErrorMessage(task.error) : ''
         }
         if (typeof task.retryCount === 'number') {
           file.retryCount = task.retryCount
@@ -2087,7 +2224,15 @@ watch(
   () => props.visible,
   async (newVal) => {
     if (newVal) {
-      await window.QzoneAPI.upload.setManagerOpen(true)
+      checkingSession.value = props.contextMode === 'album' && Boolean(effectiveAlbumId.value)
+      try {
+        await window.QzoneAPI.upload.setManagerOpen(true)
+      } catch (error) {
+        console.error('[UploadDialog] 无法打开上传管理会话:', error)
+        checkingSession.value = false
+        sessionLoadError.value = '暂时无法连接上传管理服务。'
+        return
+      }
 
       // 会话管理：检查未完成任务
       await checkAndHandlePendingTasks()
@@ -2123,7 +2268,12 @@ watch(
         console.error('加载上传数据失败:', error)
       }
     } else {
-      await window.QzoneAPI.upload.setManagerOpen(false)
+      clearUploadPopovers()
+      try {
+        await window.QzoneAPI.upload.setManagerOpen(false)
+      } catch (error) {
+        console.warn('[UploadDialog] 无法关闭上传管理会话:', error)
+      }
       // 关闭弹窗时不移除监听器，保持后台任务进度更新
       // console.log('[UploadDialog] 关闭弹窗，保持监听器活跃以接收后台更新')
     }
@@ -2151,6 +2301,7 @@ onMounted(async () => {
 
 // 组件销毁时清理
 onUnmounted(async () => {
+  clearUploadPopovers()
   await window.QzoneAPI.upload.setManagerOpen(false)
   // 只在组件销毁时才移除监听器
   cleanupEventListeners()
@@ -2161,10 +2312,10 @@ onUnmounted(async () => {
 <style lang="scss">
 /* 相册选择 popover —— teleport 到 body，故不能放在 scoped 块里 */
 .upload-album-picker-popper.el-popover {
-  background: #1c1f24 !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: var(--theme-surface-overlay) !important;
+  border: 1px solid var(--theme-border) !important;
   padding: 8px !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: var(--theme-shadow-lg) !important;
 
   .album-picker {
     display: flex;
@@ -2174,14 +2325,14 @@ onUnmounted(async () => {
 
   .album-picker-header {
     .el-input__wrapper {
-      background: rgba(255, 255, 255, 0.06);
-      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset !important;
+      background: var(--theme-surface-soft);
+      box-shadow: 0 0 0 1px var(--theme-border) inset !important;
     }
     .el-input__inner {
-      color: rgba(255, 255, 255, 0.9);
+      color: var(--theme-text-primary);
     }
     .el-input__inner::placeholder {
-      color: rgba(255, 255, 255, 0.35);
+      color: var(--theme-text-subtle);
     }
   }
 
@@ -2194,7 +2345,7 @@ onUnmounted(async () => {
       width: 6px;
     }
     &::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.15);
+      background: var(--theme-surface-active);
       border-radius: 3px;
     }
   }
@@ -2202,7 +2353,7 @@ onUnmounted(async () => {
   .album-picker-empty {
     padding: 16px 8px;
     text-align: center;
-    color: rgba(255, 255, 255, 0.45);
+    color: var(--theme-text-muted);
     font-size: 12px;
   }
 
@@ -2223,7 +2374,7 @@ onUnmounted(async () => {
     transition: background 0.15s;
 
     .item-icon {
-      color: #60a5fa;
+      color: var(--theme-info);
       flex-shrink: 0;
     }
     .item-info {
@@ -2234,7 +2385,7 @@ onUnmounted(async () => {
       gap: 2px;
     }
     .item-name {
-      color: rgba(255, 255, 255, 0.9);
+      color: var(--theme-text-primary);
       font-size: 13px;
       font-weight: 500;
       overflow: hidden;
@@ -2242,32 +2393,109 @@ onUnmounted(async () => {
       white-space: nowrap;
     }
     .item-meta {
-      color: rgba(255, 255, 255, 0.45);
+      color: var(--theme-text-muted);
       font-size: 11px;
     }
     .item-check {
-      color: #34d399;
+      color: var(--theme-success);
       flex-shrink: 0;
     }
 
     &:hover {
-      background: rgba(255, 255, 255, 0.06);
+      background: var(--theme-surface-hover);
     }
     &:focus-visible {
-      outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+      outline: 2px solid var(--theme-focus);
       outline-offset: -2px;
     }
     &.active {
-      background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
+      background: var(--theme-brand-soft);
       .item-name {
-        color: var(--qz-active-text, #fed7aa);
+        color: var(--theme-brand-text);
       }
       .item-icon,
       .item-check {
-        color: var(--qz-active, #fb923c);
+        color: var(--theme-brand-accent);
       }
     }
   }
+}
+
+.upload-settings-popover.el-popper {
+  padding: 12px;
+  border-color: var(--theme-border);
+  background: var(--theme-surface-overlay);
+  box-shadow: var(--theme-shadow-lg);
+}
+
+.upload-settings-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.upload-settings-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 2px;
+  color: var(--theme-text-primary);
+  font-size: 13px;
+}
+
+.upload-settings-heading span,
+.upload-settings-copy span {
+  color: var(--theme-text-muted);
+  font-size: 11px;
+}
+
+.upload-settings-row {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: var(--theme-radius-sm);
+  background: var(--theme-surface-soft);
+}
+
+.upload-settings-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.upload-settings-copy label {
+  color: var(--theme-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.upload-settings-number {
+  width: 84px;
+  flex: 0 0 84px;
+}
+
+.upload-settings-size {
+  flex: 0 0 auto;
+}
+
+.upload-settings-size .el-radio-button__inner {
+  min-width: 38px;
+  padding: 6px 8px;
+  background: var(--theme-surface-raised);
+  border-color: var(--theme-border);
+  color: var(--theme-text-secondary);
+  box-shadow: none;
+}
+
+.upload-settings-size .el-radio-button__original-radio:checked + .el-radio-button__inner {
+  background: var(--theme-brand-soft);
+  border-color: var(--theme-brand-border);
+  color: var(--theme-brand-text);
+  box-shadow: -1px 0 0 0 var(--theme-brand-border);
 }
 </style>
 
@@ -2281,8 +2509,8 @@ onUnmounted(async () => {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--theme-surface-soft);
+  border-bottom: 1px solid var(--theme-border-subtle);
   flex-shrink: 0; // 关键：工具栏定高，不挤压下方文件区
 
   .ud-toolbar-left,
@@ -2300,11 +2528,11 @@ onUnmounted(async () => {
     gap: 6px;
     padding: 5px 10px;
     height: 32px;
-    background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
-    border: 1px solid var(--qz-active-border, rgba(251, 146, 60, 0.38));
-    border-radius: 16px;
+    background: var(--theme-brand-soft);
+    border: 1px solid var(--theme-brand-border);
+    border-radius: var(--theme-radius-pill);
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--theme-text-primary);
     max-width: 240px;
     appearance: none;
     font: inherit;
@@ -2314,34 +2542,34 @@ onUnmounted(async () => {
       cursor: pointer;
 
       &:hover {
-        background: rgba(249, 115, 22, 0.2);
-        border-color: var(--qz-active, #fb923c);
+        background: var(--theme-brand-soft-hover);
+        border-color: var(--theme-brand-accent);
       }
 
       &:focus-visible {
-        outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+        outline: 2px solid var(--theme-focus);
         outline-offset: 2px;
       }
     }
 
     &.overridden {
-      background: rgba(251, 191, 36, 0.12);
-      border-color: rgba(251, 191, 36, 0.45);
+      background: var(--theme-warning-soft);
+      border-color: var(--theme-warning-border);
 
       .el-icon,
       .album-chip-name {
-        color: #fbbf24;
+        color: var(--theme-warning);
       }
     }
 
     .el-icon {
-      color: var(--qz-active, #fb923c);
+      color: var(--theme-brand-accent);
       flex-shrink: 0;
     }
 
     .album-chip-name {
       font-weight: 600;
-      color: var(--qz-active-text, #fed7aa);
+      color: var(--qz-active-text);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -2359,44 +2587,19 @@ onUnmounted(async () => {
     }
   }
 
-  /* 并发 chip */
-  .concurrency-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0 6px 0 10px;
+  .upload-settings-trigger {
     height: 32px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 16px;
-    cursor: help;
+    padding-inline: 11px;
+    border-color: var(--theme-border);
+    border-radius: var(--theme-radius-pill);
+    background: var(--theme-surface-soft);
+    color: var(--theme-text-secondary);
 
-    .chip-label {
-      font-size: 12px;
-      color: rgba(255, 255, 255, 0.7);
-      font-weight: 500;
-    }
-
-    :deep(.chip-input) {
-      width: 72px;
-
-      .el-input-number__decrease,
-      .el-input-number__increase {
-        background: transparent;
-        border-color: transparent;
-      }
-
-      .el-input__wrapper {
-        background: transparent;
-        box-shadow: none !important;
-        padding: 0;
-      }
-
-      .el-input__inner {
-        text-align: center;
-        font-weight: 600;
-        font-size: 13px;
-      }
+    &:hover,
+    &:focus-visible {
+      border-color: var(--theme-border-strong);
+      background: var(--theme-surface-hover);
+      color: var(--theme-text-primary);
     }
   }
 
@@ -2407,13 +2610,13 @@ onUnmounted(async () => {
     gap: 6px;
     padding: 0 6px 0 10px;
     height: 32px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 16px;
+    background: var(--theme-surface-soft);
+    border: 1px solid var(--theme-border);
+    border-radius: var(--theme-radius-pill);
 
     .chip-label {
       font-size: 12px;
-      color: rgba(255, 255, 255, 0.7);
+      color: var(--theme-text-secondary);
       font-weight: 500;
     }
 
@@ -2424,13 +2627,13 @@ onUnmounted(async () => {
         line-height: 14px;
         font-size: 11px;
         background: transparent;
-        border-color: rgba(255, 255, 255, 0.15);
-        color: rgba(255, 255, 255, 0.7);
+        border-color: var(--theme-border);
+        color: var(--theme-text-secondary);
         box-shadow: none !important;
       }
 
       .el-radio-button:first-child .el-radio-button__inner {
-        border-left-color: rgba(255, 255, 255, 0.15);
+        border-left-color: var(--theme-border);
         border-radius: 11px 0 0 11px;
       }
 
@@ -2439,11 +2642,11 @@ onUnmounted(async () => {
       }
 
       .el-radio-button__original-radio:checked + .el-radio-button__inner {
-        background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
-        border-color: var(--qz-active-border, rgba(251, 146, 60, 0.38));
-        color: var(--qz-active-text, #fed7aa);
+        background: var(--theme-brand-soft);
+        border-color: var(--theme-brand-border);
+        color: var(--qz-active-text);
         font-weight: 600;
-        box-shadow: -1px 0 0 0 var(--qz-active-border, rgba(251, 146, 60, 0.38)) !important;
+        box-shadow: -1px 0 0 0 var(--theme-brand-border) !important;
       }
     }
   }
@@ -2456,7 +2659,7 @@ onUnmounted(async () => {
     font-weight: 500;
     font-size: 13px;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--theme-shadow-sm);
 
     .el-icon {
       margin-right: 6px;
@@ -2465,51 +2668,51 @@ onUnmounted(async () => {
 
     &:hover {
       transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      box-shadow: var(--theme-shadow-md);
     }
 
     &:active {
       transform: translateY(0);
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      box-shadow: var(--theme-shadow-sm);
     }
 
     &.primary-btn {
-      background: linear-gradient(135deg, #60a5fa 0%, #7eb8fc 100%);
-      border: 1px solid #60a5fa;
-      color: #ffffff;
+      background: var(--theme-brand);
+      border: 1px solid var(--theme-brand);
+      color: var(--theme-text-inverse);
 
       &:hover {
-        background: linear-gradient(135deg, #5bacff 0%, #66b8f7 100%);
-        border-color: #5bacff;
+        background: var(--theme-brand-hover);
+        border-color: var(--theme-brand-hover);
       }
     }
 
     &.secondary-btn {
       background: transparent;
-      border: 1px solid #60a5fa;
-      color: #60a5fa;
+      border: 1px solid var(--theme-border);
+      color: var(--theme-text-secondary);
 
       &:hover {
-        background: rgba(96, 165, 250, 0.1);
-        border-color: #5bacff;
-        color: #5bacff;
+        background: var(--theme-surface-hover);
+        border-color: var(--theme-brand-border);
+        color: var(--theme-text-primary);
       }
     }
 
     &.success-btn {
-      background: linear-gradient(135deg, #34d399 0%, #52e3a8 100%);
-      border: 1px solid #34d399;
-      color: #ffffff;
+      background: var(--theme-brand);
+      border: 1px solid var(--theme-brand);
+      color: var(--theme-text-inverse);
 
       &:hover {
-        background: linear-gradient(135deg, #7aca52 0%, #95d373 100%);
-        border-color: #7aca52;
+        background: var(--theme-brand-hover);
+        border-color: var(--theme-brand-hover);
       }
 
       &:disabled {
-        background: #c0c4cc;
-        border-color: #c0c4cc;
-        color: #ffffff;
+        background: var(--theme-surface-disabled);
+        border-color: var(--theme-surface-disabled);
+        color: var(--theme-text-disabled);
         transform: none;
         box-shadow: none;
         cursor: not-allowed;
@@ -2517,27 +2720,35 @@ onUnmounted(async () => {
     }
 
     &.warning-btn {
-      background: linear-gradient(135deg, #fbbf24 0%, #eebe77 100%);
-      border: 1px solid #fbbf24;
-      color: #ffffff;
+      background: var(--theme-warning-soft);
+      border: 1px solid var(--theme-warning-border);
+      color: var(--theme-warning-text);
 
       &:hover {
-        background: linear-gradient(135deg, #eaae4e 0%, #f1c589 100%);
-        border-color: #eaae4e;
+        background: color-mix(in srgb, var(--theme-warning-soft) 70%, var(--theme-warning) 30%);
+        border-color: var(--theme-warning);
       }
     }
 
     &.danger-btn {
       background: transparent;
-      border: 1px solid #f87171;
-      color: #f87171;
+      border: 1px solid var(--theme-danger-border);
+      color: var(--theme-danger);
 
       &:hover {
-        background: rgba(248, 113, 113, 0.1);
-        border-color: #fb9090;
-        color: #fb9090;
+        background: var(--theme-danger-soft);
+        border-color: var(--theme-danger);
+        color: var(--theme-danger-text);
       }
     }
+  }
+}
+
+.concurrency-help {
+  line-height: 1.5;
+
+  span {
+    color: var(--theme-warning-text);
   }
 }
 
@@ -2548,13 +2759,13 @@ onUnmounted(async () => {
   margin-left: 10px;
 
   .notice-icon {
-    color: #60a5fa;
+    color: var(--theme-info);
     font-size: 15px;
     flex-shrink: 0;
   }
 
   .notice-text {
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--theme-text-secondary);
     font-size: 12px;
     line-height: 1.4;
   }
@@ -2563,8 +2774,8 @@ onUnmounted(async () => {
   &.top {
     margin: 0 24px 12px;
     padding: 10px 14px;
-    background: linear-gradient(90deg, rgba(96, 165, 250, 0.1), rgba(96, 165, 250, 0.04));
-    border: 1px solid rgba(96, 165, 250, 0.25);
+    background: var(--theme-info-soft);
+    border: 1px solid var(--theme-info-border);
     border-radius: 8px;
 
     .notice-icon {
@@ -2574,11 +2785,11 @@ onUnmounted(async () => {
     .notice-text {
       flex: 1;
       font-size: 13px;
-      color: rgba(255, 255, 255, 0.92);
+      color: var(--theme-text-primary);
     }
 
     .target-album {
-      color: #60a5fa;
+      color: var(--theme-info-text);
       font-weight: 600;
     }
 
@@ -2597,7 +2808,7 @@ onUnmounted(async () => {
 
   .left-column {
     flex: 1;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    border-right: 1px solid var(--theme-border-subtle);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -2614,6 +2825,57 @@ onUnmounted(async () => {
     display: flex;
     flex-direction: column;
     gap: 8px; // 卡片间隔由 gap 控制，配合 :last-child margin-bottom: 0
+  }
+}
+
+.upload-session-loading {
+  flex: 1 1 auto;
+  min-height: 180px;
+}
+
+.upload-session-alert {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 16px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--theme-warning-border);
+  border-radius: var(--theme-radius-md);
+  background: var(--theme-warning-soft);
+  color: var(--theme-warning-text);
+  font-size: 12px;
+  line-height: 1.5;
+
+  > span {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  button {
+    flex: 0 0 auto;
+    padding: 3px 8px;
+    border: 0;
+    border-radius: var(--theme-radius-sm);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+
+    &:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--theme-warning) 14%, transparent);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--theme-focus);
+      outline-offset: 1px;
+    }
+
+    &:disabled {
+      cursor: wait;
+      opacity: 0.6;
+    }
   }
 }
 
@@ -2645,26 +2907,26 @@ onUnmounted(async () => {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  border: 2px dashed rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
+  border: 1px dashed var(--theme-brand-border);
+  border-radius: var(--theme-radius-lg);
   margin: 16px 20px;
-  background: rgba(255, 255, 255, 0.015);
+  background: color-mix(in srgb, var(--theme-brand-soft) 35%, var(--theme-surface-soft));
   transition: all 0.2s ease;
   cursor: pointer;
 
   &:focus-visible {
-    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline: 2px solid var(--theme-focus);
     outline-offset: -4px;
   }
 
   &:hover {
-    border-color: var(--qz-active-border, rgba(251, 146, 60, 0.38));
-    background: rgba(249, 115, 22, 0.04);
+    border-color: var(--theme-brand-accent);
+    background: var(--theme-brand-soft);
   }
 
   &.is-dragover {
-    border-color: var(--qz-active, #fb923c);
-    background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
+    border-color: var(--theme-brand-accent);
+    background: var(--theme-brand-soft-hover);
     transform: scale(1.01);
   }
 
@@ -2674,14 +2936,14 @@ onUnmounted(async () => {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
+    background: var(--theme-brand-soft);
     border-radius: 50%;
-    color: var(--qz-active, #fb923c);
+    color: var(--theme-brand-accent);
   }
 
   .drop-text {
     font-size: 14px;
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--theme-text-primary);
     margin: 0;
     font-weight: 500;
   }
@@ -2696,8 +2958,8 @@ onUnmounted(async () => {
       display: inline-block;
       padding: 2px 8px;
       font-size: 11px;
-      color: rgba(255, 255, 255, 0.5);
-      background: rgba(255, 255, 255, 0.05);
+      color: var(--theme-text-muted);
+      background: var(--theme-surface-hover);
       border-radius: 4px;
       letter-spacing: 0.5px;
     }
@@ -2709,11 +2971,11 @@ onUnmounted(async () => {
     gap: 6px;
     margin-top: 4px;
     padding: 6px 12px;
-    background: rgba(251, 191, 36, 0.06);
-    border: 1px solid rgba(251, 191, 36, 0.2);
+    background: var(--theme-warning-soft);
+    border: 1px solid var(--theme-warning-border);
     border-radius: 6px;
     font-size: 11px;
-    color: rgba(251, 191, 36, 0.85);
+    color: var(--theme-warning-text);
 
     .el-icon {
       font-size: 12px;
@@ -2741,10 +3003,10 @@ onUnmounted(async () => {
       width: 6px;
     }
     &::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.15);
+      background: var(--theme-border);
       border-radius: 3px;
       &:hover {
-        background: rgba(255, 255, 255, 0.25);
+        background: var(--theme-border-strong);
       }
     }
     &::-webkit-scrollbar-track {
@@ -2754,7 +3016,7 @@ onUnmounted(async () => {
 
   .pagination-wrapper {
     padding: 6px 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid var(--theme-border-subtle);
     display: flex;
     justify-content: center;
     background: transparent;
@@ -2827,59 +3089,65 @@ onUnmounted(async () => {
 
 // 文件卡片
 .file-card {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
   border-radius: 12px;
   overflow: hidden;
-  cursor: pointer;
+  cursor: default;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--theme-shadow-sm);
+
+  &.is-selected {
+    box-shadow:
+      inset 0 0 0 2px var(--theme-brand-border),
+      var(--theme-shadow-sm);
+  }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.15);
+    background: var(--theme-surface-hover);
+    border-color: var(--theme-border);
     transform: translateY(-4px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--theme-shadow-md);
   }
 
   &.upload-failed {
-    border-color: rgba(248, 113, 113, 0.5);
-    background: rgba(248, 113, 113, 0.1);
+    border-color: var(--theme-danger-border);
+    background: var(--theme-danger-soft);
 
     &:hover {
-      border-color: rgba(248, 113, 113, 0.7);
-      background: rgba(248, 113, 113, 0.15);
+      border-color: var(--theme-danger);
+      background: var(--theme-danger-soft);
     }
   }
 
   &.upload-uploading {
-    border-color: rgba(96, 165, 250, 0.5);
-    background: rgba(96, 165, 250, 0.1);
+    border-color: var(--theme-info-border);
+    background: var(--theme-info-soft);
 
     &:hover {
-      border-color: rgba(96, 165, 250, 0.7);
-      background: rgba(96, 165, 250, 0.15);
+      border-color: var(--theme-info);
+      background: var(--theme-info-soft);
     }
   }
 
   &.upload-waiting {
-    border-color: rgba(251, 191, 36, 0.3);
-    background: rgba(251, 191, 36, 0.05);
+    border-color: var(--theme-warning-border);
+    background: var(--theme-warning-soft);
 
     &:hover {
-      border-color: rgba(251, 191, 36, 0.5);
-      background: rgba(251, 191, 36, 0.1);
+      border-color: var(--theme-warning);
+      background: var(--theme-warning-soft);
     }
   }
 
   &.upload-completed {
-    border-color: rgba(52, 211, 153, 0.5);
-    background: rgba(52, 211, 153, 0.1);
+    border-color: var(--theme-success-border);
+    background: var(--theme-success-soft);
 
     &:hover {
-      border-color: rgba(52, 211, 153, 0.7);
-      background: rgba(52, 211, 153, 0.15);
+      border-color: var(--theme-success);
+      background: var(--theme-success-soft);
     }
   }
 
@@ -2887,7 +3155,7 @@ onUnmounted(async () => {
     width: 100%;
     padding-top: 70%;
     position: relative;
-    background: linear-gradient(135deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.3) 100%);
+    background: linear-gradient(135deg, var(--theme-surface-soft), var(--theme-canvas));
     overflow: hidden;
     border-radius: 8px 8px 0 0;
 
@@ -2895,7 +3163,7 @@ onUnmounted(async () => {
     .privacy-overlay {
       position: absolute;
       inset: 0;
-      background: rgba(0, 0, 0, 0.8);
+      background: var(--theme-privacy-backdrop);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -2908,11 +3176,11 @@ onUnmounted(async () => {
 
       .privacy-icon {
         font-size: 22px;
-        color: #e6a23c;
+        color: var(--theme-privacy-icon);
       }
       .privacy-text {
         font-size: 10px;
-        color: rgba(255, 255, 255, 0.8);
+        color: var(--theme-privacy-text);
         font-weight: 500;
       }
     }
@@ -2985,8 +3253,8 @@ onUnmounted(async () => {
       align-items: center;
       justify-content: center;
       gap: 8px;
-      color: rgba(255, 255, 255, 0.4);
-      background: rgba(255, 255, 255, 0.05);
+      color: var(--theme-text-subtle);
+      background: var(--theme-surface-hover);
 
       .error-text {
         font-size: 12px;
@@ -2999,7 +3267,7 @@ onUnmounted(async () => {
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0, 0, 0, 0.4);
+      background: color-mix(in srgb, var(--theme-backdrop) 72%, transparent);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -3015,7 +3283,7 @@ onUnmounted(async () => {
       .el-icon {
         color: white;
         font-size: 20px;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        text-shadow: 0 2px 4px var(--theme-backdrop);
       }
     }
 
@@ -3029,8 +3297,8 @@ onUnmounted(async () => {
       display: flex;
       align-items: center;
       justify-content: center;
-      color: rgba(255, 255, 255, 0.5);
-      background: rgba(255, 255, 255, 0.05);
+      color: var(--theme-text-muted);
+      background: var(--theme-surface-hover);
     }
 
     .preview-loading {
@@ -3043,17 +3311,17 @@ onUnmounted(async () => {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      background: rgba(0, 0, 0, 0.6);
+      background: var(--theme-backdrop);
       backdrop-filter: blur(4px);
       z-index: 5;
 
       .el-icon {
-        color: #60a5fa;
+        color: var(--theme-info);
         margin-bottom: 8px;
       }
 
       .loading-text {
-        color: rgba(255, 255, 255, 0.8);
+        color: var(--theme-text-secondary);
         font-size: 12px;
         font-weight: 500;
       }
@@ -3069,16 +3337,16 @@ onUnmounted(async () => {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      background: rgba(0, 0, 0, 0.3);
+      background: color-mix(in srgb, var(--theme-backdrop) 56%, transparent);
       z-index: 5;
 
       .el-icon {
-        color: rgba(255, 255, 255, 0.4);
+        color: var(--theme-text-subtle);
         margin-bottom: 8px;
       }
 
       .error-text {
-        color: rgba(255, 255, 255, 0.5);
+        color: var(--theme-text-muted);
         font-size: 10px;
         font-weight: 400;
       }
@@ -3119,24 +3387,24 @@ onUnmounted(async () => {
       }
 
       &.failed {
-        background: rgba(248, 113, 113, 0.95);
-        color: white;
-        border: 1px solid rgba(248, 113, 113, 1);
-        box-shadow: 0 1px 6px rgba(248, 113, 113, 0.4);
+        background: var(--theme-danger);
+        color: var(--theme-text-inverse);
+        border: 1px solid var(--theme-danger-border);
+        box-shadow: 0 1px 6px var(--theme-danger-soft);
         animation: pulse 2s infinite;
         cursor: help;
 
         &:hover {
           transform: scale(1.05);
-          box-shadow: 0 2px 8px rgba(248, 113, 113, 0.6);
+          box-shadow: 0 2px 8px var(--theme-danger-border);
         }
       }
 
       &.uploading {
-        background: rgba(96, 165, 250, 0.95);
-        color: white;
-        border: 1px solid rgba(96, 165, 250, 1);
-        box-shadow: 0 1px 6px rgba(96, 165, 250, 0.4);
+        background: var(--theme-info);
+        color: var(--theme-text-inverse);
+        border: 1px solid var(--theme-info-border);
+        box-shadow: 0 1px 6px var(--theme-info-soft);
         animation: pulse 1.5s ease-in-out infinite;
 
         &:hover {
@@ -3145,10 +3413,10 @@ onUnmounted(async () => {
       }
 
       &.waiting {
-        background: rgba(251, 191, 36, 0.95);
-        color: white;
-        border: 1px solid rgba(251, 191, 36, 1);
-        box-shadow: 0 1px 6px rgba(251, 191, 36, 0.4);
+        background: var(--theme-warning);
+        color: var(--theme-canvas);
+        border: 1px solid var(--theme-warning-border);
+        box-shadow: 0 1px 6px var(--theme-warning-soft);
 
         &:hover {
           transform: scale(1.05);
@@ -3156,10 +3424,10 @@ onUnmounted(async () => {
       }
 
       &.paused {
-        background: rgba(144, 147, 153, 0.95);
-        color: white;
-        border: 1px solid rgba(144, 147, 153, 1);
-        box-shadow: 0 1px 6px rgba(144, 147, 153, 0.4);
+        background: var(--theme-text-muted);
+        color: var(--theme-text-inverse);
+        border: 1px solid var(--theme-border-strong);
+        box-shadow: var(--theme-shadow-sm);
 
         &:hover {
           transform: scale(1.05);
@@ -3167,10 +3435,10 @@ onUnmounted(async () => {
       }
 
       &.completed {
-        background: rgba(52, 211, 153, 0.95);
-        color: white;
-        border: 1px solid rgba(52, 211, 153, 1);
-        box-shadow: 0 1px 6px rgba(52, 211, 153, 0.4);
+        background: var(--theme-success);
+        color: var(--theme-canvas);
+        border: 1px solid var(--theme-success-border);
+        box-shadow: 0 1px 6px var(--theme-success-soft);
         animation: scaleIn 0.3s ease-out;
 
         &:hover {
@@ -3185,7 +3453,7 @@ onUnmounted(async () => {
       bottom: 0;
       left: 0;
       right: 0;
-      background: rgba(0, 0, 0, 0.75);
+      background: var(--theme-backdrop);
       padding: 4px 6px;
       display: flex;
       align-items: center;
@@ -3196,16 +3464,16 @@ onUnmounted(async () => {
       .progress-bar {
         flex: 1;
         height: 3px;
-        background: rgba(255, 255, 255, 0.2);
+        background: var(--theme-border-strong);
         border-radius: 2px;
         overflow: hidden;
 
         .progress-fill {
           height: 100%;
-          background: linear-gradient(90deg, #60a5fa 0%, #7eb8fc 100%);
+          background: linear-gradient(90deg, var(--theme-info-strong), var(--theme-info));
           border-radius: 2px;
           transition: width 0.3s ease;
-          box-shadow: 0 0 4px rgba(96, 165, 250, 0.6);
+          box-shadow: 0 0 4px var(--theme-info-border);
         }
       }
 
@@ -3214,7 +3482,7 @@ onUnmounted(async () => {
         font-weight: 600;
         color: white;
         white-space: nowrap;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+        text-shadow: 0 1px 2px var(--theme-backdrop);
         min-width: 32px;
         text-align: right;
       }
@@ -3225,14 +3493,14 @@ onUnmounted(async () => {
       bottom: 0;
       left: 0;
       right: 0;
-      background: linear-gradient(180deg, rgba(220, 38, 38, 0.92) 0%, rgba(185, 28, 28, 0.96) 100%);
+      background: color-mix(in srgb, var(--theme-danger) 82%, var(--theme-canvas));
       padding: 6px 8px;
       display: flex;
       align-items: center;
       gap: 6px;
       z-index: 13;
-      color: #fff;
-      box-shadow: 0 -2px 8px rgba(220, 38, 38, 0.4);
+      color: var(--theme-text-inverse);
+      box-shadow: 0 -2px 8px var(--theme-danger-border);
 
       .el-icon {
         flex-shrink: 0;
@@ -3245,7 +3513,7 @@ onUnmounted(async () => {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+        text-shadow: 0 1px 2px var(--theme-backdrop);
       }
     }
 
@@ -3253,8 +3521,8 @@ onUnmounted(async () => {
       width: 22px;
       height: 22px;
       border-radius: 50%;
-      background: var(--qz-action, #c2410c);
-      border: 1px solid var(--qz-active, #fb923c);
+      background: var(--theme-brand);
+      border: 1px solid var(--theme-brand-accent);
       padding: 0;
       appearance: none;
       display: flex;
@@ -3262,8 +3530,8 @@ onUnmounted(async () => {
       justify-content: center;
       cursor: pointer;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      color: white;
-      box-shadow: 0 2px 8px rgba(194, 65, 12, 0.28);
+      color: var(--theme-text-inverse);
+      box-shadow: var(--theme-shadow-brand);
 
       .el-icon {
         font-size: 12px;
@@ -3271,13 +3539,13 @@ onUnmounted(async () => {
 
       &:hover {
         transform: scale(1.15) translateY(-1px);
-        background: var(--qz-action-hover, #ea580c);
-        box-shadow: 0 4px 12px rgba(234, 88, 12, 0.34);
+        background: var(--theme-brand-hover);
+        box-shadow: var(--theme-shadow-brand);
       }
 
       &:active {
         transform: scale(1.05);
-        box-shadow: 0 2px 4px rgba(154, 52, 18, 0.3);
+        box-shadow: var(--theme-shadow-sm);
       }
     }
 
@@ -3288,18 +3556,18 @@ onUnmounted(async () => {
       right: 38px;
       width: 26px;
       height: 26px;
-      background: rgba(0, 0, 0, 0.8);
+      background: var(--theme-backdrop);
       border-radius: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: white;
+      color: var(--theme-text-inverse);
       opacity: 0;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       cursor: pointer;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      box-shadow: var(--theme-shadow-sm);
       z-index: 15;
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      border: 1px solid var(--theme-border-strong);
       padding: 0;
       appearance: none;
       backdrop-filter: blur(8px);
@@ -3310,23 +3578,23 @@ onUnmounted(async () => {
     }
 
     .pause-btn-top:hover {
-      background: linear-gradient(135deg, #fbbf24 0%, #f0b86e 100%);
+      background: var(--theme-warning);
       transform: scale(1.1) translateY(-1px);
-      border-color: rgba(255, 255, 255, 0.6);
-      box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4);
+      border-color: var(--theme-warning-border);
+      box-shadow: 0 4px 12px var(--theme-warning-soft);
     }
 
     .resume-btn-top:hover {
-      background: linear-gradient(135deg, #34d399 0%, #52e3a8 100%);
+      background: var(--theme-success);
       transform: scale(1.1) translateY(-1px);
-      border-color: rgba(255, 255, 255, 0.6);
-      box-shadow: 0 4px 12px rgba(52, 211, 153, 0.4);
+      border-color: var(--theme-success-border);
+      box-shadow: 0 4px 12px var(--theme-success-soft);
     }
 
     .pause-btn-top:active,
     .resume-btn-top:active {
       transform: scale(1.05);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+      box-shadow: var(--theme-shadow-sm);
     }
 
     .delete-btn {
@@ -3335,18 +3603,18 @@ onUnmounted(async () => {
       right: 6px;
       width: 26px;
       height: 26px;
-      background: rgba(0, 0, 0, 0.8);
+      background: var(--theme-backdrop);
       border-radius: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: white;
+      color: var(--theme-text-inverse);
       opacity: 0;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       cursor: pointer;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      box-shadow: var(--theme-shadow-sm);
       z-index: 15;
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      border: 1px solid var(--theme-border-strong);
       padding: 0;
       appearance: none;
       backdrop-filter: blur(8px);
@@ -3356,15 +3624,15 @@ onUnmounted(async () => {
       }
 
       &:hover {
-        background: linear-gradient(135deg, #f87171 0%, #fb9090 100%);
+        background: var(--theme-danger);
         transform: scale(1.1) translateY(-1px);
-        border-color: rgba(255, 255, 255, 0.6);
-        box-shadow: 0 4px 12px rgba(248, 113, 113, 0.4);
+        border-color: var(--theme-danger-border);
+        box-shadow: 0 4px 12px var(--theme-danger-soft);
       }
 
       &:active {
         transform: scale(1.05);
-        box-shadow: 0 2px 6px rgba(248, 113, 113, 0.3);
+        box-shadow: 0 2px 6px var(--theme-danger-soft);
       }
     }
   }
@@ -3394,18 +3662,58 @@ onUnmounted(async () => {
   .resume-btn-top:focus-visible,
   .delete-btn:focus-visible {
     opacity: 1;
-    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline: 2px solid var(--theme-focus);
     outline-offset: 2px;
   }
 
   .file-info {
     padding: 8px;
-    background: rgba(0, 0, 0, 0.1);
+    background: var(--theme-surface-soft);
+
+    .file-title-row {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
+    .file-select-button {
+      display: inline-grid;
+      width: 26px;
+      height: 26px;
+      flex: 0 0 26px;
+      place-items: center;
+      padding: 0;
+      border: 1px solid var(--theme-border);
+      border-radius: 7px;
+      background: var(--theme-surface-hover);
+      color: var(--theme-text-muted);
+      cursor: pointer;
+      transition:
+        color var(--ds-dur-fast) var(--ds-ease-soft),
+        border-color var(--ds-dur-fast) var(--ds-ease-soft),
+        background-color var(--ds-dur-fast) var(--ds-ease-soft);
+
+      &:hover,
+      &.is-selected {
+        border-color: var(--theme-brand-border);
+        background: var(--theme-brand-soft);
+        color: var(--theme-brand-accent);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--theme-focus);
+        outline-offset: 1px;
+      }
+    }
 
     :deep(.el-input) {
-      margin-bottom: 6px;
+      min-width: 0;
+      flex: 1 1 auto;
+      margin-bottom: 0;
       .el-input__inner {
-        color: rgba(255, 255, 255, 0.9);
+        color: var(--theme-text-primary);
         font-size: 12px;
         height: 26px;
         line-height: 26px;
@@ -3413,14 +3721,14 @@ onUnmounted(async () => {
         transition: all 0.3s ease;
 
         &::placeholder {
-          color: rgba(255, 255, 255, 0.4);
+          color: var(--theme-text-subtle);
         }
       }
     }
 
     .file-meta {
       font-size: 10px;
-      color: rgba(255, 255, 255, 0.6);
+      color: var(--theme-text-muted);
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -3428,29 +3736,21 @@ onUnmounted(async () => {
       flex-wrap: nowrap;
 
       .file-size {
-        background: linear-gradient(
-          135deg,
-          rgba(96, 165, 250, 0.2) 0%,
-          rgba(96, 165, 250, 0.1) 100%
-        );
-        color: rgba(96, 165, 250, 0.9);
+        background: linear-gradient(135deg, var(--theme-info-soft), var(--theme-surface-soft));
+        color: var(--theme-info-text);
         padding: 3px 8px;
         border-radius: 6px;
         font-size: 10px;
         font-weight: 600;
         flex-shrink: 0;
-        border: 1px solid rgba(96, 165, 250, 0.2);
-        box-shadow: 0 1px 2px rgba(96, 165, 250, 0.1);
+        border: 1px solid var(--theme-info-border);
+        box-shadow: 0 1px 2px var(--theme-info-soft);
       }
 
       .create-time {
-        color: rgba(255, 255, 255, 0.5);
+        color: var(--theme-text-muted);
         font-size: 9px;
-        background: linear-gradient(
-          135deg,
-          rgba(255, 255, 255, 0.1) 0%,
-          rgba(255, 255, 255, 0.05) 100%
-        );
+        background: linear-gradient(135deg, var(--theme-surface-hover), var(--theme-surface-soft));
         padding: 3px 6px;
         border-radius: 4px;
         flex: 1;
@@ -3459,7 +3759,7 @@ onUnmounted(async () => {
         overflow: hidden;
         text-overflow: ellipsis;
         min-width: 0;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        border: 1px solid var(--theme-border);
         font-weight: 500;
       }
     }
@@ -3471,8 +3771,8 @@ onUnmounted(async () => {
 .progress-card,
 .speed-card,
 .album-card {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
   border-radius: 6px;
   padding: 8px 10px;
   margin-bottom: 8px;
@@ -3485,7 +3785,7 @@ onUnmounted(async () => {
     margin: 0 0 6px 0;
     font-size: 11px;
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--theme-text-secondary);
     display: flex;
     align-items: center;
     gap: 4px;
@@ -3506,14 +3806,14 @@ onUnmounted(async () => {
 
       .stat-label {
         font-size: 11px;
-        color: rgba(255, 255, 255, 0.5);
+        color: var(--theme-text-muted);
         flex-shrink: 0;
       }
 
       .stat-value {
         font-size: 13px;
         font-weight: 600;
-        color: #60a5fa;
+        color: var(--theme-info);
         text-align: right;
         max-width: 80px;
         overflow: hidden;
@@ -3553,7 +3853,7 @@ onUnmounted(async () => {
         font-size: 11px;
 
         .stat-label {
-          color: rgba(255, 255, 255, 0.5);
+          color: var(--theme-text-muted);
         }
 
         .stat-value {
@@ -3565,16 +3865,16 @@ onUnmounted(async () => {
           white-space: nowrap;
 
           &.primary {
-            color: #60a5fa;
+            color: var(--theme-info);
           }
           &.warning {
-            color: #fbbf24;
+            color: var(--theme-warning);
           }
           &.info {
-            color: #909399;
+            color: var(--theme-text-muted);
           }
           &.danger {
-            color: #f87171;
+            color: var(--theme-danger);
           }
         }
       }
@@ -3596,7 +3896,7 @@ onUnmounted(async () => {
 
       .speed-label {
         font-size: 11px;
-        color: rgba(255, 255, 255, 0.5);
+        color: var(--theme-text-muted);
         flex-shrink: 0;
       }
 
@@ -3609,12 +3909,12 @@ onUnmounted(async () => {
         .speed-value {
           font-size: 16px;
           font-weight: 600;
-          color: #34d399;
+          color: var(--theme-success);
           transition: all 0.3s ease;
           line-height: 1;
 
           &.uploading {
-            color: #60a5fa;
+            color: var(--theme-info);
             animation: pulse 2s infinite;
           }
         }
@@ -3653,7 +3953,7 @@ onUnmounted(async () => {
     .album-name {
       font-size: 14px;
       font-weight: 500;
-      color: rgba(255, 255, 255, 0.8);
+      color: var(--theme-text-secondary);
       margin-bottom: 4px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -3667,9 +3967,9 @@ onUnmounted(async () => {
         padding: 1px 6px;
         font-size: 10px;
         font-weight: 600;
-        color: #fbbf24;
-        background: rgba(251, 191, 36, 0.15);
-        border: 1px solid rgba(251, 191, 36, 0.35);
+        color: var(--theme-warning-text);
+        background: var(--theme-warning-soft);
+        border: 1px solid var(--theme-warning-border);
         border-radius: 10px;
         vertical-align: middle;
       }
@@ -3683,7 +3983,7 @@ onUnmounted(async () => {
 
       .meta-item {
         font-size: 11px;
-        color: rgba(255, 255, 255, 0.5);
+        color: var(--theme-text-muted);
         cursor: default;
         flex: 1;
         overflow: hidden;
@@ -3699,7 +3999,7 @@ onUnmounted(async () => {
       .hint-text {
         display: block;
         font-size: 12px;
-        color: rgba(255, 255, 255, 0.6);
+        color: var(--theme-text-muted);
         margin-bottom: 12px;
       }
 
@@ -3710,7 +4010,7 @@ onUnmounted(async () => {
         font-size: 12px;
         font-weight: 500;
         transition: all 0.3s ease;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--theme-shadow-sm);
 
         .el-icon {
           margin-right: 4px;
@@ -3719,7 +4019,7 @@ onUnmounted(async () => {
 
         &:hover {
           transform: translateY(-1px);
-          box-shadow: 0 2px 8px rgba(96, 165, 250, 0.3);
+          box-shadow: 0 2px 8px var(--theme-info-soft);
         }
       }
     }
@@ -3743,11 +4043,45 @@ onUnmounted(async () => {
         }
 
         &:hover {
-          background: rgba(96, 165, 250, 0.1);
-          color: #5bacff;
+          background: var(--theme-info-soft);
+          color: var(--theme-info-text);
         }
       }
     }
+  }
+}
+
+@media (max-width: 900px) {
+  .ud-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+
+    .ud-toolbar-left,
+    .ud-toolbar-right {
+      flex-wrap: wrap;
+    }
+
+    .ud-toolbar-right {
+      justify-content: flex-end;
+    }
+  }
+
+  .layout-columns.has-files {
+    .right-column {
+      width: 176px;
+    }
+  }
+}
+
+@media (max-width: 680px) {
+  .ud-toolbar .size-chip .chip-label,
+  .ud-toolbar .concurrency-chip .chip-label {
+    display: none;
+  }
+
+  .upload-drop-area {
+    min-height: 220px;
+    margin: 12px;
   }
 }
 
@@ -3762,8 +4096,8 @@ onUnmounted(async () => {
   .delete-btn,
   .progress-fill,
   .speed-value {
-    animation: none !important;
-    transition: none !important;
+    animation: none;
+    transition: none;
   }
 
   .upload-drop-area.is-dragover,
@@ -3772,7 +4106,7 @@ onUnmounted(async () => {
   .pause-btn-top:hover,
   .resume-btn-top:hover,
   .delete-btn:hover {
-    transform: none !important;
+    transform: none;
   }
 }
 </style>

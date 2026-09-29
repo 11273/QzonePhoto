@@ -1,16 +1,25 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="上传管理器"
+    :show-close="false"
     :close-on-click-modal="false"
-    :close-on-press-escape="false"
+    :close-on-press-escape="true"
     :append-to-body="true"
     :lock-scroll="false"
     :modal-append-to-body="false"
     class="upload-manager-dialog dark-theme"
+    :class="{ 'is-empty-manager': !hasTaskWorkspace }"
   >
+    <template #header="{ close }">
+      <AppDialogHeader
+        title="上传管理"
+        :subtitle="uploadManagerSummary"
+        close-label="关闭上传管理"
+        @close="close"
+      />
+    </template>
     <!-- 顶部操作栏 -->
-    <div class="header-actions">
+    <div v-if="hasTaskWorkspace" class="header-actions">
       <div class="actions-left">
         <!-- 相册筛选 -->
         <div class="filter-group">
@@ -19,7 +28,9 @@
             v-model="selectedAlbumId"
             placeholder="选择相册"
             size="small"
-            style="width: 200px"
+            class="album-filter-select"
+            :loading="albumsLoading"
+            :no-data-text="albumLoadError || '暂无相册'"
             @change="handleAlbumChange"
           >
             <el-option label="全部相册" value="all" />
@@ -30,12 +41,33 @@
               :value="album.id"
             />
           </el-select>
+          <AppActionButton
+            v-if="albumLoadError"
+            class="album-filter-retry"
+            variant="ghost"
+            ui-size="compact"
+            icon-only
+            title="相册筛选加载失败，点击重试"
+            aria-label="重新加载相册筛选"
+            :loading="albumsLoading"
+            :disabled="albumsLoading"
+            @click="loadAlbums"
+          >
+            <template #icon
+              ><el-icon><Refresh /></el-icon
+            ></template>
+          </AppActionButton>
         </div>
 
         <!-- 状态筛选 -->
         <div class="filter-group">
           <label class="filter-label">状态筛选：</label>
-          <el-select v-model="statusFilter" size="small" style="width: 120px" @change="loadTasks">
+          <el-select
+            v-model="statusFilter"
+            size="small"
+            class="status-filter-select"
+            @change="loadTasks"
+          >
             <el-option label="全部" value="all" />
             <el-option label="上传中" value="uploading" />
             <el-option label="等待中" value="waiting" />
@@ -49,31 +81,64 @@
 
       <div class="actions-right">
         <!-- 批量操作 -->
-        <el-button v-if="hasActiveTasks" size="small" type="warning" @click="pauseAllTasks">
-          <el-icon><VideoPause /></el-icon>
+        <AppActionButton
+          v-if="hasActiveTasks"
+          variant="warning"
+          ui-size="compact"
+          @click="pauseAllTasks"
+        >
+          <template #icon
+            ><el-icon><VideoPause /></el-icon
+          ></template>
           暂停全部
-        </el-button>
-        <el-button v-if="hasPausedTasks" size="small" type="success" @click="resumeAllTasks">
-          <el-icon><VideoPlay /></el-icon>
+        </AppActionButton>
+        <AppActionButton
+          v-if="hasPausedTasks"
+          variant="primary"
+          ui-size="compact"
+          @click="resumeAllTasks"
+        >
+          <template #icon
+            ><el-icon><VideoPlay /></el-icon
+          ></template>
           恢复全部
-        </el-button>
-        <el-button v-if="hasFailedTasks" size="small" type="primary" @click="retryAllFailed">
-          <el-icon><Refresh /></el-icon>
+        </AppActionButton>
+        <AppActionButton
+          v-if="hasFailedTasks"
+          variant="primary"
+          ui-size="compact"
+          @click="retryAllFailed"
+        >
+          <template #icon
+            ><el-icon><Refresh /></el-icon
+          ></template>
           重试失败
-        </el-button>
-        <el-button size="small" type="danger" @click="clearAllTasks">
-          <el-icon><Delete /></el-icon>
+        </AppActionButton>
+        <AppActionButton
+          variant="danger"
+          ui-size="compact"
+          :disabled="currentTasks.length === 0"
+          @click="clearAllTasks"
+        >
+          <template #icon
+            ><el-icon><Delete /></el-icon
+          ></template>
           清空全部
-        </el-button>
+        </AppActionButton>
       </div>
     </div>
 
     <!-- 分栏布局 -->
-    <div class="layout-columns">
+    <div class="layout-columns" :class="{ 'is-compact-state': !hasTaskWorkspace }">
       <!-- 左侧：统计区域 -->
-      <div class="left-column">
+      <div v-if="hasTaskWorkspace" class="left-column">
         <!-- 总体进度卡片 -->
-        <div class="progress-card">
+        <div
+          class="progress-card"
+          role="status"
+          aria-live="polite"
+          :aria-label="`上传总体进度 ${overallProgress}%，已完成 ${taskStats.completed} 个，共 ${taskStats.total} 个任务`"
+        >
           <div class="progress-top">
             <div class="progress-circle">
               <el-progress :percentage="overallProgress" type="circle" :width="50" />
@@ -134,24 +199,31 @@
 
       <!-- 右侧：任务列表 -->
       <div class="right-column">
-        <div class="task-list-header">
+        <div v-if="hasTaskWorkspace" class="task-list-header">
           <span class="list-title">上传任务</span>
           <span class="list-count">共 {{ pagination.total }} 个任务</span>
         </div>
 
         <!-- 任务列表 -->
-        <div v-loading="loading" class="task-list-container">
+        <div v-loading="loading" class="task-list-container" :aria-busy="loading">
           <EmptyState
             v-if="!loading && currentTasks.length === 0"
-            :icon="Archive"
-            title="暂无上传任务"
+            :icon="loadError ? Warning : Archive"
+            :title="loadError ? '上传任务加载失败' : '暂无上传任务'"
             :description="
-              statusFilter !== 'all' || selectedAlbumId !== 'all'
+              loadError ||
+              (statusFilter !== 'all' || selectedAlbumId !== 'all'
                 ? '当前筛选条件下没有任务'
-                : '在相册详情里点上传，任务会出现在这里'
+                : '在相册详情里点上传，任务会出现在这里')
             "
+            :semantic-role="loadError ? 'alert' : 'status'"
+            :aria-live="loadError ? 'assertive' : 'polite'"
             size="medium"
-          />
+          >
+            <el-button v-if="loadError" type="primary" plain size="small" @click="loadTasks">
+              重试
+            </el-button>
+          </EmptyState>
           <div v-else class="task-list">
             <div
               v-for="task in currentTasks"
@@ -184,6 +256,10 @@
                     class="thumbnail-video"
                     preload="metadata"
                     muted
+                    loop
+                    playsinline
+                    @mouseenter="startLocalVideoPreview"
+                    @mouseleave="stopLocalVideoPreview"
                     @error="handleVideoPreviewError($event, task)"
                   />
                   <div v-else-if="isVideoFile(task.filename)" class="file-icon video-icon">
@@ -229,7 +305,14 @@
               </div>
 
               <!-- 进度和状态 -->
-              <div class="task-progress">
+              <div
+                class="task-progress"
+                role="progressbar"
+                :aria-label="`${task.filename}：${getStatusText(task)}`"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                :aria-valuenow="task.progress"
+              >
                 <div class="progress-bar-container">
                   <el-progress
                     :percentage="task.progress"
@@ -334,7 +417,10 @@ import {
 } from '@element-plus/icons-vue'
 import { Archive } from '@lucide/vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
+import AppActionButton from '@renderer/components/AppActionButton/index.vue'
+import AppDialogHeader from '@renderer/components/AppDialogHeader/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
+import { describeUploadError, uploadErrorDetail } from '@renderer/utils/upload-error'
 
 const privacyStore = usePrivacyStore()
 
@@ -351,6 +437,7 @@ const visible = computed({
 
 // 数据状态
 const loading = ref(false)
+const loadError = ref('')
 const currentTasks = ref([])
 const taskStats = ref({
   total: 0,
@@ -377,6 +464,9 @@ const pagination = ref({
 
 // 相册选项
 const albumOptions = ref([])
+const albumsLoading = ref(false)
+const albumLoadError = ref('')
+let taskLoadSequence = 0
 
 // 预览图缓存（避免重复加载）
 const previewCache = new Map()
@@ -398,6 +488,19 @@ const hasFailedTasks = computed(() => {
 
 const hasActiveTasks = computed(() => {
   return taskStats.value.uploading + taskStats.value.waiting > 0
+})
+
+// 没有任何任务时只呈现可操作的空状态，避免用 0% 仪表盘和无效筛选占满弹窗。
+const hasTaskWorkspace = computed(() => {
+  return taskStats.value.total > 0 || pagination.value.total > 0 || currentTasks.value.length > 0
+})
+
+const uploadManagerSummary = computed(() => {
+  if (!hasTaskWorkspace.value) return ''
+  const activeCount = taskStats.value.uploading + taskStats.value.waiting
+  if (activeCount > 0)
+    return `${activeCount} 个进行中 · ${taskStats.value.completed}/${taskStats.value.total} 已完成`
+  return `${taskStats.value.completed}/${taskStats.value.total} 已完成`
 })
 
 // 工具函数
@@ -452,6 +555,24 @@ const isVideoFile = (filename) => {
   const ext = filename.split('.').pop().toLowerCase()
   return videoExt.includes(ext)
 }
+const startLocalVideoPreview = (event) => {
+  const video = event.currentTarget
+  if (
+    !(video instanceof HTMLVideoElement) ||
+    privacyStore.privacyMode ||
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  ) {
+    return
+  }
+  video.muted = true
+  video.play().catch(() => {})
+}
+const stopLocalVideoPreview = (event) => {
+  const video = event.currentTarget
+  if (!(video instanceof HTMLVideoElement)) return
+  video.pause()
+  video.currentTime = 0
+}
 
 const handleImageError = (event) => {
   // 图片加载失败时的处理
@@ -500,15 +621,15 @@ const handleVideoPreviewError = async (event, task) => {
 const getProgressColor = (status) => {
   switch (status) {
     case 'uploading':
-      return '#60a5fa'
+      return 'var(--theme-brand)'
     case 'completed':
-      return '#34d399'
+      return 'var(--theme-success)'
     case 'error':
-      return '#f87171'
+      return 'var(--theme-danger)'
     case 'paused':
-      return '#fbbf24'
+      return 'var(--theme-warning)'
     default:
-      return '#909399'
+      return 'var(--theme-text-muted)'
   }
 }
 
@@ -533,67 +654,31 @@ const getStatusText = (task) => {
 
 // 错误处理相关方法
 const getErrorIcon = (errorMessage) => {
-  if (!errorMessage) return Warning
-
-  const lowerError = errorMessage.toLowerCase()
-  if (lowerError.includes('文件') && (lowerError.includes('删除') || lowerError.includes('移动'))) {
-    return FolderDelete
-  } else if (
-    lowerError.includes('网络') ||
-    lowerError.includes('超时') ||
-    lowerError.includes('连接')
-  ) {
-    return Connection
-  } else if (
-    lowerError.includes('权限') ||
-    lowerError.includes('认证') ||
-    lowerError.includes('登录')
-  ) {
-    return Lock
-  } else if (lowerError.includes('信息') || lowerError.includes('参数')) {
-    return InfoFilled
-  } else {
-    return Warning
-  }
+  const { category } = describeUploadError(errorMessage)
+  if (category === 'file') return FolderDelete
+  if (['network', 'service', 'rate'].includes(category)) return Connection
+  if (['auth', 'permission'].includes(category)) return Lock
+  if (['format', 'size', 'duration', 'data', 'quota'].includes(category)) return InfoFilled
+  return Warning
 }
 
 const getErrorIconClass = (errorMessage) => {
-  if (!errorMessage) return 'error-icon-general'
-
-  const lowerError = errorMessage.toLowerCase()
-  if (lowerError.includes('文件') && (lowerError.includes('删除') || lowerError.includes('移动'))) {
-    return 'error-icon-file'
-  } else if (
-    lowerError.includes('网络') ||
-    lowerError.includes('超时') ||
-    lowerError.includes('连接')
-  ) {
-    return 'error-icon-network'
-  } else if (
-    lowerError.includes('权限') ||
-    lowerError.includes('认证') ||
-    lowerError.includes('登录')
-  ) {
-    return 'error-icon-auth'
-  } else if (lowerError.includes('信息') || lowerError.includes('参数')) {
+  const { category } = describeUploadError(errorMessage)
+  if (category === 'file') return 'error-icon-file'
+  if (['network', 'service', 'rate'].includes(category)) return 'error-icon-network'
+  if (['auth', 'permission'].includes(category)) return 'error-icon-auth'
+  if (['format', 'size', 'duration', 'data', 'quota'].includes(category)) {
     return 'error-icon-info'
-  } else {
-    return 'error-icon-general'
   }
+  return 'error-icon-general'
 }
 
 const getErrorDisplayText = (errorMessage) => {
-  if (!errorMessage) return '未知错误'
-
-  // 如果错误信息过长，截取主要部分
-  if (errorMessage.length > 30) {
-    return truncateText(errorMessage, 30)
-  }
-  return errorMessage
+  return describeUploadError(errorMessage).summary
 }
 
 const getFullErrorMessage = (task) => {
-  let message = task.error || '未知错误'
+  let message = uploadErrorDetail(task.error)
 
   // 添加额外的上下文信息
   const contextInfo = []
@@ -603,33 +688,17 @@ const getFullErrorMessage = (task) => {
   }
 
   if (task.lastRetryTime) {
-    const retryTime = new Date(task.lastRetryTime).toLocaleString()
-    contextInfo.push(`最后重试时间: ${retryTime}`)
+    const retryTime = new Date(task.lastRetryTime).toLocaleString('zh-CN')
+    contextInfo.push(`最后重试：${retryTime}`)
   }
 
   if (task.create_time) {
-    const createTime = new Date(task.create_time).toLocaleString()
-    contextInfo.push(`创建时间: ${createTime}`)
+    const createTime = new Date(task.create_time).toLocaleString('zh-CN')
+    contextInfo.push(`创建时间：${createTime}`)
   }
 
   if (contextInfo.length > 0) {
     message += '\n\n' + contextInfo.join('\n')
-  }
-
-  // 添加建议的解决方案
-  const lowerError = message.toLowerCase()
-  let suggestions = []
-
-  if (lowerError.includes('文件') && (lowerError.includes('删除') || lowerError.includes('移动'))) {
-    suggestions.push('建议: 请检查文件是否存在，或重新选择文件')
-  } else if (lowerError.includes('网络') || lowerError.includes('超时')) {
-    suggestions.push('建议: 请检查网络连接，或稍后重试')
-  } else if (lowerError.includes('权限') || lowerError.includes('认证')) {
-    suggestions.push('建议: 请检查登录状态，可能需要重新登录')
-  }
-
-  if (suggestions.length > 0) {
-    message += '\n\n' + suggestions.join('\n')
   }
 
   return message
@@ -637,16 +706,26 @@ const getFullErrorMessage = (task) => {
 
 // API调用
 const loadAlbums = async () => {
+  albumsLoading.value = true
+  albumLoadError.value = ''
   try {
     const albums = await window.QzoneAPI.upload.getAlbumsWithStats()
     albumOptions.value = albums
   } catch (error) {
     console.error('加载相册列表失败:', error)
+    albumOptions.value = []
+    albumLoadError.value = '相册列表加载失败，请重新打开后重试'
+  } finally {
+    albumsLoading.value = false
   }
 }
 
 const loadTasks = async () => {
+  const loadSequence = ++taskLoadSequence
   loading.value = true
+  loadError.value = ''
+  currentTasks.value = []
+  pagination.value = { ...pagination.value, total: 0, totalPages: 0 }
   try {
     const params = {
       page: currentPage.value,
@@ -656,6 +735,7 @@ const loadTasks = async () => {
     }
 
     const result = await window.QzoneAPI.upload.getTasks(params)
+    if (loadSequence !== taskLoadSequence) return
     const tasks = result.tasks || []
 
     // 先从缓存中快速填充预览URL
@@ -682,9 +762,12 @@ const loadTasks = async () => {
     // 异步并行加载未缓存的预览（不阻塞UI）
     loadTaskPreviews(tasks)
   } catch (error) {
+    if (loadSequence !== taskLoadSequence) return
     console.error('加载任务列表失败:', error)
-    ElMessage.error('加载任务列表失败')
-    loading.value = false
+    loadError.value = '暂时无法读取上传任务，请检查网络或稍后重试。'
+    ElMessage.error('加载上传任务失败')
+  } finally {
+    if (loadSequence === taskLoadSequence) loading.value = false
   }
 }
 
@@ -1012,21 +1095,21 @@ onUnmounted(async () => {
 :deep(.upload-manager-dialog) {
   &.dark-theme {
     .el-dialog {
-      background: #1a1a1a;
-      color: #e0e0e0;
+      background: var(--theme-surface);
+      color: var(--theme-text-secondary);
 
       .el-dialog__header {
-        background: linear-gradient(135deg, #1e1e1e 0%, #2a2a2a 100%);
-        border-bottom: 1px solid #333;
+        background: var(--theme-surface);
+        border-bottom: 1px solid var(--theme-border-subtle);
 
         .el-dialog__title {
-          color: #e0e0e0;
+          color: var(--theme-text-primary);
           font-weight: 600;
         }
       }
 
       .el-dialog__body {
-        background: #1a1a1a;
+        background: var(--theme-surface);
         padding: 0;
       }
     }
@@ -1037,14 +1120,25 @@ onUnmounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--theme-space-3);
   padding: 12px 16px;
   background: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--theme-border-subtle);
 
   .actions-left {
     display: flex;
+    flex: 1 1 420px;
     gap: 16px;
     align-items: center;
+    min-width: 0;
+
+    .album-filter-select {
+      width: 200px;
+    }
+
+    .status-filter-select {
+      width: 120px;
+    }
 
     .filter-group {
       display: flex;
@@ -1053,7 +1147,7 @@ onUnmounted(async () => {
 
       .filter-label {
         font-size: 12px;
-        color: rgba(255, 255, 255, 0.7);
+        color: var(--theme-text-secondary);
         white-space: nowrap;
       }
     }
@@ -1061,69 +1155,108 @@ onUnmounted(async () => {
 
   .actions-right {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 8px;
 
     :deep(.el-button) {
-      background: #2a2a2a;
-      border-color: #444;
-      color: #ccc;
+      background: var(--theme-surface-soft);
+      border-color: var(--theme-border);
+      color: var(--theme-text-secondary);
 
       &:hover {
-        background: #333;
-        border-color: #555;
-        color: #fff;
+        background: var(--theme-surface-hover);
+        border-color: var(--theme-border-strong);
+        color: var(--theme-text-primary);
       }
 
       &.el-button--success {
-        background: #34d399;
-        border-color: #34d399;
-        color: #fff;
+        background: var(--theme-success);
+        border-color: var(--theme-success);
+        color: var(--theme-text-inverse);
 
         &:hover {
-          background: #52e3a8;
-          border-color: #52e3a8;
+          filter: brightness(1.08);
         }
       }
 
       &.el-button--warning {
-        background: #fbbf24;
-        border-color: #fbbf24;
-        color: #fff;
+        background: var(--theme-warning-soft);
+        border-color: var(--theme-warning-border);
+        color: var(--theme-warning-text);
 
         &:hover {
-          background: #fccc54;
-          border-color: #fccc54;
+          background: color-mix(in srgb, var(--theme-warning-soft) 75%, var(--theme-warning) 25%);
+          border-color: var(--theme-warning);
         }
       }
 
       &.el-button--primary {
-        background: #60a5fa;
-        border-color: #60a5fa;
-        color: #fff;
+        background: var(--theme-brand);
+        border-color: var(--theme-brand);
+        color: var(--theme-text-inverse);
 
         &:hover {
-          background: #7eb8fc;
-          border-color: #7eb8fc;
+          background: var(--theme-brand-hover);
+          border-color: var(--theme-brand-accent);
         }
       }
 
       &.el-button--danger {
-        background: #f87171;
-        border-color: #f87171;
-        color: #fff;
+        background: var(--theme-danger-soft);
+        border-color: var(--theme-danger-border);
+        color: var(--theme-danger-text);
 
         &:hover {
-          background: #fb9090;
-          border-color: #fb9090;
+          background: color-mix(in srgb, var(--theme-danger-soft) 70%, var(--theme-danger) 30%);
+          border-color: var(--theme-danger);
         }
       }
+    }
+  }
+
+  @media (max-width: 860px) {
+    flex-wrap: wrap;
+
+    .actions-left {
+      flex-basis: 100%;
+      flex-wrap: wrap;
+
+      .filter-group {
+        flex: 1 1 180px;
+      }
+
+      .album-filter-select,
+      .status-filter-select {
+        width: 100%;
+      }
+    }
+
+    .actions-right {
+      width: 100%;
     }
   }
 }
 
 .layout-columns {
   display: flex;
-  height: 465px;
+  height: 100%;
+  min-height: 0;
+
+  &.is-compact-state {
+    min-height: 240px;
+
+    .right-column {
+      min-height: 240px;
+    }
+
+    .task-list-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+  }
 
   /* 1024px 以下：左右双列改成上下，左列卡片横向铺开 */
   @media (max-width: 1024px) {
@@ -1172,7 +1305,7 @@ onUnmounted(async () => {
     width: 200px;
     flex-shrink: 0;
     padding: 8px 10px;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    border-right: 1px solid var(--theme-border-subtle);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -1181,8 +1314,8 @@ onUnmounted(async () => {
     .progress-card,
     .stats-card,
     .speed-card {
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: var(--theme-surface-soft);
+      border: 1px solid var(--theme-border-subtle);
       border-radius: 6px;
       padding: 8px 10px;
       margin-bottom: 0; // 用容器的 gap 撑开间距
@@ -1196,7 +1329,7 @@ onUnmounted(async () => {
         margin: 0 0 6px 0;
         font-size: 11px;
         font-weight: 500;
-        color: rgba(255, 255, 255, 0.7);
+        color: var(--theme-text-secondary);
         display: flex;
         align-items: center;
         gap: 4px;
@@ -1218,13 +1351,13 @@ onUnmounted(async () => {
           .progress-percentage {
             font-size: 18px;
             font-weight: 700;
-            color: #34d399;
+            color: var(--theme-success);
             line-height: 1;
           }
 
           .progress-text {
             font-size: 10px;
-            color: rgba(255, 255, 255, 0.6);
+            color: var(--theme-text-muted);
             margin-top: 2px;
           }
         }
@@ -1244,7 +1377,7 @@ onUnmounted(async () => {
 
           .stat-label {
             font-size: 11px;
-            color: rgba(255, 255, 255, 0.6);
+            color: var(--theme-text-muted);
           }
 
           .stat-value {
@@ -1252,22 +1385,22 @@ onUnmounted(async () => {
             font-weight: 600;
 
             &.total {
-              color: #909399;
+              color: var(--theme-text-muted);
             }
             &.uploading {
-              color: #60a5fa;
+              color: var(--theme-info);
             }
             &.waiting {
-              color: #fbbf24;
+              color: var(--theme-warning);
             }
             &.completed {
-              color: #34d399;
+              color: var(--theme-success);
             }
             &.error {
-              color: #f87171;
+              color: var(--theme-danger);
             }
             &.paused {
-              color: #fbbf24;
+              color: var(--theme-warning);
             }
           }
         }
@@ -1281,14 +1414,14 @@ onUnmounted(async () => {
         .current-speed {
           font-size: 16px;
           font-weight: 700;
-          color: #34d399;
+          color: var(--theme-success);
           line-height: 1;
           margin-bottom: 4px;
         }
 
         .speed-label {
           font-size: 10px;
-          color: rgba(255, 255, 255, 0.6);
+          color: var(--theme-text-muted);
         }
       }
     }
@@ -1305,17 +1438,17 @@ onUnmounted(async () => {
       justify-content: space-between;
       align-items: center;
       padding: 12px 16px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid var(--theme-border-subtle);
 
       .list-title {
         font-size: 14px;
         font-weight: 600;
-        color: rgba(255, 255, 255, 0.8);
+        color: var(--theme-text-primary);
       }
 
       .list-count {
         font-size: 12px;
-        color: rgba(255, 255, 255, 0.5);
+        color: var(--theme-text-muted);
       }
     }
 
@@ -1334,34 +1467,36 @@ onUnmounted(async () => {
           align-items: center;
           gap: 12px;
           padding: 8px 12px;
-          background: rgba(255, 255, 255, 0.02);
-          border: 1px solid rgba(255, 255, 255, 0.06);
+          background: var(--theme-surface-soft);
+          border: 1px solid var(--theme-border-subtle);
           border-radius: 6px;
-          transition: all 0.2s ease;
+          transition:
+            background-color var(--theme-duration-fast) var(--theme-ease),
+            border-color var(--theme-duration-fast) var(--theme-ease);
 
           &:hover {
-            background: rgba(255, 255, 255, 0.05);
-            border-color: rgba(255, 255, 255, 0.1);
+            background: var(--theme-surface-hover);
+            border-color: var(--theme-border);
           }
 
           &.is-uploading {
-            border-color: rgba(96, 165, 250, 0.3);
-            background: rgba(96, 165, 250, 0.05);
+            border-color: var(--theme-info-border);
+            background: var(--theme-info-soft);
           }
 
           &.is-error {
-            border-color: rgba(248, 113, 113, 0.3);
-            background: rgba(248, 113, 113, 0.05);
+            border-color: var(--theme-danger-border);
+            background: var(--theme-danger-soft);
           }
 
           &.is-completed {
-            border-color: rgba(52, 211, 153, 0.3);
-            background: rgba(52, 211, 153, 0.05);
+            border-color: var(--theme-success-border);
+            background: var(--theme-success-soft);
           }
 
           &.is-paused {
-            border-color: rgba(251, 191, 36, 0.3);
-            background: rgba(251, 191, 36, 0.05);
+            border-color: var(--theme-warning-border);
+            background: var(--theme-warning-soft);
           }
 
           .task-info {
@@ -1377,7 +1512,7 @@ onUnmounted(async () => {
               flex-shrink: 0;
               border-radius: 4px;
               overflow: hidden;
-              background: rgba(255, 255, 255, 0.05);
+              background: var(--theme-surface-hover);
               display: flex;
               align-items: center;
               justify-content: center;
@@ -1387,7 +1522,7 @@ onUnmounted(async () => {
                 position: absolute;
                 inset: 0;
                 z-index: 3;
-                background: rgba(0, 0, 0, 0.8);
+                background: var(--theme-privacy-backdrop);
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -1397,7 +1532,7 @@ onUnmounted(async () => {
 
                 .privacy-icon {
                   font-size: 14px;
-                  color: #e6a23c;
+                  color: var(--theme-privacy-icon);
                 }
               }
 
@@ -1410,14 +1545,14 @@ onUnmounted(async () => {
               }
 
               .file-icon {
-                color: rgba(255, 255, 255, 0.6);
+                color: var(--theme-text-muted);
 
                 &.video-icon {
-                  color: #60a5fa;
+                  color: var(--theme-info);
                 }
 
                 &.document-icon {
-                  color: rgba(255, 255, 255, 0.6);
+                  color: var(--theme-text-muted);
                 }
               }
 
@@ -1425,11 +1560,11 @@ onUnmounted(async () => {
                 position: absolute;
                 top: 2px;
                 right: 2px;
-                background: rgba(0, 0, 0, 0.7);
+                background: var(--theme-backdrop);
                 border-radius: 2px;
                 padding: 1px 2px;
                 font-size: 10px;
-                color: #fff;
+                color: var(--theme-text-inverse);
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -1447,7 +1582,7 @@ onUnmounted(async () => {
               .task-name {
                 font-size: 12px;
                 font-weight: 500;
-                color: rgba(255, 255, 255, 0.9);
+                color: var(--theme-text-primary);
                 margin-bottom: 4px;
                 word-break: break-word;
               }
@@ -1456,40 +1591,40 @@ onUnmounted(async () => {
                 display: flex;
                 gap: 8px;
                 font-size: 10px;
-                color: rgba(255, 255, 255, 0.5);
+                color: var(--theme-text-muted);
                 margin-bottom: 2px;
                 align-items: center;
                 flex-wrap: wrap;
 
                 .album-name {
-                  color: #60a5fa;
-                  background: rgba(96, 165, 250, 0.12);
+                  color: var(--theme-info-text);
+                  background: var(--theme-info-soft);
                   padding: 1px 4px;
                   border-radius: 3px;
                   font-size: 9px;
                   font-weight: 500;
-                  border: 1px solid rgba(96, 165, 250, 0.2);
+                  border: 1px solid var(--theme-info-border);
                 }
 
                 .file-size {
-                  background: rgba(52, 211, 153, 0.12);
-                  color: rgba(52, 211, 153, 0.9);
+                  background: var(--theme-success-soft);
+                  color: var(--theme-success-text);
                   padding: 1px 4px;
                   border-radius: 3px;
                   font-size: 9px;
                   font-weight: 500;
-                  border: 1px solid rgba(52, 211, 153, 0.2);
+                  border: 1px solid var(--theme-success-border);
                   flex-shrink: 0;
                 }
 
                 .create-time {
-                  background: rgba(255, 255, 255, 0.08);
-                  color: rgba(255, 255, 255, 0.7);
+                  background: var(--theme-surface-hover);
+                  color: var(--theme-text-secondary);
                   padding: 1px 4px;
                   border-radius: 3px;
                   font-size: 9px;
                   font-weight: 500;
-                  border: 1px solid rgba(255, 255, 255, 0.1);
+                  border: 1px solid var(--theme-border);
                   flex-shrink: 0;
                   white-space: nowrap;
                 }
@@ -1506,34 +1641,34 @@ onUnmounted(async () => {
                   cursor: help;
 
                   .error-text {
-                    color: #f87171;
+                    color: var(--theme-danger);
                     flex: 1;
                   }
 
                   .retry-count {
-                    color: rgba(248, 113, 113, 0.7);
+                    color: var(--theme-danger-text);
                     font-size: 9px;
                   }
 
                   // 不同类型错误图标的样式
                   .error-icon-file {
-                    color: #fbbf24;
+                    color: var(--theme-warning);
                   }
 
                   .error-icon-network {
-                    color: #909399;
+                    color: var(--theme-text-muted);
                   }
 
                   .error-icon-auth {
-                    color: #f87171;
+                    color: var(--theme-danger);
                   }
 
                   .error-icon-info {
-                    color: #60a5fa;
+                    color: var(--theme-info);
                   }
 
                   .error-icon-general {
-                    color: #f87171;
+                    color: var(--theme-danger);
                   }
                 }
               }
@@ -1554,11 +1689,11 @@ onUnmounted(async () => {
               font-size: 10px;
 
               .progress-text {
-                color: rgba(255, 255, 255, 0.7);
+                color: var(--theme-text-secondary);
               }
 
               .speed-text {
-                color: #34d399;
+                color: var(--theme-success);
               }
             }
           }
@@ -1574,7 +1709,7 @@ onUnmounted(async () => {
 
     .pagination-wrapper {
       padding: 12px 16px;
-      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      border-top: 1px solid var(--theme-border-subtle);
       display: flex;
       justify-content: center;
     }

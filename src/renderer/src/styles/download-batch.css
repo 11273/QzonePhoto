@@ -1,0 +1,148 @@
+.download-batch-message-box {
+  width: min(460px, calc(100vw - 32px));
+  padding: 0;
+  overflow: hidden;
+}
+
+.download-batch-message-box .el-message-box__header {
+  padding: 16px 20px 12px;
+}
+
+.download-batch-message-box .el-message-box__title {
+  font-size: 19px;
+  line-height: 1.35;
+  font-weight: 650;
+}
+
+.download-batch-message-box .el-message-box__content {
+  padding: 10px 20px 16px;
+}
+
+.download-batch-message-box .el-message-box__btns {
+  gap: 8px;
+  padding: 12px 20px 16px;
+}
+
+.download-batch-message-box .el-message-box__btns .el-button {
+  min-width: 84px;
+}
+
+.download-batch-message-box .el-message-box__btns .el-button--primary {
+  background: var(--theme-brand);
+  border-color: var(--theme-brand);
+}
+
+.download-batch-message-box .el-message-box__btns .el-button--primary:hover {
+  background: var(--theme-brand-hover);
+  border-color: var(--theme-brand-accent);
+}
+
+.download-batch-options {
+  display: grid;
+  gap: 14px;
+}
+
+.download-batch-section {
+  display: grid;
+  gap: 8px;
+}
+
+.download-batch-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.download-batch-description {
+  margin: 0;
+  color: var(--theme-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.download-batch-label {
+  color: var(--theme-text-primary);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.download-batch-optional {
+  padding: 1px 6px;
+  border: 1px solid var(--theme-border);
+  border-radius: var(--theme-radius-pill);
+  color: var(--theme-text-muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.download-batch-autostart {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 60px;
+  height: auto;
+  margin: 0;
+  padding: 10px 12px;
+  align-items: flex-start;
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: var(--theme-radius-md);
+  background: var(--theme-surface-soft);
+  transition:
+    border-color var(--theme-duration-fast) var(--theme-ease),
+    background-color var(--theme-duration-fast) var(--theme-ease);
+}
+
+.download-batch-autostart:hover {
+  border-color: var(--theme-border);
+  background: var(--theme-surface-hover);
+}
+
+.download-batch-autostart.is-checked {
+  border-color: var(--theme-brand-border);
+  background: var(--theme-brand-soft);
+}
+
+.download-batch-autostart .el-checkbox__input {
+  margin-top: 3px;
+}
+
+.download-batch-autostart .el-checkbox__label {
+  flex: 1;
+  min-width: 0;
+  padding-left: 10px;
+  white-space: normal;
+}
+
+.download-batch-autostart-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.download-batch-autostart-title {
+  color: var(--theme-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.download-batch-autostart-hint {
+  color: var(--theme-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.download-batch-options .el-date-editor {
+  min-height: 36px;
+}
+
+.download-batch-options .el-range-separator {
+  color: var(--theme-text-muted);
+}
+
+@media (max-width: 520px) {
+  .download-batch-message-box .el-message-box__header,
+  .download-batch-message-box .el-message-box__content,
+  .download-batch-message-box .el-message-box__btns {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}

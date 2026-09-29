@@ -17,6 +17,15 @@ import { writeTaskMediaMetadata } from '@main/utils/media-metadata-writer.mjs'
 import { isVideoPhoto, mergeEnrichedImagesInOriginalOrder } from '@main/utils/photo-order.mjs'
 import { downloadFolderUin } from '@main/utils/download-directory.mjs'
 import {
+  buildImageDownloadCandidates,
+  downloadBatchTaskStatus,
+  filterAlbumMediaByDate,
+  filterFeedsByDate,
+  formatDownloadBatchDateRange,
+  normalizeDownloadBatch,
+  shouldFallbackDownload
+} from '@shared/download-batch'
+import {
   buildContactBackupFiles,
   CONTACT_BACKUP_SCOPE_CATEGORIES,
   CONTACT_BACKUP_SCOPE_LABELS,
@@ -179,6 +188,7 @@ export class DownloadService {
       const adapter = new JSONFile(this.dbPath)
       this.db = new Low(adapter, {
         tasks: [],
+        batches: [],
         settings: {},
         version: '1.0.0',
         uin: this.currentUin // 记录数据库归属的用户ID
@@ -188,8 +198,15 @@ export class DownloadService {
       await this.db.read()
 
       // 确保数据结构完整
-      this.db.data ||= { tasks: [], settings: {}, version: '1.0.0', uin: this.currentUin }
+      this.db.data ||= {
+        tasks: [],
+        batches: [],
+        settings: {},
+        version: '1.0.0',
+        uin: this.currentUin
+      }
       this.db.data.tasks ||= []
+      this.db.data.batches ||= []
       this.db.data.settings ||= {}
       this.db.data.uin = this.currentUin // 更新用户ID
       this.db.data.tasks.forEach((task) => {
@@ -382,6 +399,10 @@ export class DownloadService {
   createTask(options) {
     const now = Date.now()
     const fileTime = options.fileTime ? new Date(options.fileTime) : null
+    const batch = normalizeDownloadBatch(options.batch || {})
+    const candidates = Array.isArray(options.downloadCandidates)
+      ? options.downloadCandidates.filter((candidate) => candidate?.url)
+      : []
     const task = {
       id: this.generateTaskId(),
       name: options.filename || path.basename(options.url),
@@ -389,7 +410,9 @@ export class DownloadService {
       url: options.url,
       filename: options.filename,
       directory: options.directory || this.downloadPath,
-      status: TASK_STATUS.WAITING,
+      status:
+        options.initialStatus ||
+        downloadBatchTaskStatus(batch, TASK_STATUS.WAITING, TASK_STATUS.PAUSED),
       progress: 0,
       downloaded: 0,
       total: options.total || 0,
@@ -406,7 +429,17 @@ export class DownloadService {
       referer: options.referer || '',
       file_time: fileTime && !Number.isNaN(fileTime.getTime()) ? fileTime.getTime() : null,
       metadata_description: options.metadataDescription || '',
-      media_metadata: options.mediaMetadata || null
+      media_metadata: options.mediaMetadata || null,
+      batch_id: batch?.id || '',
+      batch_label: batch?.label || '',
+      batch_source_type: batch?.sourceType || '',
+      batch_date_range: batch?.dateRange || null,
+      batch_auto_start: batch?.autoStart !== false,
+      download_candidates: candidates,
+      download_candidate_index: 0,
+      download_quality: candidates[0]?.quality || '',
+      used_fallback: false,
+      download_fallback_reason: ''
     }
     if (options.requestHeaders) {
       Object.defineProperty(task, 'request_headers', {
@@ -417,6 +450,80 @@ export class DownloadService {
       })
     }
     return task
+  }
+
+  recordDownloadBatch(batch, stats = {}, taskCount = 0) {
+    const normalized = normalizeDownloadBatch(batch || {})
+    if (!normalized) return null
+
+    this.db.data.batches ||= []
+    let record = this.db.data.batches.find((item) => item.id === normalized.id)
+    const now = Date.now()
+    if (!record) {
+      record = {
+        id: normalized.id,
+        label: normalized.label,
+        source_type: normalized.sourceType,
+        auto_start: normalized.autoStart,
+        date_range: normalized.dateRange,
+        date_label: formatDownloadBatchDateRange(normalized),
+        scanned: 0,
+        matched: 0,
+        skipped: 0,
+        missing_time: 0,
+        task_count: 0,
+        state: 'collecting',
+        create_time: now,
+        update_time: now
+      }
+      this.db.data.batches.push(record)
+    }
+
+    record.scanned += Number(stats.scanned) || 0
+    record.matched += Number(stats.matched) || 0
+    record.skipped += Number(stats.skipped) || 0
+    record.missing_time += Number(stats.missingTime) || 0
+    record.task_count += Number(taskCount) || 0
+    record.update_time = now
+    return record
+  }
+
+  getDownloadBatchSummary(record) {
+    if (!record) return null
+    const tasks = this.db.data.tasks.filter((task) => task.batch_id === record.id)
+    const statuses = {
+      waiting: 0,
+      downloading: 0,
+      paused: 0,
+      completed: 0,
+      error: 0,
+      cancelled: 0
+    }
+    tasks.forEach((task) => {
+      if (Object.hasOwn(statuses, task.status)) statuses[task.status] += 1
+    })
+    return { ...record, task_count: tasks.length, statuses }
+  }
+
+  getDownloadBatches(limit = 30) {
+    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 30))
+    return [...(this.db.data.batches || [])]
+      .sort((left, right) => Number(right.create_time || 0) - Number(left.create_time || 0))
+      .slice(0, safeLimit)
+      .map((record) => this.getDownloadBatchSummary(record))
+  }
+
+  async finishDownloadBatch({ batchId, cancelled = false } = {}) {
+    const record = this.db.data.batches?.find((item) => item.id === batchId)
+    if (!record) return null
+
+    record.state = cancelled ? 'cancelled' : 'ready'
+    record.update_time = Date.now()
+    await this.db.write()
+    this.triggerUpdate(
+      this.db.data.tasks.filter((task) => task.batch_id === record.id).map((task) => task.id)
+    )
+    return this.getDownloadBatchSummary(record)
   }
 
   // 添加单个任务
@@ -577,6 +684,8 @@ export class DownloadService {
   // 批量添加相册任务 - 优化大批量操作
   async addAlbumTasks(albumData, headers) {
     const { album, photos, uin, friendUin } = albumData
+    const downloadBatch = normalizeDownloadBatch(albumData.batch || {})
+    const filtered = filterAlbumMediaByDate(photos, downloadBatch?.dateRange)
 
     // 提取用户信息
     const userInfo = {
@@ -623,19 +732,28 @@ export class DownloadService {
     const batchSize = 1000 // 分批处理，避免内存占用过大
 
     // 分批处理照片
-    for (let i = 0; i < photos.length; i += batchSize) {
-      const batch = photos.slice(i, i + batchSize)
-      const batchIds = await this.processBatch(batch, albumDir, metadataAlbum, userInfo, headers)
+    for (let i = 0; i < filtered.items.length; i += batchSize) {
+      const photoBatch = filtered.items.slice(i, i + batchSize)
+      const batchIds = await this.processBatch(
+        photoBatch,
+        albumDir,
+        metadataAlbum,
+        userInfo,
+        headers,
+        downloadBatch
+      )
       taskIds.push(...batchIds)
 
       // 触发批量更新
       this.triggerUpdate(batchIds)
 
       // 给UI一些时间响应
-      if (i + batchSize < photos.length) {
+      if (i + batchSize < filtered.items.length) {
         await new Promise((resolve) => setTimeout(resolve, 10))
       }
     }
+
+    const batchRecord = this.recordDownloadBatch(downloadBatch, filtered, taskIds.length)
 
     // 保存数据库
     await this.db.write()
@@ -646,14 +764,19 @@ export class DownloadService {
     )
 
     // 处理队列
-    this.processQueue()
+    if (!downloadBatch || downloadBatch.autoStart) this.processQueue()
 
-    return taskIds
+    return downloadBatch ? { taskIds, batch: this.getDownloadBatchSummary(batchRecord) } : taskIds
   }
 
   // 按动态/说说聚合下载 —— 每条动态独立子目录，文件名带时间前缀
   // feeds: [{ skey, time, desc, albumId, albumName, photos: [...] }, ...]
-  async addFeedsTasks({ feeds = [], uin, friendUin = null }, headers = {}) {
+  async addFeedsTasks(
+    { feeds = [], uin, friendUin = null, batch: batchOptions = null },
+    headers = {}
+  ) {
+    const downloadBatch = normalizeDownloadBatch(batchOptions || {})
+    const filtered = filterFeedsByDate(feeds, downloadBatch?.dateRange)
     const userInfo = {
       uin: uin || this.currentUin,
       p_skey: headers.p_skey || null,
@@ -674,7 +797,7 @@ export class DownloadService {
     const allTaskIds = []
     const batchSize = 500
 
-    for (const feed of feeds) {
+    for (const feed of filtered.items) {
       if (!feed?.photos?.length) continue
 
       // 子目录名：{YYYYMMDD-HHmm}_{desc 摘要 or skey 短码}
@@ -716,8 +839,15 @@ export class DownloadService {
 
       // 大动态分批
       for (let i = 0; i < feed.photos.length; i += batchSize) {
-        const batch = feed.photos.slice(i, i + batchSize)
-        const batchIds = await this.processBatch(batch, feedDir, virtualAlbum, userInfo, headers)
+        const photoBatch = feed.photos.slice(i, i + batchSize)
+        const batchIds = await this.processBatch(
+          photoBatch,
+          feedDir,
+          virtualAlbum,
+          userInfo,
+          headers,
+          downloadBatch
+        )
         allTaskIds.push(...batchIds)
         this.triggerUpdate(batchIds)
         if (i + batchSize < feed.photos.length) {
@@ -726,19 +856,23 @@ export class DownloadService {
       }
     }
 
+    const batchRecord = this.recordDownloadBatch(downloadBatch, filtered, allTaskIds.length)
+
     await this.db.write()
     reportDownloadUsageTelemetry(
       this,
       allTaskIds.map((id) => this.activeTasks.get(id)).filter(Boolean),
       'feed_task'
     )
-    this.processQueue()
+    if (!downloadBatch || downloadBatch.autoStart) this.processQueue()
 
-    return allTaskIds
+    return downloadBatch
+      ? { taskIds: allTaskIds, batch: this.getDownloadBatchSummary(batchRecord) }
+      : allTaskIds
   }
 
   // 处理单批次任务
-  async processBatch(photos, albumDir, album, userInfo = null, headers = null) {
+  async processBatch(photos, albumDir, album, userInfo = null, headers = null, batch = null) {
     const tasks = []
     const taskIds = []
     const requestHeaders = this.buildQzoneImageRequestHeaders(album, userInfo, headers)
@@ -762,8 +896,9 @@ export class DownloadService {
     for (const photo of orderedPhotos) {
       if (!isVideoPhoto(photo)) {
         const filename = this.generatePhotoFilename(photo)
+        const downloadCandidates = buildImageDownloadCandidates(photo)
         const task = this.createTask({
-          url: photo.raw || photo.url || photo.pre,
+          url: downloadCandidates[0]?.url || '',
           filename,
           directory: albumDir,
           total: photo.size || 0,
@@ -777,7 +912,9 @@ export class DownloadService {
           fileTime: this.getConfiguredPhotoFileTime(photo),
           metadataDescription: photo.metadataDescription || album.feedDescription || '',
           mediaMetadata: photo.mediaMetadata || album.feedMetadata || null,
-          priority: PRIORITY.NORMAL
+          priority: PRIORITY.NORMAL,
+          batch,
+          downloadCandidates
         })
         tasks.push(task)
         taskIds.push(task.id)
@@ -804,7 +941,8 @@ export class DownloadService {
             fileTime: this.getConfiguredPhotoFileTime(video),
             metadataDescription: video.metadataDescription || album.feedDescription || '',
             mediaMetadata: video.mediaMetadata || album.feedMetadata || null,
-            priority: PRIORITY.NORMAL
+            priority: PRIORITY.NORMAL,
+            batch
           })
           tasks.push(task)
           taskIds.push(task.id)
@@ -833,7 +971,8 @@ export class DownloadService {
                 this.getConfiguredPhotoFileTime(video),
               metadataDescription: video.metadataDescription || album.feedDescription || '',
               mediaMetadata: video.mediaMetadata || album.feedMetadata || null,
-              priority: PRIORITY.NORMAL
+              priority: PRIORITY.NORMAL,
+              batch
             })
             tasks.push(task)
             taskIds.push(task.id)
@@ -855,7 +994,8 @@ export class DownloadService {
               fileTime: this.getConfiguredPhotoFileTime(video),
               metadataDescription: video.metadataDescription || album.feedDescription || '',
               mediaMetadata: video.mediaMetadata || album.feedMetadata || null,
-              priority: PRIORITY.NORMAL
+              priority: PRIORITY.NORMAL,
+              batch
             })
             tasks.push(task)
             taskIds.push(task.id)
@@ -879,7 +1019,8 @@ export class DownloadService {
           fileTime: this.getConfiguredPhotoFileTime(video),
           metadataDescription: video.metadataDescription || album.feedDescription || '',
           mediaMetadata: video.mediaMetadata || album.feedMetadata || null,
-          priority: PRIORITY.NORMAL
+          priority: PRIORITY.NORMAL,
+          batch
         })
         tasks.push(task)
         taskIds.push(task.id)
@@ -1155,7 +1296,7 @@ export class DownloadService {
       const cancelToken = axios.CancelToken.source()
       this.cancelTokens.set(task.id, cancelToken)
 
-      await this.downloadFile(task, filePath, cancelToken)
+      await this.downloadTaskWithFallback(task, filePath, cancelToken)
 
       if (task.status !== TASK_STATUS.CANCELLED) {
         await this.applyTaskMediaMetadata(filePath, task)
@@ -1185,6 +1326,56 @@ export class DownloadService {
 
       // 继续处理队列
       setTimeout(() => this.processQueue(), 100)
+    }
+  }
+
+  shouldTryDownloadFallback(error, task, candidateIndex, candidates) {
+    const status = Number(error?.response?.status || 0)
+    return shouldFallbackDownload({
+      type: task.type,
+      candidateIndex,
+      candidateCount: candidates.length,
+      httpStatus: status,
+      networkError: Boolean(error?.request && !error?.response),
+      cancelled: axios.isCancel(error)
+    })
+  }
+
+  async downloadTaskWithFallback(task, filePath, cancelToken) {
+    const candidates =
+      Array.isArray(task.download_candidates) && task.download_candidates.length
+        ? task.download_candidates
+        : [{ url: task.url, quality: task.download_quality || '' }]
+    const startIndex = Math.max(0, Number(task.download_candidate_index) || 0)
+
+    for (let index = startIndex; index < candidates.length; index += 1) {
+      const candidate = candidates[index]
+      task.url = candidate.url
+      task.download_candidate_index = index
+      task.download_quality = candidate.quality || ''
+      task.downloaded = 0
+      task.progress = 0
+      task.speed = 0
+
+      try {
+        await this.downloadFile(task, filePath, cancelToken)
+        task.used_fallback = index > 0
+        if (index > 0 && !task.download_fallback_reason) {
+          task.download_fallback_reason = '原图不可用，已自动使用可下载版本'
+        }
+        return
+      } catch (error) {
+        if (!this.shouldTryDownloadFallback(error, task, index, candidates)) throw error
+
+        const status = Number(error?.response?.status || 0)
+        task.used_fallback = true
+        const sourceLabel = candidate.quality === 'original' ? '原图' : '当前图片地址'
+        task.download_fallback_reason = status
+          ? `${sourceLabel}不可用（HTTP ${status}），已自动切换`
+          : `${sourceLabel}连接失败，已自动切换`
+        await this.updateTaskInDB(task)
+        this.triggerUpdate([task.id])
+      }
     }
   }
 
@@ -1299,6 +1490,7 @@ export class DownloadService {
         response.data.on('error', reject)
       })
     } catch (error) {
+      writer.destroy()
       await fs.promises.unlink(filePath).catch(() => {})
       throw error
     }
@@ -1467,6 +1659,9 @@ export class DownloadService {
       task.progress = 0
       task.error = null
       task.speed = 0
+      task.download_candidate_index = 0
+      task.used_fallback = false
+      task.download_fallback_reason = ''
 
       this.activeTasks.set(taskId, task)
       await this.updateTaskInDB(task)
@@ -1546,6 +1741,7 @@ export class DownloadService {
 
     // 清空数据库
     this.db.data.tasks = []
+    this.db.data.batches = []
     await this.db.write()
 
     // 清空内存

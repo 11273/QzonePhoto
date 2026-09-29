@@ -105,6 +105,10 @@ export const IPC_DOWNLOAD = {
   GET_ACTIVE_TASKS: 'download:getActiveTasks',
   /** 获取任务统计 */
   GET_STATS: 'download:getStats',
+  /** 获取最近的批量下载记录 */
+  GET_BATCHES: 'download:getBatches',
+  /** 完成批量下载任务收集 */
+  FINISH_BATCH: 'download:finishBatch',
   /** 暂停任务 */
   PAUSE_TASK: 'download:pauseTask',
   /** 继续任务 */

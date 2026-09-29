@@ -138,6 +138,8 @@ try {
       getTasks: (params = {}) => ipcClient.call(IPC_DOWNLOAD.GET_TASKS, params),
       getActiveTasks: () => ipcClient.call(IPC_DOWNLOAD.GET_ACTIVE_TASKS),
       getStats: () => ipcClient.call(IPC_DOWNLOAD.GET_STATS),
+      getBatches: (limit = 30) => ipcClient.call(IPC_DOWNLOAD.GET_BATCHES, { limit }),
+      finishBatch: (data) => ipcClient.call(IPC_DOWNLOAD.FINISH_BATCH, data),
 
       // 任务控制
       pauseTask: (taskId) => ipcClient.call(IPC_DOWNLOAD.PAUSE_TASK, taskId),

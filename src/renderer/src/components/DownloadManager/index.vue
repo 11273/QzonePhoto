@@ -1,154 +1,235 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="下载管理器"
+    :show-close="false"
     :close-on-click-modal="false"
-    :close-on-press-escape="false"
+    :close-on-press-escape="true"
     :append-to-body="true"
     :lock-scroll="false"
     :modal-append-to-body="false"
-    class="download-manager-dialog dark-theme"
+    :before-close="handleDialogBeforeClose"
+    :class="[
+      'download-manager-dialog dark-theme',
+      { 'is-empty-manager': !loading && !hasAnyTasks }
+    ]"
+    aria-label="下载管理"
   >
+    <template #header="{ close }">
+      <AppDialogHeader
+        title="下载管理"
+        :subtitle="managerSummary"
+        close-label="关闭下载管理"
+        @close="close"
+      />
+    </template>
+
     <!-- 顶部操作栏 -->
-    <div class="header-actions">
-      <div class="actions-left">
-        <el-tooltip :content="`当前保存位置：${downloadPath}`" placement="bottom">
-          <el-button size="small" @click="changeGlobalLocation">更改位置</el-button>
-        </el-tooltip>
-        <el-button
-          size="small"
-          title="打开下载文件夹"
-          aria-label="打开下载文件夹"
-          @click="openGlobalFolder"
-        >
-          <el-icon><Folder /></el-icon>
-        </el-button>
+    <div class="header-actions" :class="{ 'is-empty-toolbar': !loading && !hasAnyTasks }">
+      <div class="toolbar-row toolbar-primary">
+        <div class="location-block">
+          <div class="location-copy">
+            <span class="location-label">保存位置</span>
+            <span class="location-path" :title="downloadPath || '正在获取保存位置'">
+              {{ compactDownloadPath }}
+            </span>
+          </div>
+          <div class="location-actions">
+            <AppActionButton ui-size="compact" @click="changeGlobalLocation">
+              更改
+            </AppActionButton>
+            <AppActionButton
+              ui-size="compact"
+              icon-only
+              title="打开下载文件夹"
+              aria-label="打开下载文件夹"
+              @click="openGlobalFolder"
+            >
+              <template #icon
+                ><el-icon><Folder /></el-icon
+              ></template>
+            </AppActionButton>
+            <el-popover
+              v-model:visible="downloadSettingsVisible"
+              placement="bottom-start"
+              trigger="click"
+              :width="520"
+              popper-class="download-settings-popover"
+              @after-enter="focusDownloadSettings"
+              @after-leave="restoreDownloadSettingsFocus"
+            >
+              <template #reference>
+                <AppActionButton
+                  ref="downloadSettingsTriggerRef"
+                  ui-size="compact"
+                  title="调整后续下载任务设置"
+                >
+                  <template #icon
+                    ><el-icon><Setting /></el-icon
+                  ></template>
+                  下载设置
+                </AppActionButton>
+              </template>
 
-        <!-- 并发数设置 -->
-        <div class="setting-group">
-          <label class="setting-label">并发数</label>
-          <div class="setting-control">
-            <el-input-number
-              v-model="tempConcurrency"
-              :min="1"
-              :max="10"
-              size="small"
-              controls-position="right"
-              class="concurrency-input"
-              @change="handleConcurrencyChange"
-            />
-            <span class="setting-hint">建议1-10个</span>
+              <section
+                ref="downloadSettingsPanelRef"
+                class="download-settings-panel"
+                aria-label="下载设置"
+                @keydown.esc.capture.stop.prevent="closeDownloadSettingsWithFocus"
+              >
+                <header class="settings-panel-heading">
+                  <strong>下载设置</strong>
+                  <span>仅影响后续创建的任务</span>
+                </header>
+                <div class="settings-panel-grid">
+                  <div class="settings-panel-item">
+                    <div class="settings-panel-copy">
+                      <label for="download-concurrency">并发任务</label>
+                      <span>同时下载 1–10 个</span>
+                    </div>
+                    <AppNumberStepper
+                      id="download-concurrency"
+                      v-model="tempConcurrency"
+                      :min="1"
+                      :max="10"
+                      size="small"
+                      aria-label="并发任务"
+                      class="settings-number-input"
+                      @change="handleConcurrencyChange"
+                    />
+                  </div>
+
+                  <div class="settings-panel-item">
+                    <div class="settings-panel-copy">
+                      <span class="settings-panel-label">同名文件</span>
+                      <span>{{ replaceExisting ? '覆盖已有文件' : '跳过已有文件' }}</span>
+                    </div>
+                    <el-switch
+                      v-model="replaceExisting"
+                      size="small"
+                      active-text=""
+                      inactive-text=""
+                      :aria-label="`同名文件处理：${replaceExisting ? '覆盖已有文件' : '跳过已有文件'}`"
+                      @change="handleReplaceSettingChange"
+                    />
+                  </div>
+
+                  <el-tooltip
+                    content="将文案、发布者、QQ 号、发布时间和相册信息保存在下载的图片与视频中。"
+                    placement="bottom"
+                  >
+                    <div class="settings-panel-item">
+                      <div class="settings-panel-copy">
+                        <span class="settings-panel-label">动态信息</span>
+                        <span>{{ writeFeedDescription ? '写入媒体文件' : '不写入文件' }}</span>
+                      </div>
+                      <el-switch
+                        v-model="writeFeedDescription"
+                        size="small"
+                        active-text=""
+                        inactive-text=""
+                        aria-label="保留动态信息"
+                        @change="handleWriteFeedDescriptionChange"
+                      />
+                    </div>
+                  </el-tooltip>
+
+                  <el-tooltip
+                    content="用于下载文件名、本地文件时间和 JPEG EXIF 日期。"
+                    placement="bottom"
+                  >
+                    <div class="settings-panel-item">
+                      <div class="settings-panel-copy">
+                        <label class="settings-panel-label">文件时间</label>
+                        <span>用于名称与 EXIF</span>
+                      </div>
+                      <el-select
+                        v-model="downloadTimePreference"
+                        size="small"
+                        class="settings-time-select"
+                        aria-label="选择下载文件使用的时间"
+                        @change="handleTimePreferenceChange"
+                      >
+                        <el-option label="拍摄时间优先" value="shoot" />
+                        <el-option label="使用上传时间" value="upload" />
+                      </el-select>
+                    </div>
+                  </el-tooltip>
+                </div>
+              </section>
+            </el-popover>
           </div>
         </div>
 
-        <!-- 文件替换设置 -->
-        <div class="setting-group compact">
-          <div class="setting-control">
-            <el-switch
-              v-model="replaceExisting"
-              size="small"
-              active-text=""
-              inactive-text=""
-              aria-label="替换相同文件"
-              active-color="#c2410c"
-              inactive-color="#DCDFE6"
-              @change="handleReplaceSettingChange"
-            />
-            <span class="setting-hint compact">{{
-              replaceExisting ? '替换相同文件' : '跳过相同文件'
-            }}</span>
-          </div>
+        <div v-if="hasAnyTasks" class="actions-right">
+          <AppActionButton
+            variant="primary"
+            ui-size="compact"
+            :disabled="!canStartAll"
+            @click="startAll"
+          >
+            全部开始
+          </AppActionButton>
+          <AppActionButton ui-size="compact" :disabled="!canPauseAll" @click="pauseAll">
+            暂停全部
+          </AppActionButton>
+          <el-popconfirm
+            title="确定清空全部下载记录吗？不会删除已下载文件。"
+            confirm-button-text="清空记录"
+            cancel-button-text="取消"
+            confirm-button-type="danger"
+            width="250"
+            placement="bottom"
+            :disabled="clearingTasks"
+            @confirm="clearAllTasks"
+          >
+            <template #reference>
+              <AppActionButton
+                variant="danger"
+                ui-size="compact"
+                :loading="clearingTasks"
+                :disabled="clearingTasks || !hasAnyTasks"
+              >
+                {{ clearingTasks ? '清空中...' : '清空记录' }}
+              </AppActionButton>
+            </template>
+          </el-popconfirm>
         </div>
-
-        <el-tooltip
-          content="将文案、发布者、QQ 号、发布时间和相册信息保存在下载的图片与视频中，方便在本地查看和搜索。"
-          placement="bottom"
-        >
-          <div class="setting-group compact">
-            <div class="setting-control">
-              <el-switch
-                v-model="writeFeedDescription"
-                size="small"
-                active-text=""
-                inactive-text=""
-                aria-label="保留动态信息"
-                active-color="#c2410c"
-                inactive-color="#DCDFE6"
-                @change="handleWriteFeedDescriptionChange"
-              />
-              <span class="setting-hint compact">保留动态信息</span>
-            </div>
-          </div>
-        </el-tooltip>
-
-        <el-tooltip
-          content="用于下载文件名、本地文件时间和 JPEG EXIF 日期；所选时间缺失时会自动使用另一种时间。"
-          placement="bottom"
-        >
-          <div class="setting-group compact">
-            <label class="setting-label">文件时间</label>
-            <el-select
-              v-model="downloadTimePreference"
-              size="small"
-              class="time-preference-select"
-              @change="handleTimePreferenceChange"
-            >
-              <el-option label="拍摄时间优先" value="shoot" />
-              <el-option label="使用上传时间" value="upload" />
-            </el-select>
-          </div>
-        </el-tooltip>
-      </div>
-
-      <div class="actions-right">
-        <!-- 中间：主要操作 -->
-        <el-button size="small" type="success" @click="startAll">全部开始</el-button>
-        <el-button size="small" type="warning" @click="pauseAll">暂停全部</el-button>
-        <!-- 清空列表按钮 -->
-        <el-popconfirm
-          title="确定要清空所有任务吗？此操作不可恢复！"
-          confirm-button-text="确定清空"
-          cancel-button-text="取消"
-          confirm-button-type="danger"
-          width="250"
-          placement="bottom"
-          :disabled="clearingTasks"
-          @confirm="clearAllTasks"
-        >
-          <template #reference>
-            <el-button
-              size="small"
-              type="danger"
-              :loading="clearingTasks"
-              :disabled="clearingTasks"
-            >
-              {{ clearingTasks ? '清空中...' : '清空列表' }}
-            </el-button>
-          </template>
-        </el-popconfirm>
       </div>
     </div>
 
     <!-- 分栏布局 -->
-    <div class="layout-columns">
+    <div v-if="hasAnyTasks" class="layout-columns">
       <!-- 左侧进度和统计 - 优化布局 -->
       <div class="left-column optimized-layout">
         <!-- 总体进度区域 -->
-        <div class="progress-card">
+        <div
+          class="progress-card"
+          data-material-light="subtle"
+          role="status"
+          aria-live="polite"
+          :aria-label="`下载总体进度 ${overallProgress}%，已完成 ${completedTasks} 个，共 ${globalTotalTasks} 个任务`"
+        >
           <div class="progress-top">
             <div class="progress-circle">
-              <el-progress :percentage="overallProgress" type="circle" :width="50" />
+              <el-progress
+                :percentage="overallProgress"
+                type="circle"
+                :width="50"
+                :color="overallProgressColor"
+              />
             </div>
-            <div class="progress-percentage">{{ overallProgress }}%</div>
+            <div class="progress-percentage" :style="{ color: overallProgressColor }">
+              {{ overallProgress }}%
+            </div>
           </div>
           <div class="progress-bottom">
             <el-tooltip
-              :content="`已完成 ${completedTasks} 个，共 ${totalTasks} 个任务`"
+              :content="`已完成 ${completedTasks} 个，共 ${globalTotalTasks} 个任务`"
               placement="top"
-              :disabled="totalTasks < 10000"
+              :disabled="globalTotalTasks < 10000"
             >
               <span class="progress-numbers">
-                {{ formatTaskCount(completedTasks) }}/{{ formatTaskCount(totalTasks) }}
+                {{ formatTaskCount(completedTasks) }}/{{ formatTaskCount(globalTotalTasks) }}
               </span>
             </el-tooltip>
             <span class="progress-label">完成</span>
@@ -216,8 +297,44 @@
 
       <!-- 右侧任务列表 -->
       <div class="right-column">
+        <div v-if="loadError" class="task-load-error" role="alert">
+          <span>{{ loadError }}</span>
+          <AppActionButton ui-size="compact" @click="loadTasksPage">重新加载</AppActionButton>
+        </div>
         <div class="task-header">
-          <h4>任务列表</h4>
+          <div class="task-heading">
+            <h4>任务列表</h4>
+            <el-popover
+              v-if="recentBatches.length"
+              placement="bottom-start"
+              trigger="click"
+              :width="300"
+              popper-class="batch-summary-popover"
+            >
+              <template #reference>
+                <button class="batch-summary-trigger" type="button" aria-label="查看最近下载批次">
+                  <span>最近批次</span>
+                  <strong>{{ recentBatches[0].matched }}</strong>
+                </button>
+              </template>
+              <div class="batch-summary-list" aria-label="最近下载批次">
+                <div v-for="batch in recentBatches" :key="batch.id" class="batch-summary-item">
+                  <div class="batch-summary-main">
+                    <span class="batch-summary-title">{{ batch.label }}</span>
+                    <span class="batch-summary-date">{{ batch.date_label }}</span>
+                  </div>
+                  <div class="batch-summary-counts">
+                    <span>匹配 {{ batch.matched }}</span>
+                    <span v-if="batch.skipped">跳过 {{ batch.skipped }}</span>
+                    <span v-if="batch.missing_time">缺少时间 {{ batch.missing_time }}</span>
+                    <span :class="batch.auto_start ? 'is-auto' : 'is-queued'">
+                      {{ batch.auto_start ? '自动开始' : '仅加入队列' }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </el-popover>
+          </div>
           <!-- 状态筛选器 -->
           <div class="task-filter">
             <el-radio-group v-model="statusFilter" size="small">
@@ -242,7 +359,7 @@
               <el-option label="状态优先" :value="DOWNLOAD_TASK_SORT.STATUS_PRIORITY" />
             </el-select>
             <div class="pagination-info">
-              {{ (currentPage - 1) * pageSize + 1 }} -
+              {{ filteredTotalTasks === 0 ? 0 : (currentPage - 1) * pageSize + 1 }} -
               {{ Math.min(currentPage * pageSize, filteredTotalTasks) }} /
               {{ filteredTotalTasks }}
             </div>
@@ -447,7 +564,12 @@
                   <!-- 第二行：进度条和详细信息 -->
                   <div class="task-bottom-row">
                     <!-- 进度百分比 -->
-                    <div class="progress-percent">{{ task.stableProgress }}%</div>
+                    <div
+                      class="progress-percent"
+                      :style="{ color: getTaskProgressColor(task.status) }"
+                    >
+                      {{ task.stableProgress }}%
+                    </div>
 
                     <!-- 进度条 -->
                     <div class="progress-bar-container">
@@ -456,6 +578,7 @@
                         :stroke-width="4"
                         :show-text="false"
                         :status="task.status === 'error' ? 'exception' : undefined"
+                        :color="getTaskProgressColor(task.status)"
                       />
                     </div>
 
@@ -481,6 +604,16 @@
                         <span v-if="task.status === 'downloading'" class="eta-info">{{
                           getEstimatedTime(task)
                         }}</span>
+                        <span
+                          v-if="task.batch_label"
+                          class="batch-task-info"
+                          :title="task.batch_label"
+                        >
+                          {{ task.batch_label }}
+                        </span>
+                        <span v-if="task.used_fallback" class="fallback-info">
+                          {{ downloadQualityText(task.download_quality) }}
+                        </span>
                       </template>
                     </div>
                   </div>
@@ -492,10 +625,22 @@
         <div v-else class="task-detail-list progress-bar-layout">
           <EmptyState
             :icon="Archive"
-            title="暂无下载任务"
-            description="照片、视频和联系人备份任务都会出现在这里"
+            :title="statusFilter === 'all' ? '暂无下载任务' : '当前筛选没有任务'"
+            :description="
+              statusFilter === 'all'
+                ? '照片、视频和联系人备份任务都会出现在这里'
+                : '可以切换其他状态，或清除当前筛选。'
+            "
             size="medium"
-          />
+          >
+            <AppActionButton
+              v-if="statusFilter !== 'all'"
+              ui-size="compact"
+              @click="statusFilter = 'all'"
+            >
+              查看全部任务
+            </AppActionButton>
+          </EmptyState>
         </div>
 
         <!-- 分页器 -->
@@ -511,11 +656,28 @@
         </div>
       </div>
     </div>
+    <div v-else class="download-empty-workspace" role="status" aria-live="polite">
+      <EmptyState
+        :icon="Archive"
+        :title="loading ? '正在读取下载任务' : loadError ? '下载任务读取失败' : '还没有下载任务'"
+        :description="
+          loadError
+            ? '没有清空已有数据，请重新加载任务列表。'
+            : '开始下载后，任务和进度会显示在这里。'
+        "
+        :semantic-role="loadError ? 'alert' : 'status'"
+        size="small"
+      >
+        <AppActionButton v-if="loadError" ui-size="compact" @click="loadTasksPage">
+          重新加载
+        </AppActionButton>
+      </EmptyState>
+    </div>
   </el-dialog>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Folder,
@@ -523,6 +685,7 @@ import {
   VideoPause,
   Refresh,
   Delete,
+  Setting,
   Loading,
   Hide
 } from '@element-plus/icons-vue'
@@ -538,6 +701,9 @@ import {
 } from '@lucide/vue'
 import Pagination from '@renderer/components/Pagination/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
+import AppActionButton from '@renderer/components/AppActionButton/index.vue'
+import AppDialogHeader from '@renderer/components/AppDialogHeader/index.vue'
+import AppNumberStepper from '@renderer/components/AppNumberStepper/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { useFriendStore } from '@renderer/store/friend.store'
 import { formatTaskCount, formatTaskName } from '@renderer/utils/formatters'
@@ -557,6 +723,50 @@ const visible = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value)
 })
+
+const downloadSettingsVisible = ref(false)
+const downloadSettingsTriggerRef = ref(null)
+const downloadSettingsPanelRef = ref(null)
+const shouldRestoreDownloadSettingsFocus = ref(false)
+
+const focusableSelector =
+  'input:not([disabled]), button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+const focusComponentRoot = (component) => {
+  const root = component?.$el || component
+  const focusTarget = root?.matches?.(focusableSelector)
+    ? root
+    : root?.querySelector?.(focusableSelector)
+  focusTarget?.focus?.()
+}
+
+const focusDownloadSettings = async () => {
+  await nextTick()
+  downloadSettingsPanelRef.value?.querySelector(focusableSelector)?.focus()
+}
+
+const closeDownloadSettingsWithFocus = () => {
+  shouldRestoreDownloadSettingsFocus.value = true
+  downloadSettingsVisible.value = false
+}
+
+const restoreDownloadSettingsFocus = async () => {
+  if (!shouldRestoreDownloadSettingsFocus.value || !visible.value) return
+  shouldRestoreDownloadSettingsFocus.value = false
+  await nextTick()
+  focusComponentRoot(downloadSettingsTriggerRef.value)
+}
+
+const clearDownloadSettingsPopover = () => {
+  shouldRestoreDownloadSettingsFocus.value = false
+  downloadSettingsVisible.value = false
+}
+
+const handleDialogBeforeClose = async (done) => {
+  clearDownloadSettingsPopover()
+  await nextTick()
+  done()
+}
 
 // 分页相关
 const currentPage = ref(1)
@@ -580,6 +790,8 @@ const downloadTimePreference = ref('shoot')
 
 // 任务数据
 const currentPageTasks = ref([]) // 当前页的任务
+const activeDownloadTasks = ref([])
+const recentBatches = ref([])
 const taskStats = ref({
   total: 0,
   waiting: 0,
@@ -593,8 +805,10 @@ const taskStats = ref({
 
 // 加载状态
 const loading = ref(false)
+const loadError = ref('')
 const clearingTasks = ref(false)
 const retryingContactBackupIds = ref(new Set())
+let batchReloadTimer = null
 
 // 初始化下载路径
 const initDownloadPath = async () => {
@@ -700,6 +914,7 @@ const loadTasksPage = async () => {
   if (loading.value) return
 
   loading.value = true
+  loadError.value = ''
   try {
     const result = await window.QzoneAPI.download.requestTasksPage({
       page: currentPage.value,
@@ -717,7 +932,7 @@ const loadTasksPage = async () => {
     }
   } catch (error) {
     console.error('加载任务失败:', error)
-    currentPageTasks.value = []
+    loadError.value = '下载任务加载失败，请检查网络后重试。'
   } finally {
     loading.value = false
   }
@@ -742,18 +957,38 @@ const loadStats = async () => {
   }
 }
 
+const loadBatches = async () => {
+  try {
+    recentBatches.value = await window.QzoneAPI.download.getBatches(3)
+  } catch (error) {
+    console.error('加载下载批次失败:', error)
+    recentBatches.value = []
+  }
+}
+
+const scheduleBatchReload = () => {
+  if (batchReloadTimer) clearTimeout(batchReloadTimer)
+  batchReloadTimer = setTimeout(() => {
+    batchReloadTimer = null
+    loadBatches()
+  }, 500)
+}
+
 // 设置事件监听器
+const downloadListenerCleanups = []
 const setupEventListeners = () => {
-  // 使用preload暴露的API来监听事件
-  window.QzoneAPI.download.onStatsUpdate(handleStatsUpdate)
-  window.QzoneAPI.download.onActiveTasksUpdate(handleActiveTasksUpdate)
-  window.QzoneAPI.download.onTaskChanges(handleTaskChanges)
-  window.QzoneAPI.download.onTasksPage(handleTasksPage)
+  cleanupEventListeners()
+  downloadListenerCleanups.push(
+    window.QzoneAPI.download.onStatsUpdate(handleStatsUpdate),
+    window.QzoneAPI.download.onActiveTasksUpdate(handleActiveTasksUpdate),
+    window.QzoneAPI.download.onTaskChanges(handleTaskChanges),
+    window.QzoneAPI.download.onTasksPage(handleTasksPage)
+  )
 }
 
 // 清理事件监听器
 const cleanupEventListeners = () => {
-  window.QzoneAPI.download.removeAllListeners()
+  downloadListenerCleanups.splice(0).forEach((cleanup) => cleanup?.())
 }
 
 // 处理统计信息更新
@@ -762,6 +997,7 @@ const handleStatsUpdate = (...args) => {
   const stats = args[0]
   // console.debug('[DownloadManager] 收到统计信息更新:', stats)
   taskStats.value = stats || taskStats.value
+  scheduleBatchReload()
 }
 
 // 处理活跃任务更新
@@ -771,6 +1007,8 @@ const handleActiveTasksUpdate = (...args) => {
   // console.debug('[DownloadManager] 收到活跃任务更新:', activeTasks?.length || 0, '个任务')
 
   if (!Array.isArray(activeTasks)) return
+
+  activeDownloadTasks.value = activeTasks.filter((task) => task.status === 'downloading')
 
   // 调试信息：显示下载中任务的速度
   const downloadingTasks = activeTasks.filter((task) => task.status === 'downloading')
@@ -880,8 +1118,10 @@ watch(visible, async (newVisible) => {
     initTimePreference()
     loadStats()
     loadTasksPage()
+    loadBatches()
     setupEventListeners()
   } else {
+    clearDownloadSettingsPopover()
     await window.QzoneAPI.download.setManagerOpen(false)
     cleanupEventListeners()
   }
@@ -912,22 +1152,60 @@ onMounted(async () => {
     initTimePreference()
     loadStats()
     loadTasksPage()
+    loadBatches()
     setupEventListeners()
   }
 })
 
 // 组件销毁时清理
 onUnmounted(async () => {
+  if (batchReloadTimer) clearTimeout(batchReloadTimer)
   await window.QzoneAPI.download.setManagerOpen(false)
   cleanupEventListeners()
 })
 
 // 计算属性
 const completedTasks = computed(() => taskStats.value.completed || 0)
+const globalTotalTasks = computed(() => taskStats.value.total || totalTasks.value || 0)
+const hasAnyTasks = computed(() => globalTotalTasks.value > 0)
+const canStartAll = computed(
+  () =>
+    (taskStats.value.waiting || 0) +
+      (taskStats.value.paused || 0) +
+      (taskStats.value.error || 0) +
+      (taskStats.value.cancelled || 0) >
+    0
+)
+const canPauseAll = computed(
+  () => (taskStats.value.downloading || 0) + (taskStats.value.waiting || 0) > 0
+)
+const compactDownloadPath = computed(() => {
+  if (!downloadPath.value) return '正在获取…'
+  const normalized = downloadPath.value.replace(/\\/g, '/')
+  const parts = normalized.split('/').filter(Boolean)
+  if (parts.length <= 2) return normalized
+  return `…/${parts.slice(-2).join('/')}`
+})
+const managerSummary = computed(() => {
+  if (globalTotalTasks.value === 0) return ''
+  const activeCount = (taskStats.value.downloading || 0) + (taskStats.value.waiting || 0)
+  if (activeCount > 0)
+    return `${activeCount} 个进行中 · ${completedTasks.value}/${globalTotalTasks.value} 已完成`
+  return `${completedTasks.value}/${globalTotalTasks.value} 已完成`
+})
 const overallProgress = computed(() => {
   const total = taskStats.value.total || 0
   if (total === 0) return 0
   return Math.round((completedTasks.value / total) * 100)
+})
+const overallProgressColor = computed(() => {
+  if ((taskStats.value.error || 0) > 0) return 'var(--theme-danger)'
+  if (globalTotalTasks.value > 0 && completedTasks.value === globalTotalTasks.value) {
+    return 'var(--theme-success)'
+  }
+  if ((taskStats.value.downloading || 0) > 0) return 'var(--theme-info)'
+  if ((taskStats.value.paused || 0) > 0) return 'var(--theme-warning)'
+  return 'var(--theme-brand-accent)'
 })
 
 // 当前页任务列表（用于模板）
@@ -1011,6 +1289,24 @@ const getTaskStatusText = (status, type = '') => {
   return statusMap[status] || '未知'
 }
 
+const getTaskProgressColor = (status) => {
+  const colorMap = {
+    downloading: 'var(--theme-info)',
+    completed: 'var(--theme-success)',
+    paused: 'var(--theme-warning)',
+    waiting: 'var(--theme-text-muted)',
+    error: 'var(--theme-danger)',
+    cancelled: 'var(--theme-text-muted)'
+  }
+  return colorMap[status] || 'var(--theme-info)'
+}
+
+const downloadQualityText = (quality) => {
+  if (quality === 'standard') return '已回退普通图'
+  if (quality === 'preview') return '已回退预览图'
+  return '已自动回退'
+}
+
 const getTaskIcon = (type) => {
   const iconMap = {
     image: LucideImage,
@@ -1037,9 +1333,7 @@ const getTasksByStatus = (status) => {
 }
 
 const getCurrentSpeed = () => {
-  const totalSpeed = currentPageTasks.value
-    .filter((task) => task.status === 'downloading')
-    .reduce((sum, task) => sum + (task.speed || 0), 0)
+  const totalSpeed = activeDownloadTasks.value.reduce((sum, task) => sum + (task.speed || 0), 0)
   return formatSpeed(totalSpeed)
 }
 
@@ -1205,10 +1499,10 @@ const clearAllTasks = async () => {
     await loadStats()
     await loadTasksPage()
 
-    ElMessage.success('任务列表已清空')
+    ElMessage.success('下载记录已清空，已下载文件仍保留在本地')
   } catch (error) {
-    console.error('清空任务失败:', error)
-    ElMessage.error('清空任务失败')
+    console.error('清空下载记录失败:', error)
+    ElMessage.error('清空下载记录失败')
   } finally {
     clearingTasks.value = false
   }
@@ -1375,256 +1669,357 @@ const handleTimePreferenceChange = async (preference) => {
   max-width: 600px !important;
   word-break: break-all;
 }
+
+.batch-summary-popover.el-popper {
+  padding: 8px;
+  border-color: var(--theme-border);
+  background: var(--theme-surface-overlay);
+  box-shadow: var(--theme-shadow-lg);
+}
+
+.download-settings-popover.el-popper {
+  padding: 12px;
+  border-color: var(--theme-border);
+  background: var(--theme-surface-overlay);
+  box-shadow: var(--theme-shadow-lg);
+}
+
+.download-settings-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-panel-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--theme-text-primary);
+  font-size: 13px;
+}
+
+.settings-panel-heading span,
+.settings-panel-copy span {
+  color: var(--theme-text-muted);
+  font-size: 11px;
+}
+
+.settings-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settings-panel-item {
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: var(--theme-radius-sm);
+  background: var(--theme-surface-soft);
+}
+
+.settings-panel-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.settings-panel-copy label,
+.settings-panel-label {
+  color: var(--theme-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-number-input {
+  width: 84px;
+  flex: 0 0 84px;
+}
+
+.settings-time-select {
+  width: 132px;
+  flex: 0 0 132px;
+}
 </style>
 
 <style lang="scss" scoped>
-// 原有样式保持不变，从layouts.vue中复制过来
-.download-manager-dialog.dark-theme {
-  :deep(.el-dialog) {
-    background: #1a1a1a;
-    border: 1px solid #333;
-  }
-
-  :deep(.el-dialog__header) {
-    background: #2a2a2a;
-    border-bottom: 1px solid #333;
-
-    .el-dialog__title {
-      color: #fff;
-    }
-  }
-
-  :deep(.el-dialog__body) {
-    background: #1a1a1a;
-    max-height: 500px;
-    overflow: hidden;
-    padding: 15px 20px;
-  }
-
-  :deep(.el-dialog__headerbtn .el-dialog__close) {
-    color: #ccc;
-    &:hover {
-      color: #fff;
-    }
-  }
-
-  // Tooltip 深色主题样式
-  :deep(.el-tooltip__popper) {
-    &.is-dark {
-      background: #2a2a2a;
-      border: 1px solid #444;
-      color: #fff;
-    }
-  }
-}
-
 .header-actions {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
-  padding: 8px 0;
-  border-bottom: 1px solid #333;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 18px 8px;
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--theme-border-subtle);
 
-  .actions-left {
+  .toolbar-row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .toolbar-primary {
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .location-block {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .location-copy {
+    display: grid;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 1px;
+  }
+
+  .location-label,
+  .setting-label {
+    color: var(--theme-text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+    white-space: nowrap;
+  }
+
+  .location-path {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--theme-text-muted);
+    font-size: 11px;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .location-actions,
+  .actions-right {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
+  }
 
-    .total-info {
-      color: #ccc;
-      font-size: 13px;
+  .toolbar-preferences {
+    display: grid;
+    min-width: 0;
+    gap: 7px;
+  }
+
+  .preferences-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-inline: 2px;
+    color: var(--theme-text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+
+    small {
+      color: var(--theme-text-subtle);
+      font-size: 11px;
+      font-weight: 400;
+    }
+  }
+
+  .preferences-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1px;
+    overflow: hidden;
+    border: 1px solid var(--theme-border-subtle);
+    border-radius: var(--theme-radius-md);
+    background: var(--theme-border-subtle);
+  }
+
+  .setting-group {
+    display: flex;
+    min-width: 0;
+    min-height: 52px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    background: var(--theme-surface-soft);
+  }
+
+  .setting-copy {
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+  }
+
+  .setting-hint {
+    overflow: hidden;
+    color: var(--theme-text-subtle);
+    font-size: 10px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .time-preference-select {
+    width: 136px;
+    min-width: 136px;
+    flex: 0 0 136px;
+
+    :deep(.el-select__selected-item) {
+      overflow: visible;
+      text-overflow: clip;
+    }
+  }
+
+  :deep(.el-switch) {
+    flex: 0 0 auto;
+
+    .el-switch__core {
+      border: 1px solid var(--theme-border);
+      background-color: var(--theme-surface-active);
+
+      &:hover {
+        background-color: var(--theme-surface-hover);
+      }
+
+      .el-switch__action {
+        background-color: var(--theme-text-primary);
+      }
     }
 
-    .setting-group {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-left: 8px;
-
-      &.compact {
-        gap: 4px;
-        margin-left: 6px;
-      }
-
-      .setting-label {
-        font-size: 12px;
-        color: rgba(255, 255, 255, 0.8);
-        white-space: nowrap;
-        min-width: 18px;
-      }
-
-      &.compact .setting-label {
-        min-width: 36px;
-        font-size: 11px;
-      }
-
-      .setting-control {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-
-        .setting-hint {
-          font-size: 11px;
-          color: rgba(255, 255, 255, 0.5);
-          margin-left: 8px;
-          white-space: nowrap;
-
-          &.compact {
-            margin-left: 4px;
-            font-size: 10px;
-            color: rgba(255, 255, 255, 0.6);
-            font-weight: 500;
-          }
-        }
-
-        .concurrency-input {
-          width: 50px;
-
-          :deep(.el-input__wrapper) {
-            background-color: transparent;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 4px;
-            padding: 0 8px;
-
-            .el-input__inner {
-              background-color: transparent;
-              color: rgba(255, 255, 255, 0.9);
-              text-align: left;
-            }
-
-            &:hover {
-              border-color: #60a5fa;
-            }
-
-            &.is-focus {
-              border-color: #60a5fa;
-              background: rgba(255, 255, 255, 0.05);
-            }
-          }
-
-          :deep(.el-input-number__increase),
-          :deep(.el-input-number__decrease) {
-            background-color: transparent;
-            border-left: 1px solid rgba(255, 255, 255, 0.3);
-            color: rgba(255, 255, 255, 0.7);
-
-            &:hover {
-              background-color: rgba(255, 255, 255, 0.1);
-              color: rgba(255, 255, 255, 0.9);
-            }
-          }
-        }
-
-        .time-preference-select {
-          width: 122px;
-        }
-
-        :deep(.el-switch) {
-          .el-switch__core {
-            background-color: rgba(255, 255, 255, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-
-            &:hover {
-              background-color: rgba(255, 255, 255, 0.4);
-            }
-
-            .el-switch__action {
-              background-color: #fff;
-            }
-          }
-
-          &.is-checked .el-switch__core {
-            background-color: #60a5fa;
-            border-color: #60a5fa;
-          }
-
-          .el-switch__label {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 11px;
-
-            &.is-active {
-              color: #60a5fa;
-            }
-          }
-        }
-      }
+    &.is-checked .el-switch__core {
+      border-color: var(--theme-brand-hover);
+      background-color: var(--theme-brand);
     }
   }
 
   .actions-right {
-    display: flex;
-    gap: 8px;
-
+    flex: 0 0 auto;
     :deep(.el-button) {
-      background: #2a2a2a;
-      border-color: #444;
-      color: #ccc;
+      background: var(--theme-surface-soft);
+      border-color: var(--theme-border);
+      color: var(--theme-text-secondary);
 
       &:hover {
-        background: #333;
-        border-color: #555;
-        color: #fff;
+        background: var(--theme-surface-hover);
+        border-color: var(--theme-border-strong);
+        color: var(--theme-text-primary);
       }
 
-      &.el-button--success {
-        background: #34d399;
-        border-color: #34d399;
-        color: #fff;
+      &.el-button--primary {
+        background: var(--theme-brand);
+        border-color: var(--theme-brand);
+        color: var(--theme-text-inverse);
 
         &:hover {
-          background: #52e3a8;
-          border-color: #52e3a8;
-        }
-      }
-
-      &.el-button--warning {
-        background: #fbbf24;
-        border-color: #fbbf24;
-        color: #fff;
-
-        &:hover {
-          background: #fccc54;
-          border-color: #fccc54;
+          background: var(--theme-brand-hover);
+          border-color: var(--theme-brand-accent);
         }
       }
 
       &.el-button--danger {
-        background: #f87171;
-        border-color: #f87171;
-        color: #fff;
+        background: var(--theme-danger-soft);
+        border-color: var(--theme-danger-border);
+        color: var(--theme-danger-text);
 
         &:hover {
-          background: #fb9090;
-          border-color: #fb9090;
+          background: color-mix(in srgb, var(--theme-danger-soft) 70%, var(--theme-danger) 30%);
+          border-color: var(--theme-danger);
         }
       }
     }
   }
 
   @media (max-width: 1000px) {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-
-    .actions-left {
-      justify-content: flex-start;
+    .toolbar-primary {
       flex-wrap: wrap;
-      gap: 6px;
+    }
 
-      .setting-group {
-        margin-left: 0;
-
-        .setting-hint {
-          display: none;
-        }
-      }
+    .preferences-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .actions-right {
-      justify-content: center;
+      margin-left: auto;
     }
+  }
+
+  @media (max-width: 760px) {
+    .toolbar-primary {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .location-block {
+      width: 100%;
+    }
+
+    .actions-right {
+      width: 100%;
+      margin-left: 0;
+      flex-wrap: wrap;
+    }
+  }
+}
+
+.header-actions.is-empty-toolbar {
+  gap: 14px;
+  margin-bottom: 0;
+  padding-bottom: 12px;
+
+  .preferences-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .header-actions {
+    margin-inline: 14px;
+
+    .location-block {
+      align-items: flex-end;
+    }
+
+    .preferences-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .setting-group {
+      min-height: 48px;
+    }
+  }
+}
+
+.download-empty-workspace {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  place-items: center;
+  padding: 0 24px 18px;
+
+  :deep(.empty-state) {
+    max-width: 360px;
+    padding-block: 10px;
+  }
+
+  :deep(.empty-icon) {
+    margin-bottom: 8px;
+  }
+
+  :deep(.empty-title) {
+    margin-bottom: 4px;
+    font-size: 14px;
+  }
+
+  :deep(.empty-description) {
+    margin-bottom: 0;
+    font-size: 12px;
   }
 }
 
@@ -1686,9 +2081,9 @@ const handleTimePreferenceChange = async (preference) => {
         flex-direction: column;
         gap: 6px;
         padding: 8px 10px;
-        background: #2a2a2a;
+        background: var(--theme-surface-soft);
         border-radius: 8px;
-        border: 1px solid #333;
+        border: 1px solid var(--theme-border-subtle);
         margin-bottom: 0;
         flex: 1 1 0;
         min-height: 0;
@@ -1708,7 +2103,7 @@ const handleTimePreferenceChange = async (preference) => {
           .progress-percentage {
             font-size: 18px;
             font-weight: 700;
-            color: #60a5fa;
+            color: var(--theme-brand-accent);
             line-height: 1;
           }
         }
@@ -1727,7 +2122,7 @@ const handleTimePreferenceChange = async (preference) => {
 
           .progress-label {
             font-size: 10px;
-            color: #ccc;
+            color: var(--theme-text-secondary);
             line-height: 1;
           }
         }
@@ -1735,9 +2130,9 @@ const handleTimePreferenceChange = async (preference) => {
 
       .speed-card {
         padding: 8px 10px;
-        background: #2a2a2a;
+        background: var(--theme-surface-soft);
         border-radius: 6px;
-        border: 1px solid #333;
+        border: 1px solid var(--theme-border-subtle);
         margin-bottom: 0;
         flex: 1 1 0;
         min-height: 0;
@@ -1749,7 +2144,7 @@ const handleTimePreferenceChange = async (preference) => {
         h5 {
           margin: 0 0 8px 0;
           font-size: 12px;
-          color: #fff;
+          color: var(--theme-text-primary);
           font-weight: 600;
         }
 
@@ -1757,14 +2152,14 @@ const handleTimePreferenceChange = async (preference) => {
           .current-speed {
             font-size: 16px;
             font-weight: 700;
-            color: #34d399;
+            color: var(--theme-text-primary);
             line-height: 1;
             margin-bottom: 4px;
           }
 
           .speed-label {
             font-size: 10px;
-            color: #999;
+            color: var(--theme-text-muted);
             line-height: 1;
           }
         }
@@ -1772,9 +2167,9 @@ const handleTimePreferenceChange = async (preference) => {
 
       .status-card {
         padding: 8px 10px;
-        background: #2a2a2a;
+        background: var(--theme-surface-soft);
         border-radius: 6px;
-        border: 1px solid #333;
+        border: 1px solid var(--theme-border-subtle);
         flex: 1.6 1 0; // 有 6 行内容，份额更大
         min-height: 0;
         display: flex;
@@ -1784,7 +2179,7 @@ const handleTimePreferenceChange = async (preference) => {
           flex-shrink: 0;
           margin: 0 0 6px 0;
           font-size: 12px;
-          color: #fff;
+          color: var(--theme-text-primary);
           font-weight: 600;
         }
 
@@ -1803,22 +2198,22 @@ const handleTimePreferenceChange = async (preference) => {
               flex-shrink: 0;
 
               &.downloading {
-                background: #60a5fa;
+                background: var(--theme-info);
               }
               &.completed {
-                background: #34d399;
+                background: var(--theme-success);
               }
               &.paused {
-                background: #fbbf24;
+                background: var(--theme-warning);
               }
               &.waiting {
-                background: #909399;
+                background: var(--theme-text-muted);
               }
               &.error {
-                background: #f87171;
+                background: var(--theme-danger);
               }
               &.cancelled {
-                background: #909399;
+                background: var(--theme-text-muted);
               }
             }
 
@@ -1829,11 +2224,11 @@ const handleTimePreferenceChange = async (preference) => {
               flex: 1;
 
               .status-name {
-                color: #ccc;
+                color: var(--theme-text-secondary);
               }
 
               .status-count {
-                color: #fff;
+                color: var(--theme-text-primary);
                 font-weight: 600;
               }
             }
@@ -1848,47 +2243,117 @@ const handleTimePreferenceChange = async (preference) => {
     display: flex;
     flex-direction: column;
 
-    .task-header {
+    .task-load-error {
       display: flex;
+      flex: 0 0 auto;
+      align-items: center;
       justify-content: space-between;
+      gap: 12px;
+      min-height: 38px;
+      margin: 0 5px 10px;
+      padding: 5px 6px 5px 10px;
+      border: 1px solid var(--theme-danger-border);
+      border-radius: var(--theme-radius-sm);
+      color: var(--theme-danger-text);
+      background: var(--theme-danger-soft);
+      font-size: 11px;
+    }
+
+    .task-header {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
       align-items: center;
       margin-bottom: 10px;
       padding: 0 5px;
-      flex-wrap: wrap;
       gap: 10px;
 
       h4 {
         margin: 0;
         font-size: 14px;
-        color: #fff;
+        color: var(--theme-text-primary);
+      }
+
+      .task-heading {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: max-content;
+      }
+
+      .batch-summary-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        min-height: 26px;
+        padding: 0 8px;
+        border: 1px solid var(--theme-border-subtle);
+        border-radius: var(--theme-radius-pill);
+        color: var(--theme-text-muted);
+        background: var(--theme-surface-soft);
+        font: inherit;
+        font-size: 10px;
+        cursor: pointer;
+        transition:
+          color var(--theme-duration-fast) var(--theme-ease),
+          border-color var(--theme-duration-fast) var(--theme-ease),
+          background-color var(--theme-duration-fast) var(--theme-ease);
+
+        strong {
+          min-width: 18px;
+          padding-inline: 4px;
+          border-radius: var(--theme-radius-pill);
+          color: var(--theme-brand-text);
+          background: var(--theme-brand-soft);
+          font-size: 10px;
+          font-variant-numeric: tabular-nums;
+          line-height: 18px;
+          text-align: center;
+        }
+
+        &:hover {
+          color: var(--theme-text-primary);
+          border-color: var(--theme-brand-border);
+          background: var(--theme-surface-hover);
+        }
+
+        &:focus-visible {
+          outline: 2px solid var(--theme-focus);
+          outline-offset: 2px;
+        }
       }
 
       .task-filter {
-        flex: 1;
         display: flex;
-        justify-content: center;
+        min-width: 0;
+        width: 100%;
 
         :deep(.el-radio-group) {
+          display: flex;
+          width: 100%;
+
           .el-radio-button {
+            flex: 1 1 0;
+
             .el-radio-button__inner {
-              background: rgba(255, 255, 255, 0.1);
-              border-color: rgba(255, 255, 255, 0.2);
-              color: rgba(255, 255, 255, 0.8);
+              width: 100%;
+              background: var(--theme-surface-soft);
+              border-color: var(--theme-border);
+              color: var(--theme-text-secondary);
               padding: 4px 8px;
               font-size: 11px;
               min-width: auto;
 
               &:hover {
-                background: rgba(255, 255, 255, 0.15);
-                border-color: rgba(255, 255, 255, 0.3);
-                color: rgba(255, 255, 255, 0.9);
+                background: var(--theme-surface-hover);
+                border-color: var(--theme-border-strong);
+                color: var(--theme-text-primary);
               }
             }
 
             &.is-active .el-radio-button__inner {
-              background: #60a5fa;
-              border-color: #60a5fa;
-              color: #fff;
+              background: var(--theme-brand);
+              border-color: var(--theme-brand);
+              color: var(--theme-text-inverse);
             }
           }
         }
@@ -1896,7 +2361,7 @@ const handleTimePreferenceChange = async (preference) => {
 
       .pagination-info {
         font-size: 12px;
-        color: #999;
+        color: var(--theme-text-muted);
         min-width: 88px;
         text-align: right;
       }
@@ -1912,18 +2377,19 @@ const handleTimePreferenceChange = async (preference) => {
 
           :deep(.el-select__wrapper) {
             min-height: 28px;
-            background: rgba(255, 255, 255, 0.06);
-            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14) inset;
+            background: var(--theme-surface-soft);
+            box-shadow: 0 0 0 1px var(--theme-border) inset;
           }
 
           :deep(.el-select__selected-item) {
-            color: rgba(255, 255, 255, 0.86);
+            color: var(--theme-text-primary);
             font-size: 12px;
           }
         }
       }
 
       @media (max-width: 768px) {
+        display: flex;
         flex-direction: column;
         align-items: stretch;
         gap: 8px;
@@ -1958,16 +2424,16 @@ const handleTimePreferenceChange = async (preference) => {
       // 进度条式布局
       &.progress-bar-layout {
         .progress-task {
-          background: #2a2a2a;
-          border: 1px solid #333;
+          background: var(--theme-surface-soft);
+          border: 1px solid var(--theme-border-subtle);
           border-radius: 6px;
           padding: 8px;
           margin-bottom: 6px;
           transition: all 0.2s ease;
 
           &:hover {
-            background: #333;
-            border-color: #444;
+            background: var(--theme-surface-hover);
+            border-color: var(--theme-border);
           }
 
           &.optimized-task {
@@ -1983,13 +2449,13 @@ const handleTimePreferenceChange = async (preference) => {
                 border-radius: 4px;
                 overflow: hidden;
                 position: relative;
-                background: rgba(255, 255, 255, 0.05);
+                background: var(--theme-surface-hover);
 
                 .privacy-overlay {
                   position: absolute;
                   inset: 0;
                   z-index: 3;
-                  background: rgba(0, 0, 0, 0.8);
+                  background: var(--theme-privacy-backdrop);
                   display: flex;
                   align-items: center;
                   justify-content: center;
@@ -1999,7 +2465,7 @@ const handleTimePreferenceChange = async (preference) => {
 
                   .privacy-icon {
                     font-size: 16px;
-                    color: #e6a23c;
+                    color: var(--theme-privacy-icon);
                   }
                 }
 
@@ -2015,8 +2481,8 @@ const handleTimePreferenceChange = async (preference) => {
                   display: flex;
                   align-items: center;
                   justify-content: center;
-                  background: rgba(255, 255, 255, 0.1);
-                  color: rgba(255, 255, 255, 0.6);
+                  background: var(--theme-surface-hover);
+                  color: var(--theme-text-muted);
                   font-size: 16px;
 
                   .loading-icon {
@@ -2024,9 +2490,9 @@ const handleTimePreferenceChange = async (preference) => {
                   }
 
                   &.backup-thumbnail {
-                    border: 1px solid rgba(96, 165, 250, 0.22);
-                    color: #93c5fd;
-                    background: rgba(96, 165, 250, 0.1);
+                    border: 1px solid var(--theme-info-border);
+                    color: var(--theme-info-text);
+                    background: var(--theme-info-soft);
                   }
                 }
 
@@ -2034,11 +2500,11 @@ const handleTimePreferenceChange = async (preference) => {
                   position: absolute;
                   top: 2px;
                   right: 2px;
-                  background: rgba(0, 0, 0, 0.7);
+                  background: var(--theme-backdrop);
                   border-radius: 2px;
                   padding: 1px 2px;
                   font-size: 10px;
-                  color: #fff;
+                  color: var(--theme-text-inverse);
                   display: flex;
                   align-items: center;
                   justify-content: center;
@@ -2086,7 +2552,7 @@ const handleTimePreferenceChange = async (preference) => {
                     max-width: 300px; // 设置最大宽度，防止过度占用空间
 
                     .task-name {
-                      color: #fff;
+                      color: var(--theme-text-inverse);
                       font-size: 12px;
                       font-weight: 500;
                       white-space: nowrap;
@@ -2113,7 +2579,7 @@ const handleTimePreferenceChange = async (preference) => {
                       align-items: center;
                       gap: 6px;
                       font-size: 9px;
-                      color: #999;
+                      color: var(--theme-text-muted);
                       flex-shrink: 0;
                       min-width: 0;
 
@@ -2127,28 +2593,28 @@ const handleTimePreferenceChange = async (preference) => {
                         flex-shrink: 0;
 
                         &.downloading {
-                          background: rgba(96, 165, 250, 0.2);
-                          color: #60a5fa;
+                          background: var(--theme-info-soft);
+                          color: var(--theme-info);
                         }
                         &.completed {
-                          background: rgba(52, 211, 153, 0.2);
-                          color: #34d399;
+                          background: var(--theme-success-soft);
+                          color: var(--theme-success);
                         }
                         &.paused {
-                          background: rgba(251, 191, 36, 0.2);
-                          color: #fbbf24;
+                          background: var(--theme-warning-soft);
+                          color: var(--theme-warning);
                         }
                         &.waiting {
-                          background: rgba(144, 147, 153, 0.2);
-                          color: #909399;
+                          background: var(--theme-surface-active);
+                          color: var(--theme-text-muted);
                         }
                         &.error {
-                          background: rgba(248, 113, 113, 0.2);
-                          color: #f87171;
+                          background: var(--theme-danger-soft);
+                          color: var(--theme-danger);
                         }
                         &.cancelled {
-                          background: rgba(144, 147, 153, 0.2);
-                          color: #909399;
+                          background: var(--theme-surface-active);
+                          color: var(--theme-text-muted);
                         }
                       }
                     }
@@ -2174,7 +2640,7 @@ const handleTimePreferenceChange = async (preference) => {
 
                   .progress-percent {
                     font-size: 11px;
-                    color: #60a5fa;
+                    color: var(--theme-info);
                     font-weight: 600;
                     text-align: right;
                     flex-shrink: 0;
@@ -2191,7 +2657,7 @@ const handleTimePreferenceChange = async (preference) => {
                         padding-right: 0;
 
                         .el-progress-bar__outer {
-                          background-color: #333;
+                          background-color: var(--theme-surface-disabled);
                           border-radius: 2px;
                         }
 
@@ -2211,24 +2677,24 @@ const handleTimePreferenceChange = async (preference) => {
                     min-width: 0;
 
                     .size-info {
-                      color: #999;
+                      color: var(--theme-text-muted);
                       white-space: nowrap;
                     }
 
                     .speed-info {
-                      color: #34d399;
+                      color: var(--theme-info-text);
                       white-space: nowrap;
                     }
 
                     .eta-info {
-                      color: #fbbf24;
+                      color: var(--theme-warning);
                       white-space: nowrap;
                     }
 
                     .backup-task-detail {
                       max-width: 180px;
                       overflow: hidden;
-                      color: #93c5fd;
+                      color: var(--theme-info-text);
                       text-overflow: ellipsis;
                       white-space: nowrap;
                     }
@@ -2246,6 +2712,137 @@ const handleTimePreferenceChange = async (preference) => {
     display: flex;
     justify-content: center;
     align-items: center;
+  }
+}
+
+.batch-summary-list {
+  display: grid;
+  gap: 6px;
+}
+
+.batch-summary-item {
+  padding: 8px 10px;
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: 8px;
+  background: var(--theme-surface-soft);
+}
+
+.batch-summary-main,
+.batch-summary-counts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.batch-summary-main {
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.batch-summary-title {
+  overflow: hidden;
+  color: var(--theme-text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-summary-date,
+.batch-summary-counts {
+  color: var(--theme-text-muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.batch-summary-counts {
+  flex-wrap: wrap;
+}
+
+.batch-summary-counts .is-auto {
+  color: var(--theme-success-text);
+}
+
+.batch-summary-counts .is-queued {
+  color: var(--theme-warning);
+}
+
+.batch-task-info {
+  max-width: 110px;
+  overflow: hidden;
+  color: var(--theme-info-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fallback-info {
+  color: var(--theme-warning);
+  white-space: nowrap;
+}
+
+/*
+ * 窄窗口把统计区变成一条真正的摘要栏。这里必须放在基础卡片规则之后，
+ * 否则基础列布局会覆盖断点规则，导致三张统计卡被压成细线并互相重叠。
+ */
+@media (max-width: 1024px) {
+  .layout-columns {
+    display: grid;
+    grid-template-rows: 96px minmax(220px, 1fr);
+    gap: 10px;
+    width: 100%;
+    height: min(420px, calc(100vh - 264px));
+    max-height: none;
+  }
+
+  .layout-columns .left-column.optimized-layout {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(150px, 0.8fr) minmax(310px, 1.65fr);
+    gap: 8px;
+    width: 100% !important;
+    height: 96px;
+    max-height: none;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .layout-columns .left-column.optimized-layout > * {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .layout-columns .left-column.optimized-layout .progress-card,
+  .layout-columns .left-column.optimized-layout .speed-card,
+  .layout-columns .left-column.optimized-layout .status-card {
+    margin: 0;
+    padding: 8px 12px;
+  }
+
+  .layout-columns .left-column.optimized-layout .status-card .status-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(72px, 1fr));
+    column-gap: 12px;
+  }
+
+  .layout-columns .right-column {
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
+@media (max-width: 720px) {
+  .layout-columns {
+    grid-template-rows: auto minmax(200px, 1fr);
+    height: min(460px, calc(100vh - 320px));
+  }
+
+  .layout-columns .left-column.optimized-layout {
+    grid-template-columns: 1fr 1fr;
+    height: auto;
+  }
+
+  .layout-columns .left-column.optimized-layout .status-card {
+    grid-column: 1 / -1;
   }
 }
 

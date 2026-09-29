@@ -7,10 +7,54 @@ const images = ['sunset', 'flowers', 'coffee', 'city', 'cat', 'sky'].map(asset)
 const now = Math.floor(Date.now() / 1000)
 
 const albums = [
-  { id: 'demo-daily', classid: 1, name: '生活随拍', total: 36, priv: 1, coverUrl: images[2] },
-  { id: 'demo-travel', classid: 1, name: '沿途风景', total: 48, priv: 1, coverUrl: images[0] },
-  { id: 'demo-pets', classid: 1, name: '猫咪日常', total: 24, priv: 1, coverUrl: images[4] },
-  { id: 'demo-memories', classid: 2, name: '值得纪念', total: 18, priv: 1, coverUrl: images[1] }
+  {
+    id: 'demo-daily',
+    classid: 1,
+    name: '生活随拍',
+    total: 36,
+    priv: 1,
+    comment: 0,
+    createtime: now - 360 * 86400,
+    lastuploadtime: now - 2 * 86400,
+    modifytime: now - 86400,
+    coverUrl: images[2]
+  },
+  {
+    id: 'demo-travel',
+    classid: 1,
+    name: '沿途风景',
+    total: 48,
+    priv: 1,
+    comment: 6,
+    createtime: now - 720 * 86400,
+    lastuploadtime: now - 12 * 86400,
+    modifytime: now - 10 * 86400,
+    coverUrl: images[0]
+  },
+  {
+    id: 'demo-pets',
+    classid: 1,
+    name: '猫咪日常',
+    total: 24,
+    priv: 1,
+    comment: 2,
+    createtime: now - 180 * 86400,
+    lastuploadtime: now - 4 * 86400,
+    modifytime: now - 4 * 86400,
+    coverUrl: images[4]
+  },
+  {
+    id: 'demo-memories',
+    classid: 2,
+    name: '值得纪念',
+    total: 18,
+    priv: 1,
+    comment: 0,
+    createtime: now - 1080 * 86400,
+    lastuploadtime: now - 90 * 86400,
+    modifytime: now - 72 * 86400,
+    coverUrl: images[1]
+  }
 ]
 
 const photos = Array.from({ length: 18 }, (_, index) => {
@@ -224,6 +268,14 @@ export const createDemoQzoneAPI = (realApi) => ({
     }
   }),
   getAlbumQA: async () => ({ code: 0, data: {} }),
+  getAlbumVisitors: async () => ({
+    code: 0,
+    data: {
+      modvisitcount: [{ totalcount: 0, todaycount: 0 }],
+      items: [],
+      calvisitcount: Array(31).fill(0)
+    }
+  }),
   getFeeds: async () => ({ code: 0, data: { feeds: photoFeeds } }),
   getFriendPhotos: async () => ({ code: 0, data: { photos: [], hasmore: false } }),
   getHomeFeeds: async () => ({ code: 0, hasMore: false, pager: { start: feeds.length }, feeds }),
@@ -298,6 +350,8 @@ export const createDemoQzoneAPI = (realApi) => ({
     openContactBackupOverview: async () => ({ success: true }),
     getTasks: async () => downloadTasks,
     getActiveTasks: async () => downloadTasks.filter((task) => task.status === 'downloading'),
+    getBatches: async () => [],
+    finishBatch: async () => null,
     getStats: async () => ({
       total: 6,
       waiting: 1,
