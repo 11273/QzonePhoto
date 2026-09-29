@@ -126,7 +126,7 @@ export const QZONE_UTILS = {
    */
   checkAllowShare: (album) => {
     // 根据相册权限判断是否允许分享
-    return album && album.allowShare !== 0
+    return album?.allowShare === 1
   },
 
   /**

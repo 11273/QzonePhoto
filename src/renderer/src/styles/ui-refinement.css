@@ -1,0 +1,254 @@
+/* 全页面共用的最终抛光层；只处理跨页面一致性，不改变业务布局。 */
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+  color: var(--theme-text-primary);
+  background: var(--theme-canvas);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+body::before,
+body::after {
+  content: none;
+}
+
+#app {
+  position: relative;
+  z-index: var(--theme-z-content);
+}
+
+button,
+[role='button'],
+a,
+.el-button,
+.el-select,
+.el-switch,
+.el-checkbox,
+.el-radio {
+  touch-action: manipulation;
+}
+
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']),
+a[href] {
+  cursor: pointer;
+}
+
+button:focus-visible,
+a:focus-visible,
+[role='button']:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+.el-button:focus-visible {
+  outline: 2px solid var(--theme-focus);
+  outline-offset: 2px;
+  border-radius: var(--theme-radius-sm);
+}
+
+/* 输入控件的焦点由外层组件统一绘制，避免原生 outline 与组件光环叠成双框。 */
+.el-input__inner:focus-visible,
+.el-select__input:focus-visible,
+.el-textarea__inner:focus-visible {
+  outline: none;
+}
+
+[data-material-light='subtle'] {
+  position: relative;
+  isolation: isolate;
+}
+
+[data-material-light='subtle']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      150px circle at var(--surface-light-x, 50%) var(--surface-light-y, 50%),
+      color-mix(in srgb, var(--theme-brand-accent) 3.5%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      84px circle at var(--surface-light-x, 50%) var(--surface-light-y, 50%),
+      color-mix(in srgb, var(--theme-text-primary) 2.5%, transparent),
+      transparent 72%
+    );
+  opacity: 0;
+  transition: opacity var(--theme-duration-fast) var(--theme-ease);
+}
+
+[data-material-light='subtle'][data-surface-light='true']::before {
+  opacity: 1;
+}
+
+[data-material-light='subtle'] > * {
+  position: relative;
+  z-index: 1;
+}
+
+::selection {
+  color: var(--theme-text-primary);
+  background: var(--theme-brand-border);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--theme-border);
+  border: 2px solid transparent;
+  border-radius: var(--theme-radius-pill);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--theme-border-strong);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--theme-border) transparent;
+}
+
+.el-scrollbar__bar {
+  opacity: 0.55;
+}
+
+.el-scrollbar:hover .el-scrollbar__bar {
+  opacity: 0.9;
+}
+
+.el-scrollbar__thumb {
+  background: var(--theme-border-strong);
+}
+
+.el-button:not(.is-disabled):active,
+button:not(:disabled):active {
+  filter: brightness(0.94);
+}
+
+.el-tag,
+[class*='status-badge'],
+[class*='status-pill'] {
+  font-weight: 550;
+  border-radius: var(--theme-radius-pill);
+}
+
+img,
+video {
+  background-color: var(--theme-surface-soft);
+}
+
+.skeleton,
+.el-skeleton__item {
+  background: var(--theme-surface-soft);
+}
+
+.skeleton::after {
+  background: linear-gradient(90deg, transparent, var(--theme-surface-hover), transparent);
+}
+
+/* 为所有主要内容区提供一致、不过度抢眼的分隔。 */
+:where(.panel, .card, [class$='-card'], [class$='-panel']) {
+  border-color: var(--theme-border-subtle);
+}
+
+/* 文本截断必须保留可读的最小宽度。 */
+:where(.el-select__selected-item, .el-input__inner, [class*='title'], [class*='name']) {
+  min-width: 0;
+}
+
+@media (max-width: 980px) {
+  .el-dialog:not(.download-manager-dialog):not(.upload-manager-dialog) {
+    max-width: calc(100vw - 32px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  body::before {
+    opacity: 0.12;
+  }
+
+  .el-overlay,
+  .el-popper,
+  .el-dialog,
+  .el-message-box,
+  .floating-toolbar,
+  .toolbar-pill,
+  .feedback-toast-card,
+  .drawer-panel,
+  .login-box > .content,
+  .login-progress-card,
+  .qrcode-expired,
+  :where(.panel, .card, [class$='-card'], [class$='-panel']) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .el-dialog,
+  .el-message-box,
+  .el-popper,
+  .el-message,
+  .el-notification,
+  .floating-toolbar,
+  .toolbar-pill,
+  .feedback-toast-card,
+  .drawer-panel,
+  .login-box > .content,
+  .login-progress-card,
+  .qrcode-expired {
+    background: var(--theme-material-thick);
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --theme-border-subtle: color-mix(in srgb, var(--theme-text-primary) 16%, transparent);
+    --theme-border: color-mix(in srgb, var(--theme-text-primary) 24%, transparent);
+    --theme-border-strong: color-mix(in srgb, var(--theme-text-primary) 36%, transparent);
+    --theme-text-muted: color-mix(in srgb, var(--theme-text-primary) 72%, var(--theme-canvas));
+    --theme-text-subtle: color-mix(in srgb, var(--theme-text-primary) 66%, var(--theme-canvas));
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  [role='button']:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  .el-button:focus-visible {
+    outline-width: 3px;
+  }
+}

@@ -122,7 +122,7 @@ onUnmounted(() => {
 @import 'highlight.js/styles/github-dark.css';
 
 .markdown-content {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-secondary);
   font-size: 12px;
   line-height: 1.6;
   word-wrap: break-word;
@@ -161,19 +161,19 @@ onUnmounted(() => {
   margin: 12px 0 8px;
   font-weight: 600;
   line-height: 1.3;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--theme-text-primary);
 }
 
 .markdown-content :deep(h1) {
   font-size: 20px;
   padding-bottom: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--theme-border);
 }
 
 .markdown-content :deep(h2) {
   font-size: 18px;
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--theme-border-subtle);
 }
 
 .markdown-content :deep(h3) {
@@ -191,7 +191,7 @@ onUnmounted(() => {
 
 .markdown-content :deep(hr) {
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--theme-border);
   margin: 16px 0;
 }
 
@@ -204,47 +204,47 @@ onUnmounted(() => {
 
 .markdown-content :deep(li) {
   margin: 4px 0;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-text-secondary);
 }
 
 .markdown-content :deep(ul li)::marker {
-  color: #67c23a;
+  color: var(--theme-success);
 }
 
 .markdown-content :deep(ol li)::marker {
-  color: #409eff;
+  color: var(--theme-info);
   font-weight: 600;
 }
 
 /* 强调样式 */
 .markdown-content :deep(strong) {
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--theme-text-primary);
 }
 
 .markdown-content :deep(em) {
   font-style: italic;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-secondary);
 }
 
 .markdown-content :deep(del) {
   text-decoration: line-through;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-text-muted);
 }
 
 /* 代码样式 */
 .markdown-content :deep(code) {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--theme-surface-active);
   padding: 2px 4px;
   border-radius: 4px;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
-  color: #67c23a;
+  color: var(--theme-success);
 }
 
 .markdown-content :deep(pre) {
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--theme-canvas) 30%, transparent);
+  border: 1px solid var(--theme-border);
   border-radius: 8px;
   padding: 12px;
   margin: 12px 0;
@@ -254,31 +254,31 @@ onUnmounted(() => {
 .markdown-content :deep(pre code) {
   background: none;
   padding: 0;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-secondary);
   display: block;
 }
 
 /* 引用样式 */
 .markdown-content :deep(blockquote) {
-  border-left: 4px solid #409eff;
+  border-left: 4px solid var(--theme-info);
   padding-left: 12px;
   margin: 12px 0;
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(64, 158, 255, 0.05);
+  color: var(--theme-text-secondary);
+  background: color-mix(in srgb, var(--theme-info) 5%, transparent);
   border-radius: 0 4px 4px 0;
   padding: 8px 12px;
 }
 
 /* 链接样式 */
 .markdown-content :deep(a) {
-  color: #409eff;
+  color: var(--theme-info);
   text-decoration: none;
-  transition: all 0.2s ease;
+  transition: color var(--ds-dur-fast) var(--ds-ease-soft);
   position: relative;
 }
 
 .markdown-content :deep(a:hover) {
-  color: #66b3ff;
+  color: var(--theme-info);
   text-decoration: underline;
 }
 
@@ -294,8 +294,8 @@ onUnmounted(() => {
   width: 100%;
   border-collapse: collapse;
   margin: 12px 0;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--theme-text-inverse) 2%, transparent);
+  border: 1px solid var(--theme-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -304,13 +304,13 @@ onUnmounted(() => {
 .markdown-content :deep(td) {
   padding: 8px 12px;
   text-align: left;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--theme-border-subtle);
 }
 
 .markdown-content :deep(th) {
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--theme-text-inverse) 5%, transparent);
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-text-primary);
 }
 
 .markdown-content :deep(tr:last-child td) {
@@ -318,13 +318,13 @@ onUnmounted(() => {
 }
 
 .markdown-content :deep(tr:hover) {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--theme-surface-soft);
 }
 
 /* 代码高亮优化 */
 .markdown-content :deep(.hljs) {
   background: transparent;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-secondary);
 }
 
 /* 滚动条样式 */
@@ -333,16 +333,16 @@ onUnmounted(() => {
 }
 
 .markdown-content :deep(pre)::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--theme-text-inverse) 5%, transparent);
   border-radius: 3px;
 }
 
 .markdown-content :deep(pre)::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--theme-border-strong);
   border-radius: 3px;
 }
 
 .markdown-content :deep(pre)::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: color-mix(in srgb, var(--theme-text-inverse) 30%, transparent);
 }
 </style>

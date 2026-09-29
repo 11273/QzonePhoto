@@ -55,7 +55,6 @@ export const useFriendStore = defineStore('friend', () => {
   const groupError = ref('')
   const groupMemberCache = new Map()
   const completeGroupMemberCache = new Set()
-  const preferredQQGroupId = ref('')
   const visibleGroupMemberLimit = ref(QQ_GROUP_MEMBER_PAGE_SIZE)
 
   // === 亲密度列表 ===
@@ -63,6 +62,8 @@ export const useFriendStore = defineStore('friend', () => {
   const careByList = ref([]) // 谁在意我
   const careLoaded = ref({ 1: false, 2: false })
   const intimacyErrors = ref({ 1: '', 2: '' })
+  const intimacyRequests = new Map()
+  let intimacyBatchRequest = null
 
   const currentListError = computed(() => {
     if (currentTab.value === FRIEND_TAB.QQ_GROUP) return friendError.value
@@ -188,7 +189,6 @@ export const useFriendStore = defineStore('friend', () => {
         throw new Error('group-list-unavailable')
 
       const { groups: visibleGroups, defaultGroupId } = normalizeQQGroups(res)
-      preferredQQGroupId.value = defaultGroupId
       qqGroups.value = visibleGroups.map((group) => ({
         ...group,
         memberCount: groupMemberCache.get(group.id)?.length
@@ -258,16 +258,16 @@ export const useFriendStore = defineStore('friend', () => {
       return
     }
     if (scope === CONTACT_SCOPE.GROUPS) {
+      selectedQQGroup.value = null
+      groupMembers.value = []
+      visibleGroupMemberLimit.value = QQ_GROUP_MEMBER_PAGE_SIZE
+      setScopeSearchQuery(CONTACT_SCOPE.GROUPS, '')
+      setScopeScrollPosition(CONTACT_SCOPE.GROUPS, 0)
       if (!groupsLoaded.value) await fetchQQGroups()
-      if (!selectedQQGroup.value && qqGroups.value.length) {
-        const preferredGroup =
-          qqGroups.value.find((group) => group.id === preferredQQGroupId.value) || qqGroups.value[0]
-        await selectQQGroup(preferredGroup)
-      }
       return
     }
     currentTab.value = intimacyTab.value
-    await switchTab(currentTab.value)
+    await ensureIntimacyLists()
   }
 
   const setScopeSearchQuery = (scope, value) => {
@@ -549,27 +549,55 @@ export const useFriendStore = defineStore('friend', () => {
 
   // 获取好友亲密度列表
   const fetchFriendList = async (doType) => {
-    intimacyErrors.value[doType] = ''
+    const pendingRequest = intimacyRequests.get(doType)
+    if (pendingRequest) return pendingRequest
+
+    const request = (async () => {
+      intimacyErrors.value[doType] = ''
+      try {
+        const res = await window.QzoneAPI.getFriendList(
+          { doType, hostUin: resolveSelfQzoneUin(userStore) },
+          { skipAuthCheck: true }
+        )
+        if (res?.code !== undefined && Number(res.code) !== 0) {
+          throw new Error('intimacy-list-unavailable')
+        }
+        if (!Array.isArray(res?.data?.items_list)) {
+          throw new Error('intimacy-list-invalid')
+        }
+        const items = dedupByUin(res?.data?.items_list)
+        if (doType === 1) careList.value = items
+        else careByList.value = items
+        careLoaded.value[doType] = true
+        return items
+      } catch (error) {
+        console.error('[FriendStore] 获取好友列表失败:', error)
+        intimacyErrors.value[doType] = '亲密度名单暂时无法加载，请稍后重试'
+        return []
+      }
+    })()
+
+    intimacyRequests.set(doType, request)
     try {
-      const res = await window.QzoneAPI.getFriendList(
-        { doType, hostUin: resolveSelfQzoneUin(userStore) },
-        { skipAuthCheck: true }
-      )
-      if (res?.code !== undefined && Number(res.code) !== 0) {
-        throw new Error('intimacy-list-unavailable')
-      }
-      if (!Array.isArray(res?.data?.items_list)) {
-        throw new Error('intimacy-list-invalid')
-      }
-      const items = dedupByUin(res?.data?.items_list)
-      if (doType === 1) careList.value = items
-      else careByList.value = items
-      careLoaded.value[doType] = true
-      return items
-    } catch (error) {
-      console.error('[FriendStore] 获取好友列表失败:', error)
-      intimacyErrors.value[doType] = '亲密度名单暂时无法加载，请稍后重试'
-      return []
+      return await request
+    } finally {
+      intimacyRequests.delete(doType)
+    }
+  }
+
+  // 亲密度是同一个信息域。首次打开时并行加载两侧，避免未访问的一侧短暂显示为 0。
+  const ensureIntimacyLists = async () => {
+    const pendingTypes = [1, 2].filter((doType) => !careLoaded.value[doType])
+    if (pendingTypes.length === 0) return
+    if (intimacyBatchRequest) return intimacyBatchRequest
+
+    tabLoading.value = true
+    intimacyBatchRequest = Promise.all(pendingTypes.map((doType) => fetchFriendList(doType)))
+    try {
+      await intimacyBatchRequest
+    } finally {
+      intimacyBatchRequest = null
+      tabLoading.value = false
     }
   }
 
@@ -598,15 +626,7 @@ export const useFriendStore = defineStore('friend', () => {
       return
     }
     intimacyTab.value = tab
-    const doType = tab === FRIEND_TAB.CARE ? 1 : 2
-    if (!careLoaded.value[doType]) {
-      tabLoading.value = true
-      try {
-        await fetchFriendList(doType)
-      } finally {
-        tabLoading.value = false
-      }
-    }
+    await ensureIntimacyLists()
   }
 
   const selectGroup = (gpid) => {
@@ -666,6 +686,9 @@ export const useFriendStore = defineStore('friend', () => {
     }
     intimacyTab.value = FRIEND_TAB.CARE
     currentScope.value = CONTACT_SCOPE.FRIENDS
+    careList.value = []
+    careByList.value = []
+    careLoaded.value = { 1: false, 2: false }
     qqGroups.value = []
     selectedQQGroup.value = null
     groupMembers.value = []
@@ -675,7 +698,6 @@ export const useFriendStore = defineStore('friend', () => {
     intimacyErrors.value = { 1: '', 2: '' }
     groupMemberCache.clear()
     completeGroupMemberCache.clear()
-    preferredQQGroupId.value = ''
     visibleGroupMemberLimit.value = QQ_GROUP_MEMBER_PAGE_SIZE
   }
 
@@ -704,6 +726,7 @@ export const useFriendStore = defineStore('friend', () => {
     groupError,
     careList,
     careByList,
+    careLoaded,
     intimacyErrors,
     currentListError,
     currentListLoaded,
@@ -719,6 +742,7 @@ export const useFriendStore = defineStore('friend', () => {
     fetchQQGroups,
     fetchQQGroupMembers,
     fetchFriendList,
+    ensureIntimacyLists,
     retryCurrentList,
     switchTab,
     switchScope,

@@ -86,18 +86,18 @@ const iconSize = computed(() => {
   color: var(--ds-text-primary);
 
   &.small {
-    min-height: 80px;
-    padding: 16px;
+    min-height: 64px;
+    padding: 12px;
   }
 
   &.medium {
-    min-height: 120px;
-    padding: 24px;
+    min-height: 96px;
+    padding: 20px;
   }
 
   &.large {
-    min-height: 200px;
-    padding: 40px;
+    min-height: 160px;
+    padding: 32px;
   }
 
   &.minimal {
@@ -123,7 +123,7 @@ const iconSize = computed(() => {
     bottom: 0;
     background: var(--ds-bg-overlay);
     backdrop-filter: blur(4px);
-    z-index: 1000;
+    z-index: var(--theme-z-sticky);
   }
 }
 
@@ -135,9 +135,45 @@ const iconSize = computed(() => {
 }
 
 .loading-spinner {
+  position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--theme-brand-border);
+  border-radius: 13px;
+  color: var(--theme-brand-accent);
+  background:
+    linear-gradient(145deg, var(--theme-material-highlight), transparent 54%),
+    var(--theme-brand-soft);
+  box-shadow: inset 0 1px var(--theme-material-highlight);
+  transition:
+    color var(--theme-duration-base) var(--theme-ease),
+    border-color var(--theme-duration-base) var(--theme-ease),
+    background-color var(--theme-duration-base) var(--theme-ease);
+}
+
+.loading-state.small .loading-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.loading-state.large .loading-spinner {
+  width: 48px;
+  height: 48px;
+  border-radius: 15px;
+}
+
+.loading-state.minimal .loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
 }
 
 .spinner-icon {
@@ -147,8 +183,8 @@ const iconSize = computed(() => {
 .spinner-ring {
   width: 24px;
   height: 24px;
-  border: 3px solid var(--ds-border-strong);
-  border-top: 3px solid var(--ds-accent-blue);
+  border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-top-color: currentColor;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -186,7 +222,7 @@ const iconSize = computed(() => {
 
 .loading-text {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--theme-text-secondary);
   margin: 0;
   text-align: center;
   line-height: 1.4;
@@ -202,7 +238,7 @@ const iconSize = computed(() => {
 
 .progress-text {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-text-muted);
 }
 
 /* 动画定义 */
@@ -230,7 +266,7 @@ const iconSize = computed(() => {
   .spinner-ring,
   .spinner-dots .dot,
   .spinner-pulse {
-    animation: none !important;
+    animation: none;
   }
 }
 

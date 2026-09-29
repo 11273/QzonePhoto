@@ -80,7 +80,11 @@
             </button>
           </header>
 
-          <main class="update-content">
+          <main
+            class="update-content"
+            aria-live="polite"
+            :aria-busy="updateState === 'checking' || updateState === 'downloading'"
+          >
             <div v-if="updateState === 'checking'" class="status-copy">
               <span class="status-spinner" aria-hidden="true"></span>
               <p>正在确认是否有新版本</p>
@@ -275,6 +279,7 @@ const emit = defineEmits([
 ])
 
 const dialogRef = ref(null)
+const previouslyFocused = ref(null)
 const dialogVisible = computed({
   get: () => props.visible,
   set: (value) => emit('update:visible', value)
@@ -378,34 +383,68 @@ const openExternal = (url) => {
   fallbackCopyLink(url)
 }
 
-const handleEscape = (event) => {
-  if (event.key === 'Escape' && props.visible && canClose()) emit('dismiss')
+const focusableElements = () =>
+  Array.from(
+    dialogRef.value?.querySelectorAll?.(
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    ) || []
+  ).filter((element) => !element.hasAttribute('hidden') && element.getClientRects().length > 0)
+
+const handleDialogKeydown = (event) => {
+  if (!props.visible) return
+  if (event.key === 'Escape' && canClose()) {
+    event.preventDefault()
+    emit('dismiss')
+    return
+  }
+  if (event.key !== 'Tab') return
+  const focusable = focusableElements()
+  if (!focusable.length) {
+    event.preventDefault()
+    dialogRef.value?.focus()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (
+    event.shiftKey &&
+    (document.activeElement === first || document.activeElement === dialogRef.value)
+  ) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
 }
 
 watch(
   () => props.visible,
   (visible) => {
     if (visible) {
+      previouslyFocused.value = document.activeElement
       nextTick(() => dialogRef.value?.focus())
+    } else if (previouslyFocused.value instanceof HTMLElement) {
+      nextTick(() => previouslyFocused.value?.focus?.())
     }
   }
 )
 
-onMounted(() => window.addEventListener('keydown', handleEscape))
-onUnmounted(() => window.removeEventListener('keydown', handleEscape))
+onMounted(() => window.addEventListener('keydown', handleDialogKeydown))
+onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
 </script>
 
 <style scoped>
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: var(--theme-z-modal);
   display: grid;
   place-items: center;
   padding: 24px;
   background: var(--ds-bg-overlay);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .dialog-fade-enter-active,
@@ -434,13 +473,13 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape))
 .update-container {
   display: flex;
   flex-direction: column;
-  width: min(496px, calc(100vw - 48px));
+  width: min(472px, calc(100vw - 48px));
   max-height: min(600px, calc(100vh - 48px));
   overflow: hidden;
   color: var(--ds-text-primary);
   background: var(--ds-bg-1);
   border: 1px solid var(--ds-border-light);
-  border-radius: 18px;
+  border-radius: var(--theme-radius-xl);
   box-shadow: var(--ds-shadow-xl);
   outline: none;
 }
@@ -459,8 +498,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape))
   place-items: center;
   width: 48px;
   height: 48px;
-  color: #fff;
-  border-radius: 14px;
+  color: var(--theme-text-inverse);
+  border-radius: var(--theme-radius-lg);
 }
 
 .update-icon svg {
@@ -471,8 +510,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape))
 .update-icon.icon-checking,
 .update-icon.icon-available,
 .update-icon.icon-downloading {
-  background: linear-gradient(135deg, var(--ds-accent-blue), #67a7ff);
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--ds-accent-blue) 24%, transparent);
+  background: linear-gradient(135deg, var(--theme-brand-hover), var(--theme-brand));
+  box-shadow: var(--theme-shadow-brand);
 }
 
 .update-icon.icon-downloaded,
@@ -507,7 +546,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape))
 
 .update-version {
   margin-top: 4px;
-  color: var(--ds-accent-blue);
+  color: var(--theme-brand-accent);
   font-size: 15px;
   font-weight: 650;
   line-height: 1.35;
@@ -551,9 +590,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape))
 
 .update-content {
   display: flex;
-  flex: 1;
+  flex: 0 1 auto;
   align-items: stretch;
-  min-height: 152px;
+  min-height: 112px;
   padding: 20px 22px;
   overflow: auto;
 }
@@ -639,8 +678,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape))
 
 .release-notes-scroll :deep(.markdown-content h3:nth-of-type(3)::before) {
   background-image: url("data:image/svg+xml,%3Csvg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23b093ff' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 3v18M5 10l7-7 7 7M5 21h14'/%3E%3C/svg%3E");
-  background-color: rgba(176, 147, 255, 0.13);
-  border-color: rgba(176, 147, 255, 0.3);
+  background-color: var(--theme-info-soft);
+  border-color: var(--theme-info-border);
 }
 
 .release-notes-scroll :deep(.markdown-content p),
@@ -747,7 +786,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape))
 .progress-fill {
   height: 100%;
   min-width: 2px;
-  background: linear-gradient(90deg, var(--ds-accent-blue), #70adff);
+  background: linear-gradient(90deg, var(--theme-brand), var(--theme-brand-accent));
   border-radius: inherit;
   transition: width 180ms ease;
 }
@@ -813,20 +852,20 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape))
 }
 
 .btn-primary {
-  color: #fff;
-  background: var(--qz-action, #c2410c);
-  border-color: var(--qz-action, #c2410c);
-  box-shadow: 0 6px 16px rgba(194, 65, 12, 0.24);
+  color: var(--theme-text-inverse);
+  background: var(--theme-brand);
+  border-color: var(--theme-brand);
+  box-shadow: var(--theme-shadow-brand);
 }
 
 .btn:hover {
-  transform: translateY(-1px);
-  background: var(--ds-bg-hover);
+  background: var(--theme-surface-hover);
+  border-color: var(--theme-border-strong);
 }
 
 .btn-primary:hover {
-  background: var(--qz-action-hover, #ea580c);
-  border-color: var(--qz-active, #fb923c);
+  background: var(--theme-brand-hover);
+  border-color: var(--theme-brand-accent);
 }
 
 .btn:active {
@@ -837,7 +876,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape))
 .close-btn:focus-visible,
 .text-action:focus-visible,
 .release-notes-scroll:focus-visible {
-  outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+  outline: 2px solid var(--theme-focus);
   outline-offset: 2px;
 }
 

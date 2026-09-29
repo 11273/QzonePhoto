@@ -1,9 +1,9 @@
 <template>
-  <div class="w-72 flex flex-col border-r border-blue-500/20 h-full">
+  <div class="space-sidebar w-72 flex flex-col h-full">
     <!-- 好友模式：好友信息栏 -->
     <transition name="context-switch" mode="out-in">
       <div v-if="viewMode === 'friend' && currentFriend" key="friend" class="user-section">
-        <div class="user-card friend-card">
+        <div class="user-card friend-card" data-material-light="subtle">
           <div class="card-header">
             <el-tooltip
               v-if="
@@ -61,8 +61,7 @@
               {{ stripEmoji(currentFriend.name)?.[0] || '?' }}
             </el-avatar>
             <div class="user-info">
-              <!-- eslint-disable-next-line vue/no-v-html -- 名称已做 HTML 转义，仅注入表情 img 标签 -->
-              <div class="nickname" v-html="renderFriendName(currentFriend.name)"></div>
+              <div class="nickname"><QzoneDisplayName :name="currentFriend.name" /></div>
               <div class="uin-row">
                 <span
                   class="uin uin-copyable"
@@ -179,17 +178,15 @@
 
       <!-- 自己空间：用户信息卡片 -->
       <div v-else key="self" class="user-section">
-        <div class="user-card">
+        <div class="user-card" data-material-light="subtle">
           <div class="card-header">
             <el-avatar shape="square" :size="32" :src="userAvatarUrl" class="user-avatar">
               {{ stripEmoji(userStore.userInfo?.nick)?.[0] || 'Q' }}
             </el-avatar>
             <div class="user-info">
-              <!-- eslint-disable-next-line vue/no-v-html -- 名称已做 HTML 转义，仅注入表情 img 标签 -->
-              <div
-                class="nickname"
-                v-html="renderFriendName(userStore.userInfo?.nick || 'QZone用户')"
-              ></div>
+              <div class="nickname">
+                <QzoneDisplayName :name="userStore.userInfo?.nick || 'QZone用户'" />
+              </div>
               <div class="uin-row">
                 <span
                   class="uin uin-copyable"
@@ -411,7 +408,7 @@
 
     <!-- 二级内容区 - 根据模块动态切换 -->
     <div class="flex-1 overflow-hidden menu-container">
-      <el-scrollbar class="h-full">
+      <el-scrollbar class="h-full" :tabindex="-1">
         <!-- 相册模块 -->
         <el-menu
           v-if="currentModule === 'album' && albumLoadState.status === ALBUM_LOAD_STATUS.READY"
@@ -428,7 +425,8 @@
           >
             <template #title>
               <span class="category-title">
-                {{ category.className }} ({{ category.albums.length }})
+                <span class="category-name">{{ category.className }}</span>
+                <span class="category-count">{{ category.albums.length }}</span>
               </span>
             </template>
             <el-menu-item
@@ -454,7 +452,7 @@
                   <span v-if="getViewtypeText(album.viewtype)" class="viewtype-badge">
                     {{ getViewtypeText(album.viewtype) }}
                   </span>
-                  <span class="album-text">{{ album.name }}</span>
+                  <span class="album-text" :title="album.name">{{ album.name }}</span>
                 </div>
                 <el-icon
                   v-if="album.priv === 3"
@@ -559,17 +557,17 @@
               : 'polite'
           "
         >
-          <el-icon
+          <LoadingState
             v-if="albumLoadState.status === ALBUM_LOAD_STATUS.LOADING"
-            class="album-load-icon is-loading"
-          >
-            <Loading />
-          </el-icon>
-          <el-icon v-else class="album-load-icon">
-            <Picture v-if="albumLoadState.status === ALBUM_LOAD_STATUS.EMPTY" />
-            <WarningFilled v-else />
-          </el-icon>
-          <template v-if="albumLoadState.status !== ALBUM_LOAD_STATUS.READY">
+            :text="albumLoadState.title || '正在加载相册…'"
+            size="small"
+            spinner-type="icon"
+          />
+          <template v-else-if="albumLoadState.status !== ALBUM_LOAD_STATUS.READY">
+            <el-icon class="album-load-icon">
+              <Picture v-if="albumLoadState.status === ALBUM_LOAD_STATUS.EMPTY" />
+              <WarningFilled v-else />
+            </el-icon>
             <h3>{{ albumLoadState.title }}</h3>
             <p>{{ albumLoadState.description }}</p>
             <el-button
@@ -730,7 +728,7 @@
           <!-- 时长筛选 -->
           <div class="filter-block">
             <div class="filter-title">时长</div>
-            <div class="chip-row">
+            <div class="chip-row duration-chip-row">
               <button
                 v-for="opt in DURATION_OPTIONS"
                 :key="opt.key"
@@ -813,8 +811,8 @@
 
           <section v-if="feedsTypeRows.length" class="fd-panel fd-mix">
             <div class="fd-panel-head">
-              <span>内容比例</span>
-              <em>{{ feedsMediaRate }} 有媒体</em>
+              <span>动态类型分布</span>
+              <em>{{ feedsMediaRate }} 含媒体</em>
             </div>
             <div class="fd-mix-track">
               <span
@@ -831,182 +829,201 @@
             </div>
           </section>
 
-          <section class="fd-panel fd-soft-grid">
-            <div>
-              <span>平均点赞</span>
-              <strong>{{ feedsAvgLike }}</strong>
-            </div>
-            <div>
-              <span>平均评论</span>
-              <strong>{{ feedsAvgComment }}</strong>
-            </div>
-            <div>
-              <span>有浏览</span>
-              <strong>{{ feedsViewedRate }}</strong>
-            </div>
-            <div>
-              <span>作者</span>
-              <strong>{{ feedsUniqueAuthorCount }}</strong>
-            </div>
-          </section>
-
-          <section v-if="feedsActionRows.length" class="fd-panel">
-            <div class="fd-panel-head">
-              <span>与我相关</span>
-              <em>{{ feedsActionRows.length }} 类动作</em>
-            </div>
-            <div class="fd-action-cloud">
-              <span v-for="row in feedsActionRows.slice(0, 6)" :key="row.label">
-                {{ row.label }} <strong>{{ row.count }}</strong>
-              </span>
-            </div>
-          </section>
-
-          <section v-if="feedsStats.topAuthors && feedsStats.topAuthors.length" class="fd-panel">
-            <div class="fd-panel-head">
-              <span>常出现的人</span>
-              <button
-                v-if="feedsStats.topAuthors.length > 5"
-                type="button"
-                class="fd-panel-toggle"
-                :aria-expanded="feedsPeopleExpanded"
-                aria-controls="fd-people-list"
-                :aria-label="
-                  feedsPeopleExpanded
-                    ? '收起常出现的人列表'
-                    : `查看全部 ${feedsUniqueAuthorCount} 人`
-                "
-                @click="feedsPeopleExpanded = !feedsPeopleExpanded"
-              >
-                {{ feedsPeopleExpanded ? '收起' : `查看全部 ${feedsUniqueAuthorCount} 人` }}
-                <el-icon :class="{ 'is-expanded': feedsPeopleExpanded }"><ArrowDown /></el-icon>
-              </button>
-              <em v-else>{{ feedsUniqueAuthorCount }} 人</em>
-            </div>
-            <div
-              id="fd-people-list"
-              class="fd-people-stack"
-              :class="{ 'is-expanded': feedsPeopleExpanded }"
-            >
-              <button
-                v-for="author in visibleFeedsAuthors"
-                :key="author.uin || author.name"
-                type="button"
-                class="fd-person"
-                :title="`${author.name} · ${author.count} 条${feedsItemUnit}`"
-                @click="openQzoneProfile(author.uin, author.name, author.avatar)"
-              >
-                <img :src="author.avatar" :alt="author.name" referrerpolicy="no-referrer" />
-                <!-- eslint-disable-next-line vue/no-v-html -- 名称已做 HTML 转义，仅注入表情 img 标签 -->
-                <span v-html="renderFriendName(author.name)"></span>
-                <strong>{{ author.count }}</strong>
-              </button>
-            </div>
-          </section>
-
-          <section
-            v-if="feedsStats.sourceBadgeRows && feedsStats.sourceBadgeRows.length"
-            class="fd-panel"
+          <button
+            type="button"
+            class="fd-disclosure"
+            :aria-expanded="feedsStatsExpanded"
+            aria-controls="feeds-secondary-stats"
+            @click="feedsStatsExpanded = !feedsStatsExpanded"
           >
-            <div class="fd-panel-head">
-              <span>未读提醒</span>
-            </div>
-            <div class="fd-action-cloud">
-              <span v-for="row in feedsStats.sourceBadgeRows" :key="row.key">
-                {{ row.label }} <strong>{{ row.count > 99 ? '99+' : row.count }}</strong>
-              </span>
-            </div>
-          </section>
+            <span>{{ feedsStatsExpanded ? '收起详细统计' : '查看更多统计' }}</span>
+            <el-icon :class="{ 'is-expanded': feedsStatsExpanded }"><ArrowDown /></el-icon>
+          </button>
 
-          <section
-            v-if="feedsDynamicMod || feedsStats.trend?.length || feedsStats.recentVisitors?.length"
-            class="fd-panel fd-space-card"
-          >
-            <div class="fd-panel-head">
-              <span>空间热度</span>
-              <em v-if="feedsDynamicMod"
-                >动态 {{ formatFeedsBigNum(feedsDynamicMod.total || 0) }}</em
-              >
-            </div>
-            <div v-if="feedsDynamicMod" class="fd-space-line">
-              <strong>{{ formatFeedsBigNum(feedsDynamicMod.total || 0) }}</strong>
-              <span>动态浏览</span>
-              <em v-if="feedsDynamicMod.today > 0">今日 +{{ feedsDynamicMod.today }}</em>
-            </div>
-            <svg
-              v-if="feedsTrendMax > 0"
-              class="mn-spark mn-spark-area"
-              viewBox="0 0 220 44"
-              preserveAspectRatio="none"
-            >
-              <defs>
-                <linearGradient id="mn-spark-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#60a5fa" stop-opacity="0.32" />
-                  <stop offset="100%" stop-color="#60a5fa" stop-opacity="0" />
-                </linearGradient>
-              </defs>
-              <polygon
-                :points="trendAreaPolygon(feedsStats.trend, 220, 44)"
-                fill="url(#mn-spark-fill)"
-              />
-              <polyline
-                :points="trendPolyline(feedsStats.trend, 220, 44)"
-                fill="none"
-                stroke="#60a5fa"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <circle :cx="220 - 4" :cy="trendLastY(feedsStats.trend, 44)" r="3" fill="#60a5fa" />
-            </svg>
-          </section>
+          <div v-show="feedsStatsExpanded" id="feeds-secondary-stats" class="fd-detail-stack">
+            <section class="fd-panel fd-soft-grid">
+              <div>
+                <span>平均点赞</span>
+                <strong>{{ feedsAvgLike }}</strong>
+              </div>
+              <div>
+                <span>平均评论</span>
+                <strong>{{ feedsAvgComment }}</strong>
+              </div>
+              <div>
+                <span>有浏览</span>
+                <strong>{{ feedsViewedRate }}</strong>
+              </div>
+              <div>
+                <span>作者</span>
+                <strong>{{ feedsUniqueAuthorCount }}</strong>
+              </div>
+            </section>
 
-          <section
-            v-if="
-              feedsStats.visitorLoading ||
-              feedsStats.visitorLoaded ||
-              feedsStats.visitorError ||
-              feedsStats.recentVisitors?.length
-            "
-            class="fd-panel fd-visitors"
-          >
-            <div class="fd-panel-head">
-              <span>最近来过</span>
-              <em v-if="feedsStats.recentVisitors?.length">{{
-                feedsStats.recentVisitors.length
-              }}</em>
-            </div>
-            <p v-if="feedsStats.visitorLoading" class="fd-visitor-state" role="status">
-              正在读取访客记录…
-            </p>
-            <div v-if="feedsStats.recentVisitors?.length" class="mn-avatars">
-              <button
-                v-for="v in feedsStats.recentVisitors.slice(0, 12)"
-                :key="v.uin"
-                type="button"
-                class="mn-avatar"
-                :class="{ 'is-friend': v.isFriend }"
-                :title="`${v.name || v.uin}${v.time ? ' · ' + formatRelativeTime(v.time) : ''}`"
-                @click="openQzoneProfile(v.uin, v.name, v.img)"
+            <section v-if="feedsActionRows.length" class="fd-panel">
+              <div class="fd-panel-head">
+                <span>与我相关</span>
+                <em>{{ feedsActionRows.length }} 类动作</em>
+              </div>
+              <div class="fd-action-cloud">
+                <span v-for="row in feedsActionRows.slice(0, 6)" :key="row.label">
+                  {{ row.label }} <strong>{{ row.count }}</strong>
+                </span>
+              </div>
+            </section>
+
+            <section v-if="feedsStats.topAuthors && feedsStats.topAuthors.length" class="fd-panel">
+              <div class="fd-panel-head">
+                <span>常出现的人</span>
+                <button
+                  v-if="feedsStats.topAuthors.length > 5"
+                  type="button"
+                  class="fd-panel-toggle"
+                  :aria-expanded="feedsPeopleExpanded"
+                  aria-controls="fd-people-list"
+                  :aria-label="
+                    feedsPeopleExpanded
+                      ? '收起常出现的人列表'
+                      : `查看全部 ${feedsUniqueAuthorCount} 人`
+                  "
+                  @click="feedsPeopleExpanded = !feedsPeopleExpanded"
+                >
+                  {{ feedsPeopleExpanded ? '收起' : `查看全部 ${feedsUniqueAuthorCount} 人` }}
+                  <el-icon :class="{ 'is-expanded': feedsPeopleExpanded }"><ArrowDown /></el-icon>
+                </button>
+                <em v-else>{{ feedsUniqueAuthorCount }} 人</em>
+              </div>
+              <div
+                id="fd-people-list"
+                class="fd-people-stack"
+                :class="{ 'is-expanded': feedsPeopleExpanded }"
               >
-                <img :src="v.img" :alt="v.name" referrerpolicy="no-referrer" />
-                <span v-if="v.haveNewFeeds" class="mn-avatar-dot"></span>
-              </button>
-            </div>
-            <div v-if="feedsStats.visitorError" class="fd-visitor-state is-error" role="alert">
-              <span>{{ feedsStats.visitorError }}</span>
-              <button type="button" @click="feedsStats.retryVisitors?.()">重试</button>
-            </div>
-            <p
-              v-else-if="feedsStats.visitorLoaded && !feedsStats.recentVisitors?.length"
-              class="fd-visitor-state"
+                <button
+                  v-for="author in visibleFeedsAuthors"
+                  :key="author.uin || author.name"
+                  type="button"
+                  class="fd-person"
+                  :title="`${author.name} · ${author.count} 条${feedsItemUnit}`"
+                  @click="openQzoneProfile(author.uin, author.name, author.avatar)"
+                >
+                  <img :src="author.avatar" :alt="author.name" referrerpolicy="no-referrer" />
+                  <QzoneDisplayName :name="author.name" />
+                  <strong>{{ author.count }}</strong>
+                </button>
+              </div>
+            </section>
+
+            <section
+              v-if="feedsStats.sourceBadgeRows && feedsStats.sourceBadgeRows.length"
+              class="fd-panel"
             >
-              当前没有可见的最近访客
-            </p>
-            <p v-if="feedsStats.visitorLoaded" class="fd-visitor-note">
-              仅展示当前账号有权限看到的记录
-            </p>
-          </section>
+              <div class="fd-panel-head">
+                <span>未读提醒</span>
+              </div>
+              <div class="fd-action-cloud">
+                <span v-for="row in feedsStats.sourceBadgeRows" :key="row.key">
+                  {{ row.label }} <strong>{{ row.count > 99 ? '99+' : row.count }}</strong>
+                </span>
+              </div>
+            </section>
+
+            <section
+              v-if="
+                feedsDynamicMod || feedsStats.trend?.length || feedsStats.recentVisitors?.length
+              "
+              class="fd-panel fd-space-card"
+            >
+              <div class="fd-panel-head">
+                <span>空间热度</span>
+                <em v-if="feedsDynamicMod"
+                  >动态 {{ formatFeedsBigNum(feedsDynamicMod.total || 0) }}</em
+                >
+              </div>
+              <div v-if="feedsDynamicMod" class="fd-space-line">
+                <strong>{{ formatFeedsBigNum(feedsDynamicMod.total || 0) }}</strong>
+                <span>动态浏览</span>
+                <em v-if="feedsDynamicMod.today > 0">今日 +{{ feedsDynamicMod.today }}</em>
+              </div>
+              <svg
+                v-if="feedsTrendMax > 0"
+                class="mn-spark mn-spark-area"
+                viewBox="0 0 220 44"
+                preserveAspectRatio="none"
+              >
+                <defs>
+                  <linearGradient id="mn-spark-fill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--theme-info)" stop-opacity="0.32" />
+                    <stop offset="100%" stop-color="var(--theme-info)" stop-opacity="0" />
+                  </linearGradient>
+                </defs>
+                <polygon
+                  :points="trendAreaPolygon(feedsStats.trend, 220, 44)"
+                  fill="url(#mn-spark-fill)"
+                />
+                <polyline
+                  :points="trendPolyline(feedsStats.trend, 220, 44)"
+                  fill="none"
+                  stroke="var(--theme-info)"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <circle
+                  :cx="220 - 4"
+                  :cy="trendLastY(feedsStats.trend, 44)"
+                  r="3"
+                  fill="var(--theme-info)"
+                />
+              </svg>
+            </section>
+
+            <section
+              v-if="
+                feedsStats.visitorLoading ||
+                feedsStats.visitorLoaded ||
+                feedsStats.visitorError ||
+                feedsStats.recentVisitors?.length
+              "
+              class="fd-panel fd-visitors"
+            >
+              <div class="fd-panel-head">
+                <span>最近来过</span>
+                <em v-if="feedsStats.recentVisitors?.length">{{
+                  feedsStats.recentVisitors.length
+                }}</em>
+              </div>
+              <p v-if="feedsStats.visitorLoading" class="fd-visitor-state" role="status">
+                正在读取访客记录…
+              </p>
+              <div v-if="feedsStats.recentVisitors?.length" class="mn-avatars">
+                <button
+                  v-for="v in feedsStats.recentVisitors.slice(0, 12)"
+                  :key="v.uin"
+                  type="button"
+                  class="mn-avatar"
+                  :class="{ 'is-friend': v.isFriend }"
+                  :title="`${v.name || v.uin}${v.time ? ' · ' + formatRelativeTime(v.time) : ''}`"
+                  @click="openQzoneProfile(v.uin, v.name, v.img)"
+                >
+                  <img :src="v.img" :alt="v.name" referrerpolicy="no-referrer" />
+                  <span v-if="v.haveNewFeeds" class="mn-avatar-dot"></span>
+                </button>
+              </div>
+              <div v-if="feedsStats.visitorError" class="fd-visitor-state is-error" role="alert">
+                <span>{{ feedsStats.visitorError }}</span>
+                <button type="button" @click="feedsStats.retryVisitors?.()">重试</button>
+              </div>
+              <p
+                v-else-if="feedsStats.visitorLoaded && !feedsStats.recentVisitors?.length"
+                class="fd-visitor-state"
+              >
+                当前没有可见的最近访客
+              </p>
+              <p v-if="feedsStats.visitorLoaded" class="fd-visitor-note">
+                仅展示当前账号有权限看到的记录
+              </p>
+            </section>
+          </div>
         </div>
       </el-scrollbar>
     </div>
@@ -1068,6 +1085,8 @@ import { ElMessage } from 'element-plus'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
 import FriendDrawer from './friend-drawer.vue'
 import UploadManager from '@renderer/components/UploadManager/index.vue'
+import LoadingState from '@renderer/components/LoadingState/index.vue'
+import QzoneDisplayName from '@renderer/components/QzoneDisplayName/index.vue'
 import { generateUniqueAlbumName, copyToClipboard } from '@renderer/utils'
 import { QZONE_CONFIG } from '@shared/const'
 import {
@@ -1079,8 +1098,15 @@ import {
 import { formatBytes } from '@renderer/utils/formatters'
 import { resolveQzoneHostUin, resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
 import { retryPageRequest } from '@renderer/utils/paginationGuard'
+import {
+  batchSummaryText,
+  batchTaskIds,
+  finishDownloadBatch,
+  openDownloadBatchOptions
+} from '@renderer/utils/downloadBatch'
 
 const officialCapacityTooltip = '仅代表空间使用量，不是本地已下载文件的大小。'
+const feedsStatsExpanded = ref(false)
 
 const handleMenuSelect = (index) => {
   // 菜单选择处理由 selectAlbumItem 函数处理
@@ -1132,15 +1158,6 @@ const handlePhotoTypeSelect = (type) => {
 
 // 处理好友名称中的表情代码
 const stripEmoji = (name) => (name || '').replace(/\[em\]e\d+\[\/em\]/g, '')
-const renderFriendName = (name) => {
-  if (!name) return ''
-  const escaped = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return escaped.replace(
-    /\[em\](e\d+)\[\/em\]/g,
-    (_, code) =>
-      `<img src="https://qzonestyle.gtimg.cn/qzone/em/${code}.gif" class="friend-emoji" alt="" />`
-  )
-}
 
 const effectiveHostUin = computed(() =>
   resolveQzoneHostUin(
@@ -1385,9 +1402,9 @@ const videoFilters = reactive({
 
 const DURATION_OPTIONS = [
   { key: 'all', label: '全部' },
-  { key: 'short', label: '< 30s' },
-  { key: 'medium', label: '30s-3min' },
-  { key: 'long', label: '> 3min' }
+  { key: 'short', label: '30秒内' },
+  { key: 'medium', label: '30秒–3分钟' },
+  { key: 'long', label: '3分钟以上' }
 ]
 
 const SORT_OPTIONS = [
@@ -1401,9 +1418,9 @@ const formatTotalDuration = (seconds) => {
   if (!seconds || seconds <= 0) return '—'
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
-  if (h >= 1) return `${h}h${m > 0 ? m + 'm' : ''}`
-  if (m >= 1) return `${m}m`
-  return `${Math.floor(seconds)}s`
+  if (h >= 1) return `${h}时${m > 0 ? m + '分' : ''}`
+  if (m >= 1) return `${m}分钟`
+  return `${Math.floor(seconds)}秒`
 }
 
 // 照片统计 + 筛选（被 photo-module.vue 通过 leftRef 推送/读取）
@@ -1493,6 +1510,7 @@ const downloadButtonText = computed(() => {
 
 // 下载进度弹窗
 const downloadProgressVisible = ref(false)
+let downloadManagerReturnFocus = null
 
 // 计算相册是否正在下载
 const isAlbumDownloading = computed(() => {
@@ -1596,9 +1614,22 @@ const uploadStatusText = computed(() => {
 })
 
 // 显示下载进度
-const showDownloadProgress = () => {
+const showDownloadProgress = (event) => {
+  if (event?.currentTarget instanceof HTMLElement) {
+    downloadManagerReturnFocus = event.currentTarget
+  }
   downloadProgressVisible.value = true
 }
+
+watch(downloadProgressVisible, (isVisible, wasVisible) => {
+  if (!isVisible && wasVisible) {
+    const returnTarget = downloadManagerReturnFocus
+    downloadManagerReturnFocus = null
+    if (returnTarget?.isConnected) {
+      nextTick(() => returnTarget.focus({ preventScroll: true }))
+    }
+  }
+})
 
 // 显示上传管理器
 const showUploadProgress = () => {
@@ -1625,6 +1656,8 @@ const toggleDownloadAll = async () => {
 // 开始下载全部相册
 const startDownloadAll = async () => {
   let albumsToDownload = [] // 移到函数开始位置
+  let downloadBatch = null
+  let batchFinished = false
 
   try {
     if (!menuList.value || menuList.value.length === 0) {
@@ -1655,6 +1688,12 @@ const startDownloadAll = async () => {
       return
     }
 
+    downloadBatch = await openDownloadBatchOptions({
+      label: isFriendMode.value ? '好友的全部相册' : '全部相册',
+      sourceType: 'albums'
+    })
+    if (!downloadBatch) return
+
     // 重置状态
     downloadCancelled.value = false
     isDownloadingAll.value = true
@@ -1667,7 +1706,7 @@ const startDownloadAll = async () => {
     }
 
     let successCount = 0
-    let failCount = 0
+    let processedAlbumCount = 0
 
     ElMessage.info(
       `开始批量下载 ${albumsToDownload.length} 个相册${skipCount > 0 ? `，跳过 ${skipCount} 个正在下载的相册` : ''}`
@@ -1685,7 +1724,7 @@ const startDownloadAll = async () => {
         }
 
         // 更新进度
-        downloadProgress.value.current = successCount + failCount + 1
+        downloadProgress.value.current = processedAlbumCount + 1
         downloadProgress.value.percentage = Math.round(
           (downloadProgress.value.current / albumsToDownload.length) * 100
         )
@@ -1765,11 +1804,12 @@ const startDownloadAll = async () => {
                 photos: photoList,
                 uin: resolveSelfQzoneUin(userStore) || 'unknown',
                 albumId: album.id,
+                batch: downloadBatch,
                 ...(isFriendMode.value ? { friendUin: effectiveHostUin.value } : {})
               }
 
-              await window.QzoneAPI.download.addAlbum(albumData)
-              addedPhotosCount += photoList.length
+              const addResult = await window.QzoneAPI.download.addAlbum(albumData)
+              addedPhotosCount += batchTaskIds(addResult).length
             }
 
             // 更新获取进度
@@ -1801,6 +1841,7 @@ const startDownloadAll = async () => {
           console.log(`[warn] 相册 ${album.name} 被用户单独取消`)
           downloadStore.clearGlobalCancelFlag(album.id)
           // 不计入失败，继续处理下一个相册
+          processedAlbumCount++
           continue
         }
 
@@ -1808,16 +1849,16 @@ const startDownloadAll = async () => {
           // 重置状态，让任务系统接管
           downloadStore.resetAlbumState(album.id)
           successCount++
-          console.log(`[ok] 成功添加相册: ${album.name} (${addedPhotosCount}张照片)`)
+          console.log(`[ok] 成功添加相册: ${album.name} (${addedPhotosCount}个任务)`)
         } else {
-          // 没有照片（无权限/空相册），计入失败并继续
-          console.warn(`[warn] 相册 ${album.name} 无照片或无权限，跳过`)
+          // 可能为空、无权限，或所选日期没有匹配内容；最终由批次汇总统一说明。
+          console.warn(`[warn] 相册 ${album.name} 没有创建下载任务，跳过`)
           downloadStore.resetAlbumState(album.id)
-          failCount++
         }
 
         // 清理该相册的全局取消标志
         downloadStore.clearGlobalCancelFlag(album.id)
+        processedAlbumCount++
 
         // 添加延迟，避免请求过于频繁
         await new Promise((resolve) => setTimeout(resolve, 200))
@@ -1828,22 +1869,25 @@ const startDownloadAll = async () => {
         downloadStore.errorAlbumDownload(album.id, error.message)
         // 清理该相册的全局取消标志
         downloadStore.clearGlobalCancelFlag(album.id)
-        failCount++
+        processedAlbumCount++
       }
     }
+
+    const batchSummary = await finishDownloadBatch(downloadBatch, downloadCancelled.value)
+    batchFinished = true
 
     // 完成处理
     if (downloadCancelled.value) {
       // 清理所有正在获取的相册状态
       downloadStore.cancelAllFetching()
-      ElMessage.warning(`下载已取消，已成功添加 ${successCount} 个相册`)
+      ElMessage.warning(`下载已取消；${batchSummaryText(batchSummary)}`)
     } else {
       if (successCount > 0) {
-        ElMessage.success(
-          `批量下载完成！成功添加 ${successCount} 个相册到下载队列${failCount > 0 ? `，失败 ${failCount} 个` : ''}${skipCount > 0 ? `，跳过 ${skipCount} 个正在下载的相册` : ''}`
-        )
+        ElMessage.success(batchSummaryText(batchSummary))
         // 显示下载管理器
         downloadProgressVisible.value = true
+      } else if (batchSummary?.scanned > 0 && batchSummary?.matched === 0) {
+        ElMessage.warning(`所选日期没有匹配内容，共检查 ${batchSummary.scanned} 项`)
       } else {
         ElMessage.error('没有成功添加任何相册，请检查网络连接')
       }
@@ -1854,6 +1898,9 @@ const startDownloadAll = async () => {
     // 清理所有正在获取的相册状态
     downloadStore.cancelAllFetching()
   } finally {
+    if (downloadBatch && !batchFinished) {
+      await finishDownloadBatch(downloadBatch, true).catch(() => null)
+    }
     // 重置状态
     isDownloadingAll.value = false
     isCancelling.value = false
@@ -2421,7 +2468,7 @@ const debouncedRefreshAlbum = () => {
   refreshDebounceTimer = setTimeout(() => {
     if (pendingRefreshAlbums.size > 0 && refreshAlbumCallback) {
       // 检查是否需要刷新当前相册
-      const currentAlbumId = clickItem.value?.id
+      const currentAlbumId = String(clickItem.value?.id || '').trim()
       if (currentAlbumId && pendingRefreshAlbums.has(currentAlbumId)) {
         console.log(`[Left] 刷新相册: ${clickItem.value.name}`)
         refreshAlbumCallback()
@@ -2469,8 +2516,9 @@ const setupUploadListeners = () => {
     if (completedTasks.length > 0) {
       // 收集需要刷新的相册ID
       completedTasks.forEach((task) => {
-        if (task.albumId) {
-          pendingRefreshAlbums.add(task.albumId)
+        const albumId = String(task.albumId || '').trim()
+        if (albumId) {
+          pendingRefreshAlbums.add(albumId)
         }
       })
 
@@ -2550,14 +2598,6 @@ const confirmLogout = async () => {
     ElMessage.error('登出失败')
   }
 }
-
-// 监听全局上传管理器关闭，刷新当前相册
-watch(uploadProgressVisible, (newVal, oldVal) => {
-  // 当上传管理器从显示变为隐藏时，刷新当前相册
-  if (oldVal === true && newVal === false && refreshAlbumCallback) {
-    refreshAlbumCallback()
-  }
-})
 
 onBeforeMount(() => {
   fetchPhotoData()
@@ -2678,6 +2718,7 @@ watch(
   () => feedsStats.activeSourceKey,
   () => {
     feedsPeopleExpanded.value = false
+    feedsStatsExpanded.value = false
   }
 )
 
@@ -2716,11 +2757,12 @@ const feedsMediaText = computed(() => {
   return imageCount ? `${imageCount} 张照片` : `${videoCount} 个视频`
 })
 const feedsPulseText = computed(() => {
+  if (!Number(feedsStats.loaded || 0)) return '当前分类暂无内容'
   const pieces = []
   if (feedsTimeRangeText.value) pieces.push(feedsTimeRangeText.value)
   if (feedsUniqueAuthorCount.value) pieces.push(`${feedsUniqueAuthorCount.value} 人`)
   if (feedsEngagementTotal.value) pieces.push(`${feedsEngagementTotal.value} 次互动`)
-  return pieces.length ? pieces.join(' · ') : '继续滚动会补全这一页'
+  return pieces.length ? pieces.join(' · ') : '当前页内容已加载'
 })
 
 const feedsTypeRows = computed(() => {
@@ -2757,7 +2799,15 @@ const feedsTimeRangeText = computed(() => {
 })
 
 // 模块颜色（蓝紫青绿 主调，按 i 循环）—— 跟 60a5fa 主色保持同色系
-const MOD_PALETTE = ['#60a5fa', '#a78bfa', '#34d399', '#fbbf24', '#f87171', '#22d3ee', '#94a3b8']
+const MOD_PALETTE = [
+  'var(--theme-info)',
+  'var(--theme-brand-text)',
+  'var(--theme-success)',
+  'var(--theme-warning)',
+  'var(--theme-danger)',
+  'color-mix(in srgb, var(--theme-info) 70%, var(--theme-success))',
+  'var(--theme-text-muted)'
+]
 const modColor = (i) => MOD_PALETTE[i % MOD_PALETTE.length]
 
 // 12345 → 1.2万；100000 → 10万
@@ -2819,17 +2869,25 @@ defineExpose({
 </script>
 
 <style scoped>
+.space-sidebar {
+  border-right: 1px solid var(--theme-border-subtle);
+  background: color-mix(in srgb, var(--theme-canvas) 92%, transparent);
+  transition:
+    background-color var(--theme-duration) var(--theme-ease),
+    border-color var(--theme-duration) var(--theme-ease);
+}
+
 /* 用户信息卡片 */
 .user-section {
   padding: 6px 8px;
   padding-top: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--theme-border-subtle);
 
   .user-card {
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--theme-radius-md);
+    border: 1px solid var(--theme-border-subtle);
     overflow: hidden;
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--theme-surface-soft);
     backdrop-filter: blur(10px);
 
     .card-header {
@@ -2837,16 +2895,16 @@ defineExpose({
       align-items: center;
       gap: 8px;
       padding: 8px 10px;
-      background: rgba(255, 255, 255, 0.02);
+      background: transparent;
 
       .user-avatar {
-        border: 2px solid rgba(96, 165, 250, 0.3);
-        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
-        transition: all 0.3s ease;
+        border: 2px solid var(--theme-brand-border);
+        box-shadow: var(--theme-shadow-sm);
+        transition: var(--ds-transition-all);
 
         &:hover {
-          border-color: rgba(96, 165, 250, 0.5);
-          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+          border-color: var(--theme-brand-accent);
+          box-shadow: var(--theme-shadow-brand);
         }
       }
 
@@ -2857,7 +2915,7 @@ defineExpose({
         .nickname {
           font-size: 12px;
           font-weight: 600;
-          color: #ffffff;
+          color: var(--theme-text-primary);
           line-height: 1.2;
           margin-bottom: 1px;
           white-space: nowrap;
@@ -2882,7 +2940,7 @@ defineExpose({
 
         .uin {
           font-size: 12px;
-          color: rgba(255, 255, 255, 0.6);
+          color: var(--theme-text-muted);
           font-variant-numeric: tabular-nums;
           user-select: none;
           transition: all 0.2s ease;
@@ -2895,34 +2953,34 @@ defineExpose({
           border-radius: 3px;
 
           &:hover {
-            color: rgba(255, 255, 255, 0.95);
-            background: rgba(255, 255, 255, 0.06);
+            color: var(--theme-text-primary);
+            background: var(--theme-surface-hover);
           }
           &:active {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--theme-surface-active);
           }
 
           &:focus-visible {
-            outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+            outline: 2px solid var(--theme-focus);
             outline-offset: 2px;
           }
         }
 
         .uin-toggle {
           font-size: 11px;
-          color: rgba(255, 255, 255, 0.3);
+          color: var(--theme-text-subtle);
           cursor: pointer;
           padding: 2px;
           border-radius: 3px;
           transition: all 0.15s ease;
 
           &:hover {
-            color: rgba(255, 255, 255, 0.7);
-            background: rgba(255, 255, 255, 0.06);
+            color: var(--theme-text-secondary);
+            background: var(--theme-surface-hover);
           }
 
           &:focus-visible {
-            outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+            outline: 2px solid var(--theme-focus);
             outline-offset: 2px;
           }
         }
@@ -2935,7 +2993,7 @@ defineExpose({
         gap: 4px;
 
         .open-web-btn {
-          color: rgba(64, 158, 255, 0.8);
+          color: var(--theme-info);
           font-size: 16px;
           padding: 4px;
           min-width: unset;
@@ -2943,13 +3001,13 @@ defineExpose({
           height: 28px;
 
           &:hover {
-            color: #409eff;
-            background: rgba(64, 158, 255, 0.1);
+            color: var(--theme-info);
+            background: var(--theme-info-soft);
           }
         }
 
         .header-logout {
-          color: rgba(245, 108, 108, 0.8);
+          color: var(--theme-danger-text);
           font-size: 16px;
           padding: 4px;
           min-width: unset;
@@ -2958,8 +3016,8 @@ defineExpose({
           margin-left: 0px !important;
 
           &:hover {
-            color: #f56c6c;
-            background: rgba(245, 108, 108, 0.1);
+            color: var(--theme-danger);
+            background: var(--theme-danger-soft);
           }
         }
       }
@@ -2994,7 +3052,7 @@ defineExpose({
               padding: 0;
               border: 0;
               border-radius: 50%;
-              color: rgba(255, 255, 255, 0.42);
+              color: var(--theme-text-subtle);
               background: transparent;
               cursor: help;
               transition:
@@ -3003,12 +3061,12 @@ defineExpose({
 
               &:hover,
               &:focus-visible {
-                color: rgba(255, 255, 255, 0.78);
-                background: rgba(255, 255, 255, 0.08);
+                color: var(--theme-text-secondary);
+                background: var(--theme-surface-hover);
               }
 
               &:focus-visible {
-                outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+                outline: 2px solid var(--theme-focus);
                 outline-offset: 1px;
               }
             }
@@ -3016,36 +3074,32 @@ defineExpose({
 
           .label {
             font-size: 12px;
-            color: rgba(255, 255, 255, 0.4);
+            color: var(--theme-text-subtle);
             line-height: 1;
             margin-bottom: 3px;
             font-weight: 500;
           }
 
           .value {
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 600;
-            color: rgba(255, 255, 255, 0.9);
+            color: var(--theme-text-primary);
             line-height: 1.1;
 
             &.level {
-              color: #fbbf24;
-              text-shadow: 0 0 3px rgba(251, 191, 36, 0.3);
+              color: var(--theme-text-primary);
             }
 
             &.growth {
-              color: #10b981;
-              text-shadow: 0 0 3px rgba(16, 185, 129, 0.3);
+              color: var(--theme-text-primary);
             }
 
             &.speed {
-              color: #f59e0b;
-              text-shadow: 0 0 3px rgba(245, 158, 11, 0.3);
+              color: var(--theme-text-primary);
             }
 
             &.storage {
-              color: #06b6d4;
-              text-shadow: 0 0 3px rgba(6, 182, 212, 0.3);
+              color: var(--theme-text-primary);
             }
           }
         }
@@ -3055,8 +3109,8 @@ defineExpose({
     .card-actions {
       display: flex;
       align-items: center;
-      border-top: 1px solid rgba(255, 255, 255, 0.06);
-      background: rgba(0, 0, 0, 0.1);
+      border-top: 1px solid var(--theme-border-subtle);
+      background: var(--theme-surface-soft);
 
       .action-item {
         flex: 1;
@@ -3066,7 +3120,7 @@ defineExpose({
 
         .action-btn {
           font-size: 11px;
-          color: rgba(255, 255, 255, 0.8);
+          color: var(--theme-text-secondary);
           border: none;
           background: none;
           padding: 6px 12px;
@@ -3076,16 +3130,16 @@ defineExpose({
           min-height: 32px;
 
           &:hover {
-            color: rgba(255, 255, 255, 1);
-            background: rgba(255, 255, 255, 0.1);
+            color: var(--theme-text-primary);
+            background: var(--theme-surface-hover);
           }
 
           &.logout-btn {
-            color: rgba(245, 108, 108, 0.9);
+            color: var(--theme-danger-text);
 
             &:hover {
-              color: #f56c6c;
-              background: rgba(245, 108, 108, 0.1);
+              color: var(--theme-danger);
+              background: var(--theme-danger-soft);
             }
           }
 
@@ -3123,7 +3177,7 @@ defineExpose({
                     transform: translate(-50%, -50%);
                     width: 16px;
                     height: 16px;
-                    border: 1px solid rgba(64, 158, 255, 0.4);
+                    border: 1px solid var(--theme-info-border);
                     border-radius: 50%;
                     animation: pulse-ring 2s ease-out infinite;
                   }
@@ -3135,7 +3189,7 @@ defineExpose({
                     transform: translate(-50%, -50%);
                     width: 4px;
                     height: 4px;
-                    background: #409eff;
+                    background: var(--theme-info);
                     border-radius: 50%;
                     animation: pulse-dot 2s ease-out infinite;
                   }
@@ -3164,7 +3218,7 @@ defineExpose({
                   overflow: hidden;
                   text-overflow: ellipsis;
                   max-width: 100%;
-                  color: rgba(64, 158, 255, 0.8);
+                  color: var(--theme-info-text);
                 }
               }
             }
@@ -3172,12 +3226,12 @@ defineExpose({
             &.has-active-tasks {
               .icon-wrapper {
                 .el-icon {
-                  color: #409eff;
+                  color: var(--theme-info);
                 }
               }
 
               .main-text {
-                color: #409eff;
+                color: var(--theme-info);
               }
             }
 
@@ -3187,7 +3241,7 @@ defineExpose({
               justify-content: center;
 
               .loading-icon {
-                color: #409eff;
+                color: var(--theme-info);
                 animation: loading-spin 1s linear infinite;
               }
             }
@@ -3203,7 +3257,7 @@ defineExpose({
       .action-divider {
         width: 1px;
         height: 24px;
-        background: rgba(255, 255, 255, 0.15);
+        background: var(--theme-border);
         margin: 1px;
       }
 
@@ -3218,12 +3272,12 @@ defineExpose({
           align-items: center;
 
           &:not(:last-child) {
-            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            border-right: 1px solid color-mix(in srgb, var(--theme-text-inverse) 10%, transparent);
           }
 
           .manager-btn {
             font-size: 11px;
-            color: rgba(255, 255, 255, 0.8);
+            color: var(--theme-text-secondary);
             border: none;
             background: none;
             padding: 6px 8px;
@@ -3232,9 +3286,15 @@ defineExpose({
             justify-content: center;
             min-height: 36px;
 
+            /* 该按钮紧贴带 overflow:hidden 的卡片边缘，外描边会被圆角裁掉。 */
+            &:focus-visible {
+              outline: none;
+              box-shadow: inset 0 0 0 2px var(--theme-focus);
+            }
+
             &:hover {
-              color: rgba(255, 255, 255, 1);
-              background: rgba(255, 255, 255, 0.1);
+              color: var(--theme-text-inverse);
+              background: color-mix(in srgb, var(--theme-text-inverse) 10%, transparent);
             }
 
             .manager-btn-content {
@@ -3264,7 +3324,7 @@ defineExpose({
                     transform: translate(-50%, -50%);
                     width: 16px;
                     height: 16px;
-                    border: 1px solid rgba(64, 158, 255, 0.4);
+                    border: 1px solid color-mix(in srgb, var(--theme-info) 40%, transparent);
                     border-radius: 50%;
                     animation: pulse-ring 2s ease-out infinite;
                   }
@@ -3276,18 +3336,18 @@ defineExpose({
                     transform: translate(-50%, -50%);
                     width: 4px;
                     height: 4px;
-                    background: #409eff;
+                    background: var(--theme-info);
                     border-radius: 50%;
                     animation: pulse-dot 2s ease-out infinite;
                   }
 
                   &.upload-indicator {
                     .pulse-ring {
-                      border-color: rgba(103, 194, 58, 0.4);
+                      border-color: color-mix(in srgb, var(--theme-success) 40%, transparent);
                     }
 
                     .pulse-dot {
-                      background: #67c23a;
+                      background: var(--theme-success);
                     }
                   }
                 }
@@ -3321,35 +3381,47 @@ defineExpose({
 
             &.has-active-tasks.download-btn {
               .icon-wrapper .el-icon {
-                color: #409eff;
+                color: var(--theme-info);
               }
 
               .main-text {
-                color: #409eff;
+                color: var(--theme-info);
               }
 
               .status-text {
-                color: rgba(64, 158, 255, 0.8);
+                color: color-mix(in srgb, var(--theme-info) 80%, transparent);
               }
             }
 
             &.has-active-tasks.upload-btn {
               .icon-wrapper .el-icon {
-                color: #67c23a;
+                color: var(--theme-success);
               }
 
               .main-text {
-                color: #67c23a;
+                color: var(--theme-success);
               }
 
               .status-text {
-                color: rgba(103, 194, 58, 0.8);
+                color: color-mix(in srgb, var(--theme-success) 80%, transparent);
               }
             }
 
             :deep(.el-icon) {
               font-size: 12px;
             }
+          }
+
+          &:first-child .manager-btn {
+            border-radius: 0 0 0 calc(var(--theme-radius-md) - 1px);
+          }
+
+          &:last-child .manager-btn {
+            border-radius: 0 0 calc(var(--theme-radius-md) - 1px) 0;
+          }
+
+          &:only-child .manager-btn {
+            border-radius: 0 0 calc(var(--theme-radius-md) - 1px) calc(var(--theme-radius-md) - 1px);
           }
         }
       }
@@ -3361,38 +3433,55 @@ defineExpose({
 .album-menu {
   background: transparent;
   border: none;
+  padding: 4px 0 8px;
 
   :deep(.el-sub-menu) {
     .el-sub-menu__title {
+      position: relative;
       background: transparent;
-      color: rgba(255, 255, 255, 0.85);
-      font-size: 12px;
+      color: var(--theme-text-secondary);
+      font-size: 13px;
       font-weight: 600;
-      padding: 7px 10px;
-      height: auto;
-      line-height: 1.4;
+      padding: 0 34px 0 14px;
+      height: 40px;
+      line-height: 40px;
       border-left: 2px solid transparent;
-      transition: all 0.25s ease;
-      border-radius: 4px;
-      margin: 2px 4px;
+      transition:
+        color var(--theme-duration-fast) var(--theme-ease),
+        background-color var(--theme-duration-fast) var(--theme-ease),
+        border-color var(--theme-duration-fast) var(--theme-ease);
+      border-radius: var(--theme-radius-sm);
+      margin: 2px 8px;
 
       &:hover {
-        background: rgba(255, 255, 255, 0.06);
-        border-left-color: #3b82f6;
-        color: rgba(255, 255, 255, 1);
-        transform: translateX(2px);
+        background: var(--theme-surface-hover);
+        border-left-color: var(--theme-border-strong);
+        color: var(--theme-text-primary);
       }
 
       .el-sub-menu__icon-arrow {
-        color: rgba(255, 255, 255, 0.5);
-        font-size: 10px;
-        margin-top: -2px;
-        transition: all 0.3s ease;
+        color: var(--theme-text-muted);
+        font-size: 11px;
+        margin-top: -5px;
+        transition:
+          color var(--theme-duration-fast) var(--theme-ease),
+          transform var(--theme-duration) var(--theme-ease);
       }
 
       &:hover .el-sub-menu__icon-arrow {
-        color: #60a5fa;
+        color: var(--theme-text-secondary);
       }
+    }
+
+    &.is-active > .el-sub-menu__title {
+      background: transparent;
+      border-left-color: var(--theme-brand-accent);
+      color: var(--theme-text-primary);
+    }
+
+    &.is-opened > .el-sub-menu__title {
+      background: var(--theme-surface-soft);
+      color: var(--theme-text-primary);
     }
 
     &.is-opened .el-sub-menu__title .el-sub-menu__icon-arrow {
@@ -3401,40 +3490,38 @@ defineExpose({
   }
 
   :deep(.el-menu-item) {
-    background: rgba(0, 0, 0, 0.15);
-    color: rgba(255, 255, 255, 0.75);
-    padding: 6px 16px;
-    height: auto;
-    line-height: 1.4;
-    margin: 1px 4px;
+    background: transparent;
+    color: var(--theme-text-secondary);
+    padding: 0 12px;
+    height: 36px;
+    line-height: 36px;
+    margin: 2px 8px 2px 18px;
     border-left: 2px solid transparent;
-    border-radius: 4px;
-    transition: all 0.25s ease;
+    border-radius: var(--theme-radius-sm);
+    transition:
+      color var(--theme-duration-fast) var(--theme-ease),
+      background-color var(--theme-duration-fast) var(--theme-ease),
+      border-color var(--theme-duration-fast) var(--theme-ease);
 
     &:hover {
-      background: rgba(255, 255, 255, 0.06);
-      color: rgba(255, 255, 255, 0.95);
-      transform: translateX(2px);
+      background: var(--theme-surface-hover);
+      color: var(--theme-text-primary);
     }
 
     &.is-active {
-      background: linear-gradient(
-        90deg,
-        rgba(59, 130, 246, 0.2),
-        rgba(59, 130, 246, 0.1)
-      ) !important;
-      color: rgba(255, 255, 255, 1) !important;
-      border-left-color: #3b82f6 !important;
-      box-shadow: 0 2px 6px rgba(59, 130, 246, 0.15);
+      background: var(--theme-brand-soft) !important;
+      color: var(--theme-text-primary) !important;
+      border-left-color: var(--theme-brand-accent) !important;
+      box-shadow: none;
     }
 
     &.is-downloading,
     &.is-fetching {
-      background: rgba(64, 158, 255, 0.05) !important;
+      background: color-mix(in srgb, var(--theme-info) 5%, transparent) !important;
 
       .album-num {
         .download-progress {
-          color: #409eff;
+          color: var(--theme-info);
           font-weight: 600;
         }
       }
@@ -3460,7 +3547,7 @@ defineExpose({
 
         .el-icon {
           font-size: 12px;
-          color: #409eff;
+          color: var(--theme-info);
 
           &.is-loading {
             animation: spin 1s linear infinite;
@@ -3483,9 +3570,13 @@ defineExpose({
           font-size: 10px;
           line-height: 1;
           border-radius: 3px;
-          background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(147, 51, 234, 0.15));
-          color: rgba(147, 197, 253, 0.9);
-          border: 1px solid rgba(59, 130, 246, 0.2);
+          background: linear-gradient(
+            135deg,
+            color-mix(in srgb, var(--theme-info-strong) 15%, transparent),
+            color-mix(in srgb, var(--theme-brand) 15%, transparent)
+          );
+          color: color-mix(in srgb, var(--theme-info-text) 90%, transparent);
+          border: 1px solid color-mix(in srgb, var(--theme-info-strong) 20%, transparent);
           font-weight: 500;
           white-space: nowrap;
           flex-shrink: 0;
@@ -3503,43 +3594,43 @@ defineExpose({
 
       .album-lock-icon {
         font-size: 11px;
-        color: rgba(255, 255, 255, 0.3);
+        color: var(--theme-text-disabled);
         flex-shrink: 0;
         margin-right: 2px;
 
         &.priv-self {
-          color: rgba(255, 100, 100, 0.4);
+          color: color-mix(in srgb, var(--theme-danger) 40%, transparent);
         }
 
         &.priv-password,
         &.priv-question {
-          color: rgba(255, 180, 50, 0.5);
+          color: color-mix(in srgb, var(--theme-warning) 50%, transparent);
         }
 
         &.priv-friend {
-          color: rgba(100, 200, 255, 0.4);
+          color: color-mix(in srgb, var(--theme-info) 40%, transparent);
         }
 
         &.priv-partial {
-          color: rgba(100, 200, 255, 0.3);
+          color: color-mix(in srgb, var(--theme-info) 30%, transparent);
         }
 
         &.priv-partial-hide {
-          color: rgba(255, 150, 100, 0.35);
+          color: color-mix(in srgb, var(--theme-brand-accent) 35%, transparent);
         }
 
         &.clickable {
           cursor: pointer;
 
           &:hover {
-            color: rgba(255, 180, 50, 0.8);
+            color: color-mix(in srgb, var(--theme-warning) 80%, transparent);
           }
         }
       }
 
       .album-num {
         font-size: 10px;
-        color: rgba(255, 255, 255, 0.5);
+        color: var(--theme-text-muted);
         min-width: 30px;
         text-align: right;
       }
@@ -3547,8 +3638,32 @@ defineExpose({
   }
 
   .category-title {
-    font-size: 13px;
-    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+
+    .category-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .category-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 18px;
+      padding: 0 6px;
+      border-radius: 9px;
+      background: var(--theme-surface-soft);
+      color: var(--theme-text-muted);
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
   }
 }
 
@@ -3567,23 +3682,23 @@ defineExpose({
   align-items: center;
   justify-content: center;
   text-align: center;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--theme-text-secondary);
 
   .album-load-icon {
     width: 32px;
     height: 32px;
     margin-bottom: 12px;
     padding: 8px;
-    border: 1px solid rgba(96, 165, 250, 0.2);
+    border: 1px solid color-mix(in srgb, var(--theme-info) 20%, transparent);
     border-radius: 10px;
-    background: rgba(59, 130, 246, 0.1);
-    color: #93c5fd;
+    background: color-mix(in srgb, var(--theme-info-strong) 10%, transparent);
+    color: var(--theme-info-text);
     font-size: 16px;
   }
 
   h3 {
     margin: 0;
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--theme-text-primary);
     font-size: 14px;
     font-weight: 600;
     line-height: 1.45;
@@ -3592,26 +3707,26 @@ defineExpose({
   p {
     max-width: 194px;
     margin: 7px 0 0;
-    color: rgba(255, 255, 255, 0.48);
+    color: var(--theme-text-muted);
     font-size: 12px;
     line-height: 1.6;
   }
 
   &.is-error {
     .album-load-icon {
-      border-color: rgba(251, 146, 60, 0.2);
-      background: rgba(251, 146, 60, 0.1);
-      color: #fbbf24;
+      border-color: color-mix(in srgb, var(--theme-brand-accent) 20%, transparent);
+      background: color-mix(in srgb, var(--theme-brand-accent) 10%, transparent);
+      color: var(--theme-warning);
     }
   }
 
   .album-retry-button {
     min-height: 32px;
     margin-top: 16px;
-    border-color: rgba(96, 165, 250, 0.42);
+    border-color: color-mix(in srgb, var(--theme-info) 42%, transparent);
     border-radius: 8px;
-    background: rgba(59, 130, 246, 0.1);
-    color: #bfdbfe;
+    background: color-mix(in srgb, var(--theme-info-strong) 10%, transparent);
+    color: var(--theme-info-text);
     transition:
       background 0.2s ease,
       border-color 0.2s ease,
@@ -3619,13 +3734,13 @@ defineExpose({
 
     &:hover,
     &:focus-visible {
-      border-color: rgba(96, 165, 250, 0.75);
-      background: rgba(59, 130, 246, 0.2);
-      color: #ffffff;
+      border-color: color-mix(in srgb, var(--theme-info) 75%, transparent);
+      background: color-mix(in srgb, var(--theme-info-strong) 20%, transparent);
+      color: var(--theme-text-inverse);
     }
 
     &:focus-visible {
-      outline: 2px solid rgba(96, 165, 250, 0.7);
+      outline: 2px solid color-mix(in srgb, var(--theme-info) 70%, transparent);
       outline-offset: 2px;
     }
   }
@@ -3691,8 +3806,8 @@ defineExpose({
   align-items: stretch;
   gap: 0;
   padding: 6px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid var(--theme-border-subtle);
+  background: var(--theme-surface-soft);
   min-height: 40px;
 }
 
@@ -3705,14 +3820,14 @@ defineExpose({
   padding: 7px 4px;
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-text-muted);
   font-size: 12px;
   font-weight: 500;
   position: relative;
   border: 0;
   background: transparent;
   font-family: inherit;
-  border-radius: 6px;
+  border-radius: var(--theme-radius-sm);
   margin: 0 1px;
 
   .tab-icon {
@@ -3727,19 +3842,19 @@ defineExpose({
   }
 
   &:hover:not(.active) {
-    color: rgba(255, 255, 255, 0.9);
-    background: rgba(255, 255, 255, 0.05);
+    color: var(--theme-text-primary);
+    background: var(--theme-surface-hover);
     transform: translateY(-1px);
   }
 
   &.active {
-    color: #ffffff;
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(96, 165, 250, 0.2));
+    color: var(--theme-brand-text);
+    background: var(--theme-brand-soft);
     font-weight: 600;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+    box-shadow: inset 0 0 0 1px var(--theme-brand-border);
 
     .tab-icon {
-      color: #60a5fa;
+      color: var(--theme-brand-accent);
       transform: scale(1.1);
     }
 
@@ -3751,7 +3866,7 @@ defineExpose({
       transform: translateX(-50%);
       width: 24px;
       height: 3px;
-      background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+      background: linear-gradient(90deg, transparent, var(--theme-brand-accent), transparent);
       border-radius: 3px;
     }
   }
@@ -3764,28 +3879,28 @@ defineExpose({
   padding: 8px 0;
 
   :deep(.el-menu-item) {
-    background: rgba(0, 0, 0, 0.1);
-    color: rgba(255, 255, 255, 0.7);
+    background: transparent;
+    color: var(--theme-text-secondary);
     padding: 10px 16px;
     height: auto;
     line-height: 1.4;
     margin: 4px 8px;
-    border-radius: 6px;
+    border-radius: var(--theme-radius-sm);
     border-left: 2px solid transparent;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     font-weight: 500;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.08);
-      color: rgba(255, 255, 255, 0.95);
+      background: var(--theme-surface-hover);
+      color: var(--theme-text-primary);
       transform: translateX(2px);
     }
 
     &.is-active {
-      background: rgba(59, 130, 246, 0.2) !important;
-      color: #ffffff !important;
-      border-left-color: #3b82f6 !important;
-      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+      background: var(--theme-brand-soft) !important;
+      color: var(--theme-brand-text) !important;
+      border-left-color: var(--theme-brand-accent) !important;
+      box-shadow: inset 0 0 0 1px var(--theme-brand-border);
       font-weight: 600;
     }
 
@@ -3796,7 +3911,7 @@ defineExpose({
     }
 
     &.is-active .el-icon {
-      color: #60a5fa;
+      color: var(--theme-brand-accent);
     }
 
     span {
@@ -3808,26 +3923,23 @@ defineExpose({
 
 /* 下载全部相册功能区样式 */
 .download-all-section {
-  padding: 6px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--theme-border-subtle);
 
   .download-all-card {
-    border-radius: 8px;
+    border-radius: var(--theme-radius-md);
     overflow: hidden;
-    border: 1px solid rgba(16, 185, 129, 0.25);
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0.03) 100%);
+    border: 1px solid var(--theme-border-subtle);
+    background: var(--theme-surface-soft);
     backdrop-filter: blur(10px);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition:
+      background-color 0.2s ease,
+      border-color 0.2s ease;
 
     &:hover {
-      border-color: rgba(16, 185, 129, 0.45);
-      background: linear-gradient(
-        135deg,
-        rgba(16, 185, 129, 0.12) 0%,
-        rgba(16, 185, 129, 0.06) 100%
-      );
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(16, 185, 129, 0.2);
+      border-color: var(--theme-brand-accent);
+      background: var(--theme-surface-hover);
+      box-shadow: none;
     }
 
     .download-all-button {
@@ -3835,7 +3947,7 @@ defineExpose({
       cursor: pointer;
       overflow: hidden;
       width: 100%;
-      min-height: 56px;
+      min-height: 40px;
       padding: 0;
       border: 0;
       background: transparent;
@@ -3844,7 +3956,7 @@ defineExpose({
       text-align: left;
       display: flex;
       align-items: center;
-      transition: all 0.3s ease;
+      transition: background-color 0.2s ease;
 
       &:active {
         transform: scale(0.98);
@@ -3853,31 +3965,31 @@ defineExpose({
       .button-content {
         display: flex;
         align-items: center;
-        gap: 10px;
-        padding: 10px 14px;
+        gap: 8px;
+        padding: 5px 10px;
         width: 100%;
         z-index: 2;
         position: relative;
 
         .button-icon {
-          width: 30px;
-          height: 30px;
+          width: 26px;
+          height: 26px;
           display: flex;
           align-items: center;
           justify-content: center;
-          border-radius: 50%;
-          background: rgba(16, 185, 129, 0.2);
-          border: 1px solid rgba(16, 185, 129, 0.3);
+          border-radius: 8px;
+          background: var(--theme-brand-soft-hover);
+          border: 1px solid var(--theme-brand-border);
           transition: all 0.3s ease;
 
           .el-icon {
             font-size: 16px;
-            color: #10b981;
+            color: var(--theme-brand-accent);
             transition: all 0.3s ease;
           }
 
           .cancel-icon {
-            color: #f56c6c;
+            color: var(--theme-danger);
             animation: pulse 1s ease-in-out infinite;
           }
 
@@ -3892,8 +4004,8 @@ defineExpose({
               left: 0;
               width: 20px;
               height: 20px;
-              border: 2px solid rgba(16, 185, 129, 0.2);
-              border-top: 2px solid #10b981;
+              border: 2px solid var(--theme-brand-soft-hover);
+              border-top: 2px solid var(--theme-brand-accent);
               border-radius: 50%;
               animation: spin 1s linear infinite;
             }
@@ -3904,7 +4016,7 @@ defineExpose({
               left: 50%;
               transform: translate(-50%, -50%);
               font-size: 10px;
-              color: #10b981;
+              color: var(--theme-brand-accent);
             }
           }
         }
@@ -3916,7 +4028,7 @@ defineExpose({
           .main-text {
             font-size: 13px;
             font-weight: 600;
-            color: #10b981;
+            color: var(--theme-brand-text);
             line-height: 1.2;
             margin-bottom: 2px;
             transition: all 0.3s ease;
@@ -3924,7 +4036,7 @@ defineExpose({
 
           .sub-text {
             font-size: 11px;
-            color: rgba(16, 185, 129, 0.7);
+            color: var(--theme-text-muted);
             line-height: 1.1;
             white-space: nowrap;
             overflow: hidden;
@@ -3939,12 +4051,12 @@ defineExpose({
         left: 0;
         right: 0;
         height: 3px;
-        background: rgba(16, 185, 129, 0.1);
+        background: var(--theme-surface-active);
         z-index: 1;
 
         .progress-fill {
           height: 100%;
-          background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+          background: linear-gradient(90deg, var(--theme-brand) 0%, var(--theme-brand-accent) 100%);
           transition: width 0.3s ease;
           position: relative;
           overflow: hidden;
@@ -3959,7 +4071,7 @@ defineExpose({
             background: linear-gradient(
               90deg,
               transparent 0%,
-              rgba(255, 255, 255, 0.3) 50%,
+              var(--theme-border-strong) 50%,
               transparent 100%
             );
             animation: shimmer 2s ease-in-out infinite;
@@ -3969,16 +4081,16 @@ defineExpose({
 
       &:hover {
         .button-icon {
-          background: rgba(16, 185, 129, 0.25);
+          background: var(--theme-brand-soft-hover);
           transform: scale(1.05);
 
           .el-icon {
-            color: #059669;
+            color: var(--theme-brand-text);
           }
         }
 
         .button-text .main-text {
-          color: #059669;
+          color: var(--theme-text-inverse);
         }
       }
     }
@@ -4019,9 +4131,7 @@ defineExpose({
   gap: 14px;
 }
 
-/* ===== 「好友动态」sidebar · 现代极简方案 (mn-*) =====
-   设计原则：无卡片 / 大数字 / hairline 分区 / 单色锚 / tabular-nums。
-   token: 主蓝 #60a5fa（已有），警示 #f59e0b（新增，仅 KPI 被挡 > 0 时用） */
+/* ===== 动态侧栏：内容优先、低装饰、数字等宽 ===== */
 
 .feeds-side-min {
   padding: 8px 6px 24px !important;
@@ -4030,28 +4140,63 @@ defineExpose({
   flex-direction: column;
 }
 
+.fd-disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: 8px;
+  color: var(--theme-text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    color var(--theme-duration-fast) var(--theme-ease),
+    background-color var(--theme-duration-fast) var(--theme-ease),
+    border-color var(--theme-duration-fast) var(--theme-ease);
+
+  &:hover {
+    color: var(--theme-text-secondary);
+    border-color: var(--theme-border);
+    background: var(--theme-surface-soft);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-focus);
+    outline-offset: 2px;
+  }
+
+  .el-icon {
+    transition: transform var(--theme-duration-fast) var(--theme-ease);
+
+    &.is-expanded {
+      transform: rotate(180deg);
+    }
+  }
+}
+
+.fd-detail-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .fd-panel {
   position: relative;
   overflow: hidden;
   padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.055);
+  border: 1px solid var(--theme-border-subtle);
   border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.022)),
-    rgba(12, 15, 22, 0.3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  background: var(--theme-surface-soft);
 }
 .fd-cover {
   padding: 12px;
-  border-color: rgba(96, 165, 250, 0.14);
-  background:
-    radial-gradient(circle at 86% 12%, rgba(52, 211, 153, 0.14), transparent 34%),
-    linear-gradient(
-      135deg,
-      rgba(96, 165, 250, 0.15),
-      rgba(167, 139, 250, 0.065) 45%,
-      rgba(255, 255, 255, 0.025)
-    );
+  border-color: var(--theme-brand-border);
+  background: color-mix(in srgb, var(--theme-brand-soft) 45%, var(--theme-surface-soft));
 }
 .fd-cover-top {
   display: grid;
@@ -4066,7 +4211,7 @@ defineExpose({
   gap: 5px;
 
   strong {
-    color: rgba(255, 255, 255, 0.96);
+    color: var(--theme-text-primary);
     font-size: 22px;
     font-weight: 680;
     line-height: 1;
@@ -4075,7 +4220,7 @@ defineExpose({
 
   span:last-child {
     overflow: hidden;
-    color: rgba(255, 255, 255, 0.48);
+    color: var(--theme-text-muted);
     font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -4086,10 +4231,10 @@ defineExpose({
   max-width: 100%;
   overflow: hidden;
   padding: 3px 7px;
-  border: 1px solid rgba(96, 165, 250, 0.22);
+  border: 1px solid var(--theme-brand-border);
   border-radius: 999px;
-  color: rgba(147, 197, 253, 0.95);
-  background: rgba(96, 165, 250, 0.1);
+  color: var(--theme-brand-text);
+  background: var(--theme-brand-soft);
   font-size: 11px;
   font-weight: 650;
   line-height: 1.1;
@@ -4101,22 +4246,15 @@ defineExpose({
   width: 46px;
   height: 46px;
   place-items: center;
-  border: 1px solid rgba(52, 211, 153, 0.32);
-  border-radius: 50%;
-  color: rgba(220, 252, 231, 0.96);
-  background:
-    radial-gradient(
-      circle,
-      rgba(52, 211, 153, 0.22),
-      rgba(52, 211, 153, 0.06) 58%,
-      transparent 59%
-    ),
-    rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  color: var(--theme-text-primary);
+  background: var(--theme-surface-raised);
   font-variant-numeric: tabular-nums;
 
   strong {
     margin-top: 2px;
-    color: rgba(220, 252, 231, 0.96);
+    color: var(--theme-text-primary);
     font-size: 15px;
     font-weight: 700;
     line-height: 1;
@@ -4124,7 +4262,7 @@ defineExpose({
 
   span {
     margin-top: -12px;
-    color: rgba(220, 252, 231, 0.58);
+    color: var(--theme-text-muted);
     font-size: 9px;
     font-weight: 650;
     line-height: 1;
@@ -4140,8 +4278,8 @@ defineExpose({
     min-width: 0;
     padding: 4px 7px;
     border-radius: 999px;
-    color: rgba(255, 255, 255, 0.66);
-    background: rgba(255, 255, 255, 0.055);
+    color: var(--theme-text-secondary);
+    background: color-mix(in srgb, var(--theme-text-inverse) 5.5%, transparent);
     font-size: 11px;
     line-height: 1.2;
     font-variant-numeric: tabular-nums;
@@ -4159,11 +4297,11 @@ defineExpose({
   align-items: baseline;
   gap: 8px;
   min-width: 0;
-  color: rgba(255, 255, 255, 0.52);
+  color: var(--theme-text-muted);
   font-size: 12px;
 
   strong {
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--theme-text-primary);
     font-size: 13px;
     font-weight: 680;
     font-variant-numeric: tabular-nums;
@@ -4174,16 +4312,16 @@ defineExpose({
   height: 7px;
   border-radius: 50%;
   align-self: center;
-  background: #60a5fa;
-  box-shadow: 0 0 12px rgba(96, 165, 250, 0.45);
+  background: var(--theme-info);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--theme-info) 45%, transparent);
 }
 .fd-dot.is-video {
-  background: #a78bfa;
-  box-shadow: 0 0 12px rgba(167, 139, 250, 0.42);
+  background: var(--theme-brand-text);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--theme-brand-text) 42%, transparent);
 }
 .fd-dot.is-view {
-  background: #fbbf24;
-  box-shadow: 0 0 12px rgba(251, 191, 36, 0.36);
+  background: var(--theme-warning);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--theme-warning) 36%, transparent);
 }
 .fd-panel-head {
   display: flex;
@@ -4193,14 +4331,14 @@ defineExpose({
   margin-bottom: 9px;
 
   span {
-    color: rgba(255, 255, 255, 0.72);
+    color: var(--theme-text-secondary);
     font-size: 12px;
     font-weight: 650;
   }
 
   em {
     overflow: hidden;
-    color: rgba(255, 255, 255, 0.38);
+    color: var(--theme-text-subtle);
     font-size: 10px;
     font-style: normal;
     text-overflow: ellipsis;
@@ -4215,7 +4353,7 @@ defineExpose({
   padding: 3px 4px;
   border: 0;
   border-radius: 4px;
-  color: rgba(147, 197, 253, 0.78);
+  color: color-mix(in srgb, var(--theme-info-text) 78%, transparent);
   background: transparent;
   font: inherit;
   font-size: 10px;
@@ -4227,12 +4365,12 @@ defineExpose({
     background-color 0.18s ease;
 
   &:hover {
-    color: rgba(191, 219, 254, 0.98);
-    background: rgba(96, 165, 250, 0.08);
+    color: color-mix(in srgb, var(--theme-info-text) 98%, transparent);
+    background: color-mix(in srgb, var(--theme-info) 8%, transparent);
   }
 
   &:focus-visible {
-    outline: 2px solid rgba(96, 165, 250, 0.72);
+    outline: 2px solid color-mix(in srgb, var(--theme-info) 72%, transparent);
     outline-offset: 2px;
   }
 
@@ -4256,7 +4394,7 @@ defineExpose({
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.055);
+  background: color-mix(in srgb, var(--theme-text-inverse) 5.5%, transparent);
 
   span {
     min-width: 4px;
@@ -4272,7 +4410,7 @@ defineExpose({
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--theme-text-muted);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
   }
@@ -4296,19 +4434,19 @@ defineExpose({
     gap: 8px;
     padding: 6px 7px;
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.035);
+    background: color-mix(in srgb, var(--theme-text-inverse) 3.5%, transparent);
   }
 
   span {
     overflow: hidden;
-    color: rgba(255, 255, 255, 0.42);
+    color: var(--theme-text-subtle);
     font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   strong {
-    color: rgba(255, 255, 255, 0.88);
+    color: var(--theme-text-secondary);
     font-size: 13px;
     font-weight: 680;
     font-variant-numeric: tabular-nums;
@@ -4325,16 +4463,16 @@ defineExpose({
     gap: 4px;
     max-width: 100%;
     padding: 4px 7px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 6%, transparent);
     border-radius: 999px;
-    color: rgba(255, 255, 255, 0.58);
-    background: rgba(255, 255, 255, 0.04);
+    color: var(--theme-text-muted);
+    background: color-mix(in srgb, var(--theme-text-inverse) 4%, transparent);
     font-size: 11px;
     line-height: 1.2;
   }
 
   strong {
-    color: rgba(255, 255, 255, 0.88);
+    color: var(--theme-text-secondary);
     font-weight: 680;
     font-variant-numeric: tabular-nums;
   }
@@ -4349,7 +4487,7 @@ defineExpose({
     padding-right: 4px;
     overflow-y: auto;
     overscroll-behavior: contain;
-    scrollbar-color: rgba(96, 165, 250, 0.35) transparent;
+    scrollbar-color: color-mix(in srgb, var(--theme-info) 35%, transparent) transparent;
     scrollbar-width: thin;
   }
 
@@ -4359,7 +4497,7 @@ defineExpose({
 
   &.is-expanded::-webkit-scrollbar-thumb {
     border-radius: 999px;
-    background: rgba(96, 165, 250, 0.35);
+    background: color-mix(in srgb, var(--theme-info) 35%, transparent);
   }
 }
 .fd-person {
@@ -4381,15 +4519,15 @@ defineExpose({
     display: block;
     width: 24px;
     height: 24px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 8%, transparent);
     border-radius: 50%;
     object-fit: cover;
-    background: rgba(255, 255, 255, 0.06);
+    background: color-mix(in srgb, var(--theme-text-inverse) 6%, transparent);
   }
 
   span {
     overflow: hidden;
-    color: rgba(255, 255, 255, 0.66);
+    color: var(--theme-text-secondary);
     font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -4406,15 +4544,15 @@ defineExpose({
   strong {
     padding: 2px 6px;
     border-radius: 999px;
-    color: rgba(147, 197, 253, 0.95);
-    background: rgba(96, 165, 250, 0.08);
+    color: color-mix(in srgb, var(--theme-info-text) 95%, transparent);
+    background: color-mix(in srgb, var(--theme-info) 8%, transparent);
     font-size: 11px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
 
   &:hover span {
-    color: rgba(147, 197, 253, 0.96);
+    color: color-mix(in srgb, var(--theme-info-text) 96%, transparent);
   }
 }
 .fd-space-card {
@@ -4427,20 +4565,20 @@ defineExpose({
   margin-bottom: 6px;
 
   strong {
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--theme-text-primary);
     font-size: 16px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
 
   span {
-    color: rgba(255, 255, 255, 0.42);
+    color: var(--theme-text-subtle);
     font-size: 11px;
   }
 
   em {
     margin-left: auto;
-    color: #34d399;
+    color: var(--theme-success);
     font-size: 11px;
     font-style: normal;
     font-weight: 650;
@@ -4456,25 +4594,25 @@ defineExpose({
   justify-content: space-between;
   gap: 8px;
   margin: 0;
-  color: rgba(255, 255, 255, 0.46);
+  color: var(--theme-text-muted);
   font-size: 11px;
   line-height: 1.45;
 
   &.is-error {
-    color: rgba(252, 165, 165, 0.9);
+    color: color-mix(in srgb, var(--theme-danger-text) 90%, transparent);
   }
 
   button {
     min-height: 28px;
     padding: 0 9px;
-    border: 1px solid rgba(96, 165, 250, 0.24);
+    border: 1px solid color-mix(in srgb, var(--theme-info) 24%, transparent);
     border-radius: 7px;
-    background: rgba(96, 165, 250, 0.09);
-    color: rgba(191, 219, 254, 0.92);
+    background: color-mix(in srgb, var(--theme-info) 9%, transparent);
+    color: color-mix(in srgb, var(--theme-info-text) 92%, transparent);
     cursor: pointer;
 
     &:focus-visible {
-      outline: 2px solid #60a5fa;
+      outline: 2px solid var(--theme-info);
       outline-offset: 2px;
     }
   }
@@ -4482,14 +4620,14 @@ defineExpose({
 
 .fd-visitor-note {
   margin: 8px 0 0;
-  color: rgba(255, 255, 255, 0.28);
+  color: var(--theme-text-disabled);
   font-size: 10px;
   line-height: 1.4;
 }
 
 .mn-section {
   padding: 14px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-top: 1px solid color-mix(in srgb, var(--theme-text-inverse) 4%, transparent);
 
   &:first-child {
     border-top: none;
@@ -4501,7 +4639,7 @@ defineExpose({
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-subtle);
   margin: 0 0 10px;
 }
 
@@ -4518,7 +4656,7 @@ defineExpose({
 .mn-h-sub {
   font-size: 10px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-subtle);
   font-variant-numeric: tabular-nums;
 }
 
@@ -4543,12 +4681,20 @@ defineExpose({
     bottom: 4px;
     width: 3px;
     border-radius: 2px;
-    background: linear-gradient(180deg, rgba(96, 165, 250, 0.55), rgba(96, 165, 250, 0.12));
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-info) 55%, transparent),
+      color-mix(in srgb, var(--theme-info) 12%, transparent)
+    );
   }
 
   /* 今日 KPI：左色条更亮（锚点：今天） */
   &.mn-kpi-today::before {
-    background: linear-gradient(180deg, #60a5fa, rgba(96, 165, 250, 0.3));
+    background: linear-gradient(
+      180deg,
+      var(--theme-info),
+      color-mix(in srgb, var(--theme-info) 30%, transparent)
+    );
   }
 }
 .mn-kpi-lab {
@@ -4556,13 +4702,13 @@ defineExpose({
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.42);
+  color: var(--theme-text-subtle);
   margin-bottom: 3px;
 }
 .mn-kpi-num {
   font-size: 22px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--theme-text-primary);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -4574,8 +4720,8 @@ defineExpose({
 .mn-kpi-blk {
   font-size: 9px;
   font-weight: 600;
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.1);
+  color: var(--theme-warning-strong);
+  background: color-mix(in srgb, var(--theme-warning-strong) 10%, transparent);
   border-radius: 3px;
   padding: 1px 4px;
   letter-spacing: 0;
@@ -4594,7 +4740,7 @@ defineExpose({
 }
 .mn-empty {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--theme-text-disabled);
   padding: 6px 0;
 }
 
@@ -4605,7 +4751,7 @@ defineExpose({
   width: 100%;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--theme-text-inverse) 4%, transparent);
   margin-bottom: 10px;
 }
 .mn-stack-seg {
@@ -4639,26 +4785,26 @@ defineExpose({
   align-self: center;
 }
 .mn-mod-name {
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--theme-text-secondary);
 }
 .mn-mod-pct {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-subtle);
   font-size: 11px;
   min-width: 28px;
   text-align: right;
 }
 .mn-mod-num {
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-text-primary);
   font-weight: 600;
   min-width: 36px;
   text-align: right;
 }
 .mn-mod-today {
-  color: #34d399;
+  color: var(--theme-success);
   font-size: 10px;
   font-weight: 600;
   padding: 1px 4px;
-  background: rgba(52, 211, 153, 0.1);
+  background: color-mix(in srgb, var(--theme-success) 10%, transparent);
   border-radius: 3px;
 }
 
@@ -4668,14 +4814,14 @@ defineExpose({
   align-items: baseline;
   gap: 8px;
   margin-bottom: 12px;
-  color: rgba(255, 255, 255, 0.96);
+  color: var(--theme-text-primary);
   font-size: 24px;
   font-weight: 650;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 .fd-hero-sub {
-  color: rgba(255, 255, 255, 0.42);
+  color: var(--theme-text-subtle);
   font-size: 11px;
   font-weight: 500;
 }
@@ -4690,18 +4836,22 @@ defineExpose({
   gap: 3px;
   min-width: 0;
   padding: 8px 0 8px 10px;
-  border-left: 3px solid rgba(96, 165, 250, 0.5);
-  background: linear-gradient(90deg, rgba(96, 165, 250, 0.07), rgba(96, 165, 250, 0));
+  border-left: 3px solid color-mix(in srgb, var(--theme-info) 50%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--theme-info) 7%, transparent),
+    transparent
+  );
 }
 .fd-metric-value {
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--theme-text-primary);
   font-size: 18px;
   font-weight: 650;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 .fd-metric-label {
-  color: rgba(255, 255, 255, 0.42);
+  color: var(--theme-text-subtle);
   font-size: 10px;
   letter-spacing: 0.04em;
 }
@@ -4724,10 +4874,10 @@ defineExpose({
   font-variant-numeric: tabular-nums;
 }
 .fd-bar-name {
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--theme-text-secondary);
 }
 .fd-bar-num {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--theme-text-muted);
   font-weight: 600;
 }
 .fd-bar-track {
@@ -4735,7 +4885,7 @@ defineExpose({
   height: 4px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--theme-text-inverse) 6%, transparent);
 }
 .fd-bar-fill {
   position: absolute;
@@ -4754,14 +4904,14 @@ defineExpose({
   gap: 8px;
   min-width: 0;
   padding-bottom: 6px;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+  border-bottom: 1px dashed color-mix(in srgb, var(--theme-text-inverse) 6%, transparent);
 }
 .fd-compact-label {
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--theme-text-subtle);
   font-size: 11px;
 }
 .fd-compact-value {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-text-primary);
   font-size: 13px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
@@ -4777,9 +4927,9 @@ defineExpose({
   max-width: 100%;
   padding: 3px 7px;
   border-radius: 999px;
-  color: rgba(147, 197, 253, 0.95);
-  background: rgba(96, 165, 250, 0.08);
-  border: 1px solid rgba(96, 165, 250, 0.14);
+  color: color-mix(in srgb, var(--theme-info-text) 95%, transparent);
+  background: color-mix(in srgb, var(--theme-info) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-info) 14%, transparent);
   font-size: 11px;
   font-weight: 550;
   line-height: 1.35;
@@ -4803,22 +4953,22 @@ defineExpose({
     height: 22px;
     border-radius: 50%;
     object-fit: cover;
-    background: rgba(255, 255, 255, 0.06);
+    background: color-mix(in srgb, var(--theme-text-inverse) 6%, transparent);
   }
   &:hover .fd-author-name {
-    color: #93c5fd;
+    color: var(--theme-info-text);
   }
 }
 .fd-author-name {
   min-width: 0;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--theme-text-secondary);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .fd-author-count {
-  color: rgba(255, 255, 255, 0.52);
+  color: var(--theme-text-muted);
   font-size: 11px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
@@ -4828,17 +4978,17 @@ defineExpose({
   align-items: baseline;
   gap: 8px;
   margin-bottom: 8px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--theme-text-subtle);
   font-size: 11px;
 
   strong {
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--theme-text-primary);
     font-size: 14px;
     font-weight: 650;
     font-variant-numeric: tabular-nums;
   }
   em {
-    color: #34d399;
+    color: var(--theme-success);
     font-style: normal;
     font-weight: 600;
   }
@@ -4853,22 +5003,22 @@ defineExpose({
   flex-direction: column;
   gap: 2px;
   padding: 8px 6px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--theme-text-inverse) 2.5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 4%, transparent);
   border-radius: 8px;
   text-align: center;
 }
 .mn-batch-num {
   font-size: 16px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--theme-text-primary);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   line-height: 1;
 }
 .mn-batch-lab {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.42);
+  color: var(--theme-text-subtle);
   letter-spacing: 0.04em;
 }
 
@@ -4895,19 +5045,19 @@ defineExpose({
     height: 26px;
     border-radius: 50%;
     object-fit: cover;
-    background: rgba(255, 255, 255, 0.06);
+    background: color-mix(in srgb, var(--theme-text-inverse) 6%, transparent);
     display: block;
-    outline: 1.5px solid rgba(0, 0, 0, 0.45);
+    outline: 1.5px solid color-mix(in srgb, var(--theme-canvas) 45%, transparent);
   }
   &:hover {
     transform: scale(1.18);
     z-index: 10;
     img {
-      outline-color: #60a5fa;
+      outline-color: var(--theme-info);
     }
   }
   &.is-friend img {
-    outline-color: rgba(52, 211, 153, 0.7);
+    outline-color: color-mix(in srgb, var(--theme-success) 70%, transparent);
   }
 }
 .mn-avatar-dot {
@@ -4917,8 +5067,8 @@ defineExpose({
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #ef4444;
-  border: 2px solid var(--ds-bg-0, #141418);
+  background: var(--theme-danger);
+  border: 2px solid var(--ds-bg-0, var(--theme-canvas));
 }
 
 /* 说说额外的小统计行（评论 / 图 / 视频） */
@@ -4926,18 +5076,18 @@ defineExpose({
   display: flex;
   justify-content: space-around;
   padding: 6px 4px;
-  background: rgba(255, 255, 255, 0.02);
+  background: color-mix(in srgb, var(--theme-text-inverse) 2%, transparent);
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 4%, transparent);
 
   .feeds-extra {
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.55);
+    color: var(--theme-text-muted);
 
     em {
       font-style: normal;
       font-weight: 600;
-      color: rgba(255, 255, 255, 0.92);
+      color: var(--theme-text-primary);
       margin-right: 2px;
     }
   }
@@ -4957,15 +5107,15 @@ defineExpose({
     padding: 4px 8px;
     font-size: 11px;
     border-radius: 4px;
-    background: rgba(255, 255, 255, 0.02);
+    background: color-mix(in srgb, var(--theme-text-inverse) 2%, transparent);
     transition: background 0.15s;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.05);
+      background: color-mix(in srgb, var(--theme-text-inverse) 5%, transparent);
     }
 
     .device-name {
-      color: rgba(255, 255, 255, 0.78);
+      color: var(--theme-text-secondary);
       flex: 1;
       min-width: 0;
       overflow: hidden;
@@ -4973,7 +5123,7 @@ defineExpose({
       white-space: nowrap;
     }
     .device-count {
-      color: #60a5fa;
+      color: var(--theme-info);
       font-weight: 600;
       flex-shrink: 0;
     }
@@ -4987,7 +5137,7 @@ defineExpose({
       border-radius: 50%;
       flex-shrink: 0;
       object-fit: cover;
-      background: rgba(255, 255, 255, 0.08);
+      background: color-mix(in srgb, var(--theme-text-inverse) 8%, transparent);
     }
   }
 }
@@ -4995,12 +5145,12 @@ defineExpose({
 /* 类型 chip 的次数小数字 */
 .chip .chip-num {
   margin-left: 4px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-subtle);
   font-size: 10px;
   font-style: normal;
 }
 .chip.active .chip-num {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--theme-text-secondary);
 }
 
 /* 三栏小数字 */
@@ -5015,28 +5165,28 @@ defineExpose({
     align-items: center;
     justify-content: center;
     padding: 8px 4px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: color-mix(in srgb, var(--theme-text-inverse) 3%, transparent);
+    border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 5%, transparent);
     border-radius: 8px;
     transition: background 0.15s ease;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.05);
+      background: color-mix(in srgb, var(--theme-text-inverse) 5%, transparent);
     }
 
     .num {
       font-size: 16px;
       font-weight: 700;
-      color: #60a5fa;
+      color: var(--theme-text-primary);
       line-height: 1.15;
       font-variant-numeric: tabular-nums;
 
       &.loaded {
-        color: #34d399;
+        color: var(--theme-text-primary);
       }
 
       &.duration {
-        color: #fbbf24;
+        color: var(--theme-text-primary);
         font-size: 14px;
       }
     }
@@ -5044,15 +5194,15 @@ defineExpose({
     .lab {
       margin-top: 3px;
       font-size: 10px;
-      color: rgba(255, 255, 255, 0.45);
+      color: var(--theme-text-subtle);
     }
   }
 }
 
 /* 磁盘进度条 */
 .disk-bar-wrap {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--theme-text-inverse) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 5%, transparent);
   border-radius: 8px;
   padding: 8px 10px;
 
@@ -5064,16 +5214,16 @@ defineExpose({
 
     .disk-lab {
       font-size: 11px;
-      color: rgba(255, 255, 255, 0.5);
+      color: var(--theme-text-muted);
     }
 
     .disk-val {
       font-size: 11px;
-      color: rgba(255, 255, 255, 0.4);
+      color: var(--theme-text-subtle);
       font-variant-numeric: tabular-nums;
 
       strong {
-        color: rgba(255, 255, 255, 0.9);
+        color: var(--theme-text-primary);
         font-weight: 600;
       }
     }
@@ -5081,13 +5231,13 @@ defineExpose({
 
   .disk-bar {
     height: 4px;
-    background: rgba(255, 255, 255, 0.06);
+    background: color-mix(in srgb, var(--theme-text-inverse) 6%, transparent);
     border-radius: 2px;
     overflow: hidden;
 
     .disk-bar-fill {
       height: 100%;
-      background: linear-gradient(90deg, #60a5fa 0%, #818cf8 100%);
+      background: linear-gradient(90deg, var(--theme-info) 0%, var(--theme-brand-accent) 100%);
       border-radius: 2px;
       transition: width 0.3s ease;
     }
@@ -5096,7 +5246,7 @@ defineExpose({
   .disk-quota {
     margin-top: 6px;
     font-size: 10px;
-    color: rgba(255, 255, 255, 0.35);
+    color: var(--theme-text-disabled);
   }
 }
 
@@ -5104,7 +5254,7 @@ defineExpose({
 .filter-block {
   .filter-title {
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--theme-text-subtle);
     font-weight: 500;
     margin-bottom: 6px;
     letter-spacing: 0.5px;
@@ -5120,6 +5270,15 @@ defineExpose({
     }
   }
 
+  .duration-chip-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+
+    .chip {
+      width: 100%;
+    }
+  }
+
   .chip {
     flex: 1;
     display: inline-flex;
@@ -5132,9 +5291,9 @@ defineExpose({
     line-height: 1.35;
     font-size: 11px;
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.55);
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--theme-text-muted);
+    background: color-mix(in srgb, var(--theme-text-inverse) 3%, transparent);
+    border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 5%, transparent);
     border-radius: 6px;
     cursor: pointer;
     user-select: none;
@@ -5146,14 +5305,14 @@ defineExpose({
     }
 
     &:hover {
-      color: rgba(255, 255, 255, 0.85);
-      background: rgba(255, 255, 255, 0.06);
+      color: var(--theme-text-secondary);
+      background: color-mix(in srgb, var(--theme-text-inverse) 6%, transparent);
     }
 
     &.active {
-      color: #60a5fa;
-      background: rgba(96, 165, 250, 0.12);
-      border-color: rgba(96, 165, 250, 0.35);
+      color: var(--theme-info);
+      background: color-mix(in srgb, var(--theme-info) 12%, transparent);
+      border-color: color-mix(in srgb, var(--theme-info) 35%, transparent);
     }
   }
 
@@ -5165,8 +5324,8 @@ defineExpose({
 
 /* 聚合统计（照片侧） */
 .agg-stats {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--theme-text-inverse) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 5%, transparent);
   border-radius: 8px;
   padding: 8px 10px;
   display: flex;
@@ -5178,7 +5337,7 @@ defineExpose({
     align-items: center;
     gap: 8px;
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--theme-text-muted);
 
     .agg-icon {
       font-size: 12px;
@@ -5188,12 +5347,12 @@ defineExpose({
 
     .agg-key {
       flex: 1;
-      color: rgba(255, 255, 255, 0.45);
+      color: var(--theme-text-subtle);
     }
 
     .agg-val {
       font-weight: 600;
-      color: rgba(255, 255, 255, 0.9);
+      color: var(--theme-text-primary);
       font-variant-numeric: tabular-nums;
     }
   }
@@ -5209,7 +5368,7 @@ defineExpose({
   gap: 4px;
   padding: 4px;
   margin-bottom: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--theme-text-inverse) 4%, transparent);
   border-radius: 8px;
 }
 
@@ -5218,18 +5377,18 @@ defineExpose({
   padding: 6px 0;
   text-align: center;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-text-muted);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
 
   &:hover {
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--theme-text-secondary);
   }
 
   &.active {
-    background: rgba(64, 158, 255, 0.15);
-    color: #60a5fa;
+    background: color-mix(in srgb, var(--theme-info) 15%, transparent);
+    color: var(--theme-info);
     font-weight: 500;
   }
 }
@@ -5238,27 +5397,27 @@ defineExpose({
   margin-bottom: 8px;
 
   :deep(.el-input__wrapper) {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: color-mix(in srgb, var(--theme-text-inverse) 4%, transparent);
+    border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 6%, transparent);
     box-shadow: none;
 
     &:hover,
     &:focus-within {
-      border-color: rgba(64, 158, 255, 0.3);
+      border-color: color-mix(in srgb, var(--theme-info) 30%, transparent);
     }
   }
 
   :deep(.el-input__inner) {
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--theme-text-secondary);
     font-size: 12px;
 
     &::placeholder {
-      color: rgba(255, 255, 255, 0.3);
+      color: var(--theme-text-disabled);
     }
   }
 
   :deep(.el-input__prefix .el-icon) {
-    color: rgba(255, 255, 255, 0.3);
+    color: var(--theme-text-disabled);
   }
 }
 
@@ -5268,7 +5427,7 @@ defineExpose({
   justify-content: center;
   gap: 8px;
   padding: 24px 0;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-subtle);
   font-size: 13px;
 }
 
@@ -5288,12 +5447,12 @@ defineExpose({
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: color-mix(in srgb, var(--theme-text-inverse) 6%, transparent);
   }
 
   &.active {
-    background: rgba(64, 158, 255, 0.12);
-    border: 1px solid rgba(64, 158, 255, 0.2);
+    background: color-mix(in srgb, var(--theme-info) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--theme-info) 20%, transparent);
     margin: -1px;
   }
 }
@@ -5305,7 +5464,7 @@ defineExpose({
 
 .friend-name {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5320,14 +5479,14 @@ defineExpose({
 
 .friend-score {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--theme-text-disabled);
   margin-top: 2px;
 }
 
 .friend-empty {
   text-align: center;
   padding: 24px 0;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--theme-text-disabled);
   font-size: 13px;
 }
 
@@ -5352,12 +5511,12 @@ defineExpose({
 /* 好友卡片样式 */
 .friend-card {
   .friend-avatar {
-    border-color: rgba(248, 113, 113, 0.3) !important;
-    box-shadow: 0 2px 8px rgba(248, 113, 113, 0.2) !important;
+    border-color: color-mix(in srgb, var(--theme-danger) 30%, transparent) !important;
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--theme-danger) 20%, transparent) !important;
 
     &:hover {
-      border-color: rgba(248, 113, 113, 0.5) !important;
-      box-shadow: 0 4px 12px rgba(248, 113, 113, 0.3) !important;
+      border-color: color-mix(in srgb, var(--theme-danger) 50%, transparent) !important;
+      box-shadow: 0 4px 12px color-mix(in srgb, var(--theme-danger) 30%, transparent) !important;
     }
   }
 
@@ -5374,14 +5533,14 @@ defineExpose({
     display: flex;
     align-items: center;
     gap: 3px;
-    color: #f87171;
-    text-shadow: 0 0 3px rgba(248, 113, 113, 0.3);
+    color: var(--theme-danger);
+    text-shadow: 0 0 3px color-mix(in srgb, var(--theme-danger) 30%, transparent);
   }
 
   .stat-heart {
     width: 10px;
     height: 10px;
-    color: #f87171;
+    color: var(--theme-danger);
     flex-shrink: 0;
   }
 }
@@ -5397,23 +5556,23 @@ defineExpose({
 
   .qa-label {
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.35);
+    color: var(--theme-text-disabled);
     flex-shrink: 0;
   }
 
   .qa-text {
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--theme-text-secondary);
     word-break: break-all;
   }
 
   .qa-answer {
-    color: #e6a23c;
+    color: var(--theme-warning-strong);
     font-weight: 500;
   }
 
   .qa-muted {
-    color: rgba(255, 255, 255, 0.3);
+    color: var(--theme-text-disabled);
   }
 }
 </style>
@@ -5432,13 +5591,13 @@ defineExpose({
     white-space: normal;
 
     strong {
-      color: rgba(255, 255, 255, 0.94);
+      color: var(--theme-text-primary);
       font-size: 12px;
       font-weight: 600;
     }
 
     span {
-      color: rgba(255, 255, 255, 0.68);
+      color: var(--theme-text-secondary);
     }
   }
 }
@@ -5449,16 +5608,16 @@ defineExpose({
     line-height: 1.6;
 
     .online-tooltip-row {
-      color: rgba(0, 0, 0, 0.85);
+      color: color-mix(in srgb, var(--theme-canvas) 85%, transparent);
       font-weight: 500;
       &.is-online-text {
-        color: #16a34a;
+        color: var(--theme-success);
       }
     }
 
     .online-tooltip-sub {
       font-size: 11px;
-      color: rgba(0, 0, 0, 0.4);
+      color: color-mix(in srgb, var(--theme-canvas) 40%, transparent);
     }
   }
 }

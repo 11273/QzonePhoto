@@ -75,18 +75,18 @@ const iconSize = computed(() => {
   color: var(--ds-text-secondary);
 
   &.small {
-    min-height: 120px;
-    padding: 20px;
+    min-height: 96px;
+    padding: 16px;
   }
 
   &.medium {
-    min-height: 200px;
-    padding: 40px 20px;
+    min-height: 136px;
+    padding: 24px 20px;
   }
 
   &.large {
-    min-height: 300px;
-    padding: 60px 20px;
+    min-height: 176px;
+    padding: 32px 20px;
   }
 
   &.minimal {
@@ -109,26 +109,27 @@ const iconSize = computed(() => {
   }
 
   &.card {
-    background: var(--ds-bg-2);
-    border: 1px solid var(--ds-border-light);
-    border-radius: var(--ds-radius-xl);
+    background: var(--theme-surface-soft);
+    border: 1px solid var(--theme-border-subtle);
+    border-radius: var(--theme-radius-lg);
     backdrop-filter: blur(10px);
   }
 }
 
 .empty-content {
   text-align: center;
-  max-width: 400px;
+  max-width: 440px;
 }
 
 .empty-icon {
-  margin-bottom: 16px;
-  opacity: 0.6;
+  margin-bottom: 12px;
+  color: var(--theme-brand-accent);
+  opacity: 0.76;
   filter: grayscale(0.3);
 }
 
 .empty-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--ds-text-primary);
   margin: 0 0 8px 0;
@@ -136,10 +137,10 @@ const iconSize = computed(() => {
 }
 
 .empty-description {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--ds-text-tertiary);
-  margin: 0 0 20px 0;
-  line-height: 1.5;
+  margin: 0 0 16px 0;
+  line-height: 1.6;
 }
 
 .empty-actions {
@@ -153,13 +154,13 @@ const iconSize = computed(() => {
 @media (max-width: 768px) {
   .empty-state {
     &.medium {
-      min-height: 160px;
-      padding: 30px 16px;
+      min-height: 128px;
+      padding: 24px 16px;
     }
 
     &.large {
-      min-height: 220px;
-      padding: 40px 16px;
+      min-height: 168px;
+      padding: 32px 16px;
     }
   }
 

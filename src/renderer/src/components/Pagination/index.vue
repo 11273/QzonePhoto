@@ -1,5 +1,5 @@
 <template>
-  <div :class="{ hidden: hidden }">
+  <nav :class="{ hidden: hidden }" aria-label="分页导航">
     <el-pagination
       v-model:current-page="currentPage"
       v-model:page-size="pageSize"
@@ -13,7 +13,7 @@
       @size-change="handleSizeChange"
       @current-change="handleCurrentChange"
     />
-  </div>
+  </nav>
 </template>
 
 <script setup>
@@ -72,4 +72,56 @@ const handleCurrentChange = (val) => {
 }
 </script>
 
-<style scoped></style>
+<style scoped>
+nav {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  padding-block: var(--theme-space-2);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+nav.hidden {
+  display: none;
+}
+
+:deep(.el-pagination) {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--theme-space-1);
+  color: var(--theme-text-secondary);
+}
+
+:deep(.el-pagination.is-background .btn-prev),
+:deep(.el-pagination.is-background .btn-next),
+:deep(.el-pagination.is-background .el-pager li) {
+  min-width: var(--theme-control-sm);
+  height: var(--theme-control-sm);
+  margin: 0;
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: var(--theme-radius-sm);
+}
+
+:deep(.el-pagination.is-background .el-pager li.is-active) {
+  color: var(--theme-text-inverse);
+  background: var(--theme-brand);
+  border-color: var(--theme-brand);
+}
+
+:deep(.el-pagination button:focus-visible),
+:deep(.el-pagination li:focus-visible) {
+  outline: 2px solid var(--theme-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  :deep(.el-pagination__sizes),
+  :deep(.el-pagination__jump) {
+    margin-inline: var(--theme-space-1);
+  }
+}
+</style>

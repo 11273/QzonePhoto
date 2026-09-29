@@ -1,31 +1,35 @@
 <template>
   <div class="feeds-module">
-    <!-- 顶部：标题 + 工具 + sub-tab -->
-    <header class="fm-top">
-      <div class="fm-top-left">
-        <h2 class="fm-title">{{ activeSourceTitle }}</h2>
-        <span class="fm-sub">{{ headerCountText }}</span>
-      </div>
-      <div class="fm-top-right">
-        <button
+    <ModuleHeader :title="activeSourceTitle" :subtitle="headerCountText">
+      <template #actions>
+        <AppActionButton
           v-if="totalMediaCount && activeSource.kind !== 'messageBoard'"
-          type="button"
-          class="fm-tool-btn fm-tool-btn-primary"
+          variant="primary"
+          ui-size="compact"
           :disabled="downloadingAll"
           @click="downloadAll"
         >
           <Download :size="14" />
           {{ downloadingAll ? '加入下载…' : `下载全部 ${totalMediaCount}` }}
-        </button>
-        <button type="button" class="fm-tool-btn" :disabled="loading" @click="handleRefresh">
-          <Refresh :size="14" />
-          刷新
-        </button>
-      </div>
-    </header>
+        </AppActionButton>
+        <AppRefreshButton :loading="loading" :disabled="loading" @click="handleRefresh" />
+      </template>
+    </ModuleHeader>
 
     <!-- 分类切换：好友动态 / 特别关心 / 与我相关 / 那年今日 -->
-    <nav class="fm-sources" role="tablist" aria-label="动态分类">
+    <nav
+      ref="sourcesRef"
+      class="fm-sources"
+      :class="{
+        'is-overflowing': sourceScrollState.overflowing,
+        'can-scroll-left': sourceScrollState.canScrollLeft,
+        'can-scroll-right': sourceScrollState.canScrollRight
+      }"
+      role="tablist"
+      aria-label="动态分类"
+      aria-orientation="horizontal"
+      @scroll.passive="updateSourceOverflow"
+    >
       <button
         v-for="(src, sourceIndex) in sources"
         :key="src.key"
@@ -35,7 +39,8 @@
         role="tab"
         :aria-selected="src.key === activeKey"
         :tabindex="src.key === activeKey ? 0 : -1"
-        @click="switchSource(src.key)"
+        @click="switchSource(src.key, sourceIndex)"
+        @focus="scrollSourceIntoView(sourceIndex)"
         @keydown="handleSourceKeydown($event, sourceIndex)"
       >
         <component :is="src.icon" :size="13" class="fm-source-icon" />
@@ -73,6 +78,8 @@
             :icon="MessageCircle"
             :title="emptyStateTitle"
             :description="emptyStateDesc"
+            :semantic-role="loadError ? 'alert' : 'status'"
+            :aria-live="loadError ? 'assertive' : 'polite'"
           />
           <button
             v-if="loadError && !loadPermissionDenied"
@@ -192,7 +199,15 @@
         <template v-else>
           <!-- 瀑布流（column-count），卡片自适应高度，最大化空间利用 -->
           <div class="fm-masonry">
-            <article v-for="feed in filteredFeeds" :key="feed.tid" class="fc-card">
+            <article
+              v-for="feed in filteredFeeds"
+              :key="feed.tid"
+              class="fc-card"
+              :class="{
+                'is-compact-card':
+                  (feed.media?.length || 0) <= 1 && (feed.contentText?.length || 0) < 180
+              }"
+            >
               <header class="fc-header">
                 <button
                   type="button"
@@ -245,7 +260,7 @@
                   <button
                     v-if="feed.media.length"
                     type="button"
-                    class="fc-dl-btn fc-dl-btn-header"
+                    class="fc-dl-btn fc-dl-btn-header is-download"
                     :disabled="isFeedDownloading(feed.tid)"
                     :aria-label="`下载这条动态的 ${feed.media.length} 个媒体`"
                     :title="`下载这条动态的 ${feed.media.length} 个媒体`"
@@ -305,14 +320,26 @@
                   class="fc-media-item"
                   :class="{ 'is-video': isVideoMedia(media) }"
                   :aria-label="`${isVideoMedia(media) ? '播放视频' : '查看图片'} ${idx + 1}，共 ${feed.media.length} 个媒体`"
+                  @mouseenter="scheduleMediaHoverPreview(feed, media, idx)"
+                  @mouseleave="stopMediaHoverPreview(feed, idx)"
+                  @focus="scheduleMediaHoverPreview(feed, media, idx)"
+                  @blur="stopMediaHoverPreview(feed, idx)"
                   @click="openPreview(feed, idx)"
                 >
                   <img
                     v-if="getMediaThumb(feed, media, idx)"
                     :src="getMediaThumb(feed, media, idx)"
+                    alt=""
+                    aria-hidden="true"
                     loading="lazy"
                     referrerpolicy="no-referrer"
                     @error="onMediaThumbError(feed, idx, media)"
+                  />
+                  <HoverVideoPreview
+                    v-if="isVideoMedia(media)"
+                    :active="hoverPreviewKey === mediaHoverKey(feed, idx)"
+                    :src="mediaPreviewSource(media)"
+                    :poster="getMediaThumb(feed, media, idx)"
                   />
                   <div v-else class="fc-thumb-fallback">
                     <el-icon>
@@ -320,7 +347,11 @@
                       <Picture v-else />
                     </el-icon>
                   </div>
-                  <div v-if="isVideoMedia(media)" class="fc-video-overlay" aria-hidden="true">
+                  <div
+                    v-if="isVideoMedia(media) && hoverPreviewKey !== mediaHoverKey(feed, idx)"
+                    class="fc-video-overlay"
+                    aria-hidden="true"
+                  >
                     <span class="fc-video-play">
                       <Play :size="18" :stroke-width="2.6" />
                     </span>
@@ -377,17 +408,9 @@
                   正在加载点赞者…
                 </span>
                 <button
-                  v-else-if="likeState(feed)?.error"
-                  type="button"
-                  class="fc-likers-toggle"
-                  @click="ensureLikers(feed, true)"
-                >
-                  {{ likeState(feed).error }} · 重试
-                </button>
-                <button
                   v-else-if="
                     likeTotal(feed) > 8 &&
-                    (allLikers(feed).length > 8 || feed.likerFetchable !== false)
+                    (allLikers(feed).length > 0 || feed.likerFetchable !== false)
                   "
                   type="button"
                   class="fc-likers-toggle"
@@ -415,6 +438,14 @@
                   @click="ensureLikers(feed, true)"
                 >
                   查看点赞者
+                </button>
+                <button
+                  v-if="likeState(feed)?.error"
+                  type="button"
+                  class="fc-likers-toggle"
+                  @click="ensureLikers(feed, true)"
+                >
+                  {{ likeState(feed).error }} · 重试补全
                 </button>
                 <span
                   v-if="feed.likeListComplete === false && feed.likerFetchable === false"
@@ -450,14 +481,6 @@
                   @click="showMoreLikers(feed.tid)"
                 >
                   再显示 {{ Math.min(40, allLikers(feed).length - visibleLikers(feed).length) }} 位
-                </button>
-                <button
-                  v-if="likeState(feed)?.loading || likeState(feed)?.error"
-                  type="button"
-                  class="fc-likers-toggle"
-                  @click="toggleLikers(feed)"
-                >
-                  收起名单
                 </button>
               </div>
 
@@ -570,12 +593,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, inject, onMounted, nextTick, watch } from 'vue'
+import { ref, reactive, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, Hide, Picture, VideoPlay } from '@element-plus/icons-vue'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import MediaPreview from '@renderer/components/MediaPreview/index.vue'
+import HoverVideoPreview from '@renderer/components/HoverVideoPreview/index.vue'
+import AppActionButton from '@renderer/components/AppActionButton/index.vue'
+import AppRefreshButton from '@renderer/components/AppRefreshButton/index.vue'
+import ModuleHeader from '@renderer/components/ModuleHeader/index.vue'
 import {
   MessageCircle,
   Repeat2,
@@ -584,7 +611,6 @@ import {
   Eye,
   Smartphone,
   ChevronDown,
-  RefreshCw as Refresh,
   Users,
   Star,
   AtSign,
@@ -628,6 +654,12 @@ import {
   resolveQzoneHostUin,
   resolveSelfQzoneUin
 } from '@renderer/utils/qzone-identity'
+import {
+  batchSummaryText,
+  batchTaskIds,
+  finishDownloadBatch,
+  openDownloadBatchOptions
+} from '@renderer/utils/downloadBatch'
 
 const userStore = useUserStore()
 const privacyStore = usePrivacyStore()
@@ -815,6 +847,13 @@ const sources = computed(() =>
   })
 )
 const activeKey = ref('home')
+const sourcesRef = ref(null)
+const sourceScrollState = reactive({
+  overflowing: false,
+  canScrollLeft: false,
+  canScrollRight: false
+})
+let sourceResizeObserver = null
 const activeSource = computed(
   () => sources.value.find((s) => s.key === activeKey.value) || sources.value[0]
 )
@@ -2138,6 +2177,34 @@ const formatBigNum = (n) => {
   return (n / 10000).toFixed(n < 100000 ? 1 : 0) + '万'
 }
 const isVideoMedia = (media) => media?.type === 'video' || media?.is_video
+const hoverPreviewKey = ref('')
+let hoverPreviewTimer = null
+const mediaHoverKey = (feed, index) =>
+  `${activeKey.value}:${feed?.tid || feed?.id || feed?.abstime || 'feed'}:${index}`
+const mediaPreviewSource = (media) =>
+  media?.origin || media?.raw || media?.url || media?.video_url || media?.videourl || ''
+const canUseHoverPreview = () =>
+  !privacyStore.privacyMode &&
+  !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches &&
+  !!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches
+const clearHoverPreviewTimer = () => {
+  if (!hoverPreviewTimer) return
+  clearTimeout(hoverPreviewTimer)
+  hoverPreviewTimer = null
+}
+const scheduleMediaHoverPreview = (feed, media, index) => {
+  clearHoverPreviewTimer()
+  if (!isVideoMedia(media) || !mediaPreviewSource(media) || !canUseHoverPreview()) return
+  const key = mediaHoverKey(feed, index)
+  hoverPreviewTimer = window.setTimeout(() => {
+    hoverPreviewTimer = null
+    hoverPreviewKey.value = key
+  }, 520)
+}
+const stopMediaHoverPreview = (feed, index) => {
+  clearHoverPreviewTimer()
+  if (hoverPreviewKey.value === mediaHoverKey(feed, index)) hoverPreviewKey.value = ''
+}
 const formatDuration = (seconds) => {
   const totalSeconds = Math.floor(Number(seconds) || 0)
   if (totalSeconds <= 0) return ''
@@ -2145,6 +2212,11 @@ const formatDuration = (seconds) => {
   const secs = totalSeconds % 60
   return mins > 0 ? `${mins}:${String(secs).padStart(2, '0')}` : `${secs}s`
 }
+
+onUnmounted(() => {
+  clearHoverPreviewTimer()
+  hoverPreviewKey.value = ''
+})
 const getMediaThumbKey = (feed, media, index) =>
   `${feed?.tid || feed?.abstime || 'feed'}-${media?.id || media?.origin || media?.thumb || index}`
 const getMediaThumbCandidates = (media) => {
@@ -2393,6 +2465,15 @@ const pushVisitorStats = () => {
     retryVisitors: fetchVisitor
   })
 }
+
+watch(
+  leftRef,
+  () => {
+    pushStats()
+    pushVisitorStats()
+  },
+  { flush: 'post' }
+)
 
 // ============= 评论 =============
 const parseCommentsHtml = (html) => {
@@ -2740,7 +2821,7 @@ const buildFeedDownloadPayload = (feed) => ({
     sourceKey: feed.isFav ? 'fav' : activeKey.value
   }))
 })
-const addFeedDownloadTasks = async (feedList) => {
+const addFeedDownloadTasks = async (feedList, batch = null) => {
   const groups = new Map()
   feedList.forEach((feed) => {
     if (!feed.media?.length) return
@@ -2752,28 +2833,40 @@ const addFeedDownloadTasks = async (feedList) => {
 
   const taskIds = []
   for (const [friendUin, feedsPayload] of groups.entries()) {
-    const ids = await window.QzoneAPI.download.addFeeds({
+    const result = await window.QzoneAPI.download.addFeeds({
       feeds: feedsPayload,
       uin: selfUin.value,
-      friendUin: friendUin || null
+      friendUin: friendUin || null,
+      batch
     })
-    taskIds.push(...(ids || []))
+    taskIds.push(...batchTaskIds(result))
   }
   return taskIds
 }
 
 const downloadAll = async () => {
   if (downloadingAll.value) return
+  const batch = filteredFeeds.value.filter((feed) => feed.media?.length)
+  if (!batch.length) {
+    ElMessage.warning('当前没有可下载的图片')
+    return
+  }
+  const downloadBatch = await openDownloadBatchOptions({
+    label: `${activeSource.value.label}动态`,
+    sourceType: 'feeds'
+  })
+  if (!downloadBatch) return
   downloadingAll.value = true
   try {
-    const batch = filteredFeeds.value.filter((feed) => feed.media?.length)
-    if (!batch.length) {
-      ElMessage.warning('当前没有可下载的图片')
+    const ids = await addFeedDownloadTasks(batch, downloadBatch)
+    const summary = await finishDownloadBatch(downloadBatch)
+    if (!ids.length) {
+      ElMessage.warning(`所选日期没有匹配内容，共检查 ${summary?.scanned || 0} 项`)
       return
     }
-    const ids = await addFeedDownloadTasks(batch)
-    ElMessage.success(`已添加 ${ids?.length || 0} 个下载任务（${batch.length} 条动态）`)
+    ElMessage.success(batchSummaryText(summary, ids.length))
   } catch (e) {
+    await finishDownloadBatch(downloadBatch, true).catch(() => null)
     console.error('[FeedsModule] 批量下载失败', e)
     ElMessage.error(`批量下载失败：${e.message || e}`)
   } finally {
@@ -3040,7 +3133,53 @@ const loadPage = async ({ reset = false } = {}) => {
 }
 
 // 切换分类：清空当前列表 + 重置 pager + 拉新数据
-const switchSource = async (key) => {
+const updateSourceOverflow = () => {
+  const el = sourcesRef.value
+  if (!el) return
+  const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth)
+  sourceScrollState.overflowing = maxScrollLeft > 1
+  sourceScrollState.canScrollLeft = el.scrollLeft > 1
+  sourceScrollState.canScrollRight = el.scrollLeft < maxScrollLeft - 1
+}
+
+const scrollSourceIntoView = (sourceIndex) => {
+  nextTick(() => {
+    const el = sourcesRef.value
+    const tab = el?.querySelectorAll('[role="tab"]')?.[sourceIndex]
+    if (!el || !tab) return
+
+    const safeInset = 14
+    const tabLeft = tab.offsetLeft
+    const tabRight = tabLeft + tab.offsetWidth
+    const viewLeft = el.scrollLeft + safeInset
+    const viewRight = el.scrollLeft + el.clientWidth - safeInset
+    let nextScrollLeft = el.scrollLeft
+
+    if (tabLeft < viewLeft) nextScrollLeft = Math.max(0, tabLeft - safeInset)
+    else if (tabRight > viewRight) {
+      nextScrollLeft = Math.min(
+        el.scrollWidth - el.clientWidth,
+        tabRight - el.clientWidth + safeInset
+      )
+    }
+
+    if (Math.abs(nextScrollLeft - el.scrollLeft) > 1) {
+      el.scrollTo({
+        left: nextScrollLeft,
+        behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+          ? 'auto'
+          : 'smooth'
+      })
+    }
+    window.requestAnimationFrame(updateSourceOverflow)
+  })
+}
+
+const switchSource = async (
+  key,
+  sourceIndex = sources.value.findIndex((src) => src.key === key)
+) => {
+  scrollSourceIntoView(sourceIndex)
   if (key === activeKey.value) return
   activeKey.value = key
   await loadPage({ reset: true })
@@ -3057,7 +3196,7 @@ const handleSourceKeydown = (event, currentIndex) => {
   else return
 
   event.preventDefault()
-  switchSource(sources.value[nextIndex].key)
+  switchSource(sources.value[nextIndex].key, nextIndex)
   nextTick(() => {
     event.currentTarget
       ?.closest('[role="tablist"]')
@@ -3148,12 +3287,25 @@ const openPreview = (feed, startIdx) => {
 }
 
 onMounted(async () => {
+  await nextTick()
+  if (sourcesRef.value) {
+    sourceResizeObserver = new ResizeObserver(updateSourceOverflow)
+    sourceResizeObserver.observe(sourcesRef.value)
+    updateSourceOverflow()
+    scrollSourceIntoView(sources.value.findIndex((source) => source.key === activeKey.value))
+  }
   await loadPage({ reset: true })
   await ensureScrollable()
+  pushStats()
   if (!isFriendContext.value) {
     fetchVisitor()
     fetchFeedsCount()
   }
+})
+
+onUnmounted(() => {
+  sourceResizeObserver?.disconnect()
+  sourceResizeObserver = null
 })
 
 defineExpose({ refresh: handleRefresh })
@@ -3163,62 +3315,9 @@ defineExpose({ refresh: handleRefresh })
 .feeds-module {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   height: 100%;
-  background: rgba(0, 0, 0, 0.15);
-}
-
-/* ========== 顶部精简 ========== */
-.fm-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  flex-shrink: 0;
-}
-.fm-top-left {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-.fm-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #fff;
-  margin: 0;
-  letter-spacing: 0;
-}
-.fm-sub {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
-}
-.fm-top-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.fm-tool-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 12px;
-  height: 30px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: all 0.15s;
-
-  &:hover:not(:disabled) {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.06);
-  }
-  &:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
+  background: color-mix(in srgb, var(--theme-canvas) 72%, transparent);
 }
 
 /* ========== 分类切换（sub-tab） ========== */
@@ -3226,31 +3325,88 @@ defineExpose({ refresh: handleRefresh })
   display: flex;
   gap: 0;
   padding: 6px 12px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--theme-border-subtle);
   flex-shrink: 0;
   flex-wrap: nowrap;
   overflow-x: auto;
   overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 12px;
+  overscroll-behavior-inline: contain;
   scrollbar-width: none;
 
   &::-webkit-scrollbar {
     display: none;
   }
 }
+
+@media (max-width: 1180px) {
+  .fm-sources {
+    padding-inline: 18px;
+    scroll-padding-inline: 18px;
+  }
+
+  .fm-sources.is-overflowing.can-scroll-right:not(.can-scroll-left) {
+    -webkit-mask-image: linear-gradient(
+      90deg,
+      var(--theme-text-primary) 0,
+      var(--theme-text-primary) calc(100% - 16px),
+      transparent
+    );
+    mask-image: linear-gradient(
+      90deg,
+      var(--theme-text-primary) 0,
+      var(--theme-text-primary) calc(100% - 16px),
+      transparent
+    );
+  }
+
+  .fm-sources.is-overflowing.can-scroll-left:not(.can-scroll-right) {
+    -webkit-mask-image: linear-gradient(
+      90deg,
+      transparent,
+      var(--theme-text-primary) 16px,
+      var(--theme-text-primary) 100%
+    );
+    mask-image: linear-gradient(
+      90deg,
+      transparent,
+      var(--theme-text-primary) 16px,
+      var(--theme-text-primary) 100%
+    );
+  }
+
+  .fm-sources.is-overflowing.can-scroll-left.can-scroll-right {
+    -webkit-mask-image: linear-gradient(
+      90deg,
+      transparent,
+      var(--theme-text-primary) 16px,
+      var(--theme-text-primary) calc(100% - 16px),
+      transparent
+    );
+    mask-image: linear-gradient(
+      90deg,
+      transparent,
+      var(--theme-text-primary) 16px,
+      var(--theme-text-primary) calc(100% - 16px),
+      transparent
+    );
+  }
+}
 .fm-source {
   position: relative;
   display: inline-flex;
-  flex: 1 0 96px;
+  flex: 1 0 82px;
   align-items: center;
   justify-content: center;
   gap: 5px;
   min-width: 0;
   min-height: 38px;
-  padding: 6px 8px 8px;
-  font-size: 13px;
+  padding: 6px 4px 8px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--theme-text-muted);
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
@@ -3259,13 +3415,14 @@ defineExpose({ refresh: handleRefresh })
   transition:
     color 0.15s,
     border-color 0.18s;
+  scroll-snap-align: start;
 
   &:hover:not(:disabled):not(.active) {
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--theme-text-secondary);
   }
   &.active {
-    color: #fff;
-    border-bottom-color: #60a5fa;
+    color: var(--theme-text-primary);
+    border-bottom-color: var(--theme-brand-accent);
   }
   &:disabled {
     cursor: not-allowed;
@@ -3286,8 +3443,8 @@ defineExpose({ refresh: handleRefresh })
   margin-left: 2px;
   font-size: 10px;
   font-weight: 600;
-  color: #fff;
-  background: #ef4444;
+  color: var(--theme-text-inverse);
+  background: var(--theme-danger);
   border-radius: 999px;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -3324,14 +3481,14 @@ defineExpose({ refresh: handleRefresh })
   }
 
   &:focus-visible {
-    outline: 2px solid var(--ds-accent-blue);
+    outline: 2px solid var(--theme-focus);
     outline-offset: 2px;
   }
 
   &.active {
-    border-color: var(--ds-accent-blue-border);
-    background: var(--ds-accent-blue-soft);
-    color: var(--ds-accent-blue);
+    border-color: var(--theme-brand-border);
+    background: var(--theme-brand-soft);
+    color: var(--qz-active-text);
   }
 }
 
@@ -3340,15 +3497,16 @@ defineExpose({ refresh: handleRefresh })
   min-height: 0;
 }
 .fm-wrap {
-  padding: 16px 24px 32px;
+  padding: 12px 24px 28px;
 }
 
 /* ========== 内容优先的单列流：保留长文本可读性，同时给媒体更宽的展示空间 ========== */
 .fm-masonry {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-width: 960px;
+  align-items: center;
+  gap: 12px;
+  max-width: 900px;
   margin: 0 auto;
 }
 
@@ -3356,29 +3514,27 @@ defineExpose({ refresh: handleRefresh })
 .fc-card {
   display: flex;
   flex-direction: column;
-  padding: 18px 20px;
-  background:
-    linear-gradient(135deg, rgba(251, 146, 60, 0.035), transparent 34%), rgba(255, 255, 255, 0.026);
-  border: 1px solid rgba(255, 255, 255, 0.065);
-  border-radius: 14px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.025),
-    0 12px 34px rgba(0, 0, 0, 0.12);
+  padding: 14px 16px;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: var(--theme-radius-lg);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-text-inverse) 2.5%, transparent);
   transition:
     background 0.18s,
     border-color 0.18s,
     box-shadow 0.18s,
-    transform 0.18s;
+    color 0.18s;
+
+  width: 100%;
+
+  &.is-compact-card {
+    max-width: none;
+  }
 
   &:hover {
-    background:
-      linear-gradient(135deg, rgba(251, 146, 60, 0.055), transparent 38%),
-      rgba(255, 255, 255, 0.038);
-    border-color: rgba(251, 146, 60, 0.18);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.035),
-      0 16px 40px rgba(0, 0, 0, 0.18);
-    transform: translateY(-1px);
+    background: var(--theme-surface-hover);
+    border-color: var(--theme-border);
+    box-shadow: inset 0 1px 0 var(--theme-surface-soft);
   }
 }
 
@@ -3393,25 +3549,18 @@ defineExpose({ refresh: handleRefresh })
 .mb-card {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);
-  gap: 14px;
-  padding: 16px 18px;
-  background:
-    linear-gradient(135deg, rgba(96, 165, 250, 0.055), rgba(255, 255, 255, 0.018) 38%),
-    rgba(255, 255, 255, 0.024);
-  border: 1px solid rgba(255, 255, 255, 0.055);
-  border-radius: 12px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  gap: 12px;
+  padding: 13px 16px;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: var(--theme-radius-lg);
   transition:
-    background 0.18s,
-    border-color 0.18s,
-    transform 0.18s;
+    background-color var(--ds-dur-fast) var(--ds-ease-soft),
+    border-color var(--ds-dur-fast) var(--ds-ease-soft);
 
   &:hover {
-    background:
-      linear-gradient(135deg, rgba(96, 165, 250, 0.075), rgba(255, 255, 255, 0.025) 38%),
-      rgba(255, 255, 255, 0.032);
-    border-color: rgba(96, 165, 250, 0.14);
-    transform: translateY(-1px);
+    background: var(--theme-surface-hover);
+    border-color: var(--theme-border);
   }
 }
 
@@ -3420,11 +3569,6 @@ defineExpose({ refresh: handleRefresh })
   height: 40px;
   border-radius: 50%;
   overflow: hidden;
-  transition: transform 0.15s;
-
-  &:hover {
-    transform: scale(1.04);
-  }
 }
 
 .mb-avatar-link,
@@ -3446,8 +3590,8 @@ defineExpose({ refresh: handleRefresh })
   display: block;
   object-fit: cover;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--theme-border-subtle);
+  border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 8%, transparent);
 }
 
 .mb-body {
@@ -3479,13 +3623,13 @@ defineExpose({ refresh: handleRefresh })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.94);
+  color: var(--theme-text-primary);
   font-size: 13px;
   font-weight: 700;
   text-decoration: none;
 
   &:hover {
-    color: #60a5fa;
+    color: var(--theme-info);
   }
 }
 
@@ -3503,19 +3647,19 @@ defineExpose({ refresh: handleRefresh })
 }
 
 .mb-privacy {
-  color: rgba(251, 191, 36, 0.95);
-  background: rgba(251, 191, 36, 0.09);
-  border: 1px solid rgba(251, 191, 36, 0.18);
+  color: color-mix(in srgb, var(--theme-warning) 95%, transparent);
+  background: color-mix(in srgb, var(--theme-warning) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-warning) 18%, transparent);
 }
 
 .mb-floor {
-  color: rgba(96, 165, 250, 0.94);
-  background: rgba(96, 165, 250, 0.08);
-  border: 1px solid rgba(96, 165, 250, 0.16);
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface-raised);
+  border: 1px solid var(--theme-border-subtle);
 }
 
 .mb-time {
-  color: rgba(255, 255, 255, 0.38);
+  color: var(--theme-text-subtle);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -3528,7 +3672,7 @@ defineExpose({ refresh: handleRefresh })
 }
 
 .mb-content {
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--theme-text-secondary);
   font-size: 13.5px;
   line-height: 1.7;
   white-space: pre-line;
@@ -3552,34 +3696,24 @@ defineExpose({ refresh: handleRefresh })
   padding: 0;
   display: block;
   overflow: hidden;
-  border: 1px solid rgba(96, 165, 250, 0.16);
+  border: 1px solid var(--theme-border-subtle);
   border-radius: 10px;
-  background:
-    linear-gradient(135deg, rgba(96, 165, 250, 0.12), rgba(34, 211, 238, 0.04)),
-    rgba(255, 255, 255, 0.035);
+  background: var(--theme-surface-soft);
   cursor: zoom-in;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
   transition:
-    transform 0.16s ease,
-    border-color 0.16s ease,
-    box-shadow 0.16s ease;
+    border-color var(--ds-dur-fast) var(--ds-ease-soft),
+    box-shadow var(--ds-dur-fast) var(--ds-ease-soft);
 
   img {
     width: 100%;
     height: 100%;
     display: block;
     object-fit: cover;
-    transition: transform 0.22s ease;
   }
 
   &:hover {
-    transform: translateY(-1px);
-    border-color: rgba(96, 165, 250, 0.32);
-    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
-
-    img {
-      transform: scale(1.025);
-    }
+    border-color: var(--theme-border-strong);
+    box-shadow: var(--theme-shadow-sm);
   }
 
   &.is-broken {
@@ -3593,7 +3727,7 @@ defineExpose({ refresh: handleRefresh })
       display: flex;
       align-items: center;
       justify-content: center;
-      color: rgba(255, 255, 255, 0.46);
+      color: var(--theme-text-muted);
       font-size: 12px;
     }
 
@@ -3607,9 +3741,9 @@ defineExpose({ refresh: handleRefresh })
   width: fit-content;
   max-width: 100%;
   padding: 6px 9px;
-  color: rgba(255, 255, 255, 0.52);
-  background: rgba(255, 255, 255, 0.035);
-  border-left: 2px solid rgba(96, 165, 250, 0.35);
+  color: var(--theme-text-muted);
+  background: var(--theme-surface-soft);
+  border-left: 2px solid var(--theme-info-border);
   border-radius: 6px;
   font-size: 12px;
   line-height: 1.55;
@@ -3623,25 +3757,24 @@ defineExpose({ refresh: handleRefresh })
   max-height: 270px;
   overflow: auto;
   padding: 10px 12px;
-  background:
-    linear-gradient(180deg, rgba(96, 165, 250, 0.065), rgba(96, 165, 250, 0.025)),
-    rgba(10, 18, 34, 0.52);
-  border: 1px solid rgba(96, 165, 250, 0.1);
+  background: var(--theme-surface-raised);
+  border: 1px solid var(--theme-border-subtle);
   border-radius: 10px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(96, 165, 250, 0.45) rgba(255, 255, 255, 0.04);
+  scrollbar-color: color-mix(in srgb, var(--theme-info) 45%, transparent)
+    color-mix(in srgb, var(--theme-text-inverse) 4%, transparent);
 
   &::-webkit-scrollbar {
     width: 6px;
   }
 
   &::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.04);
+    background: color-mix(in srgb, var(--theme-text-inverse) 4%, transparent);
     border-radius: 999px;
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(96, 165, 250, 0.45);
+    background: color-mix(in srgb, var(--theme-info) 45%, transparent);
     border-radius: 999px;
   }
 }
@@ -3652,15 +3785,15 @@ defineExpose({ refresh: handleRefresh })
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 2px;
-  color: rgba(255, 255, 255, 0.46);
+  color: var(--theme-text-muted);
   font-size: 12px;
 
   button {
     flex-shrink: 0;
     padding: 2px 8px;
-    color: rgba(96, 165, 250, 0.95);
-    background: rgba(96, 165, 250, 0.08);
-    border: 1px solid rgba(96, 165, 250, 0.16);
+    color: color-mix(in srgb, var(--theme-info) 95%, transparent);
+    background: color-mix(in srgb, var(--theme-info) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--theme-info) 16%, transparent);
     border-radius: 999px;
     cursor: pointer;
     transition:
@@ -3668,8 +3801,8 @@ defineExpose({ refresh: handleRefresh })
       border-color 0.15s;
 
     &:hover {
-      background: rgba(96, 165, 250, 0.14);
-      border-color: rgba(96, 165, 250, 0.26);
+      background: color-mix(in srgb, var(--theme-info) 14%, transparent);
+      border-color: color-mix(in srgb, var(--theme-info) 26%, transparent);
     }
   }
 }
@@ -3680,19 +3813,19 @@ defineExpose({ refresh: handleRefresh })
   grid-template-columns: minmax(54px, auto) auto minmax(0, 1fr) auto;
   align-items: baseline;
   gap: 8px;
-  color: rgba(255, 255, 255, 0.76);
+  color: var(--theme-text-secondary);
   font-size: 12.5px;
   line-height: 1.55;
 }
 
 .mb-reply-target {
-  color: rgba(255, 255, 255, 0.42);
+  color: var(--theme-text-subtle);
   font-size: 11px;
   white-space: nowrap;
 }
 
 .mb-reply-author {
-  color: rgba(96, 165, 250, 0.92);
+  color: color-mix(in srgb, var(--theme-info) 92%, transparent);
   font-weight: 650;
   text-decoration: none;
 }
@@ -3703,7 +3836,7 @@ defineExpose({ refresh: handleRefresh })
 }
 
 .mb-reply-time {
-  color: rgba(255, 255, 255, 0.34);
+  color: var(--theme-text-disabled);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -3721,17 +3854,13 @@ defineExpose({ refresh: handleRefresh })
   height: 36px;
   border-radius: 50%;
   overflow: hidden;
-  transition: transform 0.15s;
-  &:hover {
-    transform: scale(1.06);
-  }
 }
 .fc-avatar {
   display: block;
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--theme-border-subtle);
   object-fit: cover;
 }
 .fc-author {
@@ -3742,7 +3871,7 @@ defineExpose({ refresh: handleRefresh })
   gap: 2px;
 }
 .fc-name {
-  color: #fff;
+  color: var(--theme-text-inverse);
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
@@ -3751,7 +3880,7 @@ defineExpose({ refresh: handleRefresh })
   align-items: center;
   max-width: 100%;
   &:hover {
-    color: #60a5fa;
+    color: var(--theme-info);
   }
 }
 .fc-name-rich {
@@ -3777,7 +3906,7 @@ defineExpose({ refresh: handleRefresh })
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-subtle);
 }
 .fc-type-chip {
   display: inline-flex;
@@ -3786,24 +3915,24 @@ defineExpose({ refresh: handleRefresh })
   font-size: 10px;
   font-weight: 500;
   border-radius: 999px;
-  color: rgba(96, 165, 250, 0.85);
-  background: rgba(96, 165, 250, 0.1);
-  border: 1px solid rgba(96, 165, 250, 0.18);
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface-hover);
+  border: 1px solid var(--theme-border-subtle);
 
   &[data-type='相册'] {
-    color: #34d399;
-    background: rgba(52, 211, 153, 0.08);
-    border-color: rgba(52, 211, 153, 0.2);
+    color: var(--theme-text-secondary);
+    background: var(--theme-surface-hover);
+    border-color: var(--theme-border-subtle);
   }
   &[data-type='日志'] {
-    color: #f59e0b;
-    background: rgba(245, 158, 11, 0.08);
-    border-color: rgba(245, 158, 11, 0.22);
+    color: var(--theme-text-secondary);
+    background: var(--theme-surface-hover);
+    border-color: var(--theme-border-subtle);
   }
   &[data-type='视频'] {
-    color: #a78bfa;
-    background: rgba(167, 139, 250, 0.08);
-    border-color: rgba(167, 139, 250, 0.22);
+    color: var(--theme-text-secondary);
+    background: var(--theme-surface-hover);
+    border-color: var(--theme-border-subtle);
   }
 }
 .fc-year-chip {
@@ -3813,9 +3942,9 @@ defineExpose({ refresh: handleRefresh })
   font-size: 10px;
   font-weight: 500;
   border-radius: 999px;
-  color: rgba(52, 211, 153, 0.9);
-  background: rgba(52, 211, 153, 0.08);
-  border: 1px solid rgba(52, 211, 153, 0.18);
+  color: var(--theme-text-muted);
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
 }
 .fc-time {
   white-space: nowrap;
@@ -3834,9 +3963,9 @@ defineExpose({ refresh: handleRefresh })
   width: fit-content;
   margin: 0 0 6px;
   padding: 3px 8px;
-  color: rgba(96, 165, 250, 0.92);
-  background: rgba(96, 165, 250, 0.08);
-  border: 1px solid rgba(96, 165, 250, 0.14);
+  color: color-mix(in srgb, var(--theme-info) 92%, transparent);
+  background: color-mix(in srgb, var(--theme-info) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-info) 14%, transparent);
   border-radius: 999px;
   font-size: 12px;
   line-height: 1.4;
@@ -3849,11 +3978,11 @@ defineExpose({ refresh: handleRefresh })
   margin: 2px 0 8px;
   font-size: 13.5px;
   line-height: 1.6;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--theme-text-secondary);
   word-break: break-word;
 
   :deep(a) {
-    color: #60a5fa;
+    color: var(--theme-info);
     text-decoration: none;
     &:hover {
       text-decoration: underline;
@@ -3899,9 +4028,9 @@ defineExpose({ refresh: handleRefresh })
   min-height: 64px;
   margin: 2px 0 10px;
   padding: 10px 12px;
-  border: 1px solid rgba(96, 165, 250, 0.14);
+  border: 1px solid color-mix(in srgb, var(--theme-info) 14%, transparent);
   border-radius: 10px;
-  background: rgba(96, 165, 250, 0.055);
+  background: color-mix(in srgb, var(--theme-info) 5.5%, transparent);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -3910,12 +4039,12 @@ defineExpose({ refresh: handleRefresh })
     border-color 0.15s;
 
   &:hover:not(:disabled) {
-    border-color: rgba(96, 165, 250, 0.3);
-    background: rgba(96, 165, 250, 0.1);
+    border-color: color-mix(in srgb, var(--theme-info) 30%, transparent);
+    background: color-mix(in srgb, var(--theme-info) 10%, transparent);
   }
 
   &:focus-visible {
-    outline: 2px solid #60a5fa;
+    outline: 2px solid var(--theme-info);
     outline-offset: 2px;
   }
 
@@ -3928,11 +4057,11 @@ defineExpose({ refresh: handleRefresh })
     height: 58px;
     border-radius: 8px;
     object-fit: cover;
-    background: rgba(255, 255, 255, 0.05);
+    background: color-mix(in srgb, var(--theme-text-inverse) 5%, transparent);
   }
 
   > svg {
-    color: rgba(147, 197, 253, 0.72);
+    color: color-mix(in srgb, var(--theme-info-text) 72%, transparent);
   }
 }
 
@@ -3950,7 +4079,7 @@ defineExpose({ refresh: handleRefresh })
   }
 
   strong {
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--theme-text-primary);
     font-size: 13px;
     line-height: 1.35;
     white-space: nowrap;
@@ -3958,7 +4087,7 @@ defineExpose({ refresh: handleRefresh })
 
   span {
     display: -webkit-box;
-    color: rgba(255, 255, 255, 0.54);
+    color: var(--theme-text-muted);
     font-size: 12px;
     line-height: 1.45;
     -webkit-box-orient: vertical;
@@ -3966,7 +4095,7 @@ defineExpose({ refresh: handleRefresh })
   }
 
   small {
-    color: rgba(147, 197, 253, 0.62);
+    color: color-mix(in srgb, var(--theme-info-text) 62%, transparent);
     font-size: 10px;
     white-space: nowrap;
   }
@@ -3990,7 +4119,7 @@ defineExpose({ refresh: handleRefresh })
   &.fc-media-n1 {
     grid-template-columns: minmax(0, 1fr);
     grid-auto-rows: auto;
-    width: min(100%, 420px);
+    width: min(100%, 360px);
 
     .fc-media-item {
       width: 100%;
@@ -4037,12 +4166,12 @@ defineExpose({ refresh: handleRefresh })
   padding: 0;
   appearance: none;
   border: 0;
-  border: 1px solid rgba(255, 255, 255, 0.055);
+  border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 5.5%, transparent);
   border-radius: 9px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--theme-text-inverse) 4%, transparent);
   cursor: zoom-in;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  box-shadow: none;
   transition:
     border-color 0.2s,
     box-shadow 0.2s;
@@ -4053,22 +4182,22 @@ defineExpose({ refresh: handleRefresh })
     transition: transform 0.3s;
   }
   &:hover img {
-    transform: scale(1.04);
+    transform: none;
   }
 
   &:hover {
-    border-color: rgba(251, 146, 60, 0.34);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+    border-color: var(--theme-border-strong);
+    box-shadow: var(--theme-shadow-sm);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--qz-active, #fb923c);
+    outline: 2px solid var(--theme-brand-accent);
     outline-offset: 2px;
   }
 
   &.is-video {
     cursor: pointer;
-    background: rgba(0, 0, 0, 0.3);
+    background: color-mix(in srgb, var(--theme-canvas) 30%, transparent);
   }
 
   &.is-video::after {
@@ -4078,18 +4207,22 @@ defineExpose({ refresh: handleRefresh })
     background:
       linear-gradient(
         180deg,
-        rgba(0, 0, 0, 0.02) 0%,
-        rgba(0, 0, 0, 0.08) 48%,
-        rgba(0, 0, 0, 0.55) 100%
+        color-mix(in srgb, var(--theme-canvas) 2%, transparent) 0%,
+        color-mix(in srgb, var(--theme-canvas) 8%, transparent) 48%,
+        color-mix(in srgb, var(--theme-canvas) 55%, transparent) 100%
       ),
-      radial-gradient(circle at center, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0) 42%);
+      radial-gradient(
+        circle at center,
+        color-mix(in srgb, var(--theme-canvas) 16%, transparent),
+        transparent 42%
+      );
     pointer-events: none;
   }
 
   &.is-video:hover .fc-video-play {
     transform: translate(-50%, -50%) scale(1.08);
-    border-color: rgba(255, 255, 255, 0.95);
-    background: rgba(0, 0, 0, 0.62);
+    border-color: var(--theme-text-primary);
+    background: color-mix(in srgb, var(--theme-canvas) 62%, transparent);
   }
 }
 .fc-thumb-fallback {
@@ -4098,8 +4231,12 @@ defineExpose({ refresh: handleRefresh })
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(96, 165, 250, 0.18), rgba(59, 130, 246, 0.08));
-  color: rgba(255, 255, 255, 0.5);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--theme-info) 18%, transparent),
+    color-mix(in srgb, var(--theme-info-strong) 8%, transparent)
+  );
+  color: var(--theme-text-muted);
   font-size: 22px;
 }
 .fc-video-overlay {
@@ -4117,11 +4254,11 @@ defineExpose({ refresh: handleRefresh })
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.52);
-  border: 1.5px solid rgba(255, 255, 255, 0.86);
+  color: var(--theme-text-inverse);
+  background: color-mix(in srgb, var(--theme-canvas) 52%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--theme-text-inverse) 86%, transparent);
   border-radius: 50%;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--theme-canvas) 32%, transparent);
   backdrop-filter: blur(3px);
   transform: translate(-50%, -50%);
   transition:
@@ -4136,8 +4273,8 @@ defineExpose({ refresh: handleRefresh })
   min-width: 28px;
   padding: 1px 6px;
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.95);
-  background: rgba(0, 0, 0, 0.62);
+  color: var(--theme-text-primary);
+  background: color-mix(in srgb, var(--theme-canvas) 62%, transparent);
   font-size: 10px;
   line-height: 1.5;
   font-weight: 600;
@@ -4159,8 +4296,8 @@ defineExpose({ refresh: handleRefresh })
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  background: color-mix(in srgb, var(--theme-canvas) 55%, transparent);
+  color: var(--theme-text-inverse);
   font-size: 16px;
   font-weight: 600;
   pointer-events: none;
@@ -4216,17 +4353,17 @@ defineExpose({ refresh: handleRefresh })
   gap: 6px;
   padding: 5px 8px;
   margin: 2px 0;
-  background: rgba(96, 165, 250, 0.06);
+  background: color-mix(in srgb, var(--theme-info) 6%, transparent);
   border-radius: 6px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--theme-text-muted);
 }
 .fc-likers-icon {
-  color: #60a5fa;
+  color: var(--theme-info);
   flex-shrink: 0;
 }
 .fc-likers-count {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-text-secondary);
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
@@ -4238,21 +4375,21 @@ defineExpose({ refresh: handleRefresh })
   gap: 5px;
 }
 .fc-likers-rest {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-text-muted);
 }
 .fc-likers-toggle {
   padding: 5px 7px;
-  color: #93c5fd;
+  color: var(--theme-info-text);
   background: transparent;
   border: 0;
   border-radius: 5px;
   cursor: pointer;
   font-size: 11px;
   &:hover {
-    background: rgba(96, 165, 250, 0.12);
+    background: color-mix(in srgb, var(--theme-info) 12%, transparent);
   }
   &:focus-visible {
-    outline: 2px solid #93c5fd;
+    outline: 2px solid var(--theme-info-text);
     outline-offset: 2px;
   }
 }
@@ -4268,17 +4405,17 @@ defineExpose({ refresh: handleRefresh })
   gap: 5px;
   max-width: 100%;
   padding: 4px 7px;
-  color: rgba(255, 255, 255, 0.82);
-  background: rgba(96, 165, 250, 0.07);
-  border: 1px solid rgba(96, 165, 250, 0.12);
+  color: var(--theme-text-secondary);
+  background: color-mix(in srgb, var(--theme-info) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-info) 12%, transparent);
   border-radius: 999px;
   cursor: pointer;
   font-size: 12px;
   &:hover {
-    background: rgba(96, 165, 250, 0.15);
+    background: color-mix(in srgb, var(--theme-info) 15%, transparent);
   }
   &:focus-visible {
-    outline: 2px solid #93c5fd;
+    outline: 2px solid var(--theme-info-text);
     outline-offset: 2px;
   }
   img {
@@ -4301,7 +4438,7 @@ defineExpose({ refresh: handleRefresh })
   justify-content: space-between;
   gap: 10px;
   padding-top: 6px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.05);
+  border-top: 1px dashed color-mix(in srgb, var(--theme-text-inverse) 5%, transparent);
   min-height: 26px;
 }
 .fc-stats {
@@ -4309,7 +4446,7 @@ defineExpose({ refresh: handleRefresh })
   align-items: center;
   gap: 12px;
   font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-text-muted);
   flex-wrap: wrap;
 }
 .fc-stat {
@@ -4318,7 +4455,7 @@ defineExpose({ refresh: handleRefresh })
   gap: 4px;
 }
 .fc-stat.liked {
-  color: #f59e0b;
+  color: var(--theme-warning-strong);
 }
 .fc-dl-btn {
   display: inline-flex;
@@ -4327,16 +4464,29 @@ defineExpose({ refresh: handleRefresh })
   padding: 3px 9px;
   font-size: 11px;
   font-weight: 500;
-  color: rgba(96, 165, 250, 0.9);
-  background: rgba(96, 165, 250, 0.08);
-  border: 1px solid rgba(96, 165, 250, 0.18);
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
   border-radius: 999px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition:
+    color 0.15s,
+    background-color 0.15s,
+    border-color 0.15s;
   &:hover {
-    color: #fff;
-    background: rgba(96, 165, 250, 0.18);
-    border-color: rgba(96, 165, 250, 0.35);
+    color: var(--theme-text-primary);
+    background: var(--theme-surface-hover);
+    border-color: var(--theme-border-strong);
+  }
+  &.is-download {
+    color: var(--qz-active-text);
+    background: var(--theme-brand-soft);
+    border-color: var(--theme-brand-border);
+  }
+  &.is-download:hover {
+    color: var(--theme-text-primary);
+    background: var(--theme-brand-soft-hover);
+    border-color: var(--theme-brand-accent);
   }
   &:disabled {
     opacity: 0.55;
@@ -4352,7 +4502,7 @@ defineExpose({ refresh: handleRefresh })
 .fc-comments-wrap {
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.05);
+  border-top: 1px dashed color-mix(in srgb, var(--theme-text-inverse) 5%, transparent);
 }
 .fc-cmt-more {
   display: inline-flex;
@@ -4362,7 +4512,7 @@ defineExpose({ refresh: handleRefresh })
   padding: 4px 10px;
   font-size: 11.5px;
   font-weight: 500;
-  color: rgba(96, 165, 250, 0.85);
+  color: color-mix(in srgb, var(--theme-info) 85%, transparent);
   background: transparent;
   border: none;
   border-radius: 999px;
@@ -4371,8 +4521,8 @@ defineExpose({ refresh: handleRefresh })
     color 0.15s,
     background 0.15s;
   &:hover:not(:disabled) {
-    color: #93c5fd;
-    background: rgba(96, 165, 250, 0.08);
+    color: var(--theme-info-text);
+    background: color-mix(in srgb, var(--theme-info) 8%, transparent);
   }
   &:disabled {
     cursor: progress;
@@ -4383,8 +4533,8 @@ defineExpose({ refresh: handleRefresh })
   margin-top: 6px;
   padding: 6px 10px;
   font-size: 11.5px;
-  color: #f87171;
-  background: rgba(248, 113, 113, 0.08);
+  color: var(--theme-danger);
+  background: color-mix(in srgb, var(--theme-danger) 8%, transparent);
   border-radius: 6px;
 }
 
@@ -4396,7 +4546,7 @@ defineExpose({ refresh: handleRefresh })
   align-items: center;
   gap: 6px;
   padding: 16px 0 8px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-muted);
   font-size: 12px;
 }
 
@@ -4405,18 +4555,18 @@ defineExpose({ refresh: handleRefresh })
   min-height: 38px;
   margin: 12px auto 0;
   padding: 0 16px;
-  border: 1px solid rgba(96, 165, 250, 0.28);
+  border: 1px solid var(--theme-brand-border);
   border-radius: 9px;
-  background: rgba(96, 165, 250, 0.1);
-  color: #bfdbfe;
+  background: var(--theme-brand-soft);
+  color: var(--qz-active-text);
   cursor: pointer;
 
   &:hover {
-    background: rgba(96, 165, 250, 0.16);
+    background: var(--theme-brand-soft-hover);
   }
 
   &:focus-visible {
-    outline: 2px solid #60a5fa;
+    outline: 2px solid var(--theme-focus);
     outline-offset: 2px;
   }
 }

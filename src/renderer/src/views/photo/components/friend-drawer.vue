@@ -29,6 +29,7 @@
       </div>
       <div class="contact-trigger-group" role="group" aria-label="联系人">
         <button
+          ref="friendsTriggerRef"
           class="trigger-bar"
           :class="{
             active: isExpanded && friendStore.currentScope === CONTACT_SCOPE.FRIENDS
@@ -44,6 +45,7 @@
           <span class="trigger-label">好友</span>
         </button>
         <button
+          ref="groupsTriggerRef"
           class="trigger-bar"
           :class="{
             active: isExpanded && friendStore.currentScope === CONTACT_SCOPE.GROUPS
@@ -59,6 +61,7 @@
           <span class="trigger-label">群</span>
         </button>
         <button
+          ref="intimacyTriggerRef"
           class="trigger-bar"
           :class="{
             active: isExpanded && friendStore.currentScope === CONTACT_SCOPE.INTIMACY
@@ -96,6 +99,7 @@
             <span :title="contactScopeSummary">{{ contactScopeSummary }}</span>
           </div>
           <el-dropdown
+            class="contact-backup-dropdown"
             placement="bottom-end"
             trigger="click"
             popper-class="contact-backup-popper"
@@ -106,15 +110,19 @@
               class="contact-backup-btn"
               type="button"
               :disabled="backupBusy"
-              aria-label="选择联系人名单备份范围"
-              title="备份好友、群成员或亲密度名单，不包含相册"
+              :aria-label="backupMenuTitle"
+              :title="`${backupMenuTitle}，不包含照片、视频或相册`"
             >
               <el-icon v-if="backupBusy" class="is-loading"><Loading /></el-icon>
-              <DatabaseBackup v-else :size="13" />
-              <span>{{ backupButtonText }}</span>
-              <ChevronDown v-if="!backupBusy" :size="11" />
+              <DatabaseBackup v-else :size="14" />
+              <span>{{ backupBusy ? '正在备份' : '备份名单' }}</span>
+              <ChevronDown v-if="!backupBusy" :size="12" class="backup-chevron" />
             </button>
             <template #dropdown>
+              <div class="contact-backup-menu-intro">
+                <strong>{{ backupMenuTitle }}</strong>
+                <span>保存联系人资料为本地文件，不包含照片、视频或相册。</span>
+              </div>
               <el-dropdown-menu>
                 <el-dropdown-item
                   v-for="option in contactBackupOptions"
@@ -123,6 +131,7 @@
                   :disabled="option.disabled"
                   :divided="option.divided"
                 >
+                  <FileDown :size="14" class="contact-backup-option-icon" />
                   <div class="contact-backup-option">
                     <strong>{{ option.label }}</strong>
                     <span>{{ option.description }}</span>
@@ -184,6 +193,7 @@
             :class="{ active: friendStore.currentTab === FRIEND_TAB.CARE }"
             type="button"
             role="tab"
+            :aria-label="intimacyTabAriaLabel(FRIEND_TAB.CARE)"
             :aria-selected="friendStore.currentTab === FRIEND_TAB.CARE"
             :tabindex="friendStore.currentTab === FRIEND_TAB.CARE ? 0 : -1"
             @click="friendStore.switchTab(FRIEND_TAB.CARE)"
@@ -194,13 +204,14 @@
                 d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"
               />
             </svg>
-            <span>我在意谁</span>
+            <span class="sub-tab-label">我在意谁</span>
           </button>
           <button
             class="sub-tab"
             :class="{ active: friendStore.currentTab === FRIEND_TAB.CARE_BY }"
             type="button"
             role="tab"
+            :aria-label="intimacyTabAriaLabel(FRIEND_TAB.CARE_BY)"
             :aria-selected="friendStore.currentTab === FRIEND_TAB.CARE_BY"
             :tabindex="friendStore.currentTab === FRIEND_TAB.CARE_BY ? 0 : -1"
             @click="friendStore.switchTab(FRIEND_TAB.CARE_BY)"
@@ -211,7 +222,7 @@
                 d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"
               />
             </svg>
-            <span>谁在意我</span>
+            <span class="sub-tab-label">谁在意我</span>
           </button>
         </div>
 
@@ -228,36 +239,29 @@
             size="small"
             placement="bottom-start"
             popper-class="friend-group-popper"
+            aria-label="选择要浏览的好友分组"
             @change="handleFriendGroupChange"
           >
             <el-option
               v-for="opt in friendStore.groupOptions"
               :key="opt.gpid"
               :value="opt.gpid"
-              :label="`${opt.gpname} (${opt.count})`"
+              :label="friendGroupOptionLabel(opt)"
             />
           </el-select>
-          <el-tooltip
-            :content="
-              canBatchDownload
-                ? `下载分组「${currentGroupName}」的好友相册（${batchScopeCount} 人）`
-                : '请先选择一个具体好友分组'
-            "
-            placement="top"
-            :show-after="300"
+          <button
+            v-if="friendStore.selectedGroupId !== friendStore.ALL_GROUP_ID"
+            type="button"
+            class="contact-inline-action download"
+            :disabled="!canBatchDownload || batchActive"
+            :aria-label="`下载「${currentGroupName}」好友的可见相册`"
+            :title="`下载「${currentGroupName}」好友的可见相册`"
+            @click="handleBatchDownload"
           >
-            <button
-              class="batch-group-btn"
-              type="button"
-              :class="{ active: batchActive }"
-              :disabled="!canBatchDownload || batchActive"
-              :aria-label="`下载分组 ${currentGroupName} 的全部好友相册`"
-              @click="handleBatchDownload"
-            >
-              <Images :size="13" />
-              <span>相册下载</span>
-            </button>
-          </el-tooltip>
+            <el-icon v-if="batchActive" class="is-loading"><Loading /></el-icon>
+            <Download v-else :size="14" />
+            <span>{{ batchActive ? '处理中' : '下载' }}</span>
+          </button>
         </div>
 
         <div v-if="friendStore.currentScope === CONTACT_SCOPE.GROUPS" class="drawer-group-select">
@@ -266,7 +270,12 @@
             size="small"
             placement="bottom-start"
             popper-class="friend-group-popper"
-            placeholder="选择群"
+            placeholder="选择要查看的群"
+            loading-text="正在加载群列表"
+            :class="{ 'is-loading': friendStore.groupLoading }"
+            :loading="friendStore.groupLoading"
+            :disabled="friendStore.groupLoading"
+            :suffix-icon="friendStore.groupLoading ? Loading : ArrowDown"
             filterable
             @change="friendStore.selectQQGroupById"
           >
@@ -275,30 +284,41 @@
               :key="group.id"
               :value="group.id"
               :label="groupOptionLabel(group)"
-            />
+            >
+              <span class="group-option-label" :title="groupOptionLabel(group)">
+                {{ groupOptionLabel(group) }}
+              </span>
+            </el-option>
           </el-select>
         </div>
 
-        <!-- 搜索 + 输入 QQ 号入口 -->
-        <div class="drawer-search">
+        <!-- 好友搜索；群成员仅在选定群后显示本地筛选。亲密度不提供搜索入口。 -->
+        <div
+          v-if="
+            friendStore.currentScope === CONTACT_SCOPE.FRIENDS ||
+            (friendStore.currentScope === CONTACT_SCOPE.GROUPS && friendStore.selectedQQGroup)
+          "
+          class="drawer-search"
+        >
           <el-input
             v-model="friendStore.searchQuery"
             :placeholder="searchPlaceholder"
+            :aria-label="searchAriaLabel"
             :prefix-icon="Search"
             size="small"
             clearable
             @input="handleContactSearchInput"
           />
-          <el-tooltip content="查找 QQ 号并进入好友空间" placement="top" :show-after="300">
-            <button
-              class="enter-by-uin-btn"
-              type="button"
-              aria-label="查找 QQ 号并进入好友空间"
-              @click="enterByUinVisible = true"
-            >
-              <UserSearch :size="15" />
-            </button>
-          </el-tooltip>
+          <button
+            v-if="friendStore.currentScope === CONTACT_SCOPE.FRIENDS"
+            type="button"
+            class="contact-inline-action find-space"
+            aria-label="按 QQ 号查找并进入空间"
+            title="输入 QQ 号并进入对应空间"
+            @click="enterByUinVisible = true"
+          >
+            <UserRoundSearch :size="16" />
+          </button>
         </div>
 
         <!-- 好友列表 -->
@@ -333,13 +353,12 @@
               <span>{{ friendStore.currentListError }}</span>
               <button type="button" @click="friendStore.retryCurrentList()">重试</button>
             </div>
-            <div
+            <button
               v-for="friend in friendStore.filteredList"
               :key="friend.uin"
               class="drawer-friend-item"
               :class="{ active: activeFriend?.uin === friend.uin }"
-              role="button"
-              tabindex="0"
+              type="button"
               :aria-current="activeFriend?.uin === friend.uin ? 'true' : undefined"
               :title="`${friend.name}（${friend.uin}）— 右键复制 QQ 号`"
               @click="handleEnter(friend)"
@@ -351,14 +370,12 @@
                 {{ stripEmoji(primaryName(friend))?.[0] || '?' }}
               </el-avatar>
               <div class="friend-detail">
-                <!-- eslint-disable-next-line vue/no-v-html -- 名称已做 HTML 转义，仅注入表情 img 标签 -->
-                <div class="friend-name" v-html="renderName(primaryName(friend))"></div>
-                <!-- eslint-disable-next-line vue/no-v-html -- 同上 -->
-                <div
-                  v-if="secondaryName(friend)"
-                  class="friend-sub"
-                  v-html="renderName(secondaryName(friend))"
-                ></div>
+                <div class="friend-name">
+                  <QzoneDisplayName :name="primaryName(friend)" />
+                </div>
+                <div v-if="secondaryName(friend)" class="friend-sub">
+                  <QzoneDisplayName :name="secondaryName(friend)" />
+                </div>
               </div>
               <span
                 v-if="friendStore.currentTab === FRIEND_TAB.QQ_GROUP && friend.online"
@@ -376,10 +393,11 @@
                 </svg>
                 <span class="score-value">{{ friend.score }}</span>
               </div>
-            </div>
+            </button>
             <div
               v-if="friendStore.filteredList.length === 0 && !friendStore.currentListError"
               class="drawer-empty"
+              role="status"
             >
               {{ friendStore.currentScope === CONTACT_SCOPE.FRIENDS ? '暂无匹配好友' : '暂无记录' }}
             </div>
@@ -392,29 +410,28 @@
             class="drawer-list group-list"
             @scroll.passive="handleContactListScroll"
           >
-            <div
-              v-if="friendStore.groupLoading || friendStore.groupMembersLoading"
-              class="drawer-loading"
-              role="status"
-              aria-live="polite"
-            >
-              <el-icon class="is-loading"><Loading /></el-icon>
-              <span>{{ friendStore.groupLoading ? '正在加载群...' : '正在加载群成员...' }}</span>
+            <div v-if="friendStore.groupError" class="drawer-error" role="alert">
+              <span>{{ friendStore.groupError }}</span>
+              <button type="button" @click="friendStore.retryQQGroups()">重试</button>
             </div>
-            <template v-else>
-              <div v-if="friendStore.groupError" class="drawer-error" role="alert">
-                <span>{{ friendStore.groupError }}</span>
-                <button type="button" @click="friendStore.retryQQGroups()">重试</button>
-              </div>
 
-              <template v-if="friendStore.selectedQQGroup">
-                <div
+            <template v-if="friendStore.selectedQQGroup">
+              <div
+                v-if="friendStore.groupMembersLoading"
+                class="drawer-loading group-members-loading"
+                role="status"
+                aria-live="polite"
+              >
+                <el-icon class="is-loading"><Loading /></el-icon>
+                <span>正在加载「{{ friendStore.selectedQQGroup.name }}」的成员...</span>
+              </div>
+              <template v-else>
+                <button
                   v-for="member in friendStore.visibleQQGroupMembers"
                   :key="member.uin"
                   class="drawer-friend-item"
                   :class="{ active: activeFriend?.uin === member.uin }"
-                  role="button"
-                  tabindex="0"
+                  type="button"
                   :aria-current="activeFriend?.uin === member.uin ? 'true' : undefined"
                   :title="`${primaryName(member) || `QQ ${member.uin}`} — 进入空间`"
                   @click="handleGroupMemberEnter(member)"
@@ -434,10 +451,11 @@
                     </div>
                   </div>
                   <ChevronRight :size="13" class="qq-group-chevron" />
-                </div>
+                </button>
                 <div
                   v-if="!friendStore.groupError && friendStore.filteredQQGroupMembers.length === 0"
                   class="drawer-empty"
+                  role="status"
                 >
                   暂无可见群成员
                 </div>
@@ -451,8 +469,29 @@
                   <span>{{ groupMemberProgress }}</span>
                 </button>
               </template>
-              <div v-else-if="!friendStore.groupError" class="drawer-empty">暂无可见群</div>
             </template>
+            <div
+              v-else-if="
+                !friendStore.groupLoading &&
+                !friendStore.groupError &&
+                friendStore.qqGroups.length === 0
+              "
+              class="drawer-empty"
+              role="status"
+            >
+              暂无可查看的群
+            </div>
+            <div
+              v-else-if="!friendStore.groupLoading && !friendStore.groupError"
+              class="group-pick-empty"
+              role="status"
+            >
+              <span class="group-pick-icon" aria-hidden="true">
+                <UsersRound :size="22" />
+              </span>
+              <strong>选择要查看的群</strong>
+              <span>选择后加载该群的可见成员</span>
+            </div>
           </div>
         </template>
       </div>
@@ -464,25 +503,33 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Search, Loading } from '@element-plus/icons-vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { ArrowDown, ArrowLeft, Search, Loading } from '@element-plus/icons-vue'
 import {
   ChevronDown,
   ChevronRight,
   DatabaseBackup,
+  Download,
+  FileDown,
   HeartHandshake,
-  Images,
+  UserRoundSearch,
   Users,
-  UserSearch,
   UsersRound
 } from '@lucide/vue'
 import { useFriendStore, FRIEND_TAB, CONTACT_SCOPE } from '@renderer/store/friend.store'
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
+import QzoneDisplayName from '@renderer/components/QzoneDisplayName/index.vue'
 import { copyToClipboard, generateUniqueAlbumName } from '@renderer/utils'
 import { resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
 import { retryPageRequest, shouldContinuePagination } from '@renderer/utils/paginationGuard'
+import {
+  batchSummaryText,
+  batchTaskIds,
+  finishDownloadBatch,
+  openDownloadBatchOptions
+} from '@renderer/utils/downloadBatch'
 import EnterByUinDialog from './enter-by-uin-dialog.vue'
 
 defineProps({
@@ -498,6 +545,10 @@ const isExpanded = ref(false)
 const enterByUinVisible = ref(false)
 const backupStarting = ref(false)
 const contactListRef = ref(null)
+const friendsTriggerRef = ref(null)
+const groupsTriggerRef = ref(null)
+const intimacyTriggerRef = ref(null)
+const lastTriggerScope = ref(CONTACT_SCOPE.FRIENDS)
 
 const drawerPanelLabel = computed(() => {
   if (friendStore.currentScope === CONTACT_SCOPE.GROUPS) return '群面板'
@@ -513,23 +564,39 @@ const contactScopeTitle = computed(() => {
 
 const contactScopeSummary = computed(() => {
   if (friendStore.currentScope === CONTACT_SCOPE.GROUPS) {
+    if (friendStore.groupError) return '群列表暂不可用'
+    if (friendStore.groupLoading || !friendStore.groupsLoaded) return '正在获取群列表'
+    if (friendStore.selectedQQGroup && friendStore.groupMembersLoading) {
+      return `${friendStore.qqGroups.length} 个群 · 正在获取成员`
+    }
     return friendStore.selectedQQGroup
-      ? friendStore.qqGroups.length + ' 个群 · ' + friendStore.groupMembers.length + ' 位可见成员'
-      : friendStore.qqGroups.length + ' 个群'
+      ? `${friendStore.qqGroups.length} 个群 · ${friendStore.groupMembers.length} 位可见成员`
+      : `${friendStore.qqGroups.length} 个群`
   }
   if (friendStore.currentScope === CONTACT_SCOPE.INTIMACY) {
-    return '在意 ' + friendStore.careList.length + ' · 被在意 ' + friendStore.careByList.length
+    const isCare = friendStore.currentTab === FRIEND_TAB.CARE
+    const doType = isCare ? 1 : 2
+    if (friendStore.intimacyErrors?.[doType]) return '人数暂不可用'
+    if (!friendStore.careLoaded?.[doType]) return '正在获取人数'
+    const count = isCare ? friendStore.careList.length : friendStore.careByList.length
+    return `${count} 位`
   }
-  return friendStore.friends.length + ' 位好友'
+  if (friendStore.friendError) return '好友人数暂不可用'
+  if (friendStore.loading || !friendStore.qqLoaded) return '正在获取好友'
+  return `${friendStore.friends.length} 位好友`
 })
 
 const backupBusy = computed(() => backupStarting.value)
-const backupButtonText = computed(() => (backupStarting.value ? '备份中' : '名单备份'))
+const backupMenuTitle = computed(() => {
+  if (friendStore.currentScope === CONTACT_SCOPE.GROUPS) return '备份群与成员名单'
+  if (friendStore.currentScope === CONTACT_SCOPE.INTIMACY) return '备份亲密度名单'
+  return '备份好友名单'
+})
 const contactBackupOptions = computed(() => {
   const allContacts = {
     command: 'all',
-    label: '全部联系人资料',
-    description: '好友、群成员和亲密度，不含相册',
+    label: '备份全部联系人资料',
+    description: '同时保存好友、群成员和亲密度名单',
     divided: true
   }
 
@@ -537,14 +604,14 @@ const contactBackupOptions = computed(() => {
     return [
       {
         command: 'groups',
-        label: '全部群与成员',
-        description: '所有群列表和可见成员，不含相册'
+        label: '备份全部群名单',
+        description: '保存所有群及当前可读取的成员'
       },
       {
         command: 'current-group',
-        label: '当前群成员',
+        label: '备份当前群成员',
         description: friendStore.selectedQQGroup
-          ? `仅备份「${friendStore.selectedQQGroup.name}」的可见成员`
+          ? `只保存「${friendStore.selectedQQGroup.name}」的可见成员`
           : '请先选择一个群',
         disabled: !friendStore.selectedQQGroup
       },
@@ -557,13 +624,13 @@ const contactBackupOptions = computed(() => {
     return [
       {
         command: 'intimacy',
-        label: '全部亲密度名单',
-        description: '包含「我在意谁」和「谁在意我」'
+        label: '备份全部亲密度名单',
+        description: '同时保存「我在意谁」和「谁在意我」'
       },
       {
         command: 'current-intimacy',
-        label: '当前亲密度名单',
-        description: `只备份「${currentLabel}」`
+        label: `备份「${currentLabel}」`,
+        description: '只保存当前正在查看的名单'
       },
       allContacts
     ]
@@ -573,14 +640,14 @@ const contactBackupOptions = computed(() => {
   return [
     {
       command: 'friends',
-      label: '全部好友名单',
-      description: '备份所有好友分组，不含相册'
+      label: '备份全部好友名单',
+      description: '保存所有分组中的好友、备注和 QQ 号'
     },
     {
       command: 'current-friend-group',
-      label: '当前好友分组',
+      label: '备份当前分组名单',
       description: selectedGroupIsSpecific
-        ? `仅备份「${currentGroupName.value}」名单，不含相册`
+        ? `只保存「${currentGroupName.value}」中的好友资料`
         : '请先选择一个具体分组',
       disabled: !selectedGroupIsSpecific
     },
@@ -588,9 +655,12 @@ const contactBackupOptions = computed(() => {
   ]
 })
 const searchPlaceholder = computed(() =>
+  friendStore.currentScope === CONTACT_SCOPE.GROUPS ? '群成员昵称或 QQ 号' : '搜索好友'
+)
+const searchAriaLabel = computed(() =>
   friendStore.currentScope === CONTACT_SCOPE.GROUPS
-    ? '搜索群成员昵称或 QQ 号...'
-    : '搜索备注、昵称或 QQ 号...'
+    ? '筛选当前群成员的昵称或 QQ 号'
+    : '搜索好友昵称、备注或 QQ 号'
 )
 const groupMemberProgress = computed(
   () => friendStore.visibleQQGroupMembers.length + '/' + friendStore.filteredQQGroupMembers.length
@@ -598,6 +668,25 @@ const groupMemberProgress = computed(
 
 const groupOptionLabel = (group) =>
   Number.isFinite(group.memberCount) ? group.name + ' (' + group.memberCount + ')' : group.name
+
+const friendGroupOptionLabel = (group) =>
+  group.gpid === friendStore.ALL_GROUP_ID
+    ? friendStore.loading || !friendStore.qqLoaded
+      ? '全部好友 · —'
+      : `全部好友 · ${group.count} 位`
+    : `${group.gpname} · ${group.count} 位`
+
+const intimacyCount = (tab) => {
+  const doType = tab === FRIEND_TAB.CARE ? 1 : 2
+  if (!friendStore.careLoaded?.[doType]) return '-'
+  return tab === FRIEND_TAB.CARE ? friendStore.careList.length : friendStore.careByList.length
+}
+
+const intimacyTabAriaLabel = (tab) => {
+  const label = tab === FRIEND_TAB.CARE ? '我在意谁' : '谁在意我'
+  const count = intimacyCount(tab)
+  return count === '-' ? label : `${label}，${count} 位`
+}
 
 const handleEnterFromUin = (friend) => {
   rememberContactListPosition()
@@ -646,20 +735,11 @@ const handleBatchDownload = async () => {
   const friends = batchScopeFriends.value.slice()
   if (!friends.length) return
 
-  try {
-    await ElMessageBox.confirm(
-      `即将批量下载分组「${currentGroupName.value}」中 ${friends.length} 位好友的全部相册，` +
-        `期间将逐位拉取相册并加入下载队列，可点击进度栏「取消」中途停止。是否继续？`,
-      '批量下载分组相册',
-      {
-        confirmButtonText: '开始下载',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-  } catch {
-    return
-  }
+  const downloadBatch = await openDownloadBatchOptions({
+    label: `好友分组：${currentGroupName.value}`,
+    sourceType: 'friend-albums'
+  })
+  if (!downloadBatch) return
 
   batchActive.value = true
   batchCancelling.value = false
@@ -674,44 +754,51 @@ const handleBatchDownload = async () => {
   }
 
   ElMessage.info(`开始批量下载分组「${currentGroupName.value}」(${friends.length} 位好友)`)
+  let batchFinished = false
 
-  for (let i = 0; i < friends.length; i++) {
-    if (batchCancelled.value) break
-    const friend = friends[i]
-    batchProgress.value.current = i + 1
-    batchProgress.value.friendName = stripEmoji(primaryName(friend)) || String(friend.uin)
-    try {
-      const counts = await downloadFriendAllAlbums(friend)
-      batchProgress.value.addedAlbums += counts.added
-      batchProgress.value.skippedAlbums += counts.skipped
-    } catch (err) {
-      console.error('[FriendDrawer] 批量下载好友失败', friend.uin, err)
-      batchProgress.value.failedFriends += 1
+  try {
+    for (let i = 0; i < friends.length; i++) {
+      if (batchCancelled.value) break
+      const friend = friends[i]
+      batchProgress.value.current = i + 1
+      batchProgress.value.friendName = stripEmoji(primaryName(friend)) || String(friend.uin)
+      try {
+        const counts = await downloadFriendAllAlbums(friend, downloadBatch)
+        batchProgress.value.addedAlbums += counts.added
+        batchProgress.value.skippedAlbums += counts.skipped
+      } catch (err) {
+        console.error('[FriendDrawer] 批量下载好友失败', friend.uin, err)
+        batchProgress.value.failedFriends += 1
+      }
+      if (!batchCancelled.value) await new Promise((r) => setTimeout(r, 200))
     }
-    if (!batchCancelled.value) await new Promise((r) => setTimeout(r, 200))
-  }
 
-  const { addedAlbums, skippedAlbums, failedFriends } = batchProgress.value
-  if (batchCancelled.value) {
-    ElMessage.warning(`已取消批量下载，已加入 ${addedAlbums} 个相册`)
-  } else if (addedAlbums > 0) {
-    ElMessage.success(
-      `分组「${currentGroupName.value}」批量下载完成！成功加入 ${addedAlbums} 个相册` +
-        (skippedAlbums > 0 ? `，跳过 ${skippedAlbums} 个空/无权限相册` : '') +
-        (failedFriends > 0 ? `，${failedFriends} 位好友处理失败` : '')
-    )
-    downloadStore.showManager()
-  } else {
-    ElMessage.warning(
-      `批量下载结束：未加入任何相册` +
-        (skippedAlbums > 0 ? `（跳过 ${skippedAlbums} 个空/无权限相册）` : '') +
-        (failedFriends > 0 ? `，${failedFriends} 位好友处理失败` : '')
-    )
+    const { addedAlbums, skippedAlbums, failedFriends } = batchProgress.value
+    const batchSummary = await finishDownloadBatch(downloadBatch, batchCancelled.value)
+    batchFinished = true
+    if (batchCancelled.value) {
+      ElMessage.warning(`已取消批量下载；${batchSummaryText(batchSummary)}`)
+    } else if (addedAlbums > 0) {
+      ElMessage.success(batchSummaryText(batchSummary))
+      downloadStore.showManager()
+    } else if (batchSummary?.scanned > 0 && batchSummary?.matched === 0) {
+      ElMessage.warning(`所选日期没有匹配内容，共检查 ${batchSummary.scanned} 项`)
+    } else {
+      ElMessage.warning(
+        `批量下载结束：未加入任何相册` +
+          (skippedAlbums > 0 ? `（跳过 ${skippedAlbums} 个空/无权限相册）` : '') +
+          (failedFriends > 0 ? `，${failedFriends} 位好友处理失败` : '')
+      )
+    }
+  } catch (error) {
+    console.error('[FriendDrawer] 好友分组批量下载失败', error)
+    ElMessage.error('好友分组批量下载失败，请重试')
+  } finally {
+    if (!batchFinished) await finishDownloadBatch(downloadBatch, true).catch(() => null)
+    batchActive.value = false
+    batchCancelling.value = false
+    batchCancelled.value = false
   }
-
-  batchActive.value = false
-  batchCancelling.value = false
-  batchCancelled.value = false
 }
 
 const cancelBatchDownload = () => {
@@ -783,7 +870,7 @@ const fetchAllAlbumsForFriend = async (friendUin) => {
 }
 
 // 流式获取好友某相册照片并加入下载队列
-const downloadFriendAllAlbums = async (friend) => {
+const downloadFriendAllAlbums = async (friend, downloadBatch = null) => {
   let added = 0
   let skipped = 0
 
@@ -832,7 +919,7 @@ const downloadFriendAllAlbums = async (friend) => {
         })
 
         if (photoList.length > 0) {
-          await window.QzoneAPI.download.addAlbum({
+          const result = await window.QzoneAPI.download.addAlbum({
             album: {
               id: album.id,
               name: generateUniqueAlbumName(album),
@@ -842,9 +929,10 @@ const downloadFriendAllAlbums = async (friend) => {
             photos: photoList,
             uin: resolveSelfQzoneUin(userStore) || 'unknown',
             albumId: album.id,
-            friendUin: friend.uin
+            friendUin: friend.uin,
+            batch: downloadBatch
           })
-          addedPhotos += photoList.length
+          addedPhotos += batchTaskIds(result).length
         }
 
         const processedCount =
@@ -873,15 +961,6 @@ const downloadFriendAllAlbums = async (friend) => {
 }
 
 const stripEmoji = (name) => (name || '').replace(/\[em\]e\d+\[\/em\]/g, '')
-const renderName = (name) => {
-  if (!name) return ''
-  const escaped = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return escaped.replace(
-    /\[em\](e\d+)\[\/em\]/g,
-    (_, code) =>
-      `<img src="https://qzonestyle.gtimg.cn/qzone/em/${code}.gif" class="friend-emoji" alt="" />`
-  )
-}
 // 有备注：备注为主、昵称为辅；无备注：只显示昵称
 const primaryName = (f) => (f.remark?.trim() ? f.remark : f.name || '')
 const secondaryName = (f) =>
@@ -920,6 +999,32 @@ const resetContactListPosition = async (scope = friendStore.currentScope) => {
 const closeDrawer = () => {
   rememberContactListPosition()
   isExpanded.value = false
+  nextTick(() => {
+    const triggerMap = {
+      [CONTACT_SCOPE.FRIENDS]: friendsTriggerRef.value,
+      [CONTACT_SCOPE.GROUPS]: groupsTriggerRef.value,
+      [CONTACT_SCOPE.INTIMACY]: intimacyTriggerRef.value
+    }
+    triggerMap[lastTriggerScope.value]?.focus?.()
+  })
+}
+
+const handleDrawerEscape = (event) => {
+  if (event.key !== 'Escape' || !isExpanded.value || enterByUinVisible.value) return
+  const nestedPopups = document.querySelectorAll('.friend-group-popper, .contact-backup-popper')
+  const hasVisibleNestedPopup = Array.from(nestedPopups).some((popup) => {
+    const style = window.getComputedStyle(popup)
+    return (
+      popup.getClientRects().length > 0 &&
+      style.display !== 'none' &&
+      style.visibility !== 'hidden' &&
+      style.opacity !== '0'
+    )
+  })
+  if (hasVisibleNestedPopup) return
+  event.preventDefault()
+  event.stopPropagation()
+  closeDrawer()
 }
 
 const handleContactSearchInput = (value) => {
@@ -935,6 +1040,7 @@ const handleFriendGroupChange = (groupId) => {
 }
 
 const toggleDrawer = async (scope = friendStore.currentScope) => {
+  lastTriggerScope.value = scope
   if (isExpanded.value && friendStore.currentScope === scope) {
     closeDrawer()
     return
@@ -952,6 +1058,9 @@ const toggleDrawer = async (scope = friendStore.currentScope) => {
     }, 350)
   }
 }
+
+onMounted(() => window.addEventListener('keydown', handleDrawerEscape, true))
+onUnmounted(() => window.removeEventListener('keydown', handleDrawerEscape, true))
 
 const drawerTabs = [FRIEND_TAB.CARE, FRIEND_TAB.CARE_BY]
 const handleDrawerTabKeydown = (event, currentIndex) => {
@@ -1045,11 +1154,11 @@ defineExpose({ toggleDrawer })
   padding: 6px 8px 8px;
   display: flex;
   align-items: center;
-  border-radius: var(--ds-radius-lg);
+  border-radius: var(--theme-radius-lg);
 }
 
 .drawer-trigger:focus-visible {
-  outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+  outline: 2px solid var(--theme-focus);
   outline-offset: -2px;
 }
 
@@ -1083,11 +1192,10 @@ defineExpose({ toggleDrawer })
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid rgba(96, 165, 250, 0.54);
-  border-radius: var(--ds-radius-lg);
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.26), rgba(59, 130, 246, 0.1));
-  box-shadow: inset 3px 0 0 #60a5fa;
-  color: #bfdbfe;
+  border: 1px solid var(--theme-border-strong);
+  border-radius: var(--theme-radius-lg);
+  background: var(--theme-surface-soft);
+  color: var(--theme-text-secondary);
   cursor: pointer;
   transition: var(--ds-transition-all);
 }
@@ -1097,12 +1205,10 @@ defineExpose({ toggleDrawer })
 }
 
 .drawer-back-btn:hover {
-  color: #fff;
-  border-color: rgba(96, 165, 250, 0.78);
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.36), rgba(59, 130, 246, 0.16));
-  box-shadow:
-    inset 3px 0 0 #93c5fd,
-    0 0 0 3px rgba(96, 165, 250, 0.08);
+  color: var(--theme-brand-accent);
+  border-color: var(--theme-brand-border);
+  background: var(--theme-brand-soft);
+  box-shadow: 0 0 0 3px var(--theme-focus-ring);
 }
 
 .drawer-back-btn .el-icon {
@@ -1124,40 +1230,41 @@ defineExpose({ toggleDrawer })
   align-items: center;
   justify-content: center;
   gap: 5px;
+  height: 36px;
   min-height: 36px;
   padding: 7px 6px;
   appearance: none;
-  border-radius: var(--ds-radius-lg);
-  border: 1px solid rgba(96, 165, 250, 0.28);
-  background: linear-gradient(135deg, rgba(96, 165, 250, 0.08) 0%, rgba(96, 165, 250, 0.03) 100%);
-  color: rgba(255, 255, 255, 0.58);
+  border-radius: var(--theme-radius-lg);
+  border: 1px solid var(--theme-border-subtle);
+  background: var(--theme-surface-soft);
+  color: var(--theme-text-muted);
   font: inherit;
   cursor: pointer;
-  transition: var(--ds-transition-all);
+  transition:
+    color var(--ds-dur-fast) var(--ds-ease-soft),
+    background-color var(--ds-dur-fast) var(--ds-ease-soft),
+    border-color var(--ds-dur-fast) var(--ds-ease-soft);
   user-select: none;
 }
 
-.trigger-bar:hover,
+.trigger-bar:hover {
+  border-color: var(--theme-border-strong);
+  background: var(--theme-surface-hover);
+  color: var(--theme-text-primary);
+}
+
 .trigger-bar.active {
-  border-color: var(--qz-active-border, rgba(251, 146, 60, 0.38));
-  background: linear-gradient(135deg, rgba(249, 115, 22, 0.16) 0%, rgba(249, 115, 22, 0.06) 100%);
-  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.06);
+  border-color: var(--theme-brand-border);
+  background: var(--theme-brand-soft);
+  color: var(--qz-active-text);
 }
 
 .trigger-icon {
   flex-shrink: 0;
 }
 
-.trigger-icon.friend {
-  color: #f87171;
-}
-
-.trigger-icon.group {
-  color: #60a5fa;
-}
-
-.trigger-icon.intimacy {
-  color: #fb923c;
+.trigger-icon {
+  color: inherit;
 }
 
 .trigger-label {
@@ -1179,6 +1286,7 @@ defineExpose({ toggleDrawer })
 
 /* ===== 展开面板 — 绝对定位向上弹出，覆盖整个菜单区域 ===== */
 .drawer-panel {
+  --contact-control-height: 34px;
   position: absolute;
   bottom: 100%;
   left: 0;
@@ -1186,15 +1294,21 @@ defineExpose({ toggleDrawer })
   z-index: 100;
   display: flex;
   flex-direction: column;
-  background: rgba(22, 22, 26, 0.97);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(248, 113, 113, 0.15);
+  background:
+    linear-gradient(145deg, var(--theme-material-highlight), transparent 30%),
+    var(--theme-material-thick);
+  -webkit-backdrop-filter: blur(var(--theme-material-blur-strong))
+    saturate(var(--theme-material-saturation));
+  backdrop-filter: blur(var(--theme-material-blur-strong))
+    saturate(var(--theme-material-saturation));
+  border: 1px solid var(--theme-material-border);
   border-bottom: none;
-  border-radius: 10px 10px 0 0;
+  border-radius: var(--theme-radius-lg) var(--theme-radius-lg) 0 0;
   box-shadow:
-    0 -8px 32px rgba(0, 0, 0, 0.4),
-    0 -2px 8px rgba(248, 113, 113, 0.06);
-  height: calc(100vh - 260px);
+    inset 0 1px 0 var(--theme-material-highlight),
+    var(--theme-shadow-lg);
+  height: clamp(320px, 56vh, 560px);
+  max-height: calc(100vh - 190px);
 }
 
 .panel-slide-enter-active {
@@ -1213,89 +1327,77 @@ defineExpose({ toggleDrawer })
   opacity: 0;
 }
 
-/* ===== 输入 QQ 号入口（搜索栏右侧小按钮） ===== */
-.enter-by-uin-btn {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--qz-active-border, rgba(251, 146, 60, 0.38));
-  border-radius: 6px;
-  background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
-  color: var(--qz-active, #fb923c);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  padding: 0;
-  font-size: 13px;
-}
-
-.enter-by-uin-btn:hover {
-  background: rgba(249, 115, 22, 0.22);
-  border-color: var(--qz-active, #fb923c);
-  transform: scale(1.05);
-}
-
-.enter-by-uin-btn:active {
-  transform: scale(0.95);
-}
-
 /* ===== 顶层 Tab ===== */
 .drawer-sub-tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 3px;
-  padding: 3px;
-  margin: 10px 10px 6px;
-  background: rgba(255, 255, 255, 0.04);
+  min-height: var(--contact-control-height);
+  padding: 2px;
+  margin: 0 9px 6px;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
   border-radius: 6px;
   flex-shrink: 0;
 }
 
 .sub-tab {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 3px;
-  padding: 7px 0;
+  min-width: 0;
+  height: calc(var(--contact-control-height) - 4px);
+  min-height: calc(var(--contact-control-height) - 4px);
+  padding: 0 6px;
+  overflow: hidden;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--theme-text-muted);
   appearance: none;
   border: 0;
   background: transparent;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    color var(--ds-dur-fast) var(--ds-ease-soft),
+    background-color var(--ds-dur-fast) var(--ds-ease-soft);
   font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
 }
 
 .sub-tab:focus-visible,
 .trigger-bar:focus-visible,
 .contact-backup-btn:focus-visible,
+.contact-inline-action:focus-visible,
 .group-load-more:focus-visible,
-.batch-group-btn:focus-visible,
-.enter-by-uin-btn:focus-visible,
 .batch-cancel-btn:focus-visible,
 .drawer-back-btn:focus-visible,
 .drawer-friend-item:focus-visible {
-  outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+  outline: 2px solid var(--theme-focus);
   outline-offset: 2px;
 }
 
 .tab-heart {
+  flex: 0 0 auto;
   width: 10px;
   height: 10px;
 }
 
+.sub-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sub-tab:hover {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-text-secondary);
 }
 
 .sub-tab.active {
-  background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
-  color: var(--qz-active-text, #fed7aa);
+  background: var(--theme-brand-soft);
+  color: var(--qz-active-text);
   font-weight: 600;
 }
 
@@ -1304,7 +1406,9 @@ defineExpose({ toggleDrawer })
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 10px 6px;
+  margin: 0 9px 6px;
+  min-height: var(--contact-control-height);
+  padding: 0;
   flex-shrink: 0;
 }
 
@@ -1313,47 +1417,80 @@ defineExpose({ toggleDrawer })
   min-width: 0;
 }
 
-/* 当前好友分组相册下载 */
-.batch-group-btn {
-  flex-shrink: 0;
-  display: flex;
+.contact-inline-action {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid rgba(96, 165, 250, 0.3);
+  gap: 5px;
+  flex: 0 0 auto;
+  min-height: var(--contact-control-height);
+  padding: 0 9px;
+  border: 1px solid var(--theme-border);
   border-radius: 6px;
-  background: rgba(96, 165, 250, 0.09);
-  color: #bfdbfe;
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface-soft);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
   transition:
-    border-color 0.16s ease,
-    background-color 0.16s ease,
-    color 0.16s ease;
-  font: inherit;
-  font-size: 10px;
+    color var(--ds-dur-fast) var(--ds-ease-soft),
+    background-color var(--ds-dur-fast) var(--ds-ease-soft),
+    border-color var(--ds-dur-fast) var(--ds-ease-soft);
+}
+
+.contact-inline-action svg,
+.contact-inline-action .el-icon {
+  flex: 0 0 auto;
+}
+
+.contact-inline-action span {
   white-space: nowrap;
 }
 
-.batch-group-btn:hover:not(:disabled) {
-  border-color: rgba(96, 165, 250, 0.55);
-  background: rgba(96, 165, 250, 0.16);
-  color: #eff6ff;
+.contact-inline-action:hover:not(:disabled) {
+  color: var(--theme-text-primary);
+  border-color: var(--theme-border-strong);
+  background: var(--theme-surface-hover);
 }
 
-.batch-group-btn:disabled,
-.batch-group-btn.active {
-  opacity: 0.5;
+.contact-inline-action.download:not(:disabled) {
+  color: var(--theme-brand-text);
+  border-color: var(--theme-brand-border);
+  background: var(--theme-brand-soft);
+}
+
+.contact-inline-action.download:hover:not(:disabled) {
+  color: var(--qz-active-text);
+  background: var(--theme-brand-soft-hover);
+}
+
+.contact-inline-action:disabled {
+  color: var(--theme-text-subtle);
+  border-color: var(--theme-border-subtle);
+  background: var(--theme-surface-soft);
   cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.contact-inline-action.download {
+  min-width: 58px;
+}
+
+.contact-inline-action.find-space {
+  width: var(--contact-control-height);
+  min-width: var(--contact-control-height);
+  height: var(--contact-control-height);
+  min-height: var(--contact-control-height);
+  padding: 0;
 }
 
 /* 批量下载进度条 */
 .batch-progress-strip {
   flex-shrink: 0;
   padding: 8px 10px 6px;
-  background: rgba(249, 115, 22, 0.06);
-  border-bottom: 1px solid var(--qz-active-border, rgba(251, 146, 60, 0.38));
+  background: var(--theme-brand-soft);
+  border-bottom: 1px solid var(--theme-brand-border);
 }
 
 .batch-progress-info {
@@ -1364,7 +1501,7 @@ defineExpose({ toggleDrawer })
 
 .batch-spinner {
   font-size: 14px;
-  color: var(--qz-active, #fb923c);
+  color: var(--theme-brand-accent);
   flex-shrink: 0;
 }
 
@@ -1375,7 +1512,7 @@ defineExpose({ toggleDrawer })
 
 .batch-progress-line {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-primary);
   font-weight: 600;
   line-height: 1.3;
   overflow: hidden;
@@ -1389,7 +1526,7 @@ defineExpose({ toggleDrawer })
   gap: 6px;
   margin-top: 2px;
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--theme-text-muted);
   line-height: 1.25;
 }
 
@@ -1399,7 +1536,7 @@ defineExpose({ toggleDrawer })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--qz-active-text, #fed7aa);
+  color: var(--theme-brand-text);
 }
 
 .batch-progress-stat {
@@ -1409,20 +1546,23 @@ defineExpose({ toggleDrawer })
 
 .batch-cancel-btn {
   flex-shrink: 0;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--theme-border);
+  background: var(--theme-surface-soft);
+  color: var(--theme-text-secondary);
   font-size: 12px;
   padding: 6px 12px;
   min-height: 28px;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    color var(--ds-dur-fast) var(--ds-ease-soft),
+    border-color var(--ds-dur-fast) var(--ds-ease-soft),
+    background-color var(--ds-dur-fast) var(--ds-ease-soft);
 }
 
 .batch-cancel-btn:hover:not(:disabled) {
-  border-color: rgba(248, 113, 113, 0.5);
-  color: #f87171;
+  border-color: var(--theme-danger-border);
+  color: var(--theme-danger-text);
 }
 
 .batch-cancel-btn:disabled {
@@ -1433,34 +1573,48 @@ defineExpose({ toggleDrawer })
 .batch-progress-bar {
   margin-top: 6px;
   height: 3px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--theme-border-subtle);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .batch-progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #f87171 0%, #fb923c 100%);
+  background: linear-gradient(90deg, var(--theme-brand) 0%, var(--theme-brand-accent) 100%);
   border-radius: 2px;
   transition: width 0.3s ease;
 }
 
 .drawer-group-select :deep(.el-select__wrapper) {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(248, 113, 113, 0.18);
-  box-shadow: none;
-  min-height: 28px;
+  background: var(--theme-surface-soft);
+  border: 0;
+  box-shadow: 0 0 0 1px var(--theme-border) inset;
+  min-height: var(--contact-control-height);
   border-radius: 6px;
 }
 
-.drawer-group-select :deep(.el-select__wrapper:hover),
+.drawer-group-select :deep(.el-select__wrapper:hover) {
+  box-shadow: 0 0 0 1px var(--theme-border-strong) inset;
+}
+
 .drawer-group-select :deep(.el-select__wrapper.is-focused) {
-  border-color: rgba(248, 113, 113, 0.4);
+  box-shadow:
+    0 0 0 1px var(--theme-brand-accent) inset,
+    0 0 0 2px color-mix(in srgb, var(--theme-focus-ring) 72%, transparent);
+}
+
+.drawer-group-select :deep(.el-select__input:focus-visible) {
+  outline: none;
+}
+
+.drawer-group-select :deep(.el-select.is-loading .el-select__caret) {
+  color: var(--theme-brand-accent);
+  animation: group-select-loading 0.8s linear infinite;
 }
 
 .drawer-group-select :deep(.el-select__placeholder),
 .drawer-group-select :deep(.el-select__placeholder span) {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-text-secondary);
   font-size: 11px;
   font-weight: 500;
 }
@@ -1479,21 +1633,21 @@ defineExpose({ toggleDrawer })
 }
 
 .drawer-search :deep(.el-input__wrapper) {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
   box-shadow: none;
-  height: 28px;
+  height: var(--contact-control-height);
   border-radius: 6px;
   transition: border-color 0.2s ease;
 }
 
 .drawer-search :deep(.el-input__wrapper:hover),
 .drawer-search :deep(.el-input__wrapper.is-focus) {
-  border-color: rgba(248, 113, 113, 0.25);
+  border-color: var(--theme-brand-border);
 }
 
 .drawer-search :deep(.el-input__inner) {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-text-primary);
   font-size: 11px;
 }
 
@@ -1502,7 +1656,7 @@ defineExpose({ toggleDrawer })
 }
 
 .drawer-search :deep(.el-input__prefix .el-icon) {
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--theme-text-muted);
 }
 
 /* ===== 好友列表 ===== */
@@ -1524,12 +1678,12 @@ defineExpose({ toggleDrawer })
 }
 
 .drawer-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--theme-border-subtle);
   border-radius: 3px;
 }
 
 .drawer-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--theme-border-strong);
 }
 
 .drawer-loading {
@@ -1538,12 +1692,68 @@ defineExpose({ toggleDrawer })
   justify-content: center;
   gap: 6px;
   padding: 40px 0;
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--theme-text-muted);
   font-size: 12px;
 }
 
+.group-members-loading {
+  min-height: 128px;
+  padding-inline: 14px;
+  text-align: center;
+}
+
+.group-pick-empty {
+  display: flex;
+  min-height: 176px;
+  padding: 24px 20px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--theme-text-muted);
+  text-align: center;
+}
+
+.group-pick-empty strong {
+  color: var(--theme-text-primary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.group-pick-empty > span:last-child {
+  max-width: 260px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.group-pick-icon {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 2px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--theme-material-border);
+  border-radius: 14px;
+  color: var(--theme-brand-accent);
+  background:
+    linear-gradient(145deg, var(--theme-material-highlight), transparent 55%),
+    var(--theme-material-thin);
+  box-shadow:
+    inset 0 1px var(--theme-material-highlight),
+    var(--theme-shadow-sm);
+  -webkit-backdrop-filter: blur(var(--theme-material-blur));
+  backdrop-filter: blur(var(--theme-material-blur));
+}
+
 .drawer-loading .el-icon {
-  color: #f87171;
+  color: var(--theme-brand-accent);
+}
+
+@keyframes group-select-loading {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .tab-loading-overlay {
@@ -1552,14 +1762,14 @@ defineExpose({ toggleDrawer })
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(22, 22, 26, 0.6);
+  background: color-mix(in srgb, var(--theme-surface) 72%, transparent);
   z-index: 2;
   border-radius: 6px;
 }
 
 .tab-loading-overlay .el-icon {
   font-size: 18px;
-  color: #f87171;
+  color: var(--theme-brand-accent);
 }
 
 /* ===== 好友项 ===== */
@@ -1569,20 +1779,23 @@ defineExpose({ toggleDrawer })
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
+  width: 100%;
   border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
-  transition:
-    background 0.15s ease,
-    transform 0.12s ease;
+  transition: background-color var(--ds-dur-fast) var(--ds-ease-soft);
 }
 
 .drawer-friend-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  transform: translateX(2px);
+  background: var(--theme-surface-hover);
 }
 
 .drawer-friend-item.active {
-  background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
+  background: var(--theme-brand-soft);
 }
 .drawer-friend-item.active::before {
   content: '';
@@ -1592,7 +1805,7 @@ defineExpose({ toggleDrawer })
   bottom: 8px;
   width: 3px;
   border-radius: 2px;
-  background: var(--qz-active, #fb923c);
+  background: var(--theme-brand-accent);
 }
 
 .drawer-friend-item :deep(.el-avatar) {
@@ -1606,7 +1819,7 @@ defineExpose({ toggleDrawer })
 
 .friend-name {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--theme-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1616,7 +1829,7 @@ defineExpose({ toggleDrawer })
 
 .friend-sub {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--theme-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1636,9 +1849,9 @@ defineExpose({ toggleDrawer })
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #22c55e;
+  background: var(--theme-success);
   flex-shrink: 0;
-  box-shadow: 0 0 4px rgba(34, 197, 94, 0.6);
+  box-shadow: 0 0 4px var(--theme-success-border);
 }
 
 .friend-score-badge {
@@ -1651,34 +1864,38 @@ defineExpose({ toggleDrawer })
 .score-heart {
   width: 10px;
   height: 10px;
-  color: rgba(255, 255, 255, 0.08);
+  color: var(--theme-border-subtle);
   transition: color 0.15s ease;
 }
 
 .drawer-friend-item:hover .score-heart,
 .drawer-friend-item.active .score-heart {
-  color: #f87171;
+  color: var(--theme-danger);
 }
 
 .score-value {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--theme-border-strong);
   font-variant-numeric: tabular-nums;
   transition: color 0.15s ease;
 }
 
 .drawer-friend-item:hover .score-value {
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--theme-text-muted);
 }
 
 .drawer-friend-item.active .score-value {
-  color: #f87171;
+  color: var(--theme-danger);
 }
 
 .drawer-empty {
   text-align: center;
-  padding: 32px 0;
-  color: rgba(255, 255, 255, 0.18);
+  margin: 8px 4px;
+  padding: 24px 12px;
+  color: var(--theme-text-muted);
+  border: 1px dashed var(--theme-border-subtle);
+  border-radius: var(--theme-radius-md);
+  background: var(--theme-surface-soft);
   font-size: 12px;
 }
 
@@ -1687,12 +1904,9 @@ defineExpose({ toggleDrawer })
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
-  margin: 8px 10px 6px;
-  padding: 7px 8px;
-  border: 1px solid rgba(249, 115, 22, 0.12);
-  border-radius: 8px;
-  background: rgba(249, 115, 22, 0.04);
+  min-height: 40px;
+  margin: 7px 9px 5px;
+  padding: 3px 2px;
 }
 
 .contact-panel-icon {
@@ -1700,13 +1914,14 @@ defineExpose({ toggleDrawer })
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  color: #93c5fd;
-  background: rgba(96, 165, 250, 0.12);
+  color: var(--theme-brand-accent);
+  background: color-mix(in srgb, var(--theme-brand-soft-hover) 72%, transparent);
 }
 
 .contact-panel-icon {
   width: 28px;
   height: 28px;
+  border: 1px solid var(--theme-border-subtle);
   border-radius: 8px;
 }
 
@@ -1719,7 +1934,7 @@ defineExpose({ toggleDrawer })
 
 .contact-panel-heading-text strong {
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.84);
+  color: var(--theme-text-primary);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.35;
@@ -1728,37 +1943,60 @@ defineExpose({ toggleDrawer })
 }
 
 .contact-panel-heading-text span {
+  display: block;
   overflow: hidden;
   margin-top: 1px;
-  color: rgba(255, 255, 255, 0.34);
+  color: var(--theme-text-muted);
   font-size: 10px;
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.contact-backup-dropdown {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
 .contact-backup-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
   flex-shrink: 0;
-  gap: 4px;
-  min-width: 82px;
-  height: 28px;
+  min-width: 84px;
+  height: 30px;
   padding: 0 8px;
-  border: 1px solid var(--qz-active-border, rgba(251, 146, 60, 0.34));
+  border: 1px solid var(--theme-border);
   border-radius: 7px;
-  color: var(--qz-active-text, #fed7aa);
-  background: var(--qz-active-soft, rgba(249, 115, 22, 0.12));
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface-raised);
   font: inherit;
   font-size: 11px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    color var(--ds-dur-fast) var(--ds-ease-soft),
+    background-color var(--ds-dur-fast) var(--ds-ease-soft),
+    border-color var(--ds-dur-fast) var(--ds-ease-soft);
+}
+
+.contact-backup-btn span {
+  white-space: nowrap;
+}
+
+.contact-backup-btn .backup-chevron {
+  color: var(--theme-text-subtle);
+  transition: transform var(--ds-dur-fast) var(--ds-ease-soft);
+}
+
+.contact-backup-dropdown:deep(.el-tooltip__trigger[aria-expanded='true']) .backup-chevron {
+  transform: rotate(180deg);
 }
 
 .contact-backup-btn:hover:not(:disabled) {
-  border-color: var(--qz-active, #fb923c);
-  background: rgba(249, 115, 22, 0.2);
+  color: var(--theme-text-primary);
+  border-color: var(--theme-brand-border);
+  background: var(--theme-brand-soft-hover);
 }
 
 .contact-backup-btn:disabled {
@@ -1768,37 +2006,40 @@ defineExpose({ toggleDrawer })
 
 .qq-group-chevron {
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--theme-border-strong);
 }
 
 .drawer-friend-item:hover .qq-group-chevron {
-  color: var(--qz-active, #fb923c);
+  color: var(--theme-brand-accent);
 }
 
 .group-load-more {
   width: calc(100% - 8px);
   min-height: 34px;
   margin: 6px 4px 2px;
-  border: 1px solid rgba(96, 165, 250, 0.16);
+  border: 1px solid var(--theme-info-border);
   border-radius: 7px;
-  color: rgba(255, 255, 255, 0.58);
-  background: rgba(96, 165, 250, 0.06);
+  color: var(--theme-info-text);
+  background: var(--theme-info-soft);
   font: inherit;
   font-size: 11px;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition:
+    color var(--ds-dur-fast) var(--ds-ease-soft),
+    background-color var(--ds-dur-fast) var(--ds-ease-soft),
+    border-color var(--ds-dur-fast) var(--ds-ease-soft);
 }
 
 .group-load-more span {
   margin-left: 5px;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--theme-text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .group-load-more:hover {
-  border-color: rgba(96, 165, 250, 0.35);
-  color: #bfdbfe;
-  background: rgba(96, 165, 250, 0.1);
+  border-color: var(--theme-info);
+  color: var(--theme-text-primary);
+  background: color-mix(in srgb, var(--theme-info-soft) 80%, var(--theme-info) 20%);
 }
 
 .drawer-error {
@@ -1809,18 +2050,19 @@ defineExpose({ toggleDrawer })
   margin: 2px 4px 6px;
   padding: 7px 8px;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.58);
-  background: rgba(248, 113, 113, 0.08);
+  color: var(--theme-danger-text);
+  background: var(--theme-danger-soft);
+  border: 1px solid var(--theme-danger-border);
   font-size: 11px;
 }
 
 .drawer-error button {
   flex-shrink: 0;
   padding: 3px 7px;
-  border: 1px solid rgba(248, 113, 113, 0.24);
+  border: 1px solid var(--theme-danger-border);
   border-radius: 5px;
-  color: #fca5a5;
-  background: rgba(248, 113, 113, 0.08);
+  color: var(--theme-danger-text);
+  background: color-mix(in srgb, var(--theme-danger-soft) 72%, var(--theme-surface) 28%);
   cursor: pointer;
   font: inherit;
 }
@@ -1831,10 +2073,9 @@ defineExpose({ toggleDrawer })
   .drawer-back-btn,
   .trigger-bar,
   .contact-backup-btn,
+  .contact-inline-action,
   .drawer-panel,
   .sub-tab,
-  .batch-group-btn,
-  .enter-by-uin-btn,
   .drawer-friend-item,
   .group-load-more,
   .score-heart,
@@ -1847,9 +2088,11 @@ defineExpose({ toggleDrawer })
     animation: none !important;
   }
 
-  .drawer-friend-item:hover,
-  .batch-group-btn:hover,
-  .enter-by-uin-btn:hover {
+  .drawer-group-select :deep(.el-select.is-loading .el-select__caret) {
+    animation: none !important;
+  }
+
+  .drawer-friend-item:hover {
     transform: none !important;
   }
 }
@@ -1857,33 +2100,63 @@ defineExpose({ toggleDrawer })
 
 <style>
 .friend-group-popper.el-popper {
-  background: rgba(22, 22, 26, 0.98);
-  border: 1px solid rgba(248, 113, 113, 0.18);
+  background: var(--theme-surface-overlay);
+  border: 1px solid var(--theme-border);
 }
 
 .friend-group-popper .el-select-dropdown__item {
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--theme-text-secondary);
   font-size: 12px;
   height: 28px;
   line-height: 28px;
   padding: 0 12px;
 }
 
+.friend-group-popper .group-option-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .friend-group-popper .el-select-dropdown__item.is-hovering {
-  background: rgba(248, 113, 113, 0.1);
-  color: #f87171;
+  background: var(--theme-surface-hover);
+  color: var(--theme-text-primary);
 }
 
 .friend-group-popper .el-select-dropdown__item.is-selected {
-  color: #f87171;
+  color: var(--theme-brand-accent);
   font-weight: 600;
-  background: rgba(248, 113, 113, 0.08);
+  background: var(--theme-brand-soft);
 }
 
 .contact-backup-popper.el-popper {
-  min-width: 220px;
-  background: rgba(22, 22, 26, 0.98);
-  border: 1px solid rgba(96, 165, 250, 0.22);
+  min-width: 272px;
+  background: var(--theme-surface-overlay);
+  border: 1px solid var(--theme-border);
+}
+
+.contact-backup-menu-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 4px 2px;
+  padding: 7px 9px 9px;
+  border-bottom: 1px solid var(--theme-border-subtle);
+}
+
+.contact-backup-menu-intro strong {
+  color: var(--theme-text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.contact-backup-menu-intro span {
+  color: var(--theme-text-muted);
+  font-size: 9px;
+  line-height: 1.55;
 }
 
 .contact-backup-popper .el-dropdown-menu {
@@ -1895,8 +2168,14 @@ defineExpose({ toggleDrawer })
   min-height: 44px;
   padding: 5px 9px;
   border-radius: 5px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--theme-text-secondary);
   font-size: 11px;
+}
+
+.contact-backup-option-icon {
+  flex: 0 0 auto;
+  margin-right: 8px;
+  color: var(--theme-text-muted);
 }
 
 .contact-backup-option {
@@ -1914,33 +2193,33 @@ defineExpose({ toggleDrawer })
 }
 
 .contact-backup-option strong {
-  color: rgba(255, 255, 255, 0.84);
+  color: var(--theme-text-primary);
   font-size: 11px;
   font-weight: 600;
   line-height: 1.45;
 }
 
 .contact-backup-option span {
-  color: rgba(255, 255, 255, 0.36);
+  color: var(--theme-text-subtle);
   font-size: 9px;
   line-height: 1.45;
 }
 
 .contact-backup-popper .el-dropdown-menu__item.is-disabled .contact-backup-option strong,
 .contact-backup-popper .el-dropdown-menu__item.is-disabled .contact-backup-option span {
-  color: rgba(255, 255, 255, 0.22);
+  color: var(--theme-border-strong);
 }
 
 .contact-backup-popper .el-dropdown-menu__item:not(.is-disabled):focus,
 .contact-backup-popper .el-dropdown-menu__item:not(.is-disabled):hover {
-  color: #bfdbfe;
-  background: rgba(96, 165, 250, 0.12);
+  color: var(--theme-text-primary);
+  background: var(--theme-surface-hover);
 }
 
 .contact-backup-popper
   .el-dropdown-menu__item:not(.is-disabled):hover
   .contact-backup-option
   strong {
-  color: #dbeafe;
+  color: var(--theme-text-primary);
 }
 </style>

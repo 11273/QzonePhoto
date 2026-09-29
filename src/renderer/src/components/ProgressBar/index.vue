@@ -1,5 +1,13 @@
 <template>
-  <div class="progress-container" :class="[size, variant]">
+  <div
+    class="progress-container"
+    :class="[size, variant]"
+    role="progressbar"
+    :aria-label="customText || '任务进度'"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    :aria-valuenow="safePercentage"
+  >
     <div v-if="showText && textPosition === 'top'" class="progress-text top">
       {{ progressText }}
     </div>
@@ -8,7 +16,7 @@
       <div
         class="progress-fill"
         :style="{
-          width: percentage + '%',
+          width: safePercentage + '%',
           background: gradient || color
         }"
       ></div>
@@ -19,7 +27,7 @@
     </div>
 
     <div v-if="showDetails" class="progress-details">
-      <span>{{ percentage }}%</span>
+      <span>{{ safePercentage }}%</span>
       <span v-if="transferred && total"
         >{{ formatBytes(transferred) }} / {{ formatBytes(total) }}</span
       >
@@ -40,7 +48,7 @@ const props = defineProps({
   },
   color: {
     type: String,
-    default: '#409eff'
+    default: 'var(--theme-brand)'
   },
   gradient: {
     type: String,
@@ -96,6 +104,8 @@ const barHeight = computed(() => {
   return heights[props.size]
 })
 
+const safePercentage = computed(() => Math.min(100, Math.max(0, Number(props.percentage) || 0)))
+
 const progressText = computed(() => {
   if (props.customText) return props.customText
 
@@ -106,7 +116,7 @@ const progressText = computed(() => {
     return speed ? `${transferred} / ${total} (${speed}/s)` : `${transferred} / ${total}`
   }
 
-  return `${props.percentage.toFixed(1)}%`
+  return `${safePercentage.value.toFixed(1)}%`
 })
 </script>
 
@@ -141,17 +151,15 @@ const progressText = computed(() => {
 
 .progress-bar {
   width: 100%;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 2px;
+  background: var(--theme-surface-active);
+  border-radius: var(--theme-radius-pill);
   overflow: hidden;
-  transition: all 0.3s ease;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #409eff, #66b3ff);
-  border-radius: 2px;
-  transition: width 0.3s ease;
+  border-radius: var(--theme-radius-pill);
+  transition: width var(--theme-duration-slow) var(--theme-ease);
   position: relative;
 
   &::after {
@@ -164,7 +172,7 @@ const progressText = computed(() => {
     background: linear-gradient(
       90deg,
       transparent 0%,
-      rgba(255, 255, 255, 0.2) 50%,
+      var(--theme-border-strong) 50%,
       transparent 100%
     );
     animation: shimmer 2s infinite;
@@ -172,7 +180,7 @@ const progressText = computed(() => {
 }
 
 .progress-text {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-text-secondary);
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
@@ -190,7 +198,7 @@ const progressText = computed(() => {
   display: flex;
   justify-content: space-between;
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-text-muted);
   margin-top: 2px;
 }
 
@@ -200,6 +208,14 @@ const progressText = computed(() => {
   }
   100% {
     transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill,
+  .progress-fill::after {
+    animation: none;
+    transition: none;
   }
 }
 </style>

@@ -1,4 +1,10 @@
-import { getMeInfo, getPersonalCard, getVisitorStatus, getVisitorDetail, getShuoshuo } from '@main/api'
+import {
+  getMeInfo,
+  getPersonalCard,
+  getVisitorStatus,
+  getVisitorDetail,
+  getShuoshuo
+} from '@main/api'
 
 export class QzoneUserService {
   constructor() {}

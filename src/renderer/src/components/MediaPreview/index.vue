@@ -5,17 +5,27 @@
         v-if="visible"
         ref="previewMaskRef"
         class="media-preview-mask"
-        :class="{ 'is-mac': isMac }"
+        :class="{
+          'is-mac': isMac,
+          'is-chrome-idle': chromeIdle && !mediaLoading && !mediaError
+        }"
         role="dialog"
         aria-modal="true"
         :aria-label="current?.title ? `媒体预览：${current.title}` : '媒体预览'"
         tabindex="-1"
         @click.self="close"
         @wheel.prevent="handleWheel"
+        @pointermove="wakeChrome"
+        @pointerdown="wakeChrome"
+        @focusin="wakeChrome"
       >
-        <!-- 顶部加载进度条 —— 主流方案（YouTube/GitHub/PhotoSwipe）
-             prefetching 时显示一条 1.5px 蓝色不定式进度条 -->
-        <div v-if="prefetching || loadingMore" class="mp-top-progress" aria-hidden="true">
+        <!-- 顶部加载进度条：不打断浏览，同时使用品牌色保持一致。 -->
+        <div
+          v-if="prefetching || loadingMore"
+          class="mp-top-progress"
+          role="status"
+          aria-label="正在准备更多媒体"
+        >
           <span class="mp-top-progress-bar"></span>
         </div>
 
@@ -374,6 +384,7 @@
                 <div v-if="item.type === 'video'" class="mp-thumb-badge">
                   <el-icon><VideoPlay /></el-icon>
                 </div>
+                <!-- 隐私模式只遮挡非当前项；用户主动点选的媒体保持可见。 -->
                 <div
                   v-if="privacyMode && idx !== currentIndex"
                   class="mp-thumb-privacy qz-privacy-overlay"
@@ -423,6 +434,8 @@ const props = defineProps({
   resolveItem: { type: Function, default: null },
   // 剩多少张时开始静默预加载下一页（避免用户切到末尾时再阻塞等待）
   prefetchThreshold: { type: Number, default: 10 },
+  // 来源媒体在视口中的位置，用于打开时的一次性空间连续过渡。
+  sourceRect: { type: Object, default: null },
   // 是否启用「联动选中」功能：右上角显示复选框，状态由 isItemSelected 决定，点击触发 toggle-select
   selectable: { type: Boolean, default: false },
   // 判定某 item 是否已被选中（外部传入回调，参数 item / idx）
@@ -444,7 +457,67 @@ const thumbsRef = ref(null)
 const previewMaskRef = ref(null)
 const reloadNonce = ref(0)
 const downloadingCurrent = ref(false)
+const chromeIdle = ref(false)
 let previousActiveElement = null
+let chromeIdleTimer = null
+let sourceTransition = null
+let sourceTransitionPlayed = false
+
+const cancelSourceTransition = () => {
+  sourceTransition?.cancel?.()
+  sourceTransition = null
+}
+
+const playSourceTransition = (element) => {
+  if (sourceTransitionPlayed) return
+  sourceTransitionPlayed = true
+  const source = props.sourceRect
+  if (!element || !source || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+  window.requestAnimationFrame(() => {
+    if (!props.visible) return
+    const target = element.getBoundingClientRect()
+    if (target.width < 8 || target.height < 8 || source.width < 8 || source.height < 8) return
+
+    const sourceCenterX = source.left + source.width / 2
+    const sourceCenterY = source.top + source.height / 2
+    const targetCenterX = target.left + target.width / 2
+    const targetCenterY = target.top + target.height / 2
+    const scaleFrom = Math.max(
+      0.08,
+      Math.min(1, source.width / target.width, source.height / target.height)
+    )
+
+    cancelSourceTransition()
+    sourceTransition = element.animate(
+      [
+        {
+          transform: `translate(${sourceCenterX - targetCenterX}px, ${sourceCenterY - targetCenterY}px) scale(${scaleFrom})`,
+          opacity: 0.5,
+          borderRadius: '12px'
+        },
+        { transform: 'translate(0, 0) scale(1)', opacity: 1, borderRadius: '8px' }
+      ],
+      { duration: 260, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }
+    )
+    sourceTransition.addEventListener('finish', () => {
+      sourceTransition = null
+    })
+  })
+}
+
+const scheduleChromeIdle = () => {
+  if (chromeIdleTimer) window.clearTimeout(chromeIdleTimer)
+  if (!props.visible) return
+  chromeIdleTimer = window.setTimeout(() => {
+    chromeIdle.value = true
+  }, 2400)
+}
+
+const wakeChrome = () => {
+  chromeIdle.value = false
+  scheduleChromeIdle()
+}
 
 // 缩放 / 旋转 / 平移 状态（仅对图片生效，切换 item / 重置时归零）
 const scale = ref(1)
@@ -472,6 +545,7 @@ const resetTransform = () => {
 
 const zoom = (delta) => {
   if (current.value?.type !== 'image') return
+  cancelSourceTransition()
   scale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, +(scale.value + delta).toFixed(2)))
   if (scale.value === 1) {
     offsetX.value = 0
@@ -485,6 +559,7 @@ const resetZoom = () => {
 }
 const rotate = (deg) => {
   if (current.value?.type !== 'image') return
+  cancelSourceTransition()
   rotation.value = (rotation.value + deg) % 360
 }
 const resetAll = () => {
@@ -493,6 +568,7 @@ const resetAll = () => {
 
 const onImgMouseDown = (e) => {
   if (scale.value <= 1) return
+  cancelSourceTransition()
   dragging.value = true
   dragStart.x = e.clientX
   dragStart.y = e.clientY
@@ -625,6 +701,7 @@ const maybePrefetch = () => {
 }
 
 const setIndex = (i) => {
+  wakeChrome()
   currentIndex.value = i
   mediaLoading.value = true
   mediaError.value = false
@@ -665,6 +742,7 @@ const onMediaLoad = (event) => {
     return
   }
   mediaLoading.value = false
+  playSourceTransition(event?.target)
 }
 const onMediaError = () => {
   if (current.value?.type === 'image') {
@@ -824,9 +902,11 @@ watch(
   () => props.visible,
   (v) => {
     if (v) {
+      sourceTransitionPlayed = false
       previousActiveElement = document.activeElement
       const initial = Math.max(0, Math.min(props.items.length - 1, props.initialIndex || 0))
       boundaryHint.value = ''
+      wakeChrome()
       window.addEventListener('keydown', onKey)
       document.body.style.overflow = 'hidden'
       // 通过 setIndex 走完整流程：触发 resolveItem（视频拉真实 URL）+ 预加载检测
@@ -834,8 +914,11 @@ watch(
       setIndex(initial)
       nextTick(() => previewMaskRef.value?.focus())
     } else {
+      cancelSourceTransition()
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = ''
+      chromeIdle.value = false
+      if (chromeIdleTimer) window.clearTimeout(chromeIdleTimer)
       // 关闭后停止视频
       try {
         videoEl.value?.pause?.()
@@ -849,8 +932,10 @@ watch(
 )
 
 onUnmounted(() => {
+  cancelSourceTransition()
   window.removeEventListener('keydown', onKey)
   document.body.style.overflow = ''
+  if (chromeIdleTimer) window.clearTimeout(chromeIdleTimer)
 })
 </script>
 
@@ -860,7 +945,9 @@ onUnmounted(() => {
   inset: 0;
   z-index: 9999;
   background:
-    radial-gradient(circle at 50% 42%, rgba(31, 41, 55, 0.26), transparent 42%), rgba(0, 0, 0, 0.94);
+    radial-gradient(circle at 50% 42%, var(--theme-surface-hover), transparent 42%),
+    color-mix(in srgb, var(--theme-canvas) 96%, transparent);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   display: flex;
   flex-direction: column;
@@ -871,13 +958,13 @@ onUnmounted(() => {
 
 .mp-topbar {
   flex-shrink: 0;
-  min-height: 64px;
+  min-height: 52px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 18px;
-  padding: 12px 18px 10px 22px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0));
+  gap: 14px;
+  padding: 8px 14px 8px 18px;
+  background: linear-gradient(180deg, var(--theme-backdrop), transparent);
   -webkit-app-region: no-drag;
 }
 
@@ -885,20 +972,55 @@ onUnmounted(() => {
   padding-left: 88px;
 }
 
+.mp-topbar,
+.mp-bottom {
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
+}
+
+.media-preview-mask.is-chrome-idle {
+  .mp-topbar:not(:focus-within) {
+    opacity: 0.18;
+    transform: translateY(-5px);
+  }
+
+  .mp-bottom:not(:focus-within) {
+    opacity: 0.12;
+    transform: translateY(5px);
+  }
+
+  .mp-nav:not(:focus-visible) {
+    opacity: 0.2;
+  }
+}
+
 .mp-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--theme-material-border);
+  border-radius: 11px;
+  background:
+    linear-gradient(145deg, var(--theme-material-highlight), transparent 38%),
+    var(--theme-material-thin);
+  box-shadow:
+    inset 0 1px 0 var(--theme-material-highlight),
+    var(--theme-shadow-sm);
+  -webkit-backdrop-filter: blur(var(--theme-material-blur))
+    saturate(var(--theme-material-saturation));
+  backdrop-filter: blur(var(--theme-material-blur)) saturate(var(--theme-material-saturation));
 }
 
 .mp-action {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   padding: 0;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--theme-text-secondary);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -917,10 +1039,8 @@ onUnmounted(() => {
   }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.18);
-    border-color: rgba(255, 255, 255, 0.28);
-    color: #fff;
-    transform: translateY(-1px);
+    background: var(--theme-surface-hover);
+    color: var(--theme-text-inverse);
   }
 
   &:active {
@@ -928,7 +1048,7 @@ onUnmounted(() => {
   }
 
   &:focus-visible {
-    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline: 2px solid var(--theme-focus);
     outline-offset: 2px;
   }
 
@@ -939,33 +1059,33 @@ onUnmounted(() => {
   }
 
   &.mp-action-primary {
-    color: #fff;
-    background: var(--qz-action, #c2410c);
-    border-color: var(--qz-active, #fb923c);
+    color: var(--theme-text-inverse);
+    background: var(--theme-brand);
+    border: 1px solid var(--theme-brand-accent);
 
     &:hover:not(:disabled) {
-      background: var(--qz-active, #fb923c);
-      border-color: #fdba74;
+      background: var(--theme-brand-hover);
+      border-color: var(--theme-focus);
     }
   }
 
   &.mp-action-close:hover {
-    background: rgba(239, 68, 68, 0.78);
-    border-color: rgba(248, 113, 113, 0.92);
+    background: color-mix(in srgb, var(--theme-danger) 78%, transparent);
+    border-color: var(--theme-danger);
   }
 
   &.mp-action-check {
-    color: rgba(255, 255, 255, 0.38);
-    background: rgba(255, 255, 255, 0.05);
+    color: var(--theme-text-subtle);
+    background: transparent;
 
     &:hover {
-      color: rgba(255, 255, 255, 0.78);
+      color: var(--theme-text-secondary);
     }
 
     &.checked {
-      background: var(--qz-active-strong, #f97316);
-      border-color: var(--qz-active, #fb923c);
-      color: #fff;
+      background: var(--theme-brand-hover);
+      border-color: var(--theme-brand-accent);
+      color: var(--theme-text-inverse);
     }
   }
 }
@@ -976,9 +1096,9 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 10px 20px 16px;
-  background: linear-gradient(0deg, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0));
+  gap: 8px;
+  padding: 7px 20px 12px;
+  background: linear-gradient(0deg, var(--theme-backdrop), transparent);
   -webkit-app-region: no-drag;
 }
 
@@ -989,41 +1109,45 @@ onUnmounted(() => {
   gap: 8px;
   min-width: 0;
   max-width: min(760px, calc(100vw - 390px));
-  padding: 5px 12px 5px 5px;
-  border-radius: 999px;
-  background: rgba(18, 18, 20, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(16px);
-  color: rgba(255, 255, 255, 0.88);
+  padding: 3px 8px 3px 3px;
+  border-radius: 10px;
+  background:
+    linear-gradient(145deg, var(--theme-material-highlight), transparent 40%),
+    var(--theme-material-thin);
+  border: 1px solid var(--theme-material-border);
+  box-shadow: inset 0 1px 0 var(--theme-material-highlight);
+  -webkit-backdrop-filter: blur(var(--theme-material-blur))
+    saturate(var(--theme-material-saturation));
+  backdrop-filter: blur(var(--theme-material-blur)) saturate(var(--theme-material-saturation));
+  color: var(--theme-text-primary);
   font-size: 13px;
   -webkit-app-region: no-drag;
 
   .mp-cap-index {
-    height: 34px;
+    height: 28px;
     display: inline-flex;
     align-items: center;
     font-weight: 600;
-    padding: 0 12px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.13);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.95);
+    padding: 0 9px;
+    border-radius: 7px;
+    background: var(--theme-surface-hover);
+    border: 0;
+    color: var(--theme-text-primary);
     flex-shrink: 0;
     font-variant-numeric: tabular-nums;
   }
   .mp-cap-title {
     min-width: 0;
-    color: rgba(255, 255, 255, 0.92);
+    color: var(--theme-text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: none;
-    line-height: 34px;
+    line-height: 28px;
     padding-right: 2px;
   }
   .mp-cap-subtitle {
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--theme-text-muted);
     font-size: 12px;
     flex-shrink: 0;
   }
@@ -1035,11 +1159,17 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   padding: 6px 9px;
-  background: rgba(18, 18, 20, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  background:
+    linear-gradient(145deg, var(--theme-material-highlight), transparent 38%),
+    var(--theme-material-regular);
+  border: 1px solid var(--theme-material-border);
   border-radius: 999px;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(16px);
+  box-shadow:
+    inset 0 1px 0 var(--theme-material-highlight),
+    var(--theme-shadow-md);
+  -webkit-backdrop-filter: blur(var(--theme-material-blur))
+    saturate(var(--theme-material-saturation));
+  backdrop-filter: blur(var(--theme-material-blur)) saturate(var(--theme-material-saturation));
   -webkit-app-region: no-drag;
 }
 
@@ -1049,7 +1179,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-secondary);
   padding: 0;
   border: 0;
   background: transparent;
@@ -1070,12 +1200,12 @@ onUnmounted(() => {
   }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.12);
-    color: #fff;
+    background: var(--theme-surface-active);
+    color: var(--theme-text-inverse);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline: 2px solid var(--theme-focus);
     outline-offset: 1px;
   }
 }
@@ -1088,7 +1218,7 @@ onUnmounted(() => {
 .mp-tool-sep {
   width: 1px;
   height: 16px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--theme-border);
   margin: 0 4px;
 }
 
@@ -1099,7 +1229,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   position: relative;
-  padding: 16px 88px 18px;
+  padding: 8px 68px 12px;
   overflow: hidden; /* 缩放/平移时不溢出到顶/底 caption 工具栏 */
 }
 
@@ -1107,18 +1237,26 @@ onUnmounted(() => {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 50px;
-  height: 50px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border-radius: 50%;
-  background: rgba(18, 18, 20, 0.58);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #fff;
+  background:
+    linear-gradient(145deg, var(--theme-material-highlight), transparent 42%),
+    var(--theme-material-thin);
+  border: 1px solid var(--theme-material-border);
+  box-shadow:
+    inset 0 1px 0 var(--theme-material-highlight),
+    var(--theme-shadow-sm);
+  -webkit-backdrop-filter: blur(var(--theme-material-blur))
+    saturate(var(--theme-material-saturation));
+  backdrop-filter: blur(var(--theme-material-blur)) saturate(var(--theme-material-saturation));
+  color: var(--theme-text-inverse);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 20px;
+  font-size: 18px;
   transition:
     background 0.15s,
     transform 0.15s,
@@ -1139,7 +1277,7 @@ onUnmounted(() => {
   }
 
   &:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.18);
+    background: var(--theme-surface-active);
     transform: translateY(-50%) scale(1.04);
   }
   &:disabled {
@@ -1148,10 +1286,10 @@ onUnmounted(() => {
   }
 
   &.mp-nav-left {
-    left: 16px;
+    left: 14px;
   }
   &.mp-nav-right {
-    right: 16px;
+    right: 14px;
   }
 }
 
@@ -1170,8 +1308,8 @@ onUnmounted(() => {
   max-height: 100%;
   object-fit: contain;
   border-radius: 8px;
-  background: #111;
-  box-shadow: 0 18px 64px rgba(0, 0, 0, 0.54);
+  background: var(--theme-canvas);
+  box-shadow: var(--theme-shadow-lg);
   transform-origin: center;
   will-change: transform;
 }
@@ -1186,35 +1324,39 @@ onUnmounted(() => {
   aspect-ratio: 16 / 9;
   border-radius: 6px;
   overflow: hidden;
-  background: #111;
+  background: var(--theme-canvas);
 }
 
 .mp-cover-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.45;
+  opacity: 0.88;
 }
 
 .mp-cover-overlay {
   position: absolute;
-  inset: 0;
+  top: 12px;
+  right: 12px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: #fff;
-  font-size: 13px;
-  background: rgba(0, 0, 0, 0.4);
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--theme-border);
+  border-radius: 999px;
+  color: var(--theme-text-inverse);
+  font-size: 12px;
+  background: color-mix(in srgb, var(--theme-backdrop) 78%, transparent);
+  box-shadow: var(--theme-shadow-sm);
+  backdrop-filter: blur(10px);
 
   .el-icon {
-    font-size: 26px;
+    font-size: 15px;
   }
 }
 
 .mp-empty {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--theme-text-subtle);
   font-size: 64px;
 }
 
@@ -1227,8 +1369,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: rgba(0, 0, 0, 0.6);
-  color: rgba(255, 255, 255, 0.85);
+  background: color-mix(in srgb, var(--theme-backdrop) 86%, transparent);
+  color: var(--theme-text-secondary);
   border-radius: 6px;
   font-size: 13px;
 
@@ -1247,10 +1389,10 @@ onUnmounted(() => {
 .mp-error-btn {
   min-height: 32px;
   padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--theme-border-strong);
   border-radius: 999px;
-  color: rgba(255, 255, 255, 0.88);
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--theme-text-primary);
+  background: var(--theme-surface-hover);
   font: inherit;
   cursor: pointer;
   transition:
@@ -1259,15 +1401,15 @@ onUnmounted(() => {
     border-color 0.15s ease;
 
   &:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.14);
-    border-color: rgba(255, 255, 255, 0.32);
+    color: var(--theme-text-inverse);
+    background: var(--theme-surface-active);
+    border-color: var(--theme-border-strong);
   }
 
   &.primary {
-    color: #fff;
-    background: var(--qz-action, #c2410c);
-    border-color: var(--qz-active, #fb923c);
+    color: var(--theme-text-inverse);
+    background: var(--theme-brand);
+    border-color: var(--theme-brand-accent);
   }
 }
 
@@ -1276,12 +1418,12 @@ onUnmounted(() => {
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.75);
-  color: #fff;
+  background: var(--theme-backdrop);
+  color: var(--theme-text-inverse);
   font-size: 13px;
   padding: 8px 16px;
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--theme-border);
   backdrop-filter: blur(4px);
 }
 
@@ -1305,19 +1447,19 @@ onUnmounted(() => {
     height: 4px;
   }
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--theme-border-strong);
     border-radius: 2px;
   }
 }
 
 .mp-thumb {
   position: relative;
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
   flex-shrink: 0;
   border-radius: 8px;
   overflow: hidden;
-  background: #000;
+  background: var(--theme-canvas);
   cursor: pointer;
   padding: 0;
   font: inherit;
@@ -1329,7 +1471,7 @@ onUnmounted(() => {
   /* 默认浅灰 outline 描边 —— 用 outline 而不是 box-shadow inset，
      因为 inset shadow 会被隐私模式 .mp-thumb-privacy 黑底 overlay 完全盖住；
      outline 在元素外侧绘制，overlay 盖不到，每张 thumb 边界依然可辨 */
-  outline: 1px solid rgba(255, 255, 255, 0.16);
+  outline: 1px solid var(--theme-border);
   outline-offset: 0;
 
   /* 缩略图内部所有子元素（img、icon、badge）不拦截点击 */
@@ -1349,7 +1491,7 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--theme-text-subtle);
   }
 
   .mp-thumb-badge {
@@ -1358,9 +1500,9 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: var(--theme-text-inverse);
     font-size: 16px;
-    background: rgba(0, 0, 0, 0.4);
+    background: color-mix(in srgb, var(--theme-backdrop) 72%, transparent);
   }
 
   &:hover {
@@ -1369,13 +1511,13 @@ onUnmounted(() => {
   &.active {
     opacity: 1;
     /* 当前项沿用应用品牌橙，避免预览层重新回到蓝色选中态。 */
-    outline: 2px solid var(--qz-active, #fb923c);
+    outline: 2px solid var(--theme-brand-accent);
     outline-offset: 1px;
-    box-shadow: inset 0 0 0 2px var(--qz-active-border, rgba(251, 146, 60, 0.38));
+    box-shadow: inset 0 0 0 2px var(--theme-brand-border);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline: 2px solid var(--theme-focus);
     outline-offset: 1px;
   }
 }
@@ -1394,8 +1536,7 @@ onUnmounted(() => {
   backdrop-filter: none;
 }
 
-/* 顶部进度条 —— 主流加载更多视觉方案（YouTube / GitHub / NProgress 风格）
-   不打断浏览，1.5px 高，蓝色不定式滑动，prefetch / loadMore 期间都显示 */
+/* 顶部进度条：不打断浏览，prefetch / loadMore 期间都显示。 */
 .mp-top-progress {
   position: absolute;
   top: 0;
@@ -1403,7 +1544,7 @@ onUnmounted(() => {
   right: 0;
   height: 2px;
   z-index: 11;
-  background: rgba(96, 165, 250, 0.12);
+  background: var(--theme-brand-soft);
   overflow: hidden;
   pointer-events: none;
 }
@@ -1414,9 +1555,9 @@ onUnmounted(() => {
   width: 30%;
   background: linear-gradient(
     90deg,
-    rgba(96, 165, 250, 0.2) 0%,
-    #60a5fa 50%,
-    rgba(96, 165, 250, 0.2) 100%
+    transparent 0%,
+    var(--theme-brand-accent) 50%,
+    transparent 100%
   );
   border-radius: 1px;
   animation: mp-progress-indeterminate 1.4s ease-in-out infinite;
@@ -1492,6 +1633,12 @@ onUnmounted(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .mp-topbar,
+  .mp-bottom {
+    transition: none;
+    transform: none !important;
+  }
+
   .mp-action,
   .mp-tool,
   .mp-nav,
@@ -1499,12 +1646,40 @@ onUnmounted(() => {
   .mp-media,
   .mp-fade-enter-active,
   .mp-fade-leave-active {
-    transition: none !important;
+    transition: none;
   }
 
   .mp-top-progress-bar,
   .media-preview-mask .is-loading {
-    animation: none !important;
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .media-preview-mask,
+  .mp-actions,
+  .mp-caption,
+  .mp-toolbar,
+  .mp-nav {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .mp-actions,
+  .mp-caption,
+  .mp-toolbar,
+  .mp-nav {
+    background: var(--theme-material-thick);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .mp-actions,
+  .mp-caption,
+  .mp-toolbar,
+  .mp-nav {
+    border-color: var(--theme-border-strong);
+    background: var(--theme-material-thick);
   }
 }
 </style>

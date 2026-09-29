@@ -168,9 +168,9 @@ const onAvatarError = (e) => {
   width: 100%;
   flex-basis: 100%;
   margin-top: 6px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 8px;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: var(--theme-radius-md);
   padding: 10px 12px;
 }
 
@@ -191,7 +191,7 @@ const onAvatarError = (e) => {
   height: 28px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--theme-surface-hover);
   object-fit: cover;
 }
 
@@ -205,7 +205,7 @@ const onAvatarError = (e) => {
   border-radius: 50%;
   background: transparent;
   cursor: pointer;
-  transition: transform 0.15s ease;
+  transition: transform var(--theme-duration-fast) var(--theme-ease);
 
   &:hover {
     transform: scale(1.06);
@@ -233,14 +233,14 @@ const onAvatarError = (e) => {
   border: 0;
   background: transparent;
   font-family: inherit;
-  color: #60a5fa;
+  color: var(--theme-info);
   font-weight: 500;
   font-size: 12px;
   cursor: pointer;
-  transition: color 0.2s ease;
+  transition: color var(--theme-duration-fast) var(--theme-ease);
 
   &:hover {
-    color: #93c5fd;
+    color: var(--theme-info-text);
   }
 
   &:focus-visible {
@@ -251,7 +251,7 @@ const onAvatarError = (e) => {
 }
 
 .comment-time {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-subtle);
   font-size: 11px;
   flex-shrink: 0;
   white-space: nowrap;
@@ -261,7 +261,7 @@ const onAvatarError = (e) => {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--theme-text-subtle);
   font-size: 10px;
   max-width: 120px;
   overflow: hidden;
@@ -271,7 +271,7 @@ const onAvatarError = (e) => {
 
 .comment-text-content {
   display: block !important;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-primary);
   font-size: 13px;
   line-height: 1.55;
   word-break: break-word;
@@ -292,9 +292,9 @@ const onAvatarError = (e) => {
   gap: 8px;
   margin-top: 6px;
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.025);
-  border-left: 2px solid rgba(96, 165, 250, 0.25);
-  border-radius: 0 6px 6px 0;
+  background: var(--theme-surface-soft);
+  border-left: 2px solid var(--theme-info-border);
+  border-radius: 0 var(--theme-radius-sm) var(--theme-radius-sm) 0;
 }
 
 .response-row {
@@ -323,12 +323,12 @@ const onAvatarError = (e) => {
   border: 0;
   background: transparent;
   font: inherit;
-  color: #60a5fa;
+  color: var(--theme-info);
   font-weight: 500;
   cursor: pointer;
 
   &:hover {
-    color: #93c5fd;
+    color: var(--theme-info-text);
   }
 
   &:focus-visible {
@@ -340,9 +340,9 @@ const onAvatarError = (e) => {
 
 /* 修复：评论中的评论不要左右分栏，昵称与内容保持自然流 */
 .response-target {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-subtle);
   .target-name {
-    color: #60a5fa;
+    color: var(--theme-info);
   }
 
   button.target-name {
@@ -353,7 +353,7 @@ const onAvatarError = (e) => {
     cursor: pointer;
 
     &:hover {
-      color: #93c5fd;
+      color: var(--theme-info-text);
     }
 
     &:focus-visible {
@@ -365,12 +365,12 @@ const onAvatarError = (e) => {
 }
 
 .response-time {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--theme-text-subtle);
 }
 
 .response-text-content {
   display: block !important;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--theme-text-secondary);
   font-size: 12px;
   line-height: 1.5;
   text-align: left;

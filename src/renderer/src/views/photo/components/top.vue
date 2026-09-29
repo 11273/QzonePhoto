@@ -16,25 +16,51 @@
       <div class="album-info">
         <div class="title-section">
           <div class="album-title-row">
-            <div class="title-left">
-              <h2 class="album-title">{{ currentAlbum.name }}</h2>
+            <h2 class="album-title" :title="currentAlbum.name">{{ currentAlbum.name }}</h2>
 
-              <!-- 标题旁的灰字信息行（QZone 官方样式：照片数 / 权限文案，权限可点开看详情） -->
-              <div class="album-inline-info">
-                <span class="inline-count">{{ currentAlbum.total }}张</span>
-                <span class="inline-sep">/</span>
+            <!-- 相册刷新按钮 -->
+            <div class="title-right">
+              <AppRefreshButton
+                class="album-refresh-action"
+                :loading="refreshLoading"
+                :disabled="refreshLoading"
+                aria-label="刷新相册"
+                @click="refreshAlbum"
+              />
+            </div>
+          </div>
+
+          <transition name="fade-slide">
+            <div
+              v-show="!isCollapsed"
+              class="album-meta-row"
+              role="group"
+              aria-label="相册摘要信息"
+            >
+              <span class="album-meta-item album-meta-count">{{ currentAlbum.total }} 张照片</span>
+
+              <span class="album-meta-group album-meta-privacy">
+                <span class="album-meta-divider" aria-hidden="true">·</span>
                 <el-popover
+                  v-model:visible="privPopoverVisible"
                   trigger="click"
                   placement="bottom-start"
-                  :width="280"
+                  :width="300"
                   popper-class="album-priv-popper"
                   @before-enter="onPrivPopoverEnter"
                 >
                   <template #reference>
-                    <span class="inline-priv" :class="`priv-${currentAlbum.priv || 1}`">
+                    <button
+                      ref="privTriggerRef"
+                      type="button"
+                      class="inline-priv"
+                      :class="`priv-${currentAlbum.priv || 1}`"
+                      :title="`${getPrivLabel(currentAlbum.priv)}，点击查看相册信息`"
+                      :aria-label="`${getPrivLabel(currentAlbum.priv)}，查看相册信息`"
+                    >
                       {{ getPrivLabel(currentAlbum.priv) }}
                       <el-icon class="inline-priv-arrow"><ArrowDown /></el-icon>
-                    </span>
+                    </button>
                   </template>
                   <div class="priv-popover">
                     <div class="priv-popover-header">
@@ -42,6 +68,35 @@
                         <component :is="privIcon(currentAlbum.priv)" />
                       </el-icon>
                       <span>{{ getPrivLabel(currentAlbum.priv) }}</span>
+                    </div>
+
+                    <div
+                      v-if="currentAlbum.desc && currentAlbum.desc.trim()"
+                      class="priv-row priv-description-row"
+                    >
+                      <span class="priv-label">描述</span>
+                      <span class="priv-text muted">{{ currentAlbum.desc }}</span>
+                    </div>
+
+                    <div v-if="currentAlbum.createtime" class="priv-row">
+                      <span class="priv-label">创建</span>
+                      <span class="priv-text muted">{{
+                        formatCompactDate(currentAlbum.createtime)
+                      }}</span>
+                    </div>
+
+                    <div v-if="currentAlbum.lastuploadtime" class="priv-row">
+                      <span class="priv-label">最近上传</span>
+                      <span class="priv-text muted">{{
+                        formatCompactDate(currentAlbum.lastuploadtime)
+                      }}</span>
+                    </div>
+
+                    <div v-if="currentAlbum.modifytime" class="priv-row">
+                      <span class="priv-label">更新</span>
+                      <span class="priv-text muted">{{
+                        formatCompactDate(currentAlbum.modifytime)
+                      }}</span>
                     </div>
 
                     <template v-if="currentAlbum.priv === 5">
@@ -63,17 +118,29 @@
                       <div class="priv-row">
                         <span class="priv-label">答案</span>
                         <span v-if="qaLoading" class="priv-text muted">加载中...</span>
-                        <span
-                          v-else-if="qaAnswer"
-                          class="priv-text answer copyable"
-                          title="点击复制"
-                          role="button"
-                          tabindex="0"
-                          @click="copyToClipboard(qaAnswer, '答案')"
-                          @keydown.enter.prevent="copyToClipboard(qaAnswer, '答案')"
-                          @keydown.space.prevent="copyToClipboard(qaAnswer, '答案')"
-                          >{{ qaAnswer }}</span
-                        >
+                        <span v-else-if="qaAnswer" class="priv-text answer-wrap">
+                          <span
+                            v-if="qaAnswerVisible"
+                            class="answer-value"
+                            title="点击复制"
+                            role="button"
+                            tabindex="0"
+                            @click="copyToClipboard(qaAnswer, '答案')"
+                            @keydown.enter.prevent="copyToClipboard(qaAnswer, '答案')"
+                            @keydown.space.prevent="copyToClipboard(qaAnswer, '答案')"
+                            >{{ qaAnswer }}</span
+                          >
+                          <span v-else class="muted">已隐藏</span>
+                          <button
+                            type="button"
+                            class="answer-toggle"
+                            :aria-label="qaAnswerVisible ? '隐藏相册答案' : '显示相册答案'"
+                            @click.stop="qaAnswerVisible = !qaAnswerVisible"
+                          >
+                            <el-icon><component :is="qaAnswerVisible ? Hide : View" /></el-icon>
+                            {{ qaAnswerVisible ? '隐藏' : '显示' }}
+                          </button>
+                        </span>
                         <span v-else class="priv-text muted">{{
                           isFriendContext ? '仅相册主人可见' : '-'
                         }}</span>
@@ -99,138 +166,104 @@
                       <span class="priv-label">类型</span>
                       <span class="priv-text muted">{{ viewtypeText }}</span>
                     </div>
+                  </div>
+                </el-popover>
+              </span>
 
-                    <div class="priv-row">
-                      <span class="priv-label">ID</span>
-                      <span
-                        class="priv-text muted copyable mono"
-                        title="点击复制相册 ID"
+              <span v-if="albumActivityMeta" class="album-meta-group album-meta-updated">
+                <span class="album-meta-divider" aria-hidden="true">·</span>
+                <span class="album-meta-item">{{ albumActivityMeta }}</span>
+              </span>
+
+              <span class="album-meta-group album-meta-comments">
+                <span class="album-meta-divider" aria-hidden="true">·</span>
+                <span class="album-meta-item">{{ Number(currentAlbum.comment || 0) }} 条评论</span>
+              </span>
+
+              <!-- 访客（本人相册按需拉取，明确区分加载、0 条和失败） -->
+              <span
+                v-if="!isFriendContext"
+                class="album-meta-group album-meta-visitors"
+                role="status"
+                aria-live="polite"
+              >
+                <span class="album-meta-divider" aria-hidden="true">·</span>
+                <el-popover
+                  v-if="visitorStatus === 'success'"
+                  v-model:visible="visitorPopoverVisible"
+                  trigger="click"
+                  placement="bottom-end"
+                  :width="320"
+                  popper-class="album-visitors-popper"
+                >
+                  <template #reference>
+                    <button
+                      ref="visitorTriggerRef"
+                      type="button"
+                      class="album-meta-item album-meta-link visitor-meta-link"
+                      :aria-label="`查看最近访客，共 ${visitorTotal} 位`"
+                      @click.stop
+                    >
+                      {{ visitorTotal }} 位访客
+                      <span v-if="visitorToday > 0" class="visitor-today">
+                        今日 +{{ visitorToday }}
+                      </span>
+                    </button>
+                  </template>
+                  <div class="visitor-popover">
+                    <div class="visitor-popover-header">最近访客 · 共 {{ visitorTotal }} 人</div>
+                    <div class="visitor-list">
+                      <div
+                        v-for="v in visitorItems"
+                        :key="v.uin"
+                        class="visitor-item"
+                        :title="`点击复制 QQ 号 ${v.uin}`"
                         role="button"
                         tabindex="0"
-                        @click="copyToClipboard(currentAlbum.id, '相册 ID')"
-                        @keydown.enter.prevent="copyToClipboard(currentAlbum.id, '相册 ID')"
-                        @keydown.space.prevent="copyToClipboard(currentAlbum.id, '相册 ID')"
-                        >{{ currentAlbum.id }}</span
+                        @click="copyToClipboard(v.uin, 'QQ 号')"
+                        @keydown.enter.prevent="copyToClipboard(v.uin, 'QQ 号')"
+                        @keydown.space.prevent="copyToClipboard(v.uin, 'QQ 号')"
                       >
+                        <el-avatar :size="28" :src="(v.img || '').replace('/50', '/100')">
+                          {{ v.name?.[0] || '?' }}
+                        </el-avatar>
+                        <div class="visitor-meta">
+                          <div class="visitor-name">{{ v.name }}</div>
+                          <div class="visitor-time">{{ formatVisitorTime(v.time) }}</div>
+                        </div>
+                      </div>
+                      <div v-if="visitorItems.length === 0" class="visitor-empty">暂无最近访客</div>
                     </div>
                   </div>
                 </el-popover>
-              </div>
-            </div>
 
-            <!-- 相册刷新按钮 -->
-            <div class="title-right">
-              <el-button
-                text
-                :icon="Refresh"
-                :loading="refreshLoading"
-                :disabled="refreshLoading"
-                class="refresh-btn"
-                @click="refreshAlbum"
-              >
-                刷新
-              </el-button>
-            </div>
-          </div>
-
-          <transition name="fade-slide">
-            <div
-              v-show="!isCollapsed && currentAlbum.desc && currentAlbum.desc.trim()"
-              class="album-description"
-            >
-              {{ currentAlbum.desc }}
+                <button
+                  v-else
+                  type="button"
+                  class="album-meta-item album-meta-link visitor-meta-link visitor-state-link"
+                  :class="{ 'is-error': visitorStatus === 'error' }"
+                  :disabled="visitorStatus === 'loading'"
+                  :aria-busy="visitorStatus === 'loading'"
+                  :aria-label="visitorStateAriaLabel"
+                  :title="
+                    visitorStatus === 'error' ? '访客信息获取失败，点击重试' : '正在获取访客信息'
+                  "
+                  @click.stop="retryVisitors"
+                >
+                  <el-icon
+                    v-if="visitorStatus === 'loading'"
+                    class="is-loading visitor-loading-icon"
+                  >
+                    <Loading />
+                  </el-icon>
+                  <span>{{ visitorStatus === 'error' ? '访客 —' : '访客 …' }}</span>
+                  <span v-if="visitorStatus === 'error'" class="visitor-retry">重试</span>
+                </button>
+              </span>
             </div>
           </transition>
         </div>
-
-        <transition name="fade-slide">
-          <div v-show="!isCollapsed" class="stats-container">
-            <div class="stats-row">
-              <StatCard
-                :icon="LucideImage"
-                :value="currentAlbum.total"
-                label="张照片"
-                :is-primary="true"
-              />
-
-              <StatCard :icon="MessageCircle" :value="currentAlbum.comment || 0" label="评论" />
-
-              <StatCard
-                :icon="CalendarDays"
-                :value="formatDateWithYear(currentAlbum.createtime)"
-                label="创建时间"
-              />
-
-              <StatCard
-                :icon="Clock"
-                :value="formatDateWithYear(currentAlbum.modifytime)"
-                label="最后更新"
-              />
-
-              <!-- 访客（按需拉取，只有数据时显示） -->
-              <el-popover
-                v-if="visitorTotal > 0"
-                trigger="click"
-                placement="bottom-end"
-                :width="320"
-                popper-class="album-visitors-popper"
-              >
-                <template #reference>
-                  <div
-                    class="visitor-stat"
-                    role="button"
-                    tabindex="0"
-                    aria-label="查看最近访客"
-                    @click.stop
-                    @keydown.enter.prevent="$event.currentTarget.click()"
-                    @keydown.space.prevent="$event.currentTarget.click()"
-                  >
-                    <div class="stat-icon">
-                      <Eye :size="16" />
-                    </div>
-                    <div class="stat-content">
-                      <div class="stat-value">{{ visitorTotal }}</div>
-                      <div class="stat-label">
-                        访客<span v-if="visitorToday > 0" class="today-delta">
-                          · 今日 +{{ visitorToday }}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-                <div class="visitor-popover">
-                  <div class="visitor-popover-header">最近访客 · 共 {{ visitorTotal }} 人</div>
-                  <div class="visitor-list">
-                    <div
-                      v-for="v in visitorItems"
-                      :key="v.uin"
-                      class="visitor-item"
-                      :title="`点击复制 QQ 号 ${v.uin}`"
-                      role="button"
-                      tabindex="0"
-                      @click="copyToClipboard(v.uin, 'QQ 号')"
-                      @keydown.enter.prevent="copyToClipboard(v.uin, 'QQ 号')"
-                      @keydown.space.prevent="copyToClipboard(v.uin, 'QQ 号')"
-                    >
-                      <el-avatar :size="28" :src="(v.img || '').replace('/50', '/100')">
-                        {{ v.name?.[0] || '?' }}
-                      </el-avatar>
-                      <div class="visitor-meta">
-                        <div class="visitor-name">{{ v.name }}</div>
-                        <div class="visitor-time">{{ formatVisitorTime(v.time) }}</div>
-                      </div>
-                    </div>
-                    <div v-if="visitorItems.length === 0" class="visitor-empty">暂无最近访客</div>
-                  </div>
-                </div>
-              </el-popover>
-            </div>
-          </div>
-        </transition>
       </div>
-
-      <!-- 预留空间给底部控制区 -->
-      <div class="action-section"></div>
     </div>
 
     <div v-else class="empty-content">
@@ -249,7 +282,7 @@
             @change="selectAllPhotos"
           >
             <span class="selection-text">
-              已选 {{ selectedPhotos.size }} / {{ allPhotos.length }} 张
+              本页已选 {{ selectedPhotos.size }} / {{ allPhotos.length }} 张
             </span>
           </el-checkbox>
         </div>
@@ -270,36 +303,37 @@
       <!-- 右侧：主要操作按钮 -->
       <div class="right-action-buttons">
         <!-- 上传照片按钮（好友空间不显示） -->
-        <el-button
+        <AppActionButton
           v-if="!isFriendContext"
-          class="album-action-btn upload-btn qz-secondary-action"
-          size="default"
+          class="album-primary-action"
+          variant="neutral"
+          ui-size="large"
           :disabled="!currentAlbum"
           @click="showUploadDialog"
         >
           <el-icon><Upload /></el-icon>
           上传照片
-        </el-button>
+        </AppActionButton>
 
         <!-- 下载相册按钮 -->
-        <el-button
+        <AppActionButton
           v-if="shouldShowDownloadButton"
-          class="album-action-btn download-btn qz-primary-action"
-          size="default"
-          type="primary"
+          class="album-primary-action"
+          variant="primary"
+          ui-size="large"
           :disabled="!hasPhotos"
           @click="downloadAllPhotos"
         >
           <el-icon><Download /></el-icon>
           下载相册
-        </el-button>
+        </AppActionButton>
 
         <!-- 获取照片状态时的取消按钮 -->
-        <el-button
+        <AppActionButton
           v-else-if="shouldShowCancelButton"
-          class="album-action-btn cancel-btn"
-          size="default"
-          type="warning"
+          class="album-primary-action"
+          variant="warning"
+          ui-size="large"
           @click="cancelDownload"
         >
           <el-icon class="is-loading"><Loading /></el-icon>
@@ -309,14 +343,14 @@
             获取中 {{ albumDownloadState.fetchedCount || 0 }}/{{ albumDownloadState.totalPhotos }}
           </span>
           <span v-else> 取消获取 </span>
-        </el-button>
+        </AppActionButton>
 
         <!-- 下载状态时的进度显示 -->
-        <el-button
+        <AppActionButton
           v-else-if="shouldShowProgressButton"
-          class="album-action-btn download-progress-btn"
-          size="default"
-          type="primary"
+          class="album-primary-action download-progress-action"
+          variant="primary"
+          ui-size="large"
           disabled
         >
           <el-icon class="is-loading"><Loading /></el-icon>
@@ -327,19 +361,18 @@
             class="download-progress-bar"
             :style="{ width: `${albumDownloadState.progress}%` }"
           ></div>
-        </el-button>
+        </AppActionButton>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref, inject, onMounted, watch } from 'vue'
+import { computed, ref, inject, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   Loading,
   Upload,
   Download,
-  Refresh,
   Lock,
   Key,
   User,
@@ -349,9 +382,9 @@ import {
   Unlock,
   ArrowDown
 } from '@element-plus/icons-vue'
-import { Image as LucideImage, MessageCircle, CalendarDays, Clock, Eye } from '@lucide/vue'
-import StatCard from '@renderer/components/StatCard/index.vue'
 import UploadDialog from '@renderer/components/UploadDialog/index.vue'
+import AppActionButton from '@renderer/components/AppActionButton/index.vue'
+import AppRefreshButton from '@renderer/components/AppRefreshButton/index.vue'
 import { formatDateWithYear } from '@renderer/utils/formatters'
 import { copyToClipboard } from '@renderer/utils'
 import { resolveQzoneHostUin } from '@renderer/utils/qzone-identity'
@@ -367,6 +400,8 @@ const userStore = useUserStore()
 const hostUinOverride = inject('hostUinOverride', null)
 const isFriendContext = computed(() => !!hostUinOverride?.value)
 const effectiveHostUin = computed(() => resolveQzoneHostUin(hostUinOverride?.value, userStore))
+const formatCompactDate = (value) =>
+  formatDateWithYear(value).replace('年', '.').replace('月', '.').replace('日', '')
 
 const currentAlbum = inject('currentAlbum', ref(null))
 const leftRef = inject('leftRef', ref(null))
@@ -393,6 +428,34 @@ const photoSize = inject('photoSize', ref('medium'))
 // 问答状态（在 popover 打开时按需拉取）
 const qaAnswer = ref(null)
 const qaLoading = ref(false)
+const qaAnswerVisible = ref(false)
+const privPopoverVisible = ref(false)
+const visitorPopoverVisible = ref(false)
+const privTriggerRef = ref(null)
+const visitorTriggerRef = ref(null)
+
+const closeAlbumPopover = (type) => {
+  if (type === 'visitor') {
+    visitorPopoverVisible.value = false
+    nextTick(() => visitorTriggerRef.value?.focus?.())
+    return
+  }
+  privPopoverVisible.value = false
+  nextTick(() => privTriggerRef.value?.focus?.())
+}
+
+const handleAlbumPopoverEscape = (event) => {
+  if (event.key !== 'Escape') return
+  if (visitorPopoverVisible.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    closeAlbumPopover('visitor')
+  } else if (privPopoverVisible.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    closeAlbumPopover('privacy')
+  }
+}
 
 const fetchAnswer = async () => {
   if (currentAlbum.value?.priv !== 5) return
@@ -422,6 +485,9 @@ watch(
   () => currentAlbum.value?.id,
   () => {
     qaAnswer.value = null
+    qaAnswerVisible.value = false
+    privPopoverVisible.value = false
+    visitorPopoverVisible.value = false
   }
 )
 
@@ -429,6 +495,18 @@ watch(
 const PRIV_ICONS = { 1: Unlock, 2: Key, 3: Lock, 4: User, 5: QuestionFilled, 6: View, 8: Hide }
 const privIcon = (priv) => PRIV_ICONS[priv] || Lock
 const getPrivLabel = (priv) => QZONE_CONFIG.privMap[priv] || '未知权限'
+
+const albumActivityMeta = computed(() => {
+  const album = currentAlbum.value
+  if (!album) return ''
+  if (Number(album.lastuploadtime) > 0) {
+    return `最近上传 ${formatCompactDate(album.lastuploadtime)}`
+  }
+  if (Number(album.modifytime) > 0) {
+    return `更新于 ${formatCompactDate(album.modifytime)}`
+  }
+  return ''
+})
 
 const enabledFeatures = computed(() => {
   const a = currentAlbum.value
@@ -458,35 +536,56 @@ const viewtypeText = computed(() => {
 const visitorTotal = ref(0)
 const visitorToday = ref(0)
 const visitorItems = ref([])
+const visitorStatus = ref('idle')
+let visitorRequestId = 0
 
 const fetchVisitors = async () => {
   if (isFriendContext.value) return
   const albumId = currentAlbum.value?.id
   if (!albumId) return
+  const requestId = ++visitorRequestId
+  visitorStatus.value = 'loading'
   try {
     const res = await window.QzoneAPI.getAlbumVisitors(
       { hostUin: effectiveHostUin.value, albumId },
       { skipAuthCheck: true }
     )
     const stat = res?.data?.modvisitcount?.[0]
-    visitorTotal.value = stat?.totalcount || 0
-    visitorToday.value = stat?.todaycount || 0
+    if (!stat) throw new Error('相册访客接口未返回统计数据')
+    if (requestId !== visitorRequestId) return
+    visitorTotal.value = Number(stat.totalcount) || 0
+    visitorToday.value = Number(stat.todaycount) || 0
     visitorItems.value = res?.data?.items || []
+    visitorStatus.value = 'success'
   } catch (err) {
+    if (requestId !== visitorRequestId) return
     console.warn('[top] 获取相册访客失败:', err)
     visitorTotal.value = 0
     visitorToday.value = 0
     visitorItems.value = []
+    visitorStatus.value = 'error'
   }
 }
+
+const retryVisitors = () => {
+  if (visitorStatus.value === 'error') fetchVisitors()
+}
+
+const visitorStateAriaLabel = computed(() =>
+  visitorStatus.value === 'error' ? '访客信息获取失败，点击重试' : '正在获取访客信息'
+)
 
 watch(
   [() => currentAlbum.value?.id, () => isFriendContext.value],
   ([id, isFriend]) => {
+    visitorRequestId += 1
     visitorTotal.value = 0
     visitorToday.value = 0
     visitorItems.value = []
-    if (id && !isFriend) fetchVisitors()
+    visitorStatus.value = 'idle'
+    if (id && !isFriend) {
+      fetchVisitors()
+    }
   },
   { immediate: true }
 )
@@ -505,11 +604,14 @@ const formatVisitorTime = (t) => {
 
 // 从localStorage恢复和保存照片尺寸设置
 onMounted(() => {
+  window.addEventListener('keydown', handleAlbumPopoverEscape, true)
   const savedSize = localStorage.getItem('photo-size')
   if (savedSize && ['mini', 'small', 'medium', 'large'].includes(savedSize)) {
     photoSize.value = savedSize
   }
 })
+
+onUnmounted(() => window.removeEventListener('keydown', handleAlbumPopoverEscape, true))
 
 // 监听照片尺寸变化，保存到localStorage
 watch(
@@ -664,13 +766,13 @@ const refreshAlbum = async () => {
 <style lang="scss" scoped>
 .top-bar {
   position: relative;
-  padding: 16px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--theme-border-subtle);
+  background: var(--theme-surface-soft);
+  transition: padding var(--theme-duration) var(--theme-ease);
 
   &.collapsed {
-    padding: 8px 24px;
+    padding: 8px 20px;
 
     .album-header {
       gap: 8px;
@@ -685,8 +787,8 @@ const refreshAlbum = async () => {
     }
 
     .bottom-controls {
-      margin-top: 8px;
-      padding-top: 8px;
+      margin-top: 6px;
+      padding-top: 6px;
     }
   }
 }
@@ -696,195 +798,191 @@ const refreshAlbum = async () => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  container-type: inline-size;
 }
 
 .album-info {
+  display: block;
   flex: 1;
   min-width: 0;
 }
 
 .album-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-}
-
-.title-left {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 12px;
-  flex: 1;
-  min-width: 0;
+  width: 100%;
 }
 
 .title-right {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  margin-left: 16px;
 }
 
 .title-section {
-  margin-bottom: 16px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 6px;
+  transition: margin var(--theme-duration) var(--theme-ease);
 
   .album-title {
-    font-size: 22px;
+    margin: 0;
+    min-width: 0;
+    font-size: 18px;
     font-weight: 700;
-    color: #ffffff;
-    line-height: 1.3;
+    color: var(--theme-text-primary);
+    line-height: 1.35;
     letter-spacing: -0.02em;
-    display: inline-block;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .album-description {
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.65);
-    line-height: 1.4;
-    margin-top: 6px;
-  }
-
-  .album-inline-info {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.55);
-    line-height: 1.4;
-    font-weight: 400;
-
-    .inline-count {
-      font-variant-numeric: tabular-nums;
-    }
-
-    .inline-sep {
-      color: rgba(255, 255, 255, 0.2);
-    }
-
-    .inline-priv {
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      cursor: pointer;
-      padding: 2px 6px;
-      margin-left: -2px;
-      border-radius: 4px;
-      transition: all 0.15s ease;
-      color: rgba(255, 255, 255, 0.65);
-
-      &:hover {
-        background: rgba(255, 255, 255, 0.08);
-        color: rgba(255, 255, 255, 0.92);
-
-        .inline-priv-arrow {
-          opacity: 0.9;
-        }
-      }
-
-      /* 不同 priv 颜色提示，但保持低饱和、和标题样式协调 */
-      &.priv-3 {
-        color: rgba(255, 130, 130, 0.85);
-      }
-      &.priv-2,
-      &.priv-5 {
-        color: rgba(245, 180, 70, 0.92);
-      }
-      &.priv-4 {
-        color: rgba(120, 180, 255, 0.85);
-      }
-      &.priv-6 {
-        color: rgba(120, 180, 255, 0.75);
-      }
-      &.priv-8 {
-        color: rgba(255, 160, 110, 0.85);
-      }
-    }
-
-    .inline-priv-arrow {
-      font-size: 10px;
-      opacity: 0.45;
-      margin-left: 1px;
-      transition: opacity 0.15s ease;
-    }
-  }
-
-  .refresh-btn {
-    color: rgba(255, 255, 255, 0.7) !important;
-    font-size: 13px !important;
-    padding: 6px 12px !important;
-    transition: all 0.2s ease;
-
-    &:hover {
-      color: rgba(255, 255, 255, 0.9) !important;
-      background: rgba(255, 255, 255, 0.1) !important;
-    }
-
-    .el-icon {
-      margin-right: 4px;
-    }
+    display: -webkit-box;
+    overflow: hidden;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    transition: font-size var(--theme-duration) var(--theme-ease);
   }
 }
 
-.stats-container {
-  .stats-row {
-    display: flex;
-    gap: 28px;
-    flex-wrap: wrap;
-    transition: all 0.2s ease;
-  }
-}
-
-/* 访客 stat：与 StatCard 对齐，但是可点击 */
-.visitor-stat {
+.album-meta-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  cursor: pointer;
-  transition: opacity 0.15s ease;
+  flex-wrap: wrap;
+  min-width: 0;
+  min-height: 28px;
+  margin-top: 4px;
+  color: var(--theme-text-muted);
+  font-size: 12px;
+  line-height: 20px;
+}
 
-  &:hover {
-    opacity: 0.85;
-  }
+.album-meta-item,
+.album-meta-group {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.album-meta-item {
+  color: var(--theme-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.album-meta-count {
+  color: var(--theme-text-secondary);
+  font-weight: 600;
+}
+
+.album-meta-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.album-meta-divider {
+  color: var(--theme-border-strong);
+  user-select: none;
+}
+
+.inline-priv,
+.album-meta-link {
+  appearance: none;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    color var(--theme-duration-fast) var(--theme-ease),
+    background-color var(--theme-duration-fast) var(--theme-ease);
 
   &:focus-visible {
-    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline: 2px solid var(--theme-focus);
     outline-offset: 2px;
-    border-radius: 6px;
   }
+}
 
-  .stat-icon {
-    font-size: 16px;
-    opacity: 0.9;
-    flex-shrink: 0;
-  }
+.inline-priv {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border-radius: var(--theme-radius-sm);
+  color: var(--theme-text-muted);
+  background: transparent;
+  white-space: nowrap;
 
-  .stat-content {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-  }
+  &:hover {
+    color: var(--theme-text-primary);
+    background: var(--theme-surface-hover);
 
-  .stat-value {
-    font-size: 14px;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.95);
-    line-height: 1.2;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .stat-label {
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.5);
-    line-height: 1.2;
-
-    .today-delta {
-      color: #10b981;
+    .inline-priv-arrow {
+      opacity: 0.9;
     }
   }
+
+  &.priv-2,
+  &.priv-5 {
+    color: var(--theme-warning-text);
+  }
+
+  &.priv-8 {
+    color: var(--theme-brand-text);
+  }
+}
+
+.inline-priv-arrow {
+  font-size: 10px;
+  opacity: 0.45;
+  margin-left: 1px;
+  transition: opacity var(--theme-duration-fast) var(--theme-ease);
+}
+
+.album-meta-link {
+  min-height: 28px;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: var(--theme-radius-sm);
+  background: transparent;
+
+  &:hover {
+    color: var(--theme-text-primary);
+    background: var(--theme-surface-hover);
+  }
+}
+
+.visitor-meta-link {
+  min-width: 64px;
+}
+
+.visitor-state-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+
+  &:disabled {
+    color: var(--theme-text-subtle);
+    cursor: wait;
+  }
+
+  &.is-error {
+    color: var(--theme-danger-text);
+  }
+}
+
+.visitor-loading-icon {
+  font-size: 12px;
+}
+
+.visitor-retry {
+  color: var(--theme-text-secondary);
+  font-size: 11px;
+}
+
+.visitor-today {
+  margin-left: 4px;
+  color: var(--theme-brand-text);
+  font-size: 11px;
 }
 
 /* 操作区域 */
@@ -911,7 +1009,7 @@ const refreshAlbum = async () => {
 
     &:hover {
       transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      box-shadow: var(--theme-shadow-sm);
     }
 
     .btn-icon {
@@ -927,16 +1025,16 @@ const refreshAlbum = async () => {
     height: 36px;
     font-weight: 600;
     border-radius: 8px;
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    background: var(--theme-brand);
     border: none;
     transition: all 0.2s ease;
     position: relative;
     overflow: hidden;
 
     &:hover:not(:disabled) {
-      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+      background: var(--theme-brand-hover);
       transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+      box-shadow: var(--theme-shadow-brand);
     }
 
     &:active:not(:disabled) {
@@ -944,7 +1042,8 @@ const refreshAlbum = async () => {
     }
 
     &:disabled {
-      background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+      background: var(--theme-surface-disabled);
+      color: var(--theme-text-disabled);
       cursor: not-allowed;
     }
 
@@ -961,14 +1060,15 @@ const refreshAlbum = async () => {
     height: 36px;
     font-weight: 600;
     border-radius: 8px;
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    border: none;
+    background: var(--theme-warning-soft);
+    border: 1px solid var(--theme-warning-border);
+    color: var(--theme-warning-text);
     transition: all 0.2s ease;
 
     &:hover {
-      background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+      background: color-mix(in srgb, var(--theme-warning-soft) 75%, var(--theme-warning) 25%);
       transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
+      box-shadow: var(--theme-shadow-sm);
     }
 
     &:active {
@@ -985,7 +1085,7 @@ const refreshAlbum = async () => {
     height: 36px;
     font-weight: 600;
     border-radius: 8px;
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    background: var(--theme-brand-pressed);
     border: none;
     position: relative;
     overflow: hidden;
@@ -1001,7 +1101,7 @@ const refreshAlbum = async () => {
       bottom: 0;
       left: 0;
       height: 3px;
-      background: rgba(255, 255, 255, 0.5);
+      background: var(--theme-border-strong);
       transition: width 0.2s ease;
       border-radius: 0 0 8px 8px;
     }
@@ -1012,23 +1112,25 @@ const refreshAlbum = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  gap: 24px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--theme-border-subtle);
+  gap: 16px;
+  transition:
+    margin var(--theme-duration) var(--theme-ease),
+    padding var(--theme-duration) var(--theme-ease);
 
   .left-controls {
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 14px;
     flex: 0 0 auto;
   }
 
   .selection-control {
     :deep(.el-checkbox) {
       .el-checkbox__label {
-        color: rgba(255, 255, 255, 0.8);
+        color: var(--theme-text-secondary);
         font-size: 13px;
         font-weight: 500;
 
@@ -1038,23 +1140,23 @@ const refreshAlbum = async () => {
       }
 
       .el-checkbox__input.is-checked .el-checkbox__inner {
-        background-color: var(--qz-action, #c2410c);
-        border-color: var(--qz-action, #c2410c);
+        background-color: var(--theme-brand);
+        border-color: var(--theme-brand);
       }
 
       .el-checkbox__input.is-indeterminate .el-checkbox__inner {
-        background-color: var(--qz-action, #c2410c);
-        border-color: var(--qz-action, #c2410c);
+        background-color: var(--theme-brand);
+        border-color: var(--theme-brand);
       }
 
       .el-checkbox__inner {
-        border-color: rgba(255, 255, 255, 0.3);
+        border-color: var(--theme-border-strong);
         background-color: transparent;
       }
 
       &:hover {
         .el-checkbox__inner {
-          border-color: var(--qz-active, #fb923c);
+          border-color: var(--theme-brand-accent);
         }
       }
     }
@@ -1073,7 +1175,27 @@ const refreshAlbum = async () => {
   .right-action-buttons {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 10px;
+  }
+
+  .album-primary-action {
+    min-width: 108px;
+  }
+
+  .download-progress-action {
+    position: relative;
+    overflow: hidden;
+
+    .download-progress-bar {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      height: 2px;
+      background: var(--theme-brand-accent);
+      transform-origin: left;
+      transition: width var(--theme-duration-fast) var(--theme-ease);
+    }
   }
 
   .right-controls {
@@ -1088,7 +1210,11 @@ const refreshAlbum = async () => {
     border-radius: 6px;
     font-weight: 500;
     font-size: 13px;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition:
+      color var(--theme-duration-fast) var(--theme-ease),
+      background-color var(--theme-duration-fast) var(--theme-ease),
+      border-color var(--theme-duration-fast) var(--theme-ease),
+      box-shadow var(--theme-duration-fast) var(--theme-ease);
     box-shadow: var(--ds-shadow-sm);
     min-width: 80px;
     max-width: 120px;
@@ -1099,57 +1225,56 @@ const refreshAlbum = async () => {
     }
 
     &:hover {
-      transform: translateY(-1px);
       box-shadow: var(--ds-shadow-sm);
       filter: brightness(1.08);
     }
 
     &:active {
-      transform: translateY(0);
       box-shadow: var(--ds-shadow-sm);
       filter: none;
     }
 
     &.upload-btn {
-      background: var(--ds-accent-green, #34d399);
-      border: 1px solid transparent;
-      color: #ffffff;
+      background: var(--theme-surface-soft);
+      border: 1px solid var(--theme-border);
+      color: var(--theme-text-secondary);
 
       &:hover {
-        background: var(--ds-accent-green, #34d399);
-        border-color: transparent;
+        background: var(--theme-surface-hover);
+        border-color: var(--theme-brand-border);
+        color: var(--theme-text-primary);
         filter: brightness(1.08);
       }
     }
 
     &.download-btn {
-      background: var(--ds-accent-blue, #60a5fa);
+      background: var(--theme-brand);
       border: 1px solid transparent;
-      color: #ffffff;
+      color: var(--theme-text-inverse);
 
       &:hover {
-        background: var(--ds-accent-blue, #60a5fa);
+        background: var(--theme-brand-hover);
         border-color: transparent;
         filter: brightness(1.08);
       }
     }
 
     &.cancel-btn {
-      background: var(--ds-accent-yellow, #fbbf24);
-      border: 1px solid transparent;
-      color: #ffffff;
+      background: var(--theme-warning-soft);
+      border: 1px solid var(--theme-warning-border);
+      color: var(--theme-warning-text);
 
       &:hover {
-        background: var(--ds-accent-yellow, #fbbf24);
-        border-color: transparent;
+        background: color-mix(in srgb, var(--theme-warning-soft) 75%, var(--theme-warning) 25%);
+        border-color: var(--theme-warning-border);
         filter: brightness(1.08);
       }
     }
 
     &:disabled {
-      background: #c0c4cc;
+      background: var(--theme-surface-disabled);
       border-color: transparent;
-      color: #ffffff;
+      color: var(--theme-text-disabled);
       transform: none;
       box-shadow: none;
       filter: none;
@@ -1170,33 +1295,70 @@ const refreshAlbum = async () => {
   gap: 8px;
 
   .control-label {
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--theme-text-secondary);
     font-size: 12px;
     font-weight: 500;
     white-space: nowrap;
   }
 
   :deep(.el-radio-group) {
+    display: inline-flex;
+    align-items: stretch;
+    box-sizing: border-box;
+    height: 22px;
+    overflow: hidden;
+    background: var(--theme-surface-soft);
+    border: 1px solid var(--theme-border);
+    border-radius: 7px;
+
     .el-radio-button {
+      display: flex;
+      align-items: stretch;
+      height: 100%;
+
       .el-radio-button__inner {
-        background: rgba(255, 255, 255, 0.1);
-        border-color: rgba(255, 255, 255, 0.2);
-        color: rgba(255, 255, 255, 0.8);
-        padding: 4px 10px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        height: 100%;
+        min-height: 0;
+        background: var(--theme-surface-soft);
+        border: 0;
+        outline: 0;
+        color: var(--theme-text-secondary);
+        padding: 0 9px;
         font-size: 11px;
-        min-width: 36px;
+        line-height: 1;
+        min-width: 34px;
+        border-radius: 0;
+        box-shadow: inset 1px 0 0 var(--theme-border);
 
         &:hover {
-          background: rgba(255, 255, 255, 0.15);
-          border-color: rgba(255, 255, 255, 0.3);
-          color: rgba(255, 255, 255, 0.9);
+          background: var(--theme-surface-hover);
+          color: var(--theme-text-primary);
         }
       }
 
+      &:first-child .el-radio-button__inner {
+        box-shadow: none;
+      }
+
       &.is-active .el-radio-button__inner {
-        background: var(--qz-action, #c2410c);
-        border-color: var(--qz-action, #c2410c);
-        color: #fff;
+        background: var(--theme-brand);
+        color: var(--theme-text-inverse);
+        box-shadow: inset 1px 0 0 color-mix(in srgb, var(--theme-text-inverse) 22%, transparent);
+      }
+
+      &:first-child.is-active .el-radio-button__inner {
+        box-shadow: none;
+      }
+
+      .el-radio-button__original-radio:focus-visible + .el-radio-button__inner {
+        z-index: 1;
+        border-radius: 5px;
+        outline: 2px solid var(--theme-focus);
+        outline-offset: -2px;
       }
     }
   }
@@ -1214,28 +1376,28 @@ const refreshAlbum = async () => {
     transition: all 0.2s ease;
 
     &:not(.el-button--warning) {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: rgba(255, 255, 255, 0.2);
-      color: rgba(255, 255, 255, 0.8);
+      background: var(--theme-surface-soft);
+      border-color: var(--theme-border);
+      color: var(--theme-text-secondary);
 
       &:hover {
-        background: rgba(255, 255, 255, 0.15);
-        border-color: rgba(255, 255, 255, 0.3);
-        color: rgba(255, 255, 255, 0.9);
+        background: var(--theme-surface-hover);
+        border-color: var(--theme-border-strong);
+        color: var(--theme-text-primary);
         transform: translateY(-1px);
       }
     }
 
     &.el-button--warning {
-      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-      border-color: #f59e0b;
-      color: #fff;
+      background: var(--theme-warning-soft);
+      border-color: var(--theme-warning-border);
+      color: var(--theme-warning-text);
 
       &:hover {
-        background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-        border-color: #d97706;
+        background: color-mix(in srgb, var(--theme-warning-soft) 70%, var(--theme-warning) 30%);
+        border-color: var(--theme-warning);
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+        box-shadow: var(--theme-shadow-sm);
       }
     }
 
@@ -1250,11 +1412,11 @@ const refreshAlbum = async () => {
 .quick-stats {
   .selected-count {
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.6);
-    background: rgba(255, 255, 255, 0.05);
+    color: var(--theme-text-muted);
+    background: var(--theme-surface-soft);
     padding: 4px 8px;
     border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--theme-border-subtle);
     font-weight: 500;
   }
 }
@@ -1270,7 +1432,7 @@ const refreshAlbum = async () => {
 
 .empty-content {
   text-align: center;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-text-muted);
 
   .empty-icon {
     font-size: 48px;
@@ -1282,13 +1444,13 @@ const refreshAlbum = async () => {
   .empty-title {
     font-size: 18px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--theme-text-secondary);
     margin: 0 0 8px 0;
   }
 
   .empty-description {
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--theme-text-muted);
     margin: 0;
     line-height: 1.4;
   }
@@ -1296,10 +1458,6 @@ const refreshAlbum = async () => {
 
 /* 响应式设计 */
 @media (max-width: 1200px) {
-  .stats-container .stats-row {
-    gap: 20px;
-  }
-
   .action-section {
     .action-buttons {
       gap: 10px;
@@ -1307,23 +1465,51 @@ const refreshAlbum = async () => {
   }
 }
 
-@media (max-width: 1024px) {
-  .album-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 20px;
+@media (max-width: 900px) {
+  .title-section {
+    margin-bottom: 6px;
+  }
+}
+
+@container (max-width: 760px) {
+  .title-section {
+    margin-bottom: 0;
   }
 
-  .action-section {
-    align-items: center;
-    flex-direction: row;
-    justify-content: space-between;
+  .album-meta-row {
+    row-gap: 2px;
+  }
+}
+
+@container (max-width: 520px) {
+  .album-title-row {
+    align-items: flex-start;
   }
 
-  .stats-container .stats-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 16px;
+  .title-section .album-title {
+    font-size: 16px;
+  }
+
+  .title-right {
+    :deep(.album-refresh-action) {
+      width: var(--theme-control-sm);
+      min-width: var(--theme-control-sm);
+      padding-inline: 0;
+    }
+  }
+
+  .refresh-label {
+    display: none;
+  }
+
+  .album-meta-row {
+    margin-top: 2px;
+  }
+}
+
+@container (max-width: 420px) {
+  .visitor-today {
+    display: none;
   }
 }
 
@@ -1335,15 +1521,6 @@ const refreshAlbum = async () => {
 
   .album-header {
     gap: 16px;
-  }
-
-  .title-section .album-title {
-    font-size: 18px;
-  }
-
-  .stats-container .stats-row {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
   }
 
   .action-section {
@@ -1432,31 +1609,6 @@ const refreshAlbum = async () => {
     padding: 8px 12px;
   }
 
-  .stats-container .stats-row {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .stat-item {
-    flex-direction: row;
-    gap: 8px;
-    padding: 6px 0;
-
-    .stat-content {
-      flex-direction: row;
-      gap: 6px;
-      align-items: center;
-
-      .stat-value {
-        font-size: 12px;
-      }
-
-      .stat-label {
-        font-size: 10px;
-      }
-    }
-  }
-
   .action-buttons {
     flex-direction: column;
     gap: 8px;
@@ -1472,16 +1624,16 @@ const refreshAlbum = async () => {
   height: 36px;
   font-weight: 500;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border);
+  color: var(--theme-text-primary);
   transition: all 0.2s ease;
 
   &:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.3);
+    background: var(--theme-surface-hover);
+    border-color: var(--theme-brand-border);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--theme-shadow-sm);
   }
 
   &:active:not(:disabled) {
@@ -1489,9 +1641,9 @@ const refreshAlbum = async () => {
   }
 
   &:disabled {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.3);
+    background: var(--theme-surface-disabled);
+    border-color: var(--theme-border-subtle);
+    color: var(--theme-text-disabled);
     cursor: not-allowed;
   }
 
@@ -1507,11 +1659,11 @@ const refreshAlbum = async () => {
 <style lang="scss">
 /* 权限弹层（el-popover 渲染到 body，需要非 scoped 样式） */
 .album-priv-popper.el-popper {
-  background: rgba(28, 28, 32, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--theme-surface-overlay);
+  border: 1px solid var(--theme-border);
 
   .priv-popover {
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--theme-text-primary);
     font-size: 12px;
 
     .priv-popover-header {
@@ -1520,30 +1672,30 @@ const refreshAlbum = async () => {
       gap: 8px;
       padding-bottom: 8px;
       margin-bottom: 8px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid var(--theme-border-subtle);
       font-weight: 600;
       font-size: 13px;
 
       .el-icon {
         font-size: 15px;
         &.priv-1 {
-          color: #10b981;
+          color: var(--theme-text-secondary);
         }
         &.priv-3 {
-          color: rgba(255, 100, 100, 0.95);
+          color: var(--theme-text-muted);
         }
         &.priv-2,
         &.priv-5 {
-          color: #e6a23c;
+          color: var(--theme-warning);
         }
         &.priv-4 {
-          color: #60a5fa;
+          color: var(--theme-info);
         }
         &.priv-6 {
-          color: #60a5fa;
+          color: var(--theme-info);
         }
         &.priv-8 {
-          color: rgba(255, 150, 100, 0.95);
+          color: var(--theme-brand-accent);
         }
       }
     }
@@ -1554,26 +1706,38 @@ const refreshAlbum = async () => {
       padding: 4px 0;
       align-items: baseline;
       line-height: 1.5;
+
+      &.priv-description-row {
+        align-items: flex-start;
+      }
     }
 
     .priv-label {
       flex-shrink: 0;
       width: 44px;
       font-size: 11px;
-      color: rgba(255, 255, 255, 0.4);
+      color: var(--theme-text-subtle);
     }
 
     .priv-text {
       flex: 1;
-      word-break: break-all;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
 
       &.muted {
-        color: rgba(255, 255, 255, 0.45);
+        color: var(--theme-text-muted);
       }
 
       &.answer {
-        color: #e6a23c;
+        color: var(--theme-warning);
         font-weight: 500;
+      }
+
+      &.answer-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
 
       &.mono {
@@ -1590,14 +1754,64 @@ const refreshAlbum = async () => {
         transition: background-color 0.15s ease;
 
         &:hover {
-          background: rgba(255, 255, 255, 0.06);
+          background: var(--theme-surface-hover);
         }
         &:active {
-          background: rgba(255, 255, 255, 0.1);
+          background: var(--theme-surface-active);
         }
 
         &:focus-visible {
-          outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+          outline: 2px solid var(--theme-focus);
+          outline-offset: 2px;
+        }
+      }
+
+      .answer-value {
+        min-width: 0;
+        padding: 1px 4px;
+        margin: -1px -4px;
+        border-radius: 3px;
+        color: var(--theme-warning);
+        font-weight: 500;
+        overflow-wrap: anywhere;
+        cursor: pointer;
+        transition: background-color var(--theme-duration-fast) var(--theme-ease);
+
+        &:hover {
+          background: var(--theme-surface-hover);
+        }
+
+        &:active {
+          background: var(--theme-surface-active);
+        }
+
+        &:focus-visible {
+          outline: 2px solid var(--theme-focus);
+          outline-offset: 2px;
+        }
+      }
+
+      .answer-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        flex: 0 0 auto;
+        min-height: 24px;
+        padding: 2px 6px;
+        border: 0;
+        border-radius: var(--theme-radius-sm);
+        color: var(--theme-text-secondary);
+        background: transparent;
+        font: inherit;
+        cursor: pointer;
+
+        &:hover {
+          color: var(--theme-text-primary);
+          background: var(--theme-surface-hover);
+        }
+
+        &:focus-visible {
+          outline: 2px solid var(--theme-focus);
           outline-offset: 2px;
         }
       }
@@ -1607,16 +1821,16 @@ const refreshAlbum = async () => {
 
 /* 访客弹层 */
 .album-visitors-popper.el-popper {
-  background: rgba(28, 28, 32, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--theme-surface-overlay);
+  border: 1px solid var(--theme-border);
 
   .visitor-popover-header {
     font-size: 12px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--theme-text-primary);
     padding-bottom: 8px;
     margin-bottom: 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid var(--theme-border-subtle);
   }
 
   .visitor-list {
@@ -1630,7 +1844,7 @@ const refreshAlbum = async () => {
       width: 4px;
     }
     &::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--theme-surface-hover);
       border-radius: 2px;
     }
   }
@@ -1645,11 +1859,11 @@ const refreshAlbum = async () => {
     transition: background 0.15s ease;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.06);
+      background: var(--theme-surface-hover);
     }
 
     &:focus-visible {
-      outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+      outline: 2px solid var(--theme-focus);
       outline-offset: -2px;
     }
 
@@ -1660,7 +1874,7 @@ const refreshAlbum = async () => {
 
     .visitor-name {
       font-size: 12px;
-      color: rgba(255, 255, 255, 0.85);
+      color: var(--theme-text-primary);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -1669,7 +1883,7 @@ const refreshAlbum = async () => {
 
     .visitor-time {
       font-size: 10px;
-      color: rgba(255, 255, 255, 0.4);
+      color: var(--theme-text-subtle);
       line-height: 1.2;
       margin-top: 2px;
     }
@@ -1677,7 +1891,7 @@ const refreshAlbum = async () => {
 
   .visitor-empty {
     text-align: center;
-    color: rgba(255, 255, 255, 0.3);
+    color: var(--theme-text-disabled);
     font-size: 12px;
     padding: 16px 0;
   }

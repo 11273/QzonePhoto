@@ -1,37 +1,21 @@
 <template>
   <div class="video-module">
-    <!-- 顶部标题栏 -->
-    <div class="module-header">
-      <div class="header-content">
-        <div class="title-section">
-          <h2 class="module-title">{{ isFriendContext ? '好友视频' : '我的视频' }}</h2>
-          <span v-if="videoSummary" class="video-summary">{{ videoSummary }}</span>
-        </div>
-        <div class="header-actions">
-          <el-button
-            v-if="displayVideos.length > 0"
-            text
-            class="download-btn qz-primary-action"
-            :loading="downloadingAll"
-            :disabled="loading || downloadingAll"
-            @click="downloadAllVideos"
-          >
-            <Download :size="14" />
-            <span>{{ downloadingAll ? '加入下载…' : `下载全部 ${displayVideos.length}` }}</span>
-          </el-button>
-          <el-button
-            text
-            :icon="Refresh"
-            :loading="loading && videos.length === 0"
-            :disabled="loading"
-            class="refresh-btn"
-            @click="handleRefresh"
-          >
-            刷新
-          </el-button>
-        </div>
-      </div>
-    </div>
+    <ModuleHeader :title="isFriendContext ? '好友视频' : '我的视频'" :subtitle="videoSummary">
+      <template #actions>
+        <AppActionButton
+          v-if="displayVideos.length > 0"
+          variant="primary"
+          ui-size="compact"
+          :loading="downloadingAll"
+          :disabled="loading || downloadingAll"
+          @click="downloadAllVideos"
+        >
+          <Download :size="14" />
+          <span>{{ downloadingAll ? '加入下载…' : `下载全部 ${displayVideos.length}` }}</span>
+        </AppActionButton>
+        <AppRefreshButton :loading="loading" :disabled="loading" @click="handleRefresh" />
+      </template>
+    </ModuleHeader>
 
     <!-- 视频内容区 -->
     <div class="module-content">
@@ -110,9 +94,10 @@
                 <div
                   v-if="hoverPreviewKey === videoKey(video) && hoverPreviewReady"
                   class="preview-badge"
+                  role="status"
+                  aria-label="正在静音预览"
                 >
                   <VolumeX :size="12" />
-                  <span>静音预览</span>
                 </div>
 
                 <div
@@ -172,7 +157,7 @@
 
             <!-- 加载更多提示 -->
             <div v-if="hasMore && !loading && !isLoadingMore" class="load-more-tip">
-              下拉加载更多...
+              继续向下滚动以加载更多
             </div>
             <div v-if="isLoadingMore" class="loading-more">
               <el-icon class="is-loading"><Loading /></el-icon>
@@ -188,7 +173,7 @@
     <el-dialog
       v-model="videoDialogVisible"
       width="min(1080px, calc(100vw - 48px))"
-      top="3vh"
+      align-center
       class="video-dialog ds-dialog"
       modal-class="ds-dialog-overlay video-dialog-overlay"
       :close-on-click-modal="false"
@@ -293,7 +278,7 @@
 <script setup>
 import { ref, computed, onMounted, inject, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, VideoPlay, Loading, Warning, Hide } from '@element-plus/icons-vue'
+import { VideoPlay, Loading, Warning, Hide } from '@element-plus/icons-vue'
 import {
   Clapperboard,
   Clock3,
@@ -306,6 +291,9 @@ import {
 } from '@lucide/vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
+import AppActionButton from '@renderer/components/AppActionButton/index.vue'
+import AppRefreshButton from '@renderer/components/AppRefreshButton/index.vue'
+import ModuleHeader from '@renderer/components/ModuleHeader/index.vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import {
@@ -315,6 +303,12 @@ import {
   shouldContinuePagination
 } from '@renderer/utils/paginationGuard'
 import { resolveQzoneHostUin, resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
+import {
+  batchSummaryText,
+  batchTaskIds,
+  finishDownloadBatch,
+  openDownloadBatchOptions
+} from '@renderer/utils/downloadBatch'
 import {
   CONTENT_LOAD_STATUS,
   classifyContentLoadFailure,
@@ -777,14 +771,14 @@ const formatFileSize = (bytes) => {
 
 const rawUin = (uin) => String(uin || '').replace(/^o/, '')
 
-const queueVideoDownloads = async (list) => {
+const queueVideoDownloads = async (list, batch = null) => {
   const downloadable = list.filter((video) => getVideoDownloadUrl(video))
   if (!downloadable.length) return []
 
   const hostUin = effectiveHostUin.value
   const accountUin = resolveSelfQzoneUin(userStore) || hostUin
   const now = Math.floor(Date.now() / 1000)
-  return window.QzoneAPI.download.addFeeds({
+  const result = await window.QzoneAPI.download.addFeeds({
     feeds: [
       {
         skey: `video-${hostUin || accountUin || 'self'}`,
@@ -794,6 +788,7 @@ const queueVideoDownloads = async (list) => {
         albumName: isFriendContext.value ? '好友视频' : '我的视频',
         sourceKey: 'video',
         referer: `https://user.qzone.qq.com/${rawUin(hostUin || accountUin)}`,
+        dateMode: 'media',
         photos: downloadable.map((video, index) => ({
           id: video.vid || video.id || `video_${index + 1}`,
           name: video.title || video.desc || `video_${index + 1}`,
@@ -808,8 +803,10 @@ const queueVideoDownloads = async (list) => {
       }
     ],
     uin: accountUin,
-    friendUin: isFriendContext.value ? hostUin : null
+    friendUin: isFriendContext.value ? hostUin : null,
+    batch
   })
+  return batchTaskIds(result)
 }
 
 const downloadAllVideos = async () => {
@@ -820,11 +817,23 @@ const downloadAllVideos = async () => {
     return
   }
 
+  const downloadBatch = await openDownloadBatchOptions({
+    label: isFriendContext.value ? '好友视频' : '全部视频',
+    sourceType: 'videos'
+  })
+  if (!downloadBatch) return
+
   downloadingAll.value = true
   try {
-    const ids = await queueVideoDownloads(list)
-    ElMessage.success(`已添加 ${ids?.length || 0} 个视频下载任务`)
+    const ids = await queueVideoDownloads(list, downloadBatch)
+    const summary = await finishDownloadBatch(downloadBatch)
+    if (!ids.length) {
+      ElMessage.warning(`所选日期没有匹配视频，共检查 ${summary?.scanned || 0} 项`)
+      return
+    }
+    ElMessage.success(batchSummaryText(summary, ids.length))
   } catch (e) {
+    await finishDownloadBatch(downloadBatch, true).catch(() => null)
     console.error('[video] 批量下载失败', e)
     ElMessage.error(`下载失败：${e.message || e}`)
   } finally {
@@ -1133,67 +1142,9 @@ onUnmounted(() => {
 .video-module {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   height: 100%;
-  background: rgba(0, 0, 0, 0.15);
-}
-
-.module-header {
-  padding: 16px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%);
-  flex-shrink: 0;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.title-section {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-}
-
-.module-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0;
-  line-height: 1.3;
-  letter-spacing: -0.02em;
-}
-
-.video-summary {
-  color: rgba(255, 255, 255, 0.42);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.refresh-btn,
-.download-btn {
-  color: rgba(255, 255, 255, 0.7) !important;
-  font-size: 13px !important;
-  padding: 6px 12px !important;
-  transition: all 0.2s ease;
-
-  &:hover {
-    color: rgba(255, 255, 255, 0.9) !important;
-    background: rgba(255, 255, 255, 0.1) !important;
-  }
-
-  .el-icon {
-    margin-right: 4px;
-  }
+  background: color-mix(in srgb, var(--theme-canvas) 72%, transparent);
 }
 
 .module-content {
@@ -1206,7 +1157,7 @@ onUnmounted(() => {
 }
 
 .video-container {
-  padding: 24px clamp(24px, 4vw, 56px) 36px;
+  padding: 20px clamp(20px, 3vw, 44px) 32px;
   min-height: 100%;
 }
 
@@ -1236,7 +1187,7 @@ onUnmounted(() => {
     outline: none;
 
     .video-cover {
-      box-shadow: 0 0 0 3px var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+      box-shadow: 0 0 0 3px var(--theme-focus-ring);
     }
 
     .cover-overlay {
@@ -1248,19 +1199,20 @@ onUnmounted(() => {
     position: relative;
     width: 100%;
     padding-top: 56.25%; /* 16:9 */
-    background: rgba(0, 0, 0, 0.3);
+    background: color-mix(in srgb, var(--theme-canvas) 82%, transparent);
     border-radius: 8px;
     overflow: hidden;
+    border: 1px solid transparent;
     transition:
-      transform 0.2s ease,
-      box-shadow 0.2s ease;
+      border-color var(--theme-duration-fast) var(--theme-ease),
+      box-shadow var(--theme-duration-fast) var(--theme-ease);
   }
 
   &:hover .video-cover {
-    transform: translateY(-2px);
+    border-color: var(--theme-brand-border);
     box-shadow:
-      0 0 0 1px rgba(251, 146, 60, 0.3),
-      0 12px 30px rgba(0, 0, 0, 0.38);
+      0 0 0 1px color-mix(in srgb, var(--theme-brand-border) 46%, transparent),
+      var(--theme-shadow-sm);
   }
 
   &:hover .cover-overlay {
@@ -1305,26 +1257,27 @@ onUnmounted(() => {
 
 .preview-loading {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 50%;
+  left: 50%;
   z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 26px;
   height: 26px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--theme-border);
   border-radius: 999px;
-  color: rgba(255, 255, 255, 0.92);
-  background: rgba(12, 12, 14, 0.72);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
+  color: var(--theme-text-inverse);
+  background: var(--theme-backdrop);
+  box-shadow: var(--theme-shadow-sm);
   backdrop-filter: blur(10px);
+  transform: translate(-50%, -50%);
   pointer-events: none;
 
   svg {
     width: 15px;
     height: 15px;
-    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.55));
+    filter: drop-shadow(0 2px 5px var(--theme-backdrop));
     animation: video-spin 0.9s linear infinite;
   }
 }
@@ -1334,40 +1287,35 @@ onUnmounted(() => {
   top: 8px;
   left: 8px;
   z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 7px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--theme-border);
   border-radius: 999px;
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(12, 12, 14, 0.7);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  color: var(--theme-text-inverse);
+  background: var(--theme-backdrop);
+  box-shadow: var(--theme-shadow-sm);
   backdrop-filter: blur(10px);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
   pointer-events: none;
 }
 
 .preview-progress {
   position: absolute;
-  right: 8px;
-  bottom: 6px;
-  left: 8px;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 3;
   height: 2px;
   overflow: hidden;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.26);
+  background: color-mix(in srgb, black 36%, transparent);
   pointer-events: none;
 
   span {
     display: block;
     height: 100%;
-    border-radius: inherit;
-    background: var(--qz-accent, #f97316);
-    box-shadow: 0 0 8px rgba(249, 115, 22, 0.45);
+    background: var(--theme-brand-accent);
     transition: width 0.12s linear;
   }
 }
@@ -1378,7 +1326,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 100%;
   height: 100%;
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--theme-text-muted);
   font-size: 28px;
 }
 
@@ -1387,9 +1335,9 @@ onUnmounted(() => {
   inset: 0;
   background: linear-gradient(
     180deg,
-    rgba(0, 0, 0, 0) 0%,
-    rgba(0, 0, 0, 0.05) 60%,
-    rgba(0, 0, 0, 0.45) 100%
+    transparent 0%,
+    color-mix(in srgb, var(--theme-backdrop) 12%, transparent) 60%,
+    color-mix(in srgb, var(--theme-backdrop) 72%, transparent) 100%
   );
   display: flex;
   align-items: center;
@@ -1403,12 +1351,12 @@ onUnmounted(() => {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  background: var(--theme-backdrop);
+  border: 1.5px solid var(--theme-text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--theme-text-inverse);
   font-size: 16px;
   backdrop-filter: blur(2px);
   transition: transform 0.15s ease;
@@ -1450,7 +1398,7 @@ onUnmounted(() => {
 
 .video-card-title {
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--theme-text-primary);
   font-size: 12.5px;
   font-weight: 600;
   line-height: 1.4;
@@ -1464,7 +1412,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  color: rgba(255, 255, 255, 0.46);
+  color: var(--theme-text-muted);
 
   .date {
     min-width: 0;
@@ -1485,7 +1433,7 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: rgba(255, 255, 255, 0.56);
+  color: var(--theme-text-secondary);
   white-space: nowrap;
 }
 
@@ -1511,8 +1459,9 @@ onUnmounted(() => {
   .hover-preview-video,
   .cover-overlay,
   .play-button,
+  .preview-progress span,
   .video-card.privacy-mode .cover-image :deep(.el-image__inner) {
-    transition: none !important;
+    transition: none;
   }
 
   .video-card:hover .video-cover {
@@ -1523,8 +1472,12 @@ onUnmounted(() => {
 .filter-empty {
   grid-column: 1 / -1;
   text-align: center;
-  padding: 60px 20px;
-  color: rgba(255, 255, 255, 0.4);
+  margin: 8px 0;
+  padding: 32px 20px;
+  color: var(--theme-text-muted);
+  border: 1px dashed var(--theme-border-subtle);
+  border-radius: var(--theme-radius-lg);
+  background: var(--theme-surface-soft);
   font-size: 13px;
 }
 
@@ -1533,7 +1486,7 @@ onUnmounted(() => {
 .no-more-tip {
   text-align: center;
   padding: 20px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-muted);
   font-size: 12px;
   grid-column: 1 / -1;
 }
@@ -1547,32 +1500,44 @@ onUnmounted(() => {
 
 // 视频对话框：保留播放器作为视觉焦点，减少无效边框和纵向留白。
 :deep(.video-dialog-overlay) {
-  background: rgba(6, 6, 8, 0.72);
+  background: var(--theme-backdrop);
   backdrop-filter: blur(5px) saturate(92%);
+}
+
+:deep(.video-dialog-overlay .el-overlay-dialog) {
+  display: flex;
+  overflow: hidden;
+  padding: 16px;
+  align-items: center;
+  justify-content: center;
 }
 
 :deep(.video-dialog.el-dialog),
 :deep(.video-dialog .el-dialog) {
   display: flex;
-  max-height: 94vh;
+  max-height: calc(100dvh - 32px);
+  margin: 0 !important;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  border-radius: 18px;
+  border: 1px solid var(--theme-material-border);
+  border-radius: var(--theme-radius-xl);
   background:
-    radial-gradient(circle at 12% -25%, rgba(249, 115, 22, 0.16), transparent 34%),
-    rgba(24, 24, 27, 0.97);
+    radial-gradient(circle at 12% -25%, var(--theme-brand-soft), transparent 34%),
+    var(--theme-material-thick);
   box-shadow:
-    0 30px 80px rgba(0, 0, 0, 0.58),
-    0 0 0 1px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(24px) saturate(120%);
+    inset 0 1px 0 var(--theme-material-highlight),
+    var(--theme-shadow-lg);
+  -webkit-backdrop-filter: blur(var(--theme-material-blur-strong))
+    saturate(var(--theme-material-saturation));
+  backdrop-filter: blur(var(--theme-material-blur-strong))
+    saturate(var(--theme-material-saturation));
 }
 
 :deep(.video-dialog .el-dialog__header) {
   flex: 0 0 auto;
   margin: 0;
   padding: 14px 56px 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--theme-border-subtle);
 }
 
 :deep(.video-dialog .el-dialog__headerbtn) {
@@ -1581,23 +1546,23 @@ onUnmounted(() => {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--theme-text-muted);
   transition:
     color 0.18s ease,
     background 0.18s ease;
 
   &:hover,
   &:focus-visible {
-    color: rgba(255, 255, 255, 0.94);
-    background: rgba(255, 255, 255, 0.08);
+    color: var(--theme-text-primary);
+    background: var(--theme-surface-hover);
   }
 }
 
 :deep(.video-dialog .el-dialog__body) {
   min-height: 0;
   flex: 1 1 auto;
-  overflow: auto;
-  padding: 14px 16px 0;
+  overflow: hidden;
+  padding: 12px 16px 0;
 }
 
 :deep(.video-dialog .el-dialog__footer) {
@@ -1620,11 +1585,11 @@ onUnmounted(() => {
   flex: 0 0 34px;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(249, 115, 22, 0.3);
+  border: 1px solid var(--theme-brand-border);
   border-radius: 10px;
-  color: #fb923c;
-  background: rgba(249, 115, 22, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: var(--theme-brand-accent);
+  background: var(--theme-brand-soft);
+  box-shadow: inset 0 1px 0 var(--theme-border-subtle);
 }
 
 .player-dialog-heading {
@@ -1634,7 +1599,7 @@ onUnmounted(() => {
 .player-dialog-title {
   overflow: hidden;
   margin: 0;
-  color: rgba(255, 255, 255, 0.94);
+  color: var(--theme-text-primary);
   font-size: 15px;
   font-weight: 650;
   line-height: 1.3;
@@ -1647,14 +1612,14 @@ onUnmounted(() => {
   align-items: center;
   gap: 0;
   margin-top: 3px;
-  color: rgba(255, 255, 255, 0.42);
+  color: var(--theme-text-muted);
   font-size: 10.5px;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 
   span + span::before {
     margin: 0 6px;
-    color: rgba(255, 255, 255, 0.2);
+    color: var(--theme-text-subtle);
     content: '·';
   }
 }
@@ -1668,26 +1633,27 @@ onUnmounted(() => {
 .video-player-container {
   position: relative;
   width: 100%;
-  height: min(60.75vw, calc(94vh - 164px), 608px);
-  min-height: 280px;
+  height: min(56.25vw, calc(100dvh - 172px), 608px);
+  min-height: min(280px, calc(100dvh - 172px));
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: var(--theme-radius-lg);
   background:
-    radial-gradient(circle at center, rgba(255, 255, 255, 0.055), transparent 58%), #050506;
+    radial-gradient(circle at center, var(--theme-surface-hover), transparent 58%),
+    var(--theme-canvas);
   box-shadow:
-    0 18px 44px rgba(0, 0, 0, 0.34),
-    inset 0 0 50px rgba(0, 0, 0, 0.2);
+    var(--theme-shadow-md),
+    inset 0 0 50px var(--theme-backdrop);
 }
 
 .video-player {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #000;
+  background: var(--theme-canvas);
   display: block;
 }
 
@@ -1700,7 +1666,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-text-primary);
   gap: 7px;
   z-index: 10;
 
@@ -1711,13 +1677,13 @@ onUnmounted(() => {
   }
 
   > span {
-    color: rgba(255, 255, 255, 0.48);
+    color: var(--theme-text-muted);
     font-size: 11px;
   }
 }
 
 .video-loading-overlay {
-  background: rgba(5, 5, 6, 0.84);
+  background: color-mix(in srgb, var(--theme-canvas) 88%, transparent);
   backdrop-filter: blur(5px);
 }
 
@@ -1731,8 +1697,8 @@ onUnmounted(() => {
   font-size: 19px;
 
   &.is-loading {
-    color: #fb923c;
-    background: rgba(249, 115, 22, 0.12);
+    color: var(--theme-brand-accent);
+    background: var(--theme-brand-soft);
 
     .el-icon {
       animation: video-spin 0.9s linear infinite;
@@ -1740,13 +1706,13 @@ onUnmounted(() => {
   }
 
   &.is-error {
-    color: #fca5a5;
-    background: rgba(239, 68, 68, 0.14);
+    color: var(--theme-danger-text);
+    background: var(--theme-danger-soft);
   }
 }
 
 .video-error-overlay {
-  background: rgba(5, 5, 6, 0.9);
+  background: color-mix(in srgb, var(--theme-canvas) 94%, transparent);
   backdrop-filter: blur(7px);
 
   .error-actions {
@@ -1783,7 +1749,7 @@ onUnmounted(() => {
   }
 
   .video-player-container {
-    min-height: 210px;
+    min-height: min(210px, calc(100dvh - 162px));
   }
 
   .player-dialog-meta {

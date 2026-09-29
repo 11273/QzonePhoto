@@ -88,18 +88,36 @@
                   selected: selectedPhotos.has(
                     photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
                   ),
-                  'privacy-mode': privacyStore.privacyMode
+                  'privacy-mode': privacyStore.privacyMode,
+                  'is-previewing': hoverPreviewKey === photoMediaKey(photo),
+                  'is-preview-ready': hoverPreviewReady && hoverPreviewKey === photoMediaKey(photo)
                 }"
+                @mouseenter="schedulePhotoHoverPreview(photo)"
+                @mouseleave="stopPhotoHoverPreview(photo)"
               >
                 <button
                   type="button"
                   class="photo-preview-trigger"
-                  :aria-label="`${photo.is_video ? '播放视频' : '查看图片'}${photo.name ? `：${photo.name}` : ''}`"
-                  :title="photo.is_video ? '播放视频' : '查看图片'"
+                  aria-keyshortcuts="Space"
+                  :aria-label="`${photo.is_video ? '播放视频' : '查看图片'}${photo.name ? `：${photo.name}` : ''}；按空格${
+                    selectedPhotos.has(
+                      photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+                    )
+                      ? '取消选择'
+                      : '选择'
+                  }`"
                   @click="handlePhotoClick(photo, $event, index)"
+                  @keydown.space.prevent.stop="selectPhoto(photo)"
                 >
                   <div class="photo-wrapper">
-                    <el-image :src="photo.pre" fit="cover" class="photo-image" lazy>
+                    <el-image
+                      :src="photo.pre"
+                      fit="cover"
+                      class="photo-image"
+                      lazy
+                      alt=""
+                      aria-hidden="true"
+                    >
                       <template #error>
                         <div class="image-error">
                           <el-icon><Picture /></el-icon>
@@ -113,6 +131,43 @@
                       </template>
                     </el-image>
 
+                    <video
+                      v-if="hoverPreviewKey === photoMediaKey(photo)"
+                      :ref="setPhotoHoverVideoRef"
+                      class="photo-hover-preview"
+                      :class="{ 'is-ready': hoverPreviewReady }"
+                      muted
+                      loop
+                      playsinline
+                      preload="none"
+                      aria-hidden="true"
+                    ></video>
+
+                    <div
+                      v-if="hoverPreviewKey === photoMediaKey(photo) && hoverPreviewLoading"
+                      class="photo-preview-loading"
+                      aria-hidden="true"
+                    >
+                      <el-icon class="is-loading"><Loading /></el-icon>
+                    </div>
+
+                    <div
+                      v-if="hoverPreviewKey === photoMediaKey(photo) && hoverPreviewReady"
+                      class="photo-preview-status"
+                      role="status"
+                      aria-label="正在静音预览"
+                    >
+                      <VolumeX :size="12" />
+                    </div>
+
+                    <div
+                      v-if="hoverPreviewKey === photoMediaKey(photo) && hoverPreviewReady"
+                      class="photo-preview-progress"
+                      aria-hidden="true"
+                    >
+                      <span :style="{ width: `${hoverPreviewProgress}%` }"></span>
+                    </div>
+
                     <!-- 隐私模式遮罩 -->
                     <div v-if="privacyStore.privacyMode" class="privacy-overlay">
                       <el-icon class="privacy-icon"><Hide /></el-icon>
@@ -120,7 +175,10 @@
                     </div>
 
                     <!-- 视频图标 -->
-                    <span v-if="photo.is_video" class="video-badge">
+                    <span
+                      v-if="photo.is_video && hoverPreviewKey !== photoMediaKey(photo)"
+                      class="video-badge"
+                    >
                       <el-icon><VideoPlay /></el-icon>
                     </span>
 
@@ -136,6 +194,8 @@
                 <button
                   type="button"
                   class="selection-checkbox"
+                  tabindex="-1"
+                  aria-hidden="true"
                   :class="{
                     checked: selectedPhotos.has(
                       photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
@@ -315,12 +375,12 @@
 </template>
 
 <script setup>
-import { ref, computed, provide, inject, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, provide, inject, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { Loading, Picture, VideoPlay, Check, Hide } from '@element-plus/icons-vue'
-import { ImageOff, Inbox, ShieldX, TriangleAlert } from '@lucide/vue'
+import { ImageOff, Inbox, ShieldX, TriangleAlert, VolumeX } from '@lucide/vue'
 import { ElLoading, ElMessage, ElMessageBox } from 'element-plus'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
@@ -334,8 +394,15 @@ import {
 } from '@renderer/utils/paginationGuard'
 import { findCachedFeedMetadata } from '@renderer/utils/feed-description-cache'
 import { resolveQzoneHostUin, resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
+import {
+  batchSummaryText,
+  batchTaskIds,
+  finishDownloadBatch,
+  openDownloadBatchOptions
+} from '@renderer/utils/downloadBatch'
 import { ALBUM_LOAD_STATUS, createAlbumLoadState } from '@shared/album-load-state'
 import { CONTENT_LOAD_STATUS, classifyContentLoadFailure } from '@shared/content-load-state'
+import Hls from 'hls.js'
 
 const props = defineProps({
   albumLoadState: {
@@ -440,6 +507,14 @@ const previewIndex = ref(0)
 const previewItems = ref([])
 // 视频 src 缓存：picKey -> 真实播放 URL（避免重复请求）
 const videoUrlCache = ref(new Map())
+const hoverPreviewKey = ref('')
+const hoverPreviewReady = ref(false)
+const hoverPreviewLoading = ref(false)
+const hoverPreviewProgress = ref(0)
+const photoHoverVideoRef = ref(null)
+let photoHoverPreviewTimer = null
+let photoHoverRequestId = 0
+let photoPreviewHls = null
 
 // 取消标志 - 添加到组件顶部
 const cancelFlags = ref(new Map()) // 存储每个相册的取消标志
@@ -731,20 +806,20 @@ const addDownloadTask = async (albumData) => {
       const loadingInstance = ElLoading.service({
         lock: true,
         text: `正在添加 ${photoCount} 个下载任务，请稍候...`,
-        background: 'rgba(0, 0, 0, 0.7)'
+        background: 'var(--theme-backdrop)'
       })
 
       try {
-        await window.QzoneAPI.download.addAlbum(enrichedAlbumData)
+        const result = await window.QzoneAPI.download.addAlbum(enrichedAlbumData)
         loadingInstance.close()
-        return { success: true }
+        return { success: true, result }
       } catch (error) {
         loadingInstance.close()
         throw error
       }
     } else {
-      await window.QzoneAPI.download.addAlbum(enrichedAlbumData)
-      return { success: true }
+      const result = await window.QzoneAPI.download.addAlbum(enrichedAlbumData)
+      return { success: true, result }
     }
   } catch (error) {
     console.error('添加下载任务失败:', error)
@@ -896,6 +971,7 @@ const handleScroll = () => {
 
 // 监听当前相册变化
 watch(currentAlbum, async (newAlbum) => {
+  stopPhotoHoverPreview()
   if (!newAlbum) {
     photoList.value = []
     photoLoadState.value = null
@@ -1016,6 +1092,13 @@ const downloadCurrentAlbum = async () => {
     return
   }
 
+  const downloadBatch = await openDownloadBatchOptions({
+    label: `相册：${currentAlbum.value.name || '未命名相册'}`,
+    sourceType: 'album'
+  })
+  if (!downloadBatch) return
+  let batchFinished = false
+
   // 重置取消标志
   cancelFlags.value.set(albumId, false)
 
@@ -1038,7 +1121,8 @@ const downloadCurrentAlbum = async () => {
         // 累计所有照片用于最终统计
         allPhotos.push(...fetchedPhotos)
         totalAddedTasks = totalFetched
-      }
+      },
+      downloadBatch
     )
 
     // 检查是否被取消
@@ -1047,14 +1131,24 @@ const downloadCurrentAlbum = async () => {
       downloadStore.cancelAlbumDownload(albumId)
 
       ElMessage.info('已取消获取相册照片')
+      await finishDownloadBatch(downloadBatch, true)
+      batchFinished = true
       return
     }
 
     // 获取完成
     downloadStore.setAlbumFetching(albumId, false)
 
+    const batchSummary = await finishDownloadBatch(downloadBatch)
+    batchFinished = true
+    totalAddedTasks = batchSummary?.task_count || totalAddedTasks
+
     if (totalAddedTasks === 0) {
-      ElMessage.warning('当前相册没有可下载的照片')
+      ElMessage.warning(
+        batchSummary?.scanned
+          ? `所选日期没有匹配的照片，共检查 ${batchSummary.scanned} 项`
+          : '当前相册没有可下载的照片'
+      )
       downloadStore.clearAlbumDownloadState(albumId)
       return
     }
@@ -1065,7 +1159,7 @@ const downloadCurrentAlbum = async () => {
     // eslint-disable-next-line no-undef
     ElNotification({
       title: '下载任务已添加',
-      message: `已将 ${totalAddedTasks} 张图片加入下载队列`,
+      message: batchSummaryText(batchSummary, totalAddedTasks),
       type: 'success',
       duration: 4000,
       position: 'top-right'
@@ -1080,13 +1174,14 @@ const downloadCurrentAlbum = async () => {
       ElMessage.error('下载相册失败')
     }
   } finally {
+    if (!batchFinished) await finishDownloadBatch(downloadBatch, true).catch(() => null)
     // 清理取消标志
     cleanupAlbumFlags(albumId)
   }
 }
 
 // 流式获取照片并添加到下载队列
-const fetchAndAddPhotosStream = async (album, albumId, onProgress = null) => {
+const fetchAndAddPhotosStream = async (album, albumId, onProgress = null, downloadBatch = null) => {
   if (!album) return
 
   const batchSize = 100
@@ -1149,7 +1244,8 @@ const fetchAndAddPhotosStream = async (album, albumId, onProgress = null) => {
           },
           photos: cleanPhotos,
           uin: resolveSelfQzoneUin(userStore) || 'unknown',
-          albumId: albumId
+          albumId: albumId,
+          batch: downloadBatch
         }
 
         // 检查取消状态
@@ -1163,7 +1259,7 @@ const fetchAndAddPhotosStream = async (album, albumId, onProgress = null) => {
           console.error('添加下载任务失败:', addResult.error)
         }
 
-        totalFetched += result.photos.length
+        totalFetched += batchTaskIds(addResult.result).length
 
         // 调用进度回调
         if (onProgress) {
@@ -1346,7 +1442,7 @@ const deleteSelected = async () => {
     const loadingInstance = ElLoading.service({
       lock: true,
       text: '正在删除照片...',
-      background: 'rgba(0, 0, 0, 0.7)'
+      background: 'var(--theme-backdrop)'
     })
 
     // 调用删除API
@@ -1732,9 +1828,193 @@ const buildPreviewItems = () =>
     }
   })
 
+const photoMediaKey = (photo) =>
+  String(photo?.lloc || photo?.picKey || `${photo?.id}_${photo?.name}_${photo?.modifytime}`)
+
+const setPhotoHoverVideoRef = (element) => {
+  photoHoverVideoRef.value = element || null
+}
+
+const clearPhotoHoverTimer = () => {
+  if (photoHoverPreviewTimer) {
+    window.clearTimeout(photoHoverPreviewTimer)
+    photoHoverPreviewTimer = null
+  }
+}
+
+const destroyPhotoPreviewHls = () => {
+  if (photoPreviewHls) {
+    photoPreviewHls.destroy()
+    photoPreviewHls = null
+  }
+}
+
+const resetPhotoHoverVideo = () => {
+  const element = photoHoverVideoRef.value
+  if (!element) return
+  element.onloadeddata = null
+  element.oncanplay = null
+  element.onwaiting = null
+  element.onplaying = null
+  element.ontimeupdate = null
+  element.onerror = null
+  element.pause()
+  element.removeAttribute('src')
+  element.load()
+}
+
+const stopPhotoHoverPreview = (photo = null) => {
+  clearPhotoHoverTimer()
+  if (photo && hoverPreviewKey.value && hoverPreviewKey.value !== photoMediaKey(photo)) return
+
+  photoHoverRequestId += 1
+  resetPhotoHoverVideo()
+  destroyPhotoPreviewHls()
+  hoverPreviewKey.value = ''
+  hoverPreviewReady.value = false
+  hoverPreviewLoading.value = false
+  hoverPreviewProgress.value = 0
+}
+
+const canPreviewPhotoVideo = (photo) => {
+  const isVideo = photo?.is_video === true || photo?.is_video === 1 || photo?.is_video === '1'
+  if (!isVideo || privacyStore.privacyMode || previewVisible.value) return false
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  const supportsHover = window.matchMedia?.('(hover: hover)').matches ?? true
+  return !reducedMotion && supportsHover
+}
+
+const getPhotoVideoUrl = async (photo, { silent = false } = {}) => {
+  const picKey = photo?.picKey || photo?.lloc
+  const topicId = currentAlbum.value?.id
+  const hostUin = effectiveHostUin.value
+
+  if (!picKey || !topicId) {
+    if (!silent) ElMessage.warning('视频信息不完整，无法预览')
+    return ''
+  }
+
+  const cacheKey = `${topicId}:${picKey}`
+  if (videoUrlCache.value.has(cacheKey)) return videoUrlCache.value.get(cacheKey)
+
+  try {
+    const info = await window.QzoneAPI.getVideoInfo({ hostUin, topicId, picKey }, friendMeta.value)
+    const url =
+      info?.video_download_url || info?.video_play_url || info?.video_info?.video_url || ''
+    if (url) videoUrlCache.value.set(cacheKey, url)
+    else if (!silent) ElMessage.warning('无法获取视频播放地址')
+    return url
+  } catch (error) {
+    console.error('[AlbumVideoPreview] 获取视频 URL 失败:', error)
+    if (!silent) ElMessage.error('获取视频信息失败')
+    return ''
+  }
+}
+
+const setupPhotoHoverEvents = (element, requestId) => {
+  const isCurrent = () => requestId === photoHoverRequestId && photoHoverVideoRef.value === element
+
+  const markReady = () => {
+    if (!isCurrent()) return
+    hoverPreviewLoading.value = false
+    hoverPreviewReady.value = true
+  }
+
+  element.onloadeddata = markReady
+  element.oncanplay = () => {
+    if (!isCurrent()) return
+    markReady()
+    element.play().catch(() => stopPhotoHoverPreview())
+  }
+  element.onwaiting = () => {
+    if (isCurrent()) hoverPreviewLoading.value = true
+  }
+  element.onplaying = markReady
+  element.ontimeupdate = () => {
+    if (!isCurrent()) return
+    hoverPreviewProgress.value = element.duration
+      ? Math.min(100, (element.currentTime / element.duration) * 100)
+      : 0
+  }
+  element.onerror = () => {
+    if (isCurrent()) stopPhotoHoverPreview()
+  }
+}
+
+const playPhotoHoverPreview = (url, requestId) => {
+  const element = photoHoverVideoRef.value
+  if (!element || !url || requestId !== photoHoverRequestId) return
+
+  element.muted = true
+  element.volume = 0
+  element.loop = true
+  element.playsInline = true
+  setupPhotoHoverEvents(element, requestId)
+
+  if (url.includes('.m3u8')) {
+    if (element.canPlayType('application/vnd.apple.mpegurl')) {
+      element.src = url
+      element.play().catch(() => stopPhotoHoverPreview())
+      return
+    }
+    if (Hls.isSupported()) {
+      photoPreviewHls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        maxBufferLength: 8,
+        maxMaxBufferLength: 12,
+        debug: false
+      })
+      photoPreviewHls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal && requestId === photoHoverRequestId) stopPhotoHoverPreview()
+      })
+      photoPreviewHls.loadSource(url)
+      photoPreviewHls.attachMedia(element)
+      return
+    }
+    stopPhotoHoverPreview()
+    return
+  }
+
+  element.src = url
+  element.play().catch(() => stopPhotoHoverPreview())
+}
+
+const startPhotoHoverPreview = async (photo) => {
+  if (!canPreviewPhotoVideo(photo)) return
+  stopPhotoHoverPreview()
+  const requestId = photoHoverRequestId
+  hoverPreviewKey.value = photoMediaKey(photo)
+  hoverPreviewLoading.value = true
+  await nextTick()
+
+  const url = await getPhotoVideoUrl(photo, { silent: true })
+  if (requestId !== photoHoverRequestId || hoverPreviewKey.value !== photoMediaKey(photo)) return
+  if (!url) {
+    stopPhotoHoverPreview()
+    return
+  }
+  playPhotoHoverPreview(url, requestId)
+}
+
+const schedulePhotoHoverPreview = (photo) => {
+  clearPhotoHoverTimer()
+  if (!canPreviewPhotoVideo(photo)) return
+  photoHoverPreviewTimer = window.setTimeout(() => {
+    photoHoverPreviewTimer = null
+    startPhotoHoverPreview(photo)
+  }, 600)
+}
+
+const handlePhotoPreviewWindowBlur = () => stopPhotoHoverPreview()
+const handlePhotoPreviewVisibility = () => {
+  if (document.hidden) stopPhotoHoverPreview()
+}
+
 // 处理照片点击 —— 统一开 MediaPreview
 const handlePhotoClick = (photo, event) => {
   event.stopPropagation()
+  stopPhotoHoverPreview()
   previewItems.value = buildPreviewItems()
   const idx = photoList.value.findIndex(
     (p) =>
@@ -1749,43 +2029,10 @@ const handlePhotoClick = (photo, event) => {
 const resolvePreviewItem = async (item, idx) => {
   if (item.type !== 'video' || item.src) return item
   const photo = item._photo
-  const picKey = photo?.picKey || photo?.lloc
-  const topicId = currentAlbum.value?.id
-  const hostUin = effectiveHostUin.value
-
-  if (!picKey || !topicId) {
-    ElMessage.warning('视频信息不完整，无法预览')
-    return item
-  }
-
-  const cacheKey = `${topicId}:${picKey}`
-  if (videoUrlCache.value.has(cacheKey)) {
-    const cached = videoUrlCache.value.get(cacheKey)
-    previewItems.value[idx] = { ...item, src: cached, needsResolve: false }
-    return previewItems.value[idx]
-  }
-
-  try {
-    const info = await window.QzoneAPI.getVideoInfo({ hostUin, topicId, picKey }, friendMeta.value)
-    const url = info?.video_download_url || info?.video_play_url || info?.video_info?.video_url
-    if (url) {
-      videoUrlCache.value.set(cacheKey, url)
-      previewItems.value[idx] = {
-        ...item,
-        src: url,
-        needsResolve: false,
-        _videoInfo: info
-      }
-      return previewItems.value[idx]
-    } else {
-      ElMessage.warning('无法获取视频播放地址')
-      return item
-    }
-  } catch (e) {
-    console.error('[MediaPreview] 获取视频 URL 失败:', e)
-    ElMessage.error('获取视频信息失败')
-    return item
-  }
+  const url = await getPhotoVideoUrl(photo)
+  if (!url) return item
+  previewItems.value[idx] = { ...item, src: url, needsResolve: false }
+  return previewItems.value[idx]
 }
 
 // 预览中：判断 item 是否已经被外部选中
@@ -1894,8 +2141,16 @@ watch(hasMore, () => {
   })
 })
 
+onMounted(() => {
+  window.addEventListener('blur', handlePhotoPreviewWindowBlur)
+  document.addEventListener('visibilitychange', handlePhotoPreviewVisibility)
+})
+
 // 组件销毁时清理
 onUnmounted(() => {
+  window.removeEventListener('blur', handlePhotoPreviewWindowBlur)
+  document.removeEventListener('visibilitychange', handlePhotoPreviewVisibility)
+  stopPhotoHoverPreview()
   if (observer) {
     observer.disconnect()
   }
@@ -1910,6 +2165,7 @@ onUnmounted(() => {
 .photo-main {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   height: 100%;
   position: relative;
 }
@@ -1934,27 +2190,27 @@ onUnmounted(() => {
   &.is-forbidden,
   &.is-error {
     :deep(.empty-icon) {
-      color: #f59e0b;
+      color: var(--theme-warning);
       opacity: 0.72;
     }
   }
 
   &.is-empty {
     :deep(.empty-icon) {
-      color: #93c5fd;
+      color: var(--theme-info-text);
       opacity: 0.78;
     }
   }
 }
 
 .photo-timeline {
-  padding: 20px;
+  padding: 12px 20px 28px;
 }
 
 .usage-tips {
-  background: rgba(64, 158, 255, 0.1);
-  border: 1px solid rgba(64, 158, 255, 0.3);
-  border-radius: 8px;
+  background: var(--theme-info-soft);
+  border: 1px solid var(--theme-info-border);
+  border-radius: var(--theme-radius-md);
   padding: 12px 16px;
   margin-bottom: 24px;
   text-align: center;
@@ -1962,16 +2218,16 @@ onUnmounted(() => {
   p {
     margin: 0;
     font-size: 14px;
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--theme-text-primary);
 
     strong {
-      color: #409eff;
+      color: var(--theme-info);
     }
   }
 }
 
 .date-group {
-  margin-bottom: 40px;
+  margin-bottom: 20px;
 
   &:last-child {
     margin-bottom: 20px;
@@ -1986,72 +2242,75 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
-  padding: 12px 0;
-  border-left: 4px solid #409eff;
-  padding-left: 16px;
+  margin-bottom: 6px;
+  padding: 5px 4px 5px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--theme-border-subtle);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--theme-canvas) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(120%);
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 50%;
+    width: 3px;
+    height: 14px;
+    border-radius: var(--theme-radius-pill);
+    background: var(--theme-brand-accent);
+    transform: translateY(-50%);
+    opacity: 0.86;
+  }
 
   .date-info {
     display: flex;
     align-items: baseline;
-    gap: 12px;
+    gap: 8px;
 
     .date-title {
       margin: 0;
-      font-size: 18px;
-      font-weight: 700;
-      color: #ffffff;
-      text-shadow:
-        0 0 3px rgba(0, 0, 0, 0.9),
-        0 0 6px rgba(0, 0, 0, 0.8),
-        0 1px 2px rgba(0, 0, 0, 1);
-      filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--theme-text-primary);
+      letter-spacing: -0.01em;
     }
 
     .photo-count {
-      font-size: 13px;
-      color: #ffffff;
-      background: rgba(64, 158, 255, 0.9);
-      border: 1px solid rgba(64, 158, 255, 1);
-      padding: 3px 10px;
-      border-radius: 12px;
-      text-shadow:
-        0 0 2px rgba(0, 0, 0, 0.8),
-        0 1px 2px rgba(0, 0, 0, 0.9);
-      font-weight: 600;
-      backdrop-filter: blur(10px);
+      font-size: 12px;
+      color: var(--theme-text-subtle);
+      padding: 0;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
     }
   }
 
   .date-actions {
-    transition: all 0.2s ease;
+    transition: opacity 0.2s ease;
 
     :deep(.el-button) {
-      background: rgba(0, 0, 0, 0.6);
-      border-color: rgba(255, 255, 255, 0.3);
-      color: #ffffff;
-      backdrop-filter: blur(10px);
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-      font-weight: 600;
+      min-height: 26px;
+      padding: 3px 8px;
+      background: transparent;
+      border-color: transparent;
+      color: var(--theme-text-muted);
+      font-weight: 500;
 
       &:hover {
-        background: rgba(0, 0, 0, 0.8);
-        border-color: rgba(255, 255, 255, 0.5);
-        color: #ffffff;
-        transform: translateY(-1px);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        background: var(--theme-surface-hover);
+        border-color: var(--theme-border-subtle);
+        color: var(--theme-text-primary);
       }
 
       &.el-button--primary {
-        background: rgba(64, 158, 255, 0.9);
-        border-color: #409eff;
-        color: #ffffff;
+        background: var(--theme-brand);
+        border-color: var(--theme-brand);
+        color: var(--theme-text-inverse);
 
         &:hover {
-          background: #409eff;
-          border-color: #409eff;
-          transform: translateY(-1px);
-          box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
+          background: var(--theme-brand-hover);
+          border-color: var(--theme-brand-accent);
+          box-shadow: var(--theme-shadow-brand);
         }
       }
     }
@@ -2061,7 +2320,9 @@ onUnmounted(() => {
 .photo-grid {
   display: grid;
   gap: 12px;
-  transition: all 0.3s ease;
+  transition:
+    gap var(--theme-duration) var(--theme-ease),
+    grid-template-columns var(--theme-duration) var(--theme-ease);
 
   // 大尺寸图片
   &.size-large {
@@ -2115,11 +2376,10 @@ onUnmounted(() => {
   aspect-ratio: 1;
   border-radius: 8px;
   overflow: hidden;
-  transition: all 0.2s ease;
+  transition: box-shadow var(--theme-duration-fast) var(--theme-ease);
 
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--theme-shadow-sm);
 
     .photo-overlay {
       opacity: 1;
@@ -2127,14 +2387,16 @@ onUnmounted(() => {
 
     .selection-checkbox {
       opacity: 1;
-      background: rgba(255, 255, 255, 0.9);
+      pointer-events: auto;
+      background: var(--theme-text-primary);
     }
 
     /* 隐私模式下确保选择控件可见 */
     &.privacy-mode {
       .selection-checkbox {
         opacity: 1;
-        background: rgba(255, 255, 255, 0.9);
+        pointer-events: auto;
+        background: var(--theme-text-primary);
       }
 
       &.selected .photo-wrapper::after {
@@ -2143,22 +2405,36 @@ onUnmounted(() => {
     }
   }
 
+  /* 预览开始后将原始时长渐隐，只保留静音状态与底边播放进度。 */
+  &.is-preview-ready {
+    .photo-overlay {
+      opacity: 0;
+    }
+  }
+
   &.selected {
     .photo-wrapper::after {
       content: '';
       position: absolute;
       inset: 0;
-      border: 3px solid var(--qz-active-strong, #f97316);
+      border: 2px solid var(--theme-brand-accent);
       border-radius: 8px;
       pointer-events: none;
       z-index: 4; // 确保选中边框在隐私遮罩之上
     }
 
     .selection-checkbox {
-      background: var(--qz-active-strong, #f97316);
-      border-color: var(--qz-active, #fb923c);
-      color: white;
+      opacity: 1;
+      pointer-events: auto;
+      background: var(--theme-brand-hover);
+      border-color: var(--theme-brand-accent);
+      color: var(--theme-text-inverse);
     }
+  }
+
+  &:focus-within .selection-checkbox {
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 
@@ -2176,7 +2452,7 @@ onUnmounted(() => {
 
   &:focus-visible {
     outline: none;
-    box-shadow: inset 0 0 0 3px var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    box-shadow: inset 0 0 0 3px var(--theme-focus-ring);
   }
 }
 
@@ -2187,11 +2463,11 @@ onUnmounted(() => {
 
   .video-badge {
     color: white;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    text-shadow: 0 1px 3px var(--theme-backdrop);
     position: absolute;
     top: 8px;
     right: 8px;
-    z-index: 999;
+    z-index: 3;
   }
 }
 
@@ -2205,7 +2481,78 @@ onUnmounted(() => {
 
   :deep(.el-image__error),
   :deep(.el-image__placeholder) {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--theme-surface-soft);
+  }
+}
+
+.photo-hover-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--theme-duration-fast) var(--theme-ease);
+
+  &.is-ready {
+    opacity: 1;
+  }
+}
+
+.photo-preview-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 4;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, white 22%, transparent);
+  border-radius: 999px;
+  color: white;
+  background: color-mix(in srgb, var(--theme-backdrop) 82%, transparent);
+  backdrop-filter: blur(8px);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.photo-preview-status {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, white 18%, transparent);
+  border-radius: 999px;
+  color: white;
+  background: color-mix(in srgb, var(--theme-backdrop) 80%, transparent);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.photo-preview-progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 5;
+  height: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, black 36%, transparent);
+  pointer-events: none;
+
+  span {
+    display: block;
+    height: 100%;
+    background: var(--theme-brand-accent);
+    transition: width 0.12s linear;
   }
 }
 
@@ -2216,7 +2563,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-text-muted);
   font-size: 12px;
 
   .el-icon {
@@ -2230,10 +2577,10 @@ onUnmounted(() => {
   inset: 0;
   background: linear-gradient(
     to bottom,
-    rgba(0, 0, 0, 0.7) 0%,
+    var(--theme-backdrop) 0%,
     transparent 30%,
     transparent 70%,
-    rgba(0, 0, 0, 0.7) 100%
+    var(--theme-backdrop) 100%
   );
   opacity: 0;
   transition: opacity 0.2s ease;
@@ -2253,7 +2600,7 @@ onUnmounted(() => {
   .photo-time {
     font-size: 12px;
     color: white;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    text-shadow: 0 1px 2px var(--theme-backdrop);
   }
 }
 
@@ -2268,22 +2615,27 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.62);
-  background: rgba(12, 12, 14, 0.48);
-  transition: all 0.2s ease;
+  border: 1px solid var(--theme-text-muted);
+  background: color-mix(in srgb, var(--theme-surface-overlay) 72%, transparent);
+  transition:
+    opacity var(--theme-duration-fast) var(--theme-ease),
+    color var(--theme-duration-fast) var(--theme-ease),
+    background-color var(--theme-duration-fast) var(--theme-ease),
+    border-color var(--theme-duration-fast) var(--theme-ease);
   cursor: pointer;
   z-index: 5; // 确保选择复选框在隐私遮罩之上
-  opacity: 0.8;
+  opacity: 0;
+  pointer-events: none;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.5);
-    border-color: rgba(255, 255, 255, 0.8);
-    transform: scale(1.1);
+    background: var(--theme-text-muted);
+    border-color: var(--theme-text-secondary);
   }
 
   &:focus-visible {
     opacity: 1;
-    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    pointer-events: auto;
+    outline: 2px solid var(--theme-focus);
     outline-offset: 2px;
   }
 
@@ -2297,7 +2649,10 @@ onUnmounted(() => {
 @media (prefers-reduced-motion: reduce) {
   .photo-item,
   .selection-checkbox,
-  .photo-image :deep(.el-image__inner) {
+  .photo-image :deep(.el-image__inner),
+  .photo-hover-preview,
+  .photo-overlay,
+  .photo-preview-progress span {
     transition: none !important;
   }
 
@@ -2314,7 +2669,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-text-muted);
 
   .loading-icon {
     font-size: 24px;
@@ -2328,20 +2683,26 @@ onUnmounted(() => {
 }
 
 .no-more {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-subtle);
 }
 
 .floating-toolbar {
   position: fixed;
   bottom: 20px;
   left: 50%;
-  background: rgba(0, 0, 0, 0.9);
-  backdrop-filter: blur(20px);
-  border-radius: 16px;
+  background:
+    linear-gradient(145deg, var(--theme-material-highlight), transparent 38%),
+    var(--theme-material-regular);
+  -webkit-backdrop-filter: blur(var(--theme-material-blur))
+    saturate(var(--theme-material-saturation));
+  backdrop-filter: blur(var(--theme-material-blur)) saturate(var(--theme-material-saturation));
+  border-radius: var(--theme-radius-xl);
   padding: 12px 20px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: 1000;
+  box-shadow:
+    inset 0 1px 0 var(--theme-material-highlight),
+    var(--theme-shadow-lg);
+  border: 1px solid var(--theme-material-border);
+  z-index: var(--theme-z-popover);
   transform: translateX(-50%);
 
   .toolbar-content {
@@ -2351,7 +2712,7 @@ onUnmounted(() => {
     gap: 20px;
 
     .selected-count {
-      color: rgba(255, 255, 255, 0.9);
+      color: var(--theme-text-primary);
       font-size: 14px;
       white-space: nowrap;
     }
@@ -2418,7 +2779,7 @@ onUnmounted(() => {
 
   .trigger-content {
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.3);
+    color: var(--theme-text-subtle);
     text-align: center;
   }
 }
@@ -2440,7 +2801,7 @@ onUnmounted(() => {
 .privacy-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--theme-privacy-backdrop);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2452,14 +2813,14 @@ onUnmounted(() => {
 
   .privacy-icon {
     font-size: 24px;
-    color: #e6a23c;
+    color: var(--theme-warning);
     margin-bottom: 4px;
     opacity: 0.9;
   }
 
   .privacy-text {
     font-size: 10px;
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--theme-text-secondary);
     font-weight: 500;
     text-align: center;
   }
@@ -2470,7 +2831,7 @@ onUnmounted(() => {
   justify-content: center;
   align-items: center;
   padding: 12px;
-  background-color: #000;
+  background-color: var(--theme-canvas);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -2480,7 +2841,7 @@ onUnmounted(() => {
   height: 50vh;
   border-radius: 4px;
   object-fit: contain;
-  background: #000;
+  background: var(--theme-canvas);
 }
 
 .video-loading {
@@ -2489,7 +2850,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 40px 20px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-text-muted);
 
   .loading-icon {
     font-size: 24px;
@@ -2578,11 +2939,11 @@ onUnmounted(() => {
 /* ===== 相册访问验证弹窗 ===== */
 :deep(.album-access-dialog) {
   .el-dialog {
-    background: rgba(24, 24, 28, 0.98);
+    background: var(--theme-surface-overlay);
     backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+    border: 1px solid var(--theme-border);
+    border-radius: var(--theme-radius-xl);
+    box-shadow: var(--theme-shadow-lg);
     overflow: hidden;
   }
 
@@ -2609,10 +2970,10 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   border-radius: 14px;
-  background: rgba(248, 113, 113, 0.1);
-  border: 1px solid rgba(248, 113, 113, 0.15);
+  background: var(--theme-warning-soft);
+  border: 1px solid var(--theme-warning-border);
   margin-bottom: 16px;
-  color: #f87171;
+  color: var(--theme-warning);
 }
 
 .access-icon svg {
@@ -2623,19 +2984,19 @@ onUnmounted(() => {
 .access-title {
   font-size: 17px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-text-primary);
   margin: 0 0 8px;
 }
 
 .access-desc {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--theme-text-muted);
   margin: 0 0 20px;
   text-align: center;
   line-height: 1.5;
 
   strong {
-    color: rgba(255, 255, 255, 0.75);
+    color: var(--theme-text-secondary);
     font-weight: 600;
   }
 }
@@ -2645,36 +3006,36 @@ onUnmounted(() => {
   margin-bottom: 6px;
 
   :deep(.el-input__wrapper) {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--theme-surface-soft);
+    border: 1px solid var(--theme-border);
     border-radius: 10px;
     box-shadow: none;
     padding: 4px 12px;
     transition: border-color 0.2s ease;
 
     &:hover {
-      border-color: rgba(248, 113, 113, 0.3);
+      border-color: var(--theme-brand-border);
     }
 
     &.is-focus {
-      border-color: rgba(248, 113, 113, 0.5);
-      box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.08);
+      border-color: var(--theme-brand-accent);
+      box-shadow: 0 0 0 2px var(--theme-focus-ring);
     }
   }
 
   :deep(.el-input__inner) {
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--theme-text-primary);
     font-size: 14px;
 
     &::placeholder {
-      color: rgba(255, 255, 255, 0.2);
+      color: var(--theme-text-disabled);
     }
   }
 }
 
 .access-error {
   font-size: 12px;
-  color: #f87171;
+  color: var(--theme-danger);
   margin: 4px 0 0;
   align-self: flex-start;
 }
@@ -2694,23 +3055,23 @@ onUnmounted(() => {
   }
 
   .cancel-btn {
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.6);
+    background: var(--theme-surface-soft);
+    border: 1px solid var(--theme-border);
+    color: var(--theme-text-secondary);
 
     &:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: rgba(255, 255, 255, 0.8);
+      background: var(--theme-surface-hover);
+      color: var(--theme-text-primary);
     }
   }
 
   .confirm-btn {
-    background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+    background: var(--theme-brand);
     border: none;
-    color: #fff;
+    color: var(--theme-text-inverse);
 
     &:hover {
-      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      background: var(--theme-brand-hover);
     }
   }
 }

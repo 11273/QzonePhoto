@@ -78,7 +78,7 @@ const cardIconSize = computed(() => {
 
   &.primary {
     .stat-value {
-      color: var(--ds-accent-blue);
+      color: var(--theme-brand-accent);
       font-weight: 700;
     }
     .stat-icon {
@@ -138,25 +138,23 @@ const cardIconSize = computed(() => {
   font-weight: 600;
   color: var(--ds-text-primary);
   line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 
   &.level {
     color: var(--ds-accent-yellow);
-    text-shadow: 0 0 3px rgba(251, 191, 36, 0.3);
+    text-shadow: 0 0 3px var(--theme-warning-soft);
   }
 
   &.growth {
-    color: #10b981;
-    text-shadow: 0 0 3px rgba(16, 185, 129, 0.3);
+    color: var(--theme-success);
   }
 
   &.speed {
-    color: #f59e0b;
-    text-shadow: 0 0 3px rgba(245, 158, 11, 0.3);
+    color: var(--theme-warning);
   }
 
   &.vip {
-    color: #8b5cf6;
-    text-shadow: 0 0 3px rgba(139, 92, 246, 0.3);
+    color: var(--theme-brand-accent);
   }
 }
 

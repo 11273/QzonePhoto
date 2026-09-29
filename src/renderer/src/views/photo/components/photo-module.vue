@@ -1,54 +1,42 @@
 <template>
   <div class="photo-module">
-    <!-- 顶部标题栏 -->
-    <div class="module-header">
-      <div class="header-content">
-        <div class="title-section">
-          <h2 class="module-title">
-            {{ isFriendPhotos || isFriendContext ? '好友照片' : '我的照片' }}
-          </h2>
-        </div>
-        <div class="header-actions">
-          <template v-if="!isFriendContext && !isFriendPhotos">
-            <el-button v-if="!isSelectionMode" text class="action-btn" @click="enterSelectionMode">
-              <el-icon><Select /></el-icon>
-              <span>多选</span>
-            </el-button>
-            <template v-else>
-              <el-button text class="action-btn" @click="toggleSelectAll">
-                <el-icon><Check /></el-icon>
-                <span>{{ isAllSelected ? '取消全选' : '全选' }}</span>
-              </el-button>
-              <el-button text class="action-btn" @click="exitSelectionMode">
-                <el-icon><Close /></el-icon>
-                <span>取消</span>
-              </el-button>
-            </template>
+    <ModuleHeader :title="isFriendPhotos || isFriendContext ? '好友照片' : '我的照片'">
+      <template #actions>
+        <template v-if="!isFriendContext && !isFriendPhotos">
+          <AppActionButton
+            v-if="!isSelectionMode"
+            variant="ghost"
+            ui-size="compact"
+            @click="enterSelectionMode"
+          >
+            <el-icon><Select /></el-icon>
+            <span>多选</span>
+          </AppActionButton>
+          <template v-else>
+            <AppActionButton variant="ghost" ui-size="compact" @click="toggleSelectAll">
+              <el-icon><Check /></el-icon>
+              <span>{{ isAllSelected ? '取消全选' : '全选' }}</span>
+            </AppActionButton>
+            <AppActionButton variant="ghost" ui-size="compact" @click="exitSelectionMode">
+              <el-icon><Close /></el-icon>
+              <span>取消</span>
+            </AppActionButton>
           </template>
-          <el-button
-            v-if="downloadableMediaCount > 0"
-            text
-            class="action-btn download-page-btn qz-primary-action"
-            :loading="downloadingPage"
-            :disabled="loading || downloadingPage"
-            @click="downloadCurrentPageFeeds"
-          >
-            <LucideDownload :size="14" />
-            <span>{{ downloadingPage ? '加入下载…' : `下载全部 ${downloadableMediaCount}` }}</span>
-          </el-button>
-          <el-button
-            text
-            :icon="Refresh"
-            :loading="loading"
-            :disabled="loading"
-            class="refresh-btn"
-            @click="handleRefresh"
-          >
-            刷新
-          </el-button>
-        </div>
-      </div>
-    </div>
+        </template>
+        <AppActionButton
+          v-if="downloadableMediaCount > 0"
+          variant="primary"
+          ui-size="compact"
+          :loading="downloadingPage"
+          :disabled="loading || downloadingPage"
+          @click="downloadCurrentPageFeeds"
+        >
+          <LucideDownload :size="14" />
+          <span>{{ downloadingPage ? '加入下载…' : `下载全部 ${downloadableMediaCount}` }}</span>
+        </AppActionButton>
+        <AppRefreshButton :loading="loading" :disabled="loading" @click="handleRefresh" />
+      </template>
+    </ModuleHeader>
 
     <!-- 动态时间线内容 -->
     <div class="module-content">
@@ -92,13 +80,19 @@
                 class="card-image-wrapper card-preview-trigger"
                 aria-label="查看这条好友照片动态"
                 title="查看照片"
-                @click="previewMedia(feed.media, 0, feed)"
+                @mouseenter="scheduleMediaHoverPreview(feed, feed.media?.[0], 0)"
+                @mouseleave="stopMediaHoverPreview(feed, 0)"
+                @focus="scheduleMediaHoverPreview(feed, feed.media?.[0], 0)"
+                @blur="stopMediaHoverPreview(feed, 0)"
+                @click="previewMedia(feed.media, 0, feed, $event)"
               >
                 <el-image
                   v-if="feed.media && feed.media[0]"
                   :src="feed.media[0].url || feed.media[0].cover"
                   fit="cover"
                   lazy
+                  alt=""
+                  aria-hidden="true"
                   class="card-image"
                 >
                   <template #error>
@@ -107,8 +101,19 @@
                     </div>
                   </template>
                 </el-image>
+                <HoverVideoPreview
+                  v-if="feed.media?.[0]?.type === 'video'"
+                  :active="hoverPreviewKey === mediaHoverKey(feed, 0)"
+                  :src="mediaPreviewSource(feed.media[0])"
+                  :poster="feed.media[0].cover || feed.media[0].url"
+                />
                 <!-- 视频标记 -->
-                <div v-if="feed.media && feed.media[0]?.type === 'video'" class="card-video-badge">
+                <div
+                  v-if="
+                    feed.media?.[0]?.type === 'video' && hoverPreviewKey !== mediaHoverKey(feed, 0)
+                  "
+                  class="card-video-badge"
+                >
                   <el-icon><VideoPlay /></el-icon>
                 </div>
                 <!-- 隐私遮罩 -->
@@ -186,6 +191,8 @@
                 :class="{
                   'is-first-in-group': feedIdx === 0,
                   'is-last-in-group': feedIdx === group.feeds.length - 1,
+                  'is-compact-card':
+                    (feed.media?.length || 0) <= 1 && (feed.text?.length || 0) < 180,
                   selected: isSelectionMode && selectedFeeds.has(feed.id)
                 }"
                 @click="isSelectionMode && toggleFeedSelection(feed)"
@@ -230,16 +237,34 @@
                         <LucideDownload :size="13" />
                         <span>下载</span>
                       </el-button>
-                      <el-button
+                      <el-dropdown
                         v-if="!isFriendContext"
-                        text
-                        size="small"
-                        class="delete-btn"
-                        @click="deleteFeed(feed)"
+                        trigger="click"
+                        placement="bottom-end"
+                        popper-class="feed-actions-popper"
+                        @click.stop
                       >
-                        <el-icon><Delete /></el-icon>
-                        <span>删除</span>
-                      </el-button>
+                        <button
+                          type="button"
+                          class="feed-more-btn"
+                          aria-label="更多动态操作"
+                          title="更多操作"
+                          @click.stop
+                        >
+                          <MoreHorizontal :size="16" />
+                        </button>
+                        <template #dropdown>
+                          <el-dropdown-menu>
+                            <el-dropdown-item
+                              class="feed-delete-menu-item"
+                              @click="deleteFeed(feed)"
+                            >
+                              <Trash2 :size="14" />
+                              <span>删除这条动态</span>
+                            </el-dropdown-item>
+                          </el-dropdown-menu>
+                        </template>
+                      </el-dropdown>
                     </div>
                   </div>
 
@@ -275,21 +300,36 @@
                             'privacy-mode': privacyStore.privacyMode
                           }"
                           :aria-label="`${item.type === 'video' ? '播放视频' : '查看图片'} ${idx + 1}`"
-                          :title="item.type === 'video' ? '播放视频' : '查看图片'"
-                          @click="previewMedia(feed.media, idx, feed)"
+                          @mouseenter="scheduleMediaHoverPreview(feed, item, idx)"
+                          @mouseleave="stopMediaHoverPreview(feed, idx)"
+                          @focus="scheduleMediaHoverPreview(feed, item, idx)"
+                          @blur="stopMediaHoverPreview(feed, idx)"
+                          @click="previewMedia(feed.media, idx, feed, $event)"
                         >
                           <!-- 视频 -->
                           <div v-if="item.type === 'video'" class="media-video">
-                            <el-icon class="video-play-icon"><VideoPlay /></el-icon>
+                            <el-icon
+                              v-if="hoverPreviewKey !== mediaHoverKey(feed, idx)"
+                              class="video-play-icon"
+                            >
+                              <VideoPlay />
+                            </el-icon>
                             <el-image
                               v-if="item.cover"
                               :src="item.cover"
                               fit="cover"
+                              alt=""
+                              aria-hidden="true"
                               class="media-thumb"
                             />
                             <div v-else class="media-placeholder">
                               <el-icon><VideoPlay /></el-icon>
                             </div>
+                            <HoverVideoPreview
+                              :active="hoverPreviewKey === mediaHoverKey(feed, idx)"
+                              :src="mediaPreviewSource(item)"
+                              :poster="item.cover || item.thumb || item.url"
+                            />
                             <div
                               v-if="privacyStore.privacyMode"
                               class="media-privacy-overlay tl-privacy-overlay qz-privacy-overlay"
@@ -300,7 +340,14 @@
                           </div>
                           <!-- 图片 -->
                           <div v-else class="media-image-wrapper">
-                            <el-image :src="item.url" fit="cover" lazy class="media-thumb">
+                            <el-image
+                              :src="item.url"
+                              fit="cover"
+                              lazy
+                              alt=""
+                              aria-hidden="true"
+                              class="media-thumb"
+                            >
                               <template #error>
                                 <div class="media-error">
                                   <el-icon><Picture /></el-icon>
@@ -321,7 +368,7 @@
                           type="button"
                           class="media-more tl-media-more"
                           :aria-label="`查看其余 ${feed.photoTotal - 8} 个媒体`"
-                          @click="previewMedia(feed.media, 8, feed)"
+                          @click="previewMedia(feed.media, 8, feed, $event)"
                         >
                           +{{ feed.photoTotal - 8 }}
                         </button>
@@ -439,9 +486,10 @@
       :visible="previewVisible"
       :items="previewItems"
       :initial-index="previewIndex"
+      :source-rect="previewSourceRect"
       :resolve-item="resolvePreviewItem"
       :download-item="downloadPreviewItem"
-      @update:visible="previewVisible = $event"
+      @update:visible="handlePreviewVisibility"
     />
 
     <!-- 底部悬浮工具栏：进入多选模式即出现（即便 0 选中也显示空状态，避免来回闪动） -->
@@ -506,7 +554,7 @@
     <el-dialog
       v-model="deleteProgressVisible"
       title="批量删除动态"
-      width="500px"
+      width="min(500px, calc(100vw - 32px))"
       :close-on-click-modal="false"
       :close-on-press-escape="false"
       :show-close="false"
@@ -555,9 +603,10 @@
     <el-dialog
       v-model="videoPreviewVisible"
       :title="currentVideoInfo?.title || '视频预览'"
-      width="800px"
-      top="5vh"
-      class="video-preview-dialog"
+      width="min(800px, calc(100vw - 32px))"
+      align-center
+      class="video-preview-dialog ds-dialog"
+      modal-class="media-dialog-overlay"
       :close-on-click-modal="false"
       @close="closeVideoPreview"
     >
@@ -585,12 +634,7 @@
             <span>{{ videoError }}</span>
             <div class="error-actions">
               <el-button type="primary" size="small" @click="retryPlay">重试</el-button>
-              <el-button
-                v-if="currentVideoInfo?.url"
-                type="success"
-                size="small"
-                @click="openVideoInBrowser"
-              >
+              <el-button v-if="currentVideoInfo?.url" size="small" @click="openVideoInBrowser">
                 在浏览器中打开
               </el-button>
             </div>
@@ -612,11 +656,9 @@ import { ref, reactive, computed, inject, onMounted, onUnmounted, nextTick, watc
 import {
   VideoPlay,
   Picture,
-  Delete,
   Loading,
   Folder,
   ArrowRight,
-  Refresh,
   Hide,
   Warning
 } from '@element-plus/icons-vue'
@@ -635,17 +677,22 @@ import {
   Download as LucideDownload,
   Link2,
   ShieldX,
-  TriangleAlert
+  TriangleAlert,
+  MoreHorizontal
 } from '@lucide/vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { ElDialog, ElButton } from 'element-plus'
 import MediaPreview from '@renderer/components/MediaPreview/index.vue'
+import HoverVideoPreview from '@renderer/components/HoverVideoPreview/index.vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import RichText from '@renderer/components/RichText/index.vue'
 import FeedComment from '@renderer/components/FeedComment/index.vue'
+import AppActionButton from '@renderer/components/AppActionButton/index.vue'
+import AppRefreshButton from '@renderer/components/AppRefreshButton/index.vue'
+import ModuleHeader from '@renderer/components/ModuleHeader/index.vue'
 import { getQQAvatarUrl } from '@renderer/utils/formatters'
 import {
   createPaginationGuard,
@@ -659,6 +706,12 @@ import {
   resolveQzoneHostUin,
   resolveSelfQzoneUin
 } from '@renderer/utils/qzone-identity'
+import {
+  batchSummaryText,
+  batchTaskIds,
+  finishDownloadBatch,
+  openDownloadBatchOptions
+} from '@renderer/utils/downloadBatch'
 import {
   CONTENT_LOAD_STATUS,
   classifyContentLoadFailure,
@@ -940,6 +993,7 @@ let observer = null
 const previewVisible = ref(false)
 const previewIndex = ref(0)
 const previewItems = ref([])
+const previewSourceRect = ref(null)
 
 // 视频预览相关
 const videoPreviewVisible = ref(false)
@@ -1157,7 +1211,7 @@ const toggleFeedSelection = (feed) => {
   selectedFeeds.value = new Set(selectedFeeds.value)
 }
 
-const addFeedDownloadTasks = async (feedList) => {
+const addFeedDownloadTasks = async (feedList, batch = null) => {
   const groups = new Map()
   const accountUin = resolveSelfQzoneUin(userStore) || effectiveHostUin.value
 
@@ -1176,12 +1230,13 @@ const addFeedDownloadTasks = async (feedList) => {
   for (const [friendUin, list] of groups.entries()) {
     const payload = buildDownloadPayload(list)
     if (!payload.length) continue
-    const ids = await window.QzoneAPI.download.addFeeds({
+    const result = await window.QzoneAPI.download.addFeeds({
       feeds: payload,
       uin: accountUin,
-      friendUin: friendUin || null
+      friendUin: friendUin || null,
+      batch
     })
-    taskIds.push(...(ids || []))
+    taskIds.push(...batchTaskIds(result))
   }
 
   return taskIds
@@ -1207,15 +1262,30 @@ const downloadSingleFeed = async (feed) => {
 
 const downloadCurrentPageFeeds = async () => {
   if (downloadingPage.value) return
+  if (!downloadableFeeds.value.length) {
+    ElMessage.warning('当前页没有可下载的照片')
+    return
+  }
+  const downloadBatch = await openDownloadBatchOptions({
+    label: '当前页动态',
+    sourceType: 'feeds'
+  })
+  if (!downloadBatch) return
   downloadingPage.value = true
   try {
-    const ids = await addFeedDownloadTasks(downloadableFeeds.value)
+    const ids = await addFeedDownloadTasks(downloadableFeeds.value, downloadBatch)
+    const summary = await finishDownloadBatch(downloadBatch)
     if (!ids.length) {
-      ElMessage.warning('当前页没有可下载的照片')
+      ElMessage.warning(
+        summary?.scanned
+          ? `所选日期没有匹配内容，共检查 ${summary.scanned} 项`
+          : '当前页没有可下载的照片'
+      )
       return
     }
-    ElMessage.success(`已添加 ${ids.length} 个下载任务（${downloadableFeeds.value.length} 条动态）`)
+    ElMessage.success(batchSummaryText(summary, ids.length))
   } catch (e) {
+    await finishDownloadBatch(downloadBatch, true).catch(() => null)
     console.error('[photo] 下载当前页失败', e)
     ElMessage.error(`下载当前页失败：${e.message || e}`)
   } finally {
@@ -1226,17 +1296,28 @@ const downloadCurrentPageFeeds = async () => {
 // 批量下载选中的动态：调 addFeeds 把每条动态的全部媒体加入下载队列
 const downloadSelectedFeeds = async () => {
   if (selectedFeeds.value.size === 0) return
+  const selected = feeds.value.filter((f) => selectedFeeds.value.has(f.id))
+  const selectedWithMedia = selected.filter((feed) => getDownloadableMedia(feed).length > 0)
+  if (!selectedWithMedia.length) {
+    ElMessage.warning('选中的动态都没有可下载的媒体')
+    return
+  }
+  const downloadBatch = await openDownloadBatchOptions({
+    label: '选中的动态',
+    sourceType: 'feeds'
+  })
+  if (!downloadBatch) return
   downloadingSelected.value = true
   try {
-    const selected = feeds.value.filter((f) => selectedFeeds.value.has(f.id))
-    const selectedWithMedia = selected.filter((feed) => getDownloadableMedia(feed).length > 0)
-    if (!selectedWithMedia.length) {
-      ElMessage.warning('选中的动态都没有可下载的媒体')
+    const ids = await addFeedDownloadTasks(selectedWithMedia, downloadBatch)
+    const summary = await finishDownloadBatch(downloadBatch)
+    if (!ids.length) {
+      ElMessage.warning(`所选日期没有匹配内容，共检查 ${summary?.scanned || 0} 项`)
       return
     }
-    const ids = await addFeedDownloadTasks(selectedWithMedia)
-    ElMessage.success(`已添加 ${ids?.length || 0} 个下载任务`)
+    ElMessage.success(batchSummaryText(summary, ids.length))
   } catch (e) {
+    await finishDownloadBatch(downloadBatch, true).catch(() => null)
     console.error('[photo] 批量下载失败', e)
     ElMessage.error(`批量下载失败：${e.message || e}`)
   } finally {
@@ -1401,7 +1482,7 @@ const deleteFeed = async (feed) => {
     const loadingInstance = ElLoading.service({
       lock: true,
       text: '正在删除...',
-      background: 'rgba(0, 0, 0, 0.7)'
+      background: 'var(--theme-backdrop)'
     })
 
     try {
@@ -1441,9 +1522,42 @@ const deleteFeed = async (feed) => {
   }
 }
 
+const hoverPreviewKey = ref('')
+let hoverPreviewTimer = null
+const mediaHoverKey = (feed, index) => `${feed?.id || feed?.time || 'feed'}:${index}`
+const mediaPreviewSource = (media) =>
+  media?.raw || media?.videoUrl || media?.videourl || media?.url || ''
+const clearHoverPreviewTimer = () => {
+  if (!hoverPreviewTimer) return
+  clearTimeout(hoverPreviewTimer)
+  hoverPreviewTimer = null
+}
+const canUseHoverPreview = () =>
+  !privacyStore.privacyMode &&
+  !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches &&
+  !!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches
+const scheduleMediaHoverPreview = (feed, media, index) => {
+  clearHoverPreviewTimer()
+  if (media?.type !== 'video' || !mediaPreviewSource(media) || !canUseHoverPreview()) return
+  const key = mediaHoverKey(feed, index)
+  hoverPreviewTimer = window.setTimeout(() => {
+    hoverPreviewTimer = null
+    hoverPreviewKey.value = key
+  }, 520)
+}
+const stopMediaHoverPreview = (feed, index) => {
+  clearHoverPreviewTimer()
+  if (hoverPreviewKey.value === mediaHoverKey(feed, index)) hoverPreviewKey.value = ''
+}
+
 // 预览媒体（图片/视频）—— 统一走 MediaPreview，图视频混合切换
-const previewMedia = async (media, index, feed = null) => {
+const previewMedia = async (media, index, feed = null, event = null) => {
   if (!media || !Array.isArray(media) || media.length === 0) return
+  const sourceElement = event?.currentTarget
+  const rect = sourceElement?.getBoundingClientRect?.()
+  previewSourceRect.value = rect
+    ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+    : null
   previewItems.value = media.map((m) => ({
     type: m.type === 'video' ? 'video' : 'image',
     src: m.type === 'video' ? '' : m.bigUrl || m.url,
@@ -1455,6 +1569,11 @@ const previewMedia = async (media, index, feed = null) => {
   }))
   previewIndex.value = Math.max(0, index)
   previewVisible.value = true
+}
+
+const handlePreviewVisibility = (visible) => {
+  previewVisible.value = visible
+  if (!visible) previewSourceRect.value = null
 }
 
 // 视频 src 异步解析（feeds 列表里的视频通常已经有 url，直接返回即可；好友视频需走 floatview）
@@ -2132,6 +2251,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  clearHoverPreviewTimer()
+  hoverPreviewKey.value = ''
   // 清理观察器
   if (observer) {
     observer.disconnect()
@@ -2150,58 +2271,9 @@ onUnmounted(() => {
 .photo-module {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   height: 100%;
-  background: rgba(0, 0, 0, 0.15);
-}
-
-.module-header {
-  padding: 16px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%);
-  flex-shrink: 0;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.header-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.title-section {
-  display: flex;
-  align-items: center;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.refresh-btn {
-  color: rgba(255, 255, 255, 0.7) !important;
-  font-size: 13px !important;
-  padding: 6px 12px !important;
-  transition: all 0.2s ease;
-
-  &:hover {
-    color: rgba(255, 255, 255, 0.9) !important;
-    background: rgba(255, 255, 255, 0.1) !important;
-  }
-
-  .el-icon {
-    margin-right: 4px;
-  }
-}
-
-.module-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0;
-  line-height: 1.3;
-  letter-spacing: -0.02em;
+  background: color-mix(in srgb, var(--theme-canvas) 82%, transparent);
 }
 
 .module-content {
@@ -2227,6 +2299,14 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0;
+  width: min(100%, 1040px);
+  margin-inline: auto;
+}
+
+.feed-card.is-compact-card {
+  width: 100%;
+  max-width: none;
+  align-self: stretch;
 }
 
 /* 老的 timeline-line 不再用（tl-container::before 替代） */
@@ -2248,7 +2328,7 @@ onUnmounted(() => {
   justify-content: center;
   gap: 8px;
   padding: 20px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-text-muted);
   font-size: 13px;
 
   .loading-icon {
@@ -2262,7 +2342,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-subtle);
   font-size: 12px;
 }
 
@@ -2291,17 +2371,17 @@ onUnmounted(() => {
 }
 
 .friend-photo-card {
-  border-radius: 12px;
+  border-radius: var(--theme-radius-lg);
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition: var(--ds-transition-all);
 
   &:hover {
     transform: translateY(-2px);
-    border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    border-color: var(--theme-border);
+    box-shadow: var(--theme-shadow-md);
 
     .card-image {
       transform: scale(1.03);
@@ -2329,7 +2409,7 @@ onUnmounted(() => {
   position: relative;
   aspect-ratio: 1;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--theme-surface-soft);
 }
 
 .card-preview-trigger {
@@ -2344,7 +2424,7 @@ onUnmounted(() => {
 
   &:focus-visible {
     outline: none;
-    box-shadow: inset 0 0 0 3px var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    box-shadow: inset 0 0 0 3px var(--theme-focus-ring);
   }
 }
 
@@ -2360,8 +2440,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.2);
+  background: var(--theme-surface-soft);
+  color: var(--theme-text-disabled);
   font-size: 32px;
 }
 
@@ -2372,12 +2452,12 @@ onUnmounted(() => {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.5);
+  background: color-mix(in srgb, var(--theme-backdrop) 76%, transparent);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  color: var(--theme-text-inverse);
   font-size: 14px;
 }
 
@@ -2412,14 +2492,14 @@ onUnmounted(() => {
   height: 22px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--theme-border-subtle);
   flex-shrink: 0;
 }
 
 .card-nick {
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2441,19 +2521,19 @@ onUnmounted(() => {
   height: 28px;
   margin-top: 8px;
   padding: 0 10px;
-  color: rgba(96, 165, 250, 0.9);
-  background: rgba(96, 165, 250, 0.1);
-  border: 1px solid rgba(96, 165, 250, 0.2);
-  border-radius: 7px;
+  color: var(--theme-brand-text);
+  background: var(--theme-brand-soft);
+  border: 1px solid var(--theme-brand-border);
+  border-radius: var(--theme-radius-sm);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--ds-transition-all);
 
   &:hover:not(:disabled) {
-    color: #fff;
-    background: rgba(96, 165, 250, 0.18);
-    border-color: rgba(96, 165, 250, 0.32);
+    color: var(--theme-text-inverse);
+    background: var(--theme-brand);
+    border-color: var(--theme-brand-hover);
   }
 
   &:disabled {
@@ -2464,8 +2544,8 @@ onUnmounted(() => {
 
 .card-album {
   font-size: 11px;
-  color: rgba(96, 165, 250, 0.7);
-  background: rgba(96, 165, 250, 0.08);
+  color: var(--theme-info-text);
+  background: var(--theme-info-soft);
   padding: 1px 6px;
   border-radius: 4px;
   white-space: nowrap;
@@ -2476,7 +2556,7 @@ onUnmounted(() => {
 
 .card-time {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--theme-text-subtle);
   white-space: nowrap;
 }
 
@@ -2485,29 +2565,32 @@ onUnmounted(() => {
   grid-column: 1 / -1;
 }
 
-.delete-btn {
-  color: rgba(245, 108, 108, 0.8) !important;
-  padding: 2px 6px !important;
-  font-size: 12px !important;
-  height: auto !important;
-  min-height: unset !important;
-
-  &:hover {
-    color: #f56c6c !important;
-    background: rgba(245, 108, 108, 0.1) !important;
-  }
-
-  .el-icon {
-    font-size: 13px;
-    margin-right: 3px;
-  }
-}
-
 .feed-header-actions {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+
+.feed-more-btn {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  color: var(--theme-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--theme-radius-sm);
+  cursor: pointer;
+  transition: var(--ds-transition-all);
+
+  &:hover,
+  &:focus-visible {
+    color: var(--theme-text-primary);
+    background: var(--theme-surface-hover);
+    border-color: var(--theme-border-subtle);
+  }
 }
 
 .feed-download-btn {
@@ -2562,9 +2645,9 @@ onUnmounted(() => {
       left: 50%;
       transform: translate(-50%, -50%);
       font-size: 18px;
-      color: rgba(255, 255, 255, 0.9);
+      color: var(--theme-text-inverse);
       z-index: 2;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+      text-shadow: 0 2px 4px var(--theme-backdrop);
     }
 
     /* 隐私模式样式 - 视频 */
@@ -2594,6 +2677,18 @@ onUnmounted(() => {
     .media-privacy-overlay {
       opacity: 1;
     }
+  }
+}
+
+.feed-card.is-compact-card {
+  .media-row {
+    align-items: flex-start;
+  }
+
+  .media-item,
+  .media-more {
+    width: clamp(112px, 13vw, 144px);
+    height: clamp(112px, 13vw, 144px);
   }
 }
 
@@ -2646,8 +2741,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.3);
-  color: rgba(255, 255, 255, 0.4);
+  background: color-mix(in srgb, var(--theme-backdrop) 56%, transparent);
+  color: var(--theme-text-muted);
   font-size: 24px;
 }
 
@@ -2657,36 +2752,36 @@ onUnmounted(() => {
   justify-content: center;
   width: 100%;
   height: 100%;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--theme-text-disabled);
   font-size: 20px;
 }
 
 .media-more-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--theme-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 24px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--theme-text-inverse);
   backdrop-filter: blur(2px);
 }
 
 /* 隐私模式样式 + 多选状态 - 动态卡片 */
 .feed-card {
-  /* 多选选中态：蓝色高亮（覆盖 .tl-card 默认背景） */
+  /* 多选选中态使用品牌色，避免与信息链接的蓝色混淆。 */
   &.selected {
-    background: rgba(96, 165, 250, 0.1);
-    border-color: var(--ds-accent-blue-border);
+    background: var(--theme-brand-soft);
+    border-color: var(--theme-brand-border);
   }
 
   /* 隐私模式下确保选择框可见 */
   &.privacy-mode {
     .selection-checkbox {
       opacity: 1;
-      background: rgba(255, 255, 255, 0.9);
+      background: var(--theme-text-primary);
     }
   }
 }
@@ -2700,29 +2795,29 @@ onUnmounted(() => {
   padding: 6px 10px;
   margin-bottom: 8px;
   appearance: none;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  border-radius: 6px;
+  background: var(--theme-info-soft);
+  border: 1px solid var(--theme-info-border);
+  border-radius: var(--theme-radius-sm);
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: var(--ds-transition-all);
 
   &:hover {
-    background: rgba(59, 130, 246, 0.15);
-    border-color: rgba(59, 130, 246, 0.3);
+    background: color-mix(in srgb, var(--theme-info-soft) 70%, var(--theme-surface-hover));
+    border-color: var(--theme-info);
     transform: translateX(2px);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline: 2px solid var(--theme-focus);
     outline-offset: 2px;
   }
 
   .album-icon {
     font-size: 14px;
-    color: #60a5fa;
+    color: var(--theme-info);
     flex-shrink: 0;
   }
 
@@ -2730,27 +2825,27 @@ onUnmounted(() => {
     flex: 1;
     font-size: 13px;
     font-weight: 500;
-    color: #93c5fd;
+    color: var(--theme-info-text);
     line-height: 1.4;
   }
 
   .link-icon {
     font-size: 12px;
-    color: rgba(96, 165, 250, 0.6);
+    color: var(--theme-info);
     flex-shrink: 0;
     transition: transform 0.2s ease;
   }
 
   &:hover .link-icon {
     transform: translateX(2px);
-    color: #60a5fa;
+    color: var(--theme-info-text);
   }
 }
 
 .feed-text {
   font-size: 13px;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-primary);
   word-break: break-word;
   margin-bottom: 8px;
   white-space: pre-wrap;
@@ -2823,7 +2918,7 @@ onUnmounted(() => {
   line-height: 1;
 
   &.active {
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--theme-brand-accent);
 
     .action-icon {
       filter: brightness(1.2);
@@ -2836,7 +2931,7 @@ onUnmounted(() => {
   }
 
   .action-count {
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--theme-text-muted);
     font-size: 11px;
   }
 }
@@ -2848,9 +2943,9 @@ onUnmounted(() => {
   gap: 6px;
   padding: 6px 8px;
   margin-bottom: 6px;
-  background: rgba(59, 130, 246, 0.08);
-  border-radius: 4px;
-  border-left: 2px solid #60a5fa;
+  background: var(--theme-info-soft);
+  border-radius: var(--theme-radius-xs);
+  border-left: 2px solid var(--theme-info);
 }
 
 .like-icon {
@@ -2863,12 +2958,12 @@ onUnmounted(() => {
 .likes-content {
   flex: 1;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-primary);
   line-height: 1.4;
 }
 
 .like-name {
-  color: #60a5fa;
+  color: var(--theme-info);
   font-weight: 500;
   margin-right: 3px;
   padding: 0;
@@ -2878,16 +2973,16 @@ onUnmounted(() => {
   cursor: pointer;
 
   &:hover {
-    color: #93c5fd;
+    color: var(--theme-info-text);
   }
 
   &.is-me {
-    color: #85ce61;
+    color: var(--theme-success);
   }
 }
 
 .like-suffix {
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--theme-text-secondary);
   margin-left: 3px;
 }
 
@@ -2900,232 +2995,17 @@ onUnmounted(() => {
   height: 18px;
   font-size: 11px;
   font-weight: 500;
-  color: rgba(96, 165, 250, 0.85);
-  background: rgba(96, 165, 250, 0.08);
-  border: 1px solid rgba(96, 165, 250, 0.18);
-  border-radius: 999px;
+  color: var(--theme-info-text);
+  background: var(--theme-info-soft);
+  border: 1px solid var(--theme-info-border);
+  border-radius: var(--theme-radius-pill);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--ds-transition-all);
 
   &:hover {
-    color: #93c5fd;
-    background: rgba(96, 165, 250, 0.15);
+    color: var(--theme-text-inverse);
+    background: var(--theme-info-strong);
   }
-}
-
-/* 评论列表：作为 .tl-footer 的 flex 子项需要强占满整行，否则会被推到右侧错位 */
-.feed-comments {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 8px;
-  width: 100%;
-  flex-basis: 100%;
-  margin-top: 6px;
-}
-
-.comment-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.comment-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-
-.comment-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  cursor: pointer;
-  transition: transform 0.2s ease;
-  border: 2px solid rgba(96, 165, 250, 0.3);
-}
-
-.comment-avatar:hover {
-  transform: scale(1.1);
-  border-color: rgba(96, 165, 250, 0.6);
-}
-
-.comment-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.comment-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.comment-author {
-  color: #60a5fa;
-  font-weight: 500;
-  font-size: 12px;
-  cursor: help;
-  transition: color 0.2s ease;
-}
-
-.comment-author:hover {
-  color: #93c5fd;
-}
-
-.comment-time {
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 11px;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-/* 评论者设备：从 shuoshuo API 富化得到，仅匹配上时才显示 */
-.comment-device {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: rgba(255, 255, 255, 0.35);
-  font-size: 10px;
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.comment-text-content {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.comment-text {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-/* 评论回复列表 */
-.comment-responses {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-left: 40px;
-  margin-top: 4px;
-}
-
-.response-row {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-}
-
-.response-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  cursor: pointer;
-  transition: transform 0.2s ease;
-  border: 1.5px solid rgba(147, 197, 253, 0.3);
-}
-
-.response-avatar:hover {
-  transform: scale(1.1);
-  border-color: rgba(147, 197, 253, 0.6);
-}
-
-.response-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.response-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.response-author {
-  color: #93c5fd;
-  font-weight: 500;
-  font-size: 11px;
-  cursor: help;
-  transition: color 0.2s ease;
-}
-
-.response-author:hover {
-  color: #bfdbfe;
-}
-
-.response-time {
-  color: rgba(255, 255, 255, 0.35);
-  font-size: 10px;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.response-text-content {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.reply-btn {
-  padding: 0 3px !important;
-  height: auto !important;
-  min-height: unset !important;
-  font-size: 10px !important;
-  color: rgba(255, 255, 255, 0.5) !important;
-
-  &:hover {
-    color: rgba(255, 255, 255, 0.8) !important;
-  }
-}
-
-/* 评论输入框 */
-.comment-input-wrapper {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.comment-input {
-  margin-bottom: 6px;
-
-  :deep(.el-textarea__inner) {
-    background: rgba(0, 0, 0, 0.3);
-    border-color: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 12px;
-    padding: 6px 8px;
-    min-height: 50px !important;
-
-    &:focus {
-      border-color: #3b82f6;
-      background: rgba(0, 0, 0, 0.4);
-    }
-
-    &::placeholder {
-      color: rgba(255, 255, 255, 0.4);
-    }
-  }
-}
-
-.comment-input-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
 }
 
 /* 响应式设计 */
@@ -3150,41 +3030,41 @@ onUnmounted(() => {
   height: 24px;
   padding: 0;
   appearance: none;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid var(--theme-border-strong);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--theme-surface-overlay);
   backdrop-filter: blur(10px);
-  transition: all 0.2s ease;
+  transition: var(--ds-transition-all);
   margin-right: 12px;
   margin-top: 2px;
 
   &:hover {
-    border-color: var(--qz-active, #fb923c);
-    background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
+    border-color: var(--theme-brand-accent);
+    background: var(--theme-brand-soft);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+    outline: 2px solid var(--theme-focus);
     outline-offset: 2px;
   }
 
   .selected-icon {
-    color: var(--qz-active, #fb923c);
+    color: var(--theme-brand-accent);
     font-size: 18px;
   }
 }
 
-/* 底部悬浮 pill 工具栏：玻璃 + 蓝色 ring，居中浮在底部 */
+/* 底部悬浮 pill 工具栏：沿用品牌橙的选择语义。 */
 .floating-toolbar {
   position: fixed;
   bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1000;
+  z-index: var(--theme-z-popover);
   pointer-events: none; // 容器透传，pill 自己接事件
 
   .toolbar-pill {
@@ -3193,14 +3073,17 @@ onUnmounted(() => {
     align-items: center;
     gap: 18px;
     padding: 8px 8px 8px 16px;
-    background: rgba(20, 22, 30, 0.78);
-    backdrop-filter: blur(24px);
-    border: 1px solid rgba(96, 165, 250, 0.18);
-    border-radius: 999px;
+    background:
+      linear-gradient(145deg, var(--theme-material-highlight), transparent 38%),
+      var(--theme-material-regular);
+    -webkit-backdrop-filter: blur(var(--theme-material-blur))
+      saturate(var(--theme-material-saturation));
+    backdrop-filter: blur(var(--theme-material-blur)) saturate(var(--theme-material-saturation));
+    border: 1px solid var(--theme-material-border);
+    border-radius: var(--theme-radius-pill);
     box-shadow:
-      0 12px 40px rgba(0, 0, 0, 0.45),
-      0 0 0 1px rgba(96, 165, 250, 0.08),
-      0 0 24px rgba(96, 165, 250, 0.12);
+      inset 0 1px 0 var(--theme-material-highlight),
+      var(--theme-shadow-lg);
   }
 }
 
@@ -3210,23 +3093,23 @@ onUnmounted(() => {
   gap: 8px;
 
   .check-icon {
-    color: #60a5fa;
+    color: var(--theme-brand-accent);
   }
 }
 
 .selected-count {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-secondary);
   white-space: nowrap;
 
   strong {
-    color: #fff;
+    color: var(--theme-text-primary);
     font-size: 14px;
     font-weight: 700;
   }
 
   .dim {
-    color: rgba(255, 255, 255, 0.45);
+    color: var(--theme-text-subtle);
     font-weight: 400;
   }
 }
@@ -3245,17 +3128,17 @@ onUnmounted(() => {
   height: 30px;
   font-size: 12px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--theme-text-secondary);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--theme-radius-pill);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--ds-transition-all);
   white-space: nowrap;
 
   &:hover:not(:disabled) {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.08);
+    color: var(--theme-text-primary);
+    background: var(--theme-surface-hover);
   }
 
   &:disabled {
@@ -3264,22 +3147,23 @@ onUnmounted(() => {
   }
 
   &.tb-btn-primary:not(:disabled) {
-    color: #60a5fa;
-    background: rgba(96, 165, 250, 0.12);
-    border-color: rgba(96, 165, 250, 0.22);
+    color: var(--theme-text-inverse);
+    background: var(--theme-brand);
+    border-color: var(--theme-brand);
 
     &:hover {
-      color: #93c5fd;
-      background: rgba(96, 165, 250, 0.2);
+      color: var(--theme-text-inverse);
+      background: var(--theme-brand-hover);
+      border-color: var(--theme-brand-hover);
     }
   }
 
   &.tb-btn-danger:not(:disabled) {
-    color: #f87171;
+    color: var(--theme-danger);
 
     &:hover {
-      color: #fca5a5;
-      background: rgba(248, 113, 113, 0.12);
+      color: var(--theme-danger-text);
+      background: var(--theme-danger-soft);
     }
   }
 
@@ -3292,7 +3176,7 @@ onUnmounted(() => {
 .tb-divider {
   width: 1px;
   height: 18px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--theme-border);
   margin: 0 4px;
 }
 
@@ -3311,17 +3195,19 @@ onUnmounted(() => {
 /* 删除进度对话框 */
 .delete-progress-dialog {
   :deep(.el-dialog) {
-    background: rgba(30, 30, 30, 0.95);
+    background: var(--theme-surface-overlay);
     backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--theme-border);
+    border-radius: var(--theme-radius-xl);
+    box-shadow: var(--theme-shadow-lg);
   }
 
   :deep(.el-dialog__header) {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--theme-border-subtle);
   }
 
   :deep(.el-dialog__footer) {
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--theme-border-subtle);
   }
 }
 
@@ -3335,7 +3221,7 @@ onUnmounted(() => {
   align-items: center;
   margin-bottom: 12px;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--theme-text-secondary);
 }
 
 .progress-text {
@@ -3345,26 +3231,26 @@ onUnmounted(() => {
 .progress-percentage {
   font-size: 18px;
   font-weight: 600;
-  color: #409eff;
+  color: var(--theme-brand-accent);
 }
 
 .progress-failed {
   margin-top: 12px;
   padding: 8px 12px;
-  background: rgba(245, 108, 108, 0.1);
-  border-left: 3px solid #f56c6c;
-  border-radius: 4px;
-  color: #f56c6c;
+  background: var(--theme-danger-soft);
+  border-left: 3px solid var(--theme-danger);
+  border-radius: var(--theme-radius-xs);
+  color: var(--theme-danger-text);
   font-size: 13px;
 }
 
 .progress-current {
   margin-top: 12px;
   padding: 8px 12px;
-  background: rgba(64, 158, 255, 0.1);
-  border-left: 3px solid #409eff;
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.7);
+  background: var(--theme-info-soft);
+  border-left: 3px solid var(--theme-info);
+  border-radius: var(--theme-radius-xs);
+  color: var(--theme-info-text);
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3375,38 +3261,59 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  color: rgba(255, 255, 255, 0.7);
-  transition: all 0.2s ease;
+  color: var(--theme-text-secondary);
+  transition: var(--ds-transition-all);
 
   &:hover {
-    color: #409eff;
+    color: var(--theme-brand-accent);
   }
 }
 
 /* 视频预览对话框样式 */
-:deep(.video-preview-dialog) {
-  .el-dialog {
-    background: rgba(30, 30, 30, 0.95);
-    border-radius: 12px;
-    backdrop-filter: blur(20px);
-  }
+:deep(.media-dialog-overlay .el-overlay-dialog) {
+  display: flex;
+  overflow: hidden;
+  padding: 16px;
+  align-items: center;
+  justify-content: center;
+}
+
+:deep(.video-preview-dialog.el-dialog) {
+  display: flex;
+  max-height: calc(100dvh - 32px);
+  margin: 0 !important;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--theme-surface-overlay);
+  border: 1px solid var(--theme-border);
+  border-radius: var(--theme-radius-xl);
+  -webkit-backdrop-filter: blur(var(--theme-material-blur-strong))
+    saturate(var(--theme-material-saturation));
+  backdrop-filter: blur(var(--theme-material-blur-strong))
+    saturate(var(--theme-material-saturation));
+  box-shadow: var(--theme-shadow-lg);
 
   .el-dialog__header {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    flex: 0 0 auto;
+    border-bottom: 1px solid var(--theme-border-subtle);
     padding: 16px 20px;
 
     .el-dialog__title {
-      color: #ffffff;
+      color: var(--theme-text-primary);
       font-weight: 600;
     }
   }
 
   .el-dialog__body {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
     padding: 16px 20px;
   }
 
   .el-dialog__footer {
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    flex: 0 0 auto;
+    border-top: 1px solid var(--theme-border-subtle);
     padding: 12px 20px;
   }
 }
@@ -3420,10 +3327,11 @@ onUnmounted(() => {
 .video-player-container {
   position: relative;
   width: 100%;
-  background: #000;
-  border-radius: 8px;
+  background: var(--theme-canvas);
+  border-radius: var(--theme-radius-md);
   overflow: hidden;
-  max-height: 450px;
+  height: min(56.25vw, calc(100dvh - 184px), 450px);
+  min-height: min(220px, calc(100dvh - 184px));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3431,8 +3339,9 @@ onUnmounted(() => {
 
 .video-player {
   width: 100%;
-  max-height: 500px;
-  background: #000;
+  height: 100%;
+  object-fit: contain;
+  background: var(--theme-canvas);
   display: block;
 }
 
@@ -3447,14 +3356,14 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
+  background: var(--theme-backdrop);
+  color: var(--theme-text-inverse);
   gap: 12px;
-  z-index: 10;
+  z-index: var(--theme-z-sticky);
 }
 
 .video-loading-overlay {
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--theme-privacy-backdrop);
 }
 
 .loading-spinner {
@@ -3463,7 +3372,7 @@ onUnmounted(() => {
 }
 
 .video-error-overlay {
-  background: rgba(200, 0, 0, 0.6);
+  background: color-mix(in srgb, var(--theme-danger-soft) 55%, var(--theme-backdrop));
 
   .error-actions {
     display: flex;
@@ -3484,6 +3393,71 @@ onUnmounted(() => {
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 720px) {
+  .timeline-container {
+    padding-inline: var(--theme-space-4);
+  }
+
+  .feed-card.is-compact-card {
+    width: 100%;
+
+    .media-item,
+    .media-more {
+      width: clamp(96px, 30vw, 124px);
+      height: clamp(96px, 30vw, 124px);
+    }
+  }
+
+  .floating-toolbar {
+    right: var(--theme-space-3);
+    bottom: var(--theme-space-3);
+    left: var(--theme-space-3);
+    transform: none;
+
+    .toolbar-pill {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      width: 100%;
+      border-radius: var(--theme-radius-lg);
+    }
+  }
+
+  .toolbar-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-icon,
+  .loading-spinner,
+  .toolbar-enter-active,
+  .toolbar-leave-active {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .friend-photo-card:hover,
+  .feed-album-title:hover {
+    transform: none;
+  }
+}
+</style>
+
+<style lang="scss">
+.feed-actions-popper .feed-delete-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--theme-danger-text);
+
+  &:hover,
+  &:focus {
+    color: var(--theme-danger);
+    background: var(--theme-danger-soft);
   }
 }
 </style>

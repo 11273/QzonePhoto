@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    width="420px"
+    width="min(420px, calc(100vw - 32px))"
     align-center
     append-to-body
     modal-class="feedback-dialog-overlay"
@@ -23,21 +23,25 @@
     <div class="fd-body">
       <div class="fd-type-list" role="radiogroup" aria-label="反馈类型">
         <button
-          v-for="option in typeOptions"
+          v-for="(option, optionIndex) in typeOptions"
           :key="option.value"
           class="fd-type-btn"
           :class="{ active: form.type === option.value }"
           type="button"
           role="radio"
           :aria-checked="form.type === option.value"
+          :tabindex="form.type === option.value ? 0 : -1"
           @click="form.type = option.value"
+          @keydown="handleTypeKeydown($event, optionIndex)"
         >
           <el-icon><component :is="option.icon" /></el-icon>
           <span>{{ option.label }}</span>
         </button>
       </div>
 
+      <label class="fd-label" for="feedback-content">反馈内容</label>
       <el-input
+        id="feedback-content"
         v-model.trim="form.content"
         class="fd-content"
         type="textarea"
@@ -58,18 +62,24 @@
         </span>
       </label>
       <transition name="fd-slide">
-        <div v-if="smartHint" class="fd-smart-hint">
+        <div v-if="smartHint" class="fd-smart-hint" role="status" aria-live="polite">
           {{ smartHint }}
         </div>
       </transition>
 
-      <button class="fd-fold" type="button" @click="extraExpanded = !extraExpanded">
+      <button
+        class="fd-fold"
+        type="button"
+        :aria-expanded="extraExpanded"
+        aria-controls="feedback-extra-fields"
+        @click="extraExpanded = !extraExpanded"
+      >
         <span>联系方式和附带信息</span>
         <el-icon :class="{ expanded: extraExpanded }"><ArrowDown /></el-icon>
       </button>
 
       <transition name="fd-slide">
-        <div v-if="extraExpanded" class="fd-extra">
+        <div v-if="extraExpanded" id="feedback-extra-fields" class="fd-extra">
           <label class="fd-label">联系方式，可不填</label>
           <el-input
             v-model.trim="form.contact"
@@ -83,7 +93,7 @@
               <dd>{{ item.value }}</dd>
             </template>
           </dl>
-          <div v-if="recentErrors.length" class="fd-errors">
+          <div v-if="attachLogs && recentErrors.length" class="fd-errors">
             <div class="fd-errors-title">最近错误</div>
             <div v-for="item in recentErrors" :key="item.id" class="fd-error-item">
               {{ item.message }}
@@ -120,7 +130,7 @@
   </el-dialog>
 
   <transition name="feedback-toast">
-    <div v-if="feedbackNotice.visible" class="feedback-toast-card">
+    <div v-if="feedbackNotice.visible" class="feedback-toast-card" role="status" aria-live="polite">
       <div class="feedback-toast-main">
         <div class="feedback-toast-badge" :class="`is-${feedbackNotice.state}`">
           <span v-if="feedbackNotice.state === 'pending'" class="feedback-toast-spinner"></span>
@@ -253,15 +263,19 @@ const smartHint = computed(() => {
   return '如果愿意，可以补充一下发生位置，这样更容易定位。'
 })
 
-const buildFeedbackEnv = () => ({
-  ...Object.fromEntries(envItems.value.map((item) => [item.key, item.value])),
-  recentErrors: recentErrors.value.map(({ time, type, message, source }) => ({
-    time,
-    type,
-    message,
-    source
-  }))
-})
+const buildFeedbackEnv = () => {
+  const env = Object.fromEntries(envItems.value.map((item) => [item.key, item.value]))
+  if (!attachLogs.value) return env
+  return {
+    ...env,
+    recentErrors: recentErrors.value.map(({ time, type, message, source }) => ({
+      time,
+      type,
+      message,
+      source
+    }))
+  }
+}
 
 const buildLogExtraLines = () =>
   recentErrors.value.map((item) =>
@@ -282,13 +296,30 @@ const buildFeedbackText = () => {
   envItems.value.forEach((item) => {
     lines.push(`- ${item.label}：${item.value}`)
   })
-  if (recentErrors.value.length) {
+  if (attachLogs.value && recentErrors.value.length) {
     lines.push('', '### 最近错误', '')
     recentErrors.value.forEach((item) => {
       lines.push(`- ${item.message}`)
     })
   }
   return lines.join('\n')
+}
+
+const handleTypeKeydown = (event, currentIndex) => {
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+    return
+  }
+  event.preventDefault()
+  let nextIndex = currentIndex
+  if (event.key === 'Home') nextIndex = 0
+  else if (event.key === 'End') nextIndex = typeOptions.length - 1
+  else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    nextIndex = (currentIndex - 1 + typeOptions.length) % typeOptions.length
+  } else {
+    nextIndex = (currentIndex + 1) % typeOptions.length
+  }
+  form.type = typeOptions[nextIndex].value
+  event.currentTarget.parentElement?.querySelectorAll('[role="radio"]')?.[nextIndex]?.focus()
 }
 
 const openIssueUrl = async (issueUrl = '') => {
@@ -523,14 +554,14 @@ onUnmounted(() => {
   width: min(420px, calc(100vw - 32px));
   max-height: calc(100vh - 72px);
   overflow: hidden;
-  background: #191a20;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.5);
+  background: var(--theme-surface-overlay);
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-shadow-lg);
   backdrop-filter: none;
 }
 
 :global(.feedback-dialog-overlay) {
-  background: rgba(0, 0, 0, 0.68);
+  background: var(--theme-backdrop);
   backdrop-filter: none;
 }
 
@@ -561,10 +592,10 @@ onUnmounted(() => {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  color: #fff;
-  background: linear-gradient(135deg, #f15a24, #60a5fa);
-  border-radius: 12px;
-  box-shadow: 0 10px 24px rgba(96, 165, 250, 0.18);
+  color: var(--theme-text-inverse);
+  background: linear-gradient(135deg, var(--theme-brand-hover), var(--theme-brand));
+  border-radius: var(--theme-radius-lg);
+  box-shadow: var(--theme-shadow-brand);
 }
 
 .fd-heading {
@@ -609,7 +640,7 @@ onUnmounted(() => {
   color: var(--ds-text-secondary);
   font-size: 12px;
   font-weight: 700;
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--theme-surface-soft);
   border: 1px solid var(--ds-border-faint);
   border-radius: 10px;
   cursor: pointer;
@@ -622,20 +653,20 @@ onUnmounted(() => {
 
 .fd-type-btn:hover {
   color: var(--ds-text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--theme-surface-hover);
   border-color: var(--ds-border-light);
 }
 
 .fd-type-btn.active {
-  color: var(--qz-active-text, #fed7aa);
-  background: var(--qz-active-soft, rgba(249, 115, 22, 0.14));
-  border-color: var(--qz-active-border, rgba(251, 146, 60, 0.38));
+  color: var(--qz-active-text);
+  background: var(--theme-brand-soft);
+  border-color: var(--theme-brand-border);
 }
 
 :deep(.fd-content .el-textarea__inner),
 :deep(.el-input__wrapper) {
   color: var(--ds-text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--theme-surface-soft);
   border-radius: 12px;
   box-shadow: 0 0 0 1px var(--ds-border-light) inset;
   transition:
@@ -645,13 +676,15 @@ onUnmounted(() => {
 
 :deep(.fd-content .el-textarea__inner:hover),
 :deep(.el-input__wrapper:hover) {
-  background: rgba(255, 255, 255, 0.055);
+  background: var(--theme-surface-hover);
 }
 
 :deep(.fd-content .el-textarea__inner:focus),
 :deep(.el-input__wrapper.is-focus) {
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 0 0 1px var(--qz-active, #fb923c) inset;
+  background: var(--theme-surface-hover);
+  box-shadow:
+    0 0 0 1px var(--theme-brand-accent) inset,
+    0 0 0 3px var(--theme-focus-ring);
 }
 
 :deep(.fd-content .el-textarea__inner) {
@@ -678,7 +711,7 @@ onUnmounted(() => {
   color: var(--ds-text-secondary);
   font-size: 12px;
   line-height: 1.35;
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--theme-surface-soft);
   border: 1px solid var(--ds-border-faint);
   border-radius: 10px;
   cursor: pointer;
@@ -688,7 +721,7 @@ onUnmounted(() => {
   width: 14px;
   height: 14px;
   margin: 1px 0 0;
-  accent-color: var(--qz-action, #c2410c);
+  accent-color: var(--theme-brand);
 }
 
 .fd-log-option strong,
@@ -705,11 +738,11 @@ onUnmounted(() => {
 .fd-smart-hint {
   margin: -2px 0 8px;
   padding: 7px 9px;
-  color: #bfdbfe;
+  color: var(--theme-info-text);
   font-size: 11px;
   line-height: 1.45;
-  background: rgba(96, 165, 250, 0.08);
-  border: 1px solid rgba(96, 165, 250, 0.14);
+  background: var(--theme-info-soft);
+  border: 1px solid var(--theme-info-border);
   border-radius: 10px;
 }
 
@@ -743,6 +776,8 @@ onUnmounted(() => {
 }
 
 .fd-label {
+  display: block;
+  margin: 0 0 6px;
   color: var(--ds-text-tertiary);
   font-size: 12px;
   font-weight: 650;
@@ -755,7 +790,7 @@ onUnmounted(() => {
   margin: 0;
   padding: 9px 10px;
   font-size: 12px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--theme-surface-soft);
   border: 1px solid var(--ds-border-faint);
   border-radius: 10px;
 }
@@ -776,8 +811,8 @@ onUnmounted(() => {
   gap: 5px;
   padding: 9px 10px;
   font-size: 11px;
-  background: rgba(255, 193, 7, 0.06);
-  border: 1px solid rgba(255, 193, 7, 0.14);
+  background: var(--theme-warning-soft);
+  border: 1px solid var(--theme-warning-border);
   border-radius: 10px;
 }
 
@@ -799,8 +834,8 @@ onUnmounted(() => {
   gap: 12px;
   margin-top: 8px;
   padding: 11px 12px;
-  background: rgba(96, 165, 250, 0.07);
-  border: 1px solid rgba(96, 165, 250, 0.16);
+  background: var(--theme-info-soft);
+  border: 1px solid var(--theme-info-border);
   border-radius: 13px;
 }
 
@@ -825,19 +860,19 @@ onUnmounted(() => {
   height: 30px;
   gap: 4px;
   padding: 0 10px;
-  color: #bfdbfe;
+  color: var(--theme-info-text);
   font-size: 12px;
   font-weight: 750;
-  background: rgba(96, 165, 250, 0.13);
-  border: 1px solid rgba(96, 165, 250, 0.26);
-  border-radius: 999px;
+  background: var(--theme-info-soft);
+  border: 1px solid var(--theme-info-border);
+  border-radius: var(--theme-radius-pill);
   cursor: pointer;
   transition: var(--ds-transition-all);
 }
 
 .fd-link-btn:hover {
-  color: #fff;
-  background: rgba(96, 165, 250, 0.2);
+  color: var(--theme-text-inverse);
+  background: color-mix(in srgb, var(--theme-info-soft) 75%, var(--theme-surface-hover));
 }
 
 :deep(.feedback-dialog-v2) .fd-header {
@@ -854,14 +889,14 @@ onUnmounted(() => {
 
 :deep(.feedback-dialog-v2) .fd-type-btn {
   border: 1px solid var(--ds-border-faint) !important;
-  background: rgba(255, 255, 255, 0.04) !important;
+  background: var(--theme-surface-soft) !important;
   border-radius: 10px !important;
 }
 
 :deep(.feedback-dialog-v2) .fd-type-btn.active {
-  color: var(--qz-active-text, #fed7aa) !important;
-  background: var(--qz-active-soft, rgba(249, 115, 22, 0.14)) !important;
-  border-color: var(--qz-active-border, rgba(251, 146, 60, 0.38)) !important;
+  color: var(--qz-active-text) !important;
+  background: var(--theme-brand-soft) !important;
+  border-color: var(--theme-brand-border) !important;
 }
 
 :deep(.feedback-dialog-v2) .fd-manual {
@@ -890,14 +925,20 @@ onUnmounted(() => {
   position: fixed;
   top: 56px;
   right: 18px;
-  z-index: 3200;
+  z-index: var(--theme-z-toast);
   width: min(320px, calc(100vw - 24px));
   padding: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 18px;
-  background: rgba(24, 25, 31, 0.96);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(14px);
+  border: 1px solid var(--theme-material-border);
+  border-radius: var(--theme-radius-xl);
+  background:
+    linear-gradient(145deg, var(--theme-material-highlight), transparent 38%),
+    var(--theme-material-regular);
+  box-shadow:
+    inset 0 1px 0 var(--theme-material-highlight),
+    var(--theme-shadow-lg);
+  -webkit-backdrop-filter: blur(var(--theme-material-blur))
+    saturate(var(--theme-material-saturation));
+  backdrop-filter: blur(var(--theme-material-blur)) saturate(var(--theme-material-saturation));
 }
 
 .feedback-toast-main {
@@ -918,28 +959,28 @@ onUnmounted(() => {
 }
 
 .feedback-toast-badge.is-pending {
-  color: #bfdbfe;
-  background: rgba(96, 165, 250, 0.14);
-  border-color: rgba(96, 165, 250, 0.24);
+  color: var(--theme-info-text);
+  background: var(--theme-info-soft);
+  border-color: var(--theme-info-border);
 }
 
 .feedback-toast-badge.is-success {
-  color: #d1fae5;
-  background: rgba(52, 211, 153, 0.16);
-  border-color: rgba(52, 211, 153, 0.26);
+  color: var(--theme-success-text);
+  background: var(--theme-success-soft);
+  border-color: var(--theme-success-border);
 }
 
 .feedback-toast-badge.is-error {
-  color: #fde68a;
-  background: rgba(245, 158, 11, 0.14);
-  border-color: rgba(245, 158, 11, 0.22);
+  color: var(--theme-warning-text);
+  background: var(--theme-warning-soft);
+  border-color: var(--theme-warning-border);
 }
 
 .feedback-toast-spinner {
   width: 15px;
   height: 15px;
-  border: 2px solid rgba(191, 219, 254, 0.24);
-  border-top-color: #bfdbfe;
+  border: 2px solid var(--theme-info-border);
+  border-top-color: var(--theme-info-text);
   border-radius: 50%;
   animation: feedback-spin 0.88s linear infinite;
 }
@@ -950,7 +991,7 @@ onUnmounted(() => {
 }
 
 .feedback-toast-title {
-  color: #f3f4f6;
+  color: var(--theme-text-primary);
   font-size: 13px;
   font-weight: 700;
   line-height: 1.25;
@@ -958,7 +999,7 @@ onUnmounted(() => {
 
 .feedback-toast-text {
   margin-top: 5px;
-  color: rgba(229, 231, 235, 0.82);
+  color: var(--theme-text-secondary);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -973,10 +1014,10 @@ onUnmounted(() => {
   justify-content: center;
   height: 28px;
   padding: 0 11px;
-  border: 1px solid rgba(96, 165, 250, 0.28);
-  border-radius: 999px;
-  background: rgba(96, 165, 250, 0.14);
-  color: #dbeafe;
+  border: 1px solid var(--theme-info-border);
+  border-radius: var(--theme-radius-pill);
+  background: var(--theme-info-soft);
+  color: var(--theme-info-text);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -984,8 +1025,8 @@ onUnmounted(() => {
 }
 
 .feedback-toast-link:hover {
-  background: rgba(96, 165, 250, 0.22);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--theme-info-soft) 75%, var(--theme-surface-hover));
+  color: var(--theme-text-inverse);
 }
 
 .feedback-toast-close {
@@ -995,7 +1036,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   flex: 0 0 28px;
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--theme-text-muted);
   background: transparent;
   border: 0;
   border-radius: 9px;
@@ -1004,8 +1045,8 @@ onUnmounted(() => {
 }
 
 .feedback-toast-close:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--theme-text-primary);
+  background: var(--theme-surface-hover);
 }
 
 .feedback-toast-enter-active,

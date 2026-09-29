@@ -31,7 +31,7 @@
 
     <el-dialog
       v-model="albumDialogVisible"
-      width="90%"
+      width="min(1180px, calc(100vw - 32px))"
       :close-on-click-modal="false"
       :close-on-press-escape="true"
       :show-close="true"
@@ -40,7 +40,7 @@
     >
       <template #header="{ close }">
         <div class="dialog-header-custom">
-          <el-button text @click="close">
+          <el-button text aria-label="关闭相册弹窗" title="关闭" @click="close">
             <el-icon><Close /></el-icon>
           </el-button>
         </div>
@@ -126,13 +126,13 @@ const handleAlbumClick = async ({ albumId, albumName }) => {
   min-width: 0;
 }
 :deep(.album-dialog) {
-  margin-top: 10vh;
+  margin-top: max(24px, 6vh);
   .el-dialog {
-    background: rgba(20, 20, 20, 0.95);
+    background: var(--theme-surface-overlay);
     backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--theme-border);
+    border-radius: var(--theme-radius-xl);
+    box-shadow: var(--theme-shadow-lg);
   }
   .el-dialog__header {
     padding: 0;
@@ -148,16 +148,22 @@ const handleAlbumClick = async ({ albumId, albumName }) => {
     right: 16px;
     z-index: 1000;
     .el-button {
-      color: rgba(255, 255, 255, 0.8) !important;
-      background: rgba(0, 0, 0, 0.6) !important;
+      width: var(--theme-control);
+      height: var(--theme-control);
+      color: var(--theme-text-secondary) !important;
+      background: var(--theme-backdrop) !important;
       backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid var(--theme-border);
       padding: 8px !important;
-      border-radius: 8px;
+      border-radius: var(--theme-radius-md);
       &:hover {
-        color: #ffffff !important;
-        background: rgba(0, 0, 0, 0.8) !important;
-        border-color: rgba(255, 255, 255, 0.2);
+        color: var(--theme-text-primary) !important;
+        background: var(--theme-surface-raised) !important;
+        border-color: var(--theme-brand-border);
+      }
+      &:focus-visible {
+        outline: 2px solid var(--theme-focus);
+        outline-offset: 2px;
       }
       .el-icon {
         font-size: 18px;
@@ -166,7 +172,7 @@ const handleAlbumClick = async ({ albumId, albumName }) => {
   }
   .el-dialog__body {
     padding: 0;
-    height: 75vh;
+    height: min(75vh, 760px);
     overflow: hidden;
   }
 }

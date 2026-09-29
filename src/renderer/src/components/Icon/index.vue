@@ -3,7 +3,12 @@
     class="icon-wrapper"
     :class="[size, { clickable: clickable }]"
     :style="iconStyle"
+    :role="clickable ? 'button' : undefined"
+    :tabindex="clickable ? 0 : undefined"
+    :aria-label="clickable ? label || '操作' : undefined"
     @click="handleClick"
+    @keydown.enter="handleKeyboardActivate"
+    @keydown.space.prevent="handleKeyboardActivate"
   >
     <!-- 组件型图标：Element Plus / Lucide / 任意 Vue 组件 -->
     <component :is="icon" v-if="isComponentIcon" :class="iconClass" />
@@ -45,6 +50,10 @@ const props = defineProps({
   clickable: {
     type: Boolean,
     default: false
+  },
+  label: {
+    type: String,
+    default: ''
   },
   // 用于内联SVG
   svgPath: {
@@ -135,6 +144,10 @@ const handleClick = (event) => {
     emit('click', event)
   }
 }
+
+const handleKeyboardActivate = (event) => {
+  if (props.clickable) emit('click', event)
+}
 </script>
 
 <style scoped>
@@ -143,7 +156,10 @@ const handleClick = (event) => {
   align-items: center;
   justify-content: center;
   vertical-align: middle;
-  transition: all 0.2s ease;
+  transition:
+    color var(--ds-dur-fast) var(--ds-ease-soft),
+    opacity var(--ds-dur-fast) var(--ds-ease-soft),
+    background-color var(--ds-dur-fast) var(--ds-ease-soft);
 
   &.mini {
     width: 12px;
@@ -171,7 +187,10 @@ const handleClick = (event) => {
   }
 
   &.clickable {
+    min-width: var(--theme-control-sm);
+    min-height: var(--theme-control-sm);
     cursor: pointer;
+    border-radius: var(--theme-radius-xs);
 
     &:hover {
       opacity: 0.8;
@@ -181,6 +200,22 @@ const handleClick = (event) => {
     &:active {
       transform: scale(0.95);
     }
+
+    &:focus-visible {
+      outline: 2px solid var(--theme-focus);
+      outline-offset: 2px;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-wrapper {
+    transition: none;
+  }
+
+  .icon-wrapper.clickable:hover,
+  .icon-wrapper.clickable:active {
+    transform: none;
   }
 }
 

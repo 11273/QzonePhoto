@@ -89,18 +89,20 @@ const handleEmojiError = (event) => {
   appearance: none;
   border: 0;
   background: transparent;
-  color: #60a5fa;
+  color: var(--theme-info);
   font: inherit;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    color var(--ds-dur-fast) var(--ds-ease-soft),
+    background-color var(--ds-dur-fast) var(--ds-ease-soft);
   padding: 0 2px;
   border-radius: 2px;
 }
 
 .mention-segment:hover {
-  color: #93c5fd;
-  background: rgba(96, 165, 250, 0.1);
+  color: var(--theme-info-text);
+  background: var(--theme-info-soft);
 }
 
 .mention-segment:focus-visible {
@@ -126,7 +128,7 @@ const handleEmojiError = (event) => {
 
 .emoji-fallback {
   display: inline;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--theme-text-muted);
   font-size: 12px;
 }
 </style>

@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    width="580px"
+    width="min(520px, calc(100vw - 32px))"
     :show-close="false"
     :close-on-click-modal="false"
     :close-on-press-escape="true"
@@ -16,7 +16,13 @@
           <el-icon class="header-icon"><Search /></el-icon>
           <span>查找好友空间</span>
         </div>
-        <el-button text class="close-btn" aria-label="关闭查找好友空间" @click="handleClose">
+        <el-button
+          text
+          class="close-btn"
+          aria-label="关闭查找好友空间"
+          title="关闭"
+          @click="handleClose"
+        >
           <el-icon><Close /></el-icon>
         </el-button>
       </div>
@@ -28,6 +34,7 @@
         ref="inputRef"
         v-model="inputUin"
         placeholder="输入 QQ 号 (5-11 位数字)"
+        aria-label="QQ 号"
         size="large"
         maxlength="11"
         clearable
@@ -50,14 +57,20 @@
 
     <!-- 错误提示 -->
     <transition name="fade">
-      <div v-if="errorMsg" class="error-tip">
+      <div v-if="errorMsg" class="error-tip" role="alert" aria-live="assertive">
         <el-icon><WarningFilled /></el-icon>
         <span>{{ errorMsg }}</span>
       </div>
     </transition>
+    <transition name="fade">
+      <div v-if="noticeMsg" class="info-tip" role="status" aria-live="polite">
+        <el-icon><InfoFilled /></el-icon>
+        <span>{{ noticeMsg }}</span>
+      </div>
+    </transition>
 
     <!-- 加载骨架屏 -->
-    <div v-if="loading" class="result-skeleton">
+    <div v-if="loading" class="result-skeleton" role="status" aria-label="正在查询好友资料">
       <el-skeleton animated>
         <template #template>
           <div class="skeleton-hero">
@@ -202,7 +215,7 @@
     </transition>
 
     <!-- 空状态 -->
-    <div v-if="!loading && !cardInfo && !errorMsg" class="empty-state">
+    <div v-if="!loading && !cardInfo && !errorMsg" class="empty-state" role="status">
       <el-icon class="empty-icon"><Search /></el-icon>
       <div class="empty-text">输入任意 QQ 号查询资料并进入其空间</div>
       <div class="empty-sub">支持查询陌生人/好友的公开资料，包括昵称、签名、相册数等</div>
@@ -236,6 +249,7 @@ import { ref, computed, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   WarningFilled,
+  InfoFilled,
   Search,
   User,
   Close,
@@ -260,6 +274,7 @@ const inputRef = ref()
 const inputUin = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
+const noticeMsg = ref('')
 const cardInfo = ref(null)
 const albumCount = ref(null)
 const diskUsedMB = ref(null)
@@ -374,6 +389,7 @@ const onInputChange = (val) => {
   const digits = (val || '').replace(/\D/g, '')
   if (digits !== val) inputUin.value = digits
   errorMsg.value = ''
+  noticeMsg.value = ''
   cardInfo.value = null
   albumCount.value = null
   diskUsedMB.value = null
@@ -394,6 +410,7 @@ const handleQuery = async () => {
 
   loading.value = true
   errorMsg.value = ''
+  noticeMsg.value = ''
   cardInfo.value = null
   albumCount.value = null
   diskUsedMB.value = null
@@ -485,7 +502,7 @@ const handleQuery = async () => {
       commfrd: 0,
       isFriend: false
     }
-    errorMsg.value = '资料未公开，仅可访问相册'
+    noticeMsg.value = '对方没有公开资料，仍可继续查看允许访问的相册。'
   }
 
   loading.value = false
@@ -527,6 +544,7 @@ const reset = () => {
   inputUin.value = ''
   loading.value = false
   errorMsg.value = ''
+  noticeMsg.value = ''
   cardInfo.value = null
   albumCount.value = null
   diskUsedMB.value = null
@@ -548,22 +566,22 @@ const reset = () => {
   gap: 8px;
   font-size: 15px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--theme-text-primary);
 }
 
 .header-icon {
   font-size: 16px;
-  color: #f87171;
+  color: var(--theme-brand-accent);
 }
 
 .close-btn {
-  color: rgba(255, 255, 255, 0.45) !important;
-  padding: 4px !important;
+  color: var(--theme-text-muted);
+  padding: 4px;
 }
 
 .close-btn:hover {
-  color: rgba(255, 255, 255, 0.9) !important;
-  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--theme-text-primary);
+  background: var(--theme-surface-hover);
 }
 
 /* ===== 搜索栏 ===== */
@@ -578,42 +596,44 @@ const reset = () => {
 }
 
 .search-bar :deep(.el-input__wrapper) {
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  background: var(--theme-surface-soft);
+  border-radius: var(--theme-radius-md);
+  box-shadow: inset 0 0 0 1px var(--theme-border);
 }
 
 .search-bar :deep(.el-input__wrapper.is-focus) {
-  box-shadow: inset 0 0 0 1px var(--qz-active, #fb923c);
+  box-shadow:
+    inset 0 0 0 1px var(--theme-brand-accent),
+    0 0 0 3px var(--theme-focus-ring);
 }
 
 .search-bar :deep(.el-input__inner) {
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-text-primary);
   font-size: 14px;
 }
 
 .query-btn {
-  background: var(--qz-action, #c2410c) !important;
-  border: none !important;
-  border-radius: 10px !important;
-  padding: 0 22px !important;
-  font-weight: 600 !important;
-  box-shadow:
-    var(--ds-shadow-md),
-    0 4px 12px rgba(194, 65, 12, 0.25);
-  transition: all 0.2s ease;
+  background: var(--theme-brand);
+  border: none;
+  border-radius: var(--theme-radius-md);
+  padding: 0 22px;
+  font-weight: 600;
+  box-shadow: var(--theme-shadow-brand);
+  transition:
+    color var(--ds-dur-fast) var(--ds-ease-soft),
+    background-color var(--ds-dur-fast) var(--ds-ease-soft),
+    border-color var(--ds-dur-fast) var(--ds-ease-soft),
+    box-shadow var(--ds-dur-fast) var(--ds-ease-soft);
 }
 
 .query-btn:hover:not(:disabled) {
-  filter: brightness(1.08);
-  box-shadow:
-    var(--ds-shadow-md),
-    0 6px 16px rgba(234, 88, 12, 0.32);
+  background: var(--theme-brand-hover);
+  box-shadow: var(--theme-shadow-brand);
 }
 
 .query-btn:disabled {
   opacity: 0.4;
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: var(--theme-surface-disabled);
   box-shadow: none;
 }
 
@@ -625,9 +645,22 @@ const reset = () => {
   margin-top: 14px;
   padding: 10px 14px;
   border-radius: 8px;
-  background: rgba(248, 113, 113, 0.08);
-  border: 1px solid rgba(248, 113, 113, 0.22);
-  color: #f87171;
+  background: var(--theme-danger-soft);
+  border: 1px solid var(--theme-danger-border);
+  color: var(--theme-danger-text);
+  font-size: 13px;
+}
+
+.info-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--theme-info-border);
+  border-radius: var(--theme-radius-md);
+  color: var(--theme-info-text);
+  background: var(--theme-info-soft);
   font-size: 13px;
 }
 
@@ -640,7 +673,7 @@ const reset = () => {
   display: flex;
   align-items: center;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--theme-surface-soft);
   border-radius: 12px;
 }
 
@@ -654,7 +687,7 @@ const reset = () => {
 .skeleton-info {
   margin-top: 16px;
   padding: 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--theme-surface-soft);
   border-radius: 12px;
 }
 
@@ -668,18 +701,13 @@ const reset = () => {
   position: relative;
   border-radius: 14px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--theme-border-subtle);
 }
 
 .hero-bg {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(239, 68, 68, 0.18) 0%,
-    rgba(168, 85, 247, 0.12) 50%,
-    rgba(59, 130, 246, 0.1) 100%
-  );
+  background: linear-gradient(135deg, var(--theme-brand-soft), var(--theme-surface-soft));
   opacity: 0.7;
 }
 
@@ -687,9 +715,11 @@ const reset = () => {
   content: '';
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(circle at 0% 0%, rgba(248, 113, 113, 0.18) 0%, transparent 40%),
-    radial-gradient(circle at 100% 100%, rgba(168, 85, 247, 0.12) 0%, transparent 40%);
+  background: radial-gradient(
+    circle at 0% 0%,
+    color-mix(in srgb, var(--theme-brand-accent) 18%, transparent) 0%,
+    transparent 42%
+  );
 }
 
 .hero-content {
@@ -702,8 +732,8 @@ const reset = () => {
 
 .hero-avatar {
   flex-shrink: 0;
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 2px solid var(--theme-border);
+  box-shadow: var(--theme-shadow-sm);
 }
 
 .hero-info {
@@ -721,7 +751,7 @@ const reset = () => {
 .nick-text {
   font-size: 18px;
   font-weight: 600;
-  color: #fff;
+  color: var(--theme-text-primary);
   line-height: 1.3;
   max-width: 240px;
   overflow: hidden;
@@ -741,21 +771,21 @@ const reset = () => {
 }
 
 .badge.gender-male {
-  background: rgba(96, 165, 250, 0.18);
-  color: #93c5fd;
-  border: 1px solid rgba(96, 165, 250, 0.3);
+  background: var(--theme-info-soft);
+  color: var(--theme-info-text);
+  border: 1px solid var(--theme-info-border);
 }
 
 .badge.gender-female {
-  background: rgba(244, 114, 182, 0.18);
-  color: #f9a8d4;
-  border: 1px solid rgba(244, 114, 182, 0.3);
+  background: var(--theme-danger-soft);
+  color: var(--theme-danger-text);
+  border: 1px solid var(--theme-danger-border);
 }
 
 .badge.vip {
-  background: linear-gradient(135deg, rgba(250, 204, 21, 0.25), rgba(234, 179, 8, 0.18));
-  color: #fde047;
-  border: 1px solid rgba(250, 204, 21, 0.4);
+  background: linear-gradient(135deg, var(--theme-warning-soft), var(--theme-surface-soft));
+  color: var(--theme-warning-text);
+  border: 1px solid var(--theme-warning-border);
   font-weight: 600;
 }
 
@@ -765,22 +795,24 @@ const reset = () => {
   gap: 6px;
   margin-top: 6px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--theme-text-muted);
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   padding: 2px 6px;
   border-radius: 4px;
   margin-left: -6px;
-  transition: all 0.15s ease;
+  transition:
+    color var(--ds-dur-fast) var(--ds-ease-soft),
+    background-color var(--ds-dur-fast) var(--ds-ease-soft);
 }
 
 .hero-uin:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--theme-surface-hover);
+  color: var(--theme-text-secondary);
 }
 
 .hero-uin:focus-visible {
-  outline: 2px solid var(--qz-focus-ring, rgba(251, 146, 60, 0.72));
+  outline: 2px solid var(--theme-focus);
   outline-offset: 2px;
 }
 
@@ -793,11 +825,11 @@ const reset = () => {
   margin-top: 10px;
   padding: 6px 10px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--theme-text-secondary);
   font-style: italic;
   line-height: 1.5;
-  background: rgba(0, 0, 0, 0.18);
-  border-left: 2px solid rgba(248, 113, 113, 0.4);
+  background: var(--theme-surface-soft);
+  border-left: 2px solid var(--theme-brand-border);
   border-radius: 0 6px 6px 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -815,42 +847,44 @@ const reset = () => {
 
 .stat-item {
   padding: 12px 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
   border-radius: 10px;
   text-align: center;
-  transition: all 0.2s ease;
+  transition:
+    background-color var(--ds-dur-fast) var(--ds-ease-soft),
+    border-color var(--ds-dur-fast) var(--ds-ease-soft);
 }
 
 .stat-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: var(--theme-surface-hover);
+  border-color: var(--theme-border);
 }
 
 .stat-num {
   font-size: 18px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-text-primary);
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
 
 .stat-num.intimacy {
-  color: #f87171;
+  color: var(--theme-brand-accent);
 }
 
 .stat-label {
   margin-top: 4px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--theme-text-muted);
 }
 
 /* 详细资料 */
 .detail-list {
   margin-top: 12px;
   padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
   border-radius: 10px;
 }
 
@@ -859,7 +893,7 @@ const reset = () => {
   align-items: baseline;
   padding: 6px 0;
   font-size: 13px;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.04);
+  border-bottom: 1px dashed var(--theme-border-subtle);
 }
 
 .detail-row:last-child {
@@ -869,16 +903,16 @@ const reset = () => {
 .detail-key {
   flex-shrink: 0;
   width: 80px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-muted);
 }
 
 .detail-val {
   flex: 1;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--theme-text-secondary);
 }
 
 .detail-val .muted {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--theme-text-muted);
   font-size: 12px;
   margin-left: 4px;
 }
@@ -899,54 +933,54 @@ const reset = () => {
 }
 
 .rel-badge.friend {
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: var(--theme-success-soft);
+  color: var(--theme-success-text);
+  border: 1px solid var(--theme-success-border);
 }
 
 .rel-badge.stranger {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--theme-surface-soft);
+  color: var(--theme-text-muted);
+  border: 1px solid var(--theme-border-subtle);
 }
 
 .rel-badge.special {
-  background: rgba(248, 113, 113, 0.15);
-  color: #fca5a5;
-  border: 1px solid rgba(248, 113, 113, 0.3);
+  background: var(--theme-danger-soft);
+  color: var(--theme-danger-text);
+  border: 1px solid var(--theme-danger-border);
 }
 
 .rel-badge.private {
-  background: rgba(168, 85, 247, 0.12);
-  color: #c4b5fd;
-  border: 1px solid rgba(168, 85, 247, 0.25);
+  background: var(--theme-warning-soft);
+  color: var(--theme-warning-text);
+  border: 1px solid var(--theme-warning-border);
 }
 
 /* 空状态 */
 .empty-state {
-  margin-top: 20px;
-  padding: 40px 20px;
+  margin-top: 16px;
+  padding: 24px 16px;
   text-align: center;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px dashed rgba(255, 255, 255, 0.08);
+  background: var(--theme-surface-soft);
+  border: 1px dashed var(--theme-border);
   border-radius: 12px;
 }
 
 .empty-icon {
   font-size: 36px;
-  color: rgba(255, 255, 255, 0.18);
+  color: var(--theme-text-subtle);
   margin-bottom: 10px;
 }
 
 .empty-text {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-text-secondary);
   margin-bottom: 6px;
 }
 
 .empty-sub {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--theme-text-muted);
   line-height: 1.5;
 }
 
@@ -962,33 +996,29 @@ const reset = () => {
 }
 
 .footer-link {
-  color: rgba(255, 255, 255, 0.5) !important;
-  font-size: 12px !important;
+  color: var(--theme-text-muted);
+  font-size: 12px;
 }
 
 .footer-link:hover {
-  color: #93c5fd !important;
+  color: var(--theme-info-text);
 }
 
 .enter-btn {
-  background: var(--qz-action, #c2410c) !important;
-  border: none !important;
-  font-weight: 600 !important;
-  box-shadow:
-    var(--ds-shadow-md),
-    0 4px 12px rgba(194, 65, 12, 0.25);
+  background: var(--theme-brand);
+  border: none;
+  font-weight: 600;
+  box-shadow: var(--theme-shadow-brand);
 }
 
 .enter-btn:hover:not(:disabled) {
-  filter: brightness(1.08);
-  box-shadow:
-    var(--ds-shadow-md),
-    0 6px 16px rgba(234, 88, 12, 0.32);
+  background: var(--theme-brand-hover);
+  box-shadow: var(--theme-shadow-brand);
 }
 
 .enter-btn:disabled {
   opacity: 0.4;
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: var(--theme-surface-disabled);
   box-shadow: none;
 }
 
@@ -1017,21 +1047,33 @@ const reset = () => {
   opacity: 0;
   transform: translateY(-8px);
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-enter-active,
+  .fade-leave-active,
+  .card-slide-enter-active,
+  .card-slide-leave-active,
+  .query-btn,
+  .hero-uin,
+  .stat-item {
+    transition: none;
+  }
+}
 </style>
 
 <style>
 .enter-by-uin-dialog .el-dialog {
-  background: linear-gradient(180deg, #1a1a1f 0%, #15151a 100%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 16px !important;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  background: var(--theme-surface-overlay) !important;
+  border: 1px solid var(--theme-border);
+  border-radius: var(--theme-radius-xl) !important;
+  box-shadow: var(--theme-shadow-lg);
   overflow: hidden;
 }
 
 .enter-by-uin-dialog .el-dialog__header {
   padding: 16px 20px !important;
   margin: 0 !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--theme-border-subtle);
 }
 
 .enter-by-uin-dialog .el-dialog__body {
@@ -1045,13 +1087,13 @@ const reset = () => {
 }
 
 .enter-by-uin-dialog .el-dialog__body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--theme-border-strong);
   border-radius: 2px;
 }
 
 .enter-by-uin-dialog .el-dialog__footer {
   padding: 14px 20px !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid var(--theme-border-subtle);
+  background: var(--theme-surface-soft);
 }
 </style>

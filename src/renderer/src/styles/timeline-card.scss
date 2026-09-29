@@ -4,46 +4,31 @@
    照片(photo-module) / 说说(feeds-module) 共用的基础视觉。
    不带 scoped，挂在全局 styles 里两个组件都能命中。
 
-   设计原则（"优雅大气"）：
-   1. 玻璃质感 —— 卡片半透明 + backdrop blur，看得到背景动画
-   2. 主轴渐变 —— 时间线不是单调一根灰线，而是顶/尾透明、中段
-      蓝色的渐变，自然引导视线
-   3. 微动效 —— hover 时卡片提升 + 蓝色光晕 + 圆点放大
-   4. 信息层级 —— 时间/标题/正文/元信息 字号梯度清晰
+   设计原则：时间线只负责组织信息，不抢夺媒体内容的视觉焦点。
+   主题色仅标记时间锚点；卡片、主轴和悬停保持中性、克制。
    ============================================================= */
 
 /* 顶级容器：左侧时间线主轴 */
 .tl-container {
-  padding: 28px 32px 48px;
+  padding: 16px 24px 32px;
   min-height: 100%;
   position: relative;
 
-  /* 主轴：3px 渐变线，比 2px 更显层次；用径向渐变让中段更亮 */
+  /* 弱化主轴，避免长列表形成持续的高亮带。 */
   &::before {
     content: '';
     position: absolute;
-    left: 52px;
-    top: 24px;
+    left: 42px;
+    top: 18px;
     bottom: 24px;
-    width: 3px;
-    background:
-      linear-gradient(
-        180deg,
-        transparent 0%,
-        rgba(96, 165, 250, 0.4) 6%,
-        rgba(96, 165, 250, 0.18) 20%,
-        rgba(96, 165, 250, 0.12) 80%,
-        rgba(96, 165, 250, 0.4) 94%,
-        transparent 100%
-      );
-    border-radius: 2px;
-    box-shadow: 0 0 8px rgba(96, 165, 250, 0.15);
+    width: 1px;
+    background: var(--theme-border-subtle);
   }
 }
 
 /* 日期分组头：玻璃 chip，圆点在主轴上 */
 .tl-date-group {
-  margin-top: 24px;
+  margin-top: 18px;
 
   &:first-child {
     margin-top: 4px;
@@ -52,31 +37,23 @@
   .tl-date-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin: 0 0 12px;
-    padding-left: 12px;
+    gap: 8px;
+    margin: 0 0 8px;
+    padding-left: 2px;
     position: relative;
 
-    /* 日期锚点：玻璃球大一号，与 .tl-dot 风格统一 */
+    /* 主题色只作为小面积锚点使用。 */
     &::before {
       content: '';
       position: absolute;
-      left: 13px;
+      left: 18px;
       top: 50%;
       transform: translate(-50%, -50%);
-      width: 14px;
-      height: 14px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
-      background: radial-gradient(
-        circle at 35% 30%,
-        #bfdbfe 0%,
-        #60a5fa 45%,
-        #2563eb 100%
-      );
-      border: 2px solid var(--ds-bg-0, #141418);
-      box-shadow:
-        0 0 0 2px rgba(96, 165, 250, 0.28),
-        0 0 10px rgba(96, 165, 250, 0.45);
+      background: var(--theme-brand-accent);
+      border: 2px solid var(--theme-surface-overlay);
       z-index: 2;
     }
 
@@ -85,51 +62,45 @@
       font-size: 13px;
       font-weight: 600;
       letter-spacing: 0.4px;
-      color: rgba(255, 255, 255, 0.85);
-      padding: 4px 14px;
-      background: rgba(255, 255, 255, 0.04);
-      backdrop-filter: blur(8px);
-      border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--theme-text-primary);
+      padding: 2px 0;
+      background: transparent;
+      border: 0;
     }
 
     .tl-date-count {
       font-size: 11px;
-      color: rgba(255, 255, 255, 0.4);
+      color: var(--theme-text-subtle);
     }
   }
 }
 
-/* 卡片本体：玻璃质感 + hover 微抬升 + 蓝色光晕 */
+/* 卡片本体：稳定平面，不用浮动和品牌光晕干扰滚动阅读。 */
 .tl-card {
   position: relative;
   display: flex;
-  margin: 10px 0 10px 36px;
-  padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  margin: 8px 0 8px 28px;
+  padding: 12px 14px;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: var(--theme-radius-md);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(96, 165, 250, 0.3);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(96, 165, 250, 0.08);
-
-    .tl-dot {
-      transform: scale(1.25);
-      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25), 0 0 12px rgba(96, 165, 250, 0.45);
-    }
+    background: var(--theme-surface-hover);
+    border-color: var(--theme-border);
+    box-shadow: var(--theme-shadow-sm);
   }
 }
 
 /* 时间线圆点 */
 .tl-dot-wrap {
   position: absolute;
-  left: -24px;
-  top: 20px;
+  left: -16px;
+  top: 18px;
   width: 14px;
   display: flex;
   justify-content: center;
@@ -137,21 +108,12 @@
 }
 
 .tl-dot {
-  width: 12px;
-  height: 12px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  /* 蓝色径向高光，模拟玻璃球质感 */
-  background: radial-gradient(
-    circle at 35% 30%,
-    #93c5fd 0%,
-    #60a5fa 45%,
-    #3b82f6 100%
-  );
-  border: 2px solid var(--ds-bg-0, #141418);
-  box-shadow:
-    0 0 0 2px rgba(96, 165, 250, 0.22),
-    0 0 8px rgba(96, 165, 250, 0.35);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  background: var(--theme-brand-accent);
+  border: 2px solid var(--theme-surface-overlay);
+  transition: background-color 0.2s ease;
 }
 
 /* 卡片右侧内容 */
@@ -172,7 +134,7 @@
 .tl-time {
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-text-primary);
   letter-spacing: 0.2px;
   flex-shrink: 0;
 }
@@ -185,11 +147,13 @@
   padding: 3px 9px;
   font-size: 11px;
   font-weight: 500;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
-  transition: background 0.15s, color 0.15s;
+  border-radius: var(--theme-radius-pill);
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border-subtle);
+  color: var(--theme-text-secondary);
+  transition:
+    background 0.15s,
+    color 0.15s;
 
   .el-icon {
     font-size: 11px;
@@ -197,27 +161,28 @@
 
   /* 私密标识 */
   &.is-secret {
-    color: #fb923c;
-    background: rgba(251, 146, 60, 0.1);
-    border-color: rgba(251, 146, 60, 0.25);
+    color: var(--theme-brand-accent);
+    background: var(--theme-brand-soft);
+    border-color: var(--theme-brand-border);
   }
 
   /* 定位标识 */
   &.is-loc {
-    color: #f59e0b;
-    background: rgba(245, 158, 11, 0.08);
-    border-color: rgba(245, 158, 11, 0.2);
+    color: var(--theme-warning);
+    background: var(--theme-warning-soft);
+    border-color: var(--theme-warning-border);
   }
 
   /* 相册标识（可点击） */
   &.is-album {
-    color: #60a5fa;
-    background: rgba(96, 165, 250, 0.1);
-    border-color: rgba(96, 165, 250, 0.25);
+    color: var(--theme-info);
+    background: var(--theme-info-soft);
+    border-color: var(--theme-info-border);
     cursor: pointer;
 
     &:hover {
-      background: rgba(96, 165, 250, 0.18);
+      color: var(--theme-info-text);
+      background: color-mix(in srgb, var(--theme-info-soft) 70%, var(--theme-surface-hover));
     }
   }
 }
@@ -230,13 +195,15 @@
 .tl-action-btn {
   font-size: 12px !important;
   padding: 5px 10px !important;
-  color: rgba(96, 165, 250, 0.9) !important;
+  color: var(--theme-info) !important;
   border-radius: 8px !important;
-  transition: all 0.15s !important;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
 
   &:hover {
-    color: #fff !important;
-    background: rgba(96, 165, 250, 0.15) !important;
+    color: var(--theme-info-text) !important;
+    background: var(--theme-info-soft) !important;
   }
 
   :deep(.el-icon) {
@@ -256,24 +223,19 @@
   position: relative;
   border-radius: 8px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--theme-surface-soft);
   cursor: zoom-in;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease;
 
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+    box-shadow: var(--theme-shadow-sm);
   }
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform 0.3s ease;
-  }
-
-  &:hover img {
-    transform: scale(1.04);
+    transition: opacity 0.2s ease;
   }
 
   /* 视频角标 */
@@ -284,8 +246,8 @@
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.7);
-    color: #fff;
+    background: var(--theme-backdrop);
+    color: var(--theme-text-inverse);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -297,21 +259,24 @@
 /* 「+N」收纳块 */
 .tl-media-more {
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px dashed rgba(255, 255, 255, 0.18);
+  background: var(--theme-surface-hover);
+  border: 1px dashed var(--theme-border-strong);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--theme-text-secondary);
   font-size: 14px;
   font-weight: 600;
   cursor: zoom-in;
-  transition: all 0.15s;
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    border-color 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-    border-color: rgba(255, 255, 255, 0.28);
+    background: var(--theme-surface-active);
+    color: var(--theme-text-primary);
+    border-color: var(--theme-border-strong);
   }
 }
 
@@ -319,7 +284,7 @@
 .tl-privacy-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.82);
+  background: var(--theme-privacy-backdrop);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -331,11 +296,11 @@
 
   .el-icon {
     font-size: 20px;
-    color: #e6a23c;
+    color: var(--theme-warning);
   }
   span {
     font-size: 10px;
-    color: rgba(255, 255, 255, 0.78);
+    color: var(--theme-text-secondary);
   }
 }
 
@@ -347,9 +312,9 @@
   gap: 16px;
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.06);
+  border-top: 1px dashed var(--theme-border-subtle);
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--theme-text-muted);
 
   .tl-stat {
     display: inline-flex;
@@ -361,7 +326,7 @@
       transition: color 0.15s;
 
       &:hover {
-        color: #60a5fa;
+        color: var(--theme-info);
       }
     }
   }
@@ -374,7 +339,7 @@
   justify-content: center;
   gap: 8px;
   padding: 24px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--theme-text-muted);
   font-size: 13px;
 
   .el-icon {
@@ -387,6 +352,24 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--theme-text-subtle);
   font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tl-card,
+  .tl-dot,
+  .tl-media-item,
+  .tl-media-item img,
+  .tl-chip,
+  .tl-action-btn,
+  .tl-media-more {
+    transition: none;
+  }
+
+  .tl-card:hover,
+  .tl-media-item:hover,
+  .tl-media-item:hover img {
+    transform: none;
+  }
 }
