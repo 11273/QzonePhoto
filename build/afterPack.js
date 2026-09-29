@@ -5,9 +5,23 @@ const { execFileSync } = require('child_process')
 // 必须共享同一签名 seal；无 Developer ID 证书构建时，统一使用 ad-hoc
 // 签名收尾。打包后不再改写 app.asar，避免为开发环境引入原生编译依赖。
 function adhocResignMac(appPath) {
-  execFileSync('codesign', ['--force', '--deep', '--sign', '-', '--timestamp=none', appPath], {
-    stdio: 'inherit'
-  })
+  const entitlementsPath = join(__dirname, 'entitlements.mac.plist')
+  execFileSync(
+    'codesign',
+    [
+      '--force',
+      '--deep',
+      '--sign',
+      '-',
+      '--options',
+      'runtime',
+      '--timestamp=none',
+      '--entitlements',
+      entitlementsPath,
+      appPath
+    ],
+    { stdio: 'inherit' }
+  )
 }
 
 exports.default = async ({ appOutDir, packager, electronPlatformName }) => {

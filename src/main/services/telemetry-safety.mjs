@@ -137,8 +137,14 @@ export function sanitizeDiagnosticLog(value) {
     .replace(/qzone-local:\/\/[^\s"'<>]+/gi, '[URL隐藏]')
     .replace(/(?:\/Users|\/Volumes|\/home|\/var|\/private|\/tmp)\/[^\s"'<>]+/gi, '[本地路径隐藏]')
     .replace(/[A-Z]:\\[^\s"'<>]+/gi, '[本地路径隐藏]')
-    .replace(/\b[\w.-]+\.(?:jpg|jpeg|png|gif|webp|mp4|mov|avi|m4v|mkv|json|db|log)\b/gi, '[文件名隐藏]')
-    .replace(/\b(?:p_skey|skey|token|access_token|auth|authorization|cookie|uin|qq|password|passwd|pwd|secret|key)\b/gi, '[敏感字段隐藏]')
+    .replace(
+      /\b[\w.-]+\.(?:jpg|jpeg|png|gif|webp|mp4|mov|avi|m4v|mkv|json|db|log)\b/gi,
+      '[文件名隐藏]'
+    )
+    .replace(
+      /\b(?:p_skey|skey|token|access_token|auth|authorization|cookie|uin|qq|password|passwd|pwd|secret|key)\b/gi,
+      '[敏感字段隐藏]'
+    )
     .replace(/\b1[3-9]\d{9}\b/g, '[手机号隐藏]')
     .replace(/\b[1-9]\d{4,10}\b/g, '[疑似账号隐藏]')
     .split(/\r?\n/)
@@ -163,7 +169,9 @@ function normalizeApiSegment(value) {
 }
 
 function looksPrivate(text) {
-  return URL_OR_PATH_PATTERN.test(text) || SECRET_PATTERN.test(text) || ACCOUNT_NUMBER_PATTERN.test(text)
+  return (
+    URL_OR_PATH_PATTERN.test(text) || SECRET_PATTERN.test(text) || ACCOUNT_NUMBER_PATTERN.test(text)
+  )
 }
 
 function safeNumber(value) {

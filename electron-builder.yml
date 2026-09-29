@@ -8,26 +8,10 @@ productName: 企鹅相册
 directories:
   buildResources: build # 指定构建资源目录（图标等）
 
-# 包含/排除文件规则
+# 应用运行时白名单。package.json 与 production 依赖由 electron-builder 自动加入；
+# 官网、发布脚本、测试、日志和本地截图不得进入桌面端安装包。
 files:
-  - '!**/.vscode/*'
-  - '!**/.git/**'
-  - '!src/**'
-  - '!**/*.{map,local}'
-  - '!**/*.config.{js,ts,mjs,cjs}'
-  - '!**/test/**'
-  - '!**/mock/**'
-  - '!.{editorconfig,npmrc,prettierrc*,eslintrc*}'
-  - '!{README.md,CHANGELOG.md,LICENSE}'
-  - '!{pnpm-lock.yaml,yarn.lock,package-lock.json}'
-  - '!dev-app-update.yml'
-  - '!.release-it.json'
-  - '!jsconfig.json'
-  - '!tailwind.config.js'
-  - '!**/*.{iml,hprof,orig}'
-  - '!.idea'
-  - '!.vscode'
-  - '!.github'
+  - out/**
 
 # 随安装包提供 GPL-3.0 正文，避免它仅存在于源码仓库中
 extraResources:
@@ -36,7 +20,6 @@ extraResources:
 
 # ASAR解压配置（指定不需要压缩的文件）
 asarUnpack:
-  - resources/** # 保持resources目录未压缩
   - out/preload/** # 保持preload脚本未压缩，确保IPC通信正常
   - node_modules/ffmpeg-static/** # 视频元数据写入工具必须在 ASAR 外执行
 
@@ -83,13 +66,14 @@ mac:
   # 添加类别
   category: public.app-category.utilities
   # 权限配置文件
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
   # 签名配置
   # 无 Apple Developer 证书时 electron-builder 会完全跳过签名；由 build/afterPack.js
   # 里统一做递归 ad-hoc 重签，避免 macOS 14+ 因 Team ID 不一致导致启动崩溃。
-  hardenedRuntime: false
+  hardenedRuntime: true
   gatekeeperAssess: false
   notarize: false
   artifactName: QzonePhoto-${version}-${os}-${arch}.${ext}

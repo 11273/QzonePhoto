@@ -104,6 +104,12 @@ export default defineConfig({
     build: {
       sourcemap: false,
       rollupOptions: {
+        onwarn(warning, warn) {
+          const isVueUsePureAnnotation =
+            warning.code === 'INVALID_ANNOTATION' && warning.id?.includes('@vueuse/core')
+          if (isVueUsePureAnnotation) return
+          warn(warning)
+        },
         output: {
           manualChunks(id) {
             if (id.includes('node_modules')) {

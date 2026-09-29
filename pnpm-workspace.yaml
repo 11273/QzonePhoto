@@ -1,7 +1,8 @@
 overrides:
   form-data: 4.0.6
-  js-yaml: ^4.3.0
-  postcss: ^8.5.18
+  js-yaml: ^4.3.2
+  postcss: ^8.5.28
+  '@electron/get>undici': ^7.29.1
 
 allowBuilds:
   electron: true

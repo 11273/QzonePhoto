@@ -170,7 +170,7 @@ async function requestWithFallback(baseUrls, endpoint, options) {
         url: `${baseUrl}${endpoint}`,
         timeout: REQUEST_TIMEOUT_MS,
         headers,
-        validateStatus: () => true,
+        validateStatus: () => true
       })
     } catch (error) {
       lastError = error
@@ -214,7 +214,8 @@ function parseFeedbackResponse(response) {
   const data = response?.data || {}
   if (response.status === 429) return { ok: false, message: '提交太频繁了，请稍后再试' }
   if (response.status >= 500) return { ok: false, message: '反馈服务暂时不可用，请稍后再试' }
-  if (data?.ok === false) return { ok: false, message: data.message || '提交失败，请检查内容后再试' }
+  if (data?.ok === false)
+    return { ok: false, message: data.message || '提交失败，请检查内容后再试' }
   return {
     ok: response.status >= 200 && response.status < 300,
     message: data.message || '反馈已提交',
@@ -291,11 +292,13 @@ function normalizeProperties(value) {
 }
 
 function normalizeHeaderToken(value, maxLength = 80) {
-  return String(value || 'unknown')
-    .replace(/[\r\n;()]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, maxLength) || 'unknown'
+  return (
+    String(value || 'unknown')
+      .replace(/[\r\n;()]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, maxLength) || 'unknown'
+  )
 }
 
 function createLogUploadFingerprint(value) {

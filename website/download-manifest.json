@@ -1,62 +1,96 @@
 {
-  "version": "2.6.0",
-  "tag": "v2.6.0",
-  "generatedAt": "2026-06-23T00:00:00.000Z",
-  "githubReleaseUrl": "https://github.com/11273/QzonePhoto/releases/latest",
+  "version": "2.7.0",
+  "tag": "v2.7.0",
+  "generatedAt": "2026-07-26T09:48:55.000Z",
+  "githubReleaseUrl": "https://github.com/11273/QzonePhoto/releases/tag/v2.7.0",
   "assets": [
-    {
-      "id": "windows-x64-setup",
-      "os": "windows",
-      "arch": "x64",
-      "type": "setup",
-      "filename": "",
-      "r2Url": "",
-      "githubUrl": "https://github.com/11273/QzonePhoto/releases/latest"
-    },
-    {
-      "id": "windows-ia32-setup",
-      "os": "windows",
-      "arch": "ia32",
-      "type": "setup",
-      "filename": "",
-      "r2Url": "",
-      "githubUrl": "https://github.com/11273/QzonePhoto/releases/latest"
-    },
-    {
-      "id": "macos-arm64-dmg",
-      "os": "macos",
-      "arch": "arm64",
-      "type": "dmg",
-      "filename": "",
-      "r2Url": "",
-      "githubUrl": "https://github.com/11273/QzonePhoto/releases/latest"
-    },
-    {
-      "id": "macos-x64-dmg",
-      "os": "macos",
-      "arch": "x64",
-      "type": "dmg",
-      "filename": "",
-      "r2Url": "",
-      "githubUrl": "https://github.com/11273/QzonePhoto/releases/latest"
-    },
     {
       "id": "linux-x64-appimage",
       "os": "linux",
       "arch": "x64",
       "type": "appimage",
-      "filename": "",
-      "r2Url": "",
-      "githubUrl": "https://github.com/11273/QzonePhoto/releases/latest"
+      "filename": "QzonePhoto-2.7.0-linux-x86_64.AppImage",
+      "size": 181685285,
+      "sha256": "53983a559247920418e9caf885391030f5d381cbcbfa6d54b4277f92c1bd1ba2",
+      "r2Url": "https://dl.qzonephoto.getgit.one/releases/v2.7.0/QzonePhoto-2.7.0-linux-x86_64.AppImage",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/download/v2.7.0/QzonePhoto-2.7.0-linux-x86_64.AppImage"
     },
     {
       "id": "linux-x64-deb",
       "os": "linux",
       "arch": "x64",
       "type": "deb",
-      "filename": "",
-      "r2Url": "",
-      "githubUrl": "https://github.com/11273/QzonePhoto/releases/latest"
+      "filename": "QzonePhoto-2.7.0-linux-amd64.deb",
+      "size": 143645148,
+      "sha256": "b63d6e7e965653534d42e293917c3f6b8c9cad31b22fe42209f6cd2df4a61992",
+      "r2Url": "https://dl.qzonephoto.getgit.one/releases/v2.7.0/QzonePhoto-2.7.0-linux-amd64.deb",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/download/v2.7.0/QzonePhoto-2.7.0-linux-amd64.deb"
+    },
+    {
+      "id": "macos-arm64-dmg",
+      "os": "macos",
+      "arch": "arm64",
+      "type": "dmg",
+      "filename": "QzonePhoto-2.7.0-mac-arm64.dmg",
+      "size": 165234649,
+      "sha256": "0eae03e09f1ab22e0589877496e5983d19101979f3d9b892dc3e1f4eea47427d",
+      "r2Url": "https://dl.qzonephoto.getgit.one/releases/v2.7.0/QzonePhoto-2.7.0-mac-arm64.dmg",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/download/v2.7.0/QzonePhoto-2.7.0-mac-arm64.dmg"
+    },
+    {
+      "id": "macos-arm64-zip",
+      "os": "macos",
+      "arch": "arm64",
+      "type": "zip",
+      "filename": "QzonePhoto-2.7.0-mac-arm64.zip",
+      "size": 389529350,
+      "sha256": "772d9101fcc4ad24ca4da70cca5b15bb45bc8010e400e1d1b4836c5e30ac0eac",
+      "r2Url": "https://dl.qzonephoto.getgit.one/releases/v2.7.0/QzonePhoto-2.7.0-mac-arm64.zip",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/download/v2.7.0/QzonePhoto-2.7.0-mac-arm64.zip"
+    },
+    {
+      "id": "macos-x64-dmg",
+      "os": "macos",
+      "arch": "x64",
+      "type": "dmg",
+      "filename": "QzonePhoto-2.7.0-mac-x64.dmg",
+      "size": 174718991,
+      "sha256": "38d3da310f270cdeafde1754eedbf3fb5e7bea581aa6d260c2a1725e9887e380",
+      "r2Url": "https://dl.qzonephoto.getgit.one/releases/v2.7.0/QzonePhoto-2.7.0-mac-x64.dmg",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/download/v2.7.0/QzonePhoto-2.7.0-mac-x64.dmg"
+    },
+    {
+      "id": "macos-x64-zip",
+      "os": "macos",
+      "arch": "x64",
+      "type": "zip",
+      "filename": "QzonePhoto-2.7.0-mac-x64.zip",
+      "size": 405670044,
+      "sha256": "8a94c64c92b0597c255116c0853a718d25abcef05f942f82eede3a668fb53f0f",
+      "r2Url": "https://dl.qzonephoto.getgit.one/releases/v2.7.0/QzonePhoto-2.7.0-mac-x64.zip",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/download/v2.7.0/QzonePhoto-2.7.0-mac-x64.zip"
+    },
+    {
+      "id": "windows-ia32-setup",
+      "os": "windows",
+      "arch": "ia32",
+      "type": "setup",
+      "filename": "QzonePhoto-2.7.0-win-ia32-setup.exe",
+      "size": 133527270,
+      "sha256": "a1aa63df447631dbe476f0b6cd3b621367f8448f5b218eab3c8d5ea677269e88",
+      "r2Url": "https://dl.qzonephoto.getgit.one/releases/v2.7.0/QzonePhoto-2.7.0-win-ia32-setup.exe",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/download/v2.7.0/QzonePhoto-2.7.0-win-ia32-setup.exe"
+    },
+    {
+      "id": "windows-x64-setup",
+      "os": "windows",
+      "arch": "x64",
+      "type": "setup",
+      "filename": "QzonePhoto-2.7.0-win-x64-setup.exe",
+      "size": 142768092,
+      "sha256": "9325a42474dbc1ae234ddcce692a25d8ea1dc9e06654668b1b79c281bc35f12a",
+      "r2Url": "https://dl.qzonephoto.getgit.one/releases/v2.7.0/QzonePhoto-2.7.0-win-x64-setup.exe",
+      "githubUrl": "https://github.com/11273/QzonePhoto/releases/download/v2.7.0/QzonePhoto-2.7.0-win-x64-setup.exe"
     }
   ]
 }
