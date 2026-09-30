@@ -40,6 +40,7 @@ jobs:
       PROMOTION_OPERATION: ${{ inputs.operation }}
       R2_VERSIONED_REPLACEMENT: 'false'
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: 11273/QzonePhoto
     steps:
@@ -451,6 +452,13 @@ jobs:
               echo 'Same-version replacement requires the CLOUDFLARE_API_TOKEN secret for CDN cache purge.'
               return 1
             }
+            if [ -n "${CLOUDFLARE_ZONE_ID:-}" ]; then
+              [[ "${CLOUDFLARE_ZONE_ID}" =~ ^[a-f0-9]{32}$ ]] || {
+                echo 'CLOUDFLARE_ZONE_ID must be a 32-character Cloudflare zone identifier.'
+                return 1
+              }
+              return
+            fi
             local zones_response
             zones_response="$(curl --fail --silent --show-error \
               --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
