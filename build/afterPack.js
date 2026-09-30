@@ -20,6 +20,12 @@ async function writeLinuxAppStreamMetadata(appOutDir, version) {
     'com.qzonephoto.app.metainfo.xml'
   )
   const safeVersion = escapeXml(version)
+  const sourceDateEpoch = Number(process.env.SOURCE_DATE_EPOCH)
+  const releaseDate = new Date(
+    Number.isFinite(sourceDateEpoch) && sourceDateEpoch > 0 ? sourceDateEpoch * 1000 : Date.now()
+  )
+    .toISOString()
+    .slice(0, 10)
   const metadata = `<?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>com.qzonephoto.app</id>
@@ -27,8 +33,11 @@ async function writeLinuxAppStreamMetadata(appOutDir, version) {
   <name xml:lang="zh-CN">企鹅相册</name>
   <summary>Back up and manage QQ Zone albums locally</summary>
   <summary xml:lang="zh-CN">在本地管理与备份 QQ 空间相册</summary>
-  <metadata_license>GPL-3.0-only</metadata_license>
+  <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
+  <developer id="com.github.11273">
+    <name>11273</name>
+  </developer>
   <description>
     <p>QzonePhoto is a desktop utility for browsing, downloading and managing QQ Zone albums, photos, videos and posts.</p>
     <p xml:lang="zh-CN">企鹅相册是一款用于浏览、下载和管理 QQ 空间相册、照片、视频与动态的桌面工具。</p>
@@ -40,7 +49,7 @@ async function writeLinuxAppStreamMetadata(appOutDir, version) {
   <url type="homepage">https://qzonephoto.getgit.one</url>
   <url type="bugtracker">https://github.com/11273/QzonePhoto/issues</url>
   <releases>
-    <release version="${safeVersion}" />
+    <release version="${safeVersion}" date="${releaseDate}" />
   </releases>
   <content_rating type="oars-1.1" />
 </component>

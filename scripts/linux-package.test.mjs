@@ -26,6 +26,12 @@ test('Linux package uses the self-contained AppImage runtime and catalog-safe na
 test('Linux package embeds current AppStream metadata for offline catalogs', async (t) => {
   const appOutDir = await mkdtemp(path.join(os.tmpdir(), 'qzonephoto-linux-package-'))
   t.after(() => rm(appOutDir, { recursive: true, force: true }))
+  const previousSourceDateEpoch = process.env.SOURCE_DATE_EPOCH
+  process.env.SOURCE_DATE_EPOCH = '1790726400'
+  t.after(() => {
+    if (previousSourceDateEpoch === undefined) delete process.env.SOURCE_DATE_EPOCH
+    else process.env.SOURCE_DATE_EPOCH = previousSourceDateEpoch
+  })
 
   await afterPack({
     appOutDir,
@@ -38,9 +44,11 @@ test('Linux package embeds current AppStream metadata for offline catalogs', asy
     'utf8'
   )
   assert.match(metadata, /<id>com\.qzonephoto\.app<\/id>/)
+  assert.match(metadata, /<metadata_license>CC0-1\.0<\/metadata_license>/)
+  assert.match(metadata, /<developer id="com\.github\.11273">/)
   assert.match(
     metadata,
     /<launchable type="desktop-id">com\.qzonephoto\.app\.desktop<\/launchable>/
   )
-  assert.match(metadata, /<release version="9\.8\.7" \/>/)
+  assert.match(metadata, /<release version="9\.8\.7" date="2026-09-30" \/>/)
 })
