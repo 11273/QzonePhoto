@@ -1,6 +1,7 @@
 import { extractJSONFromCallback, getGTK, parseObjectLiteral } from '@main/api/utils/helpers'
 import request from '@main/api/utils/request'
 import { parseSetCookie } from '@main/utils'
+import { buildPhotoDeleteCodelist, normalizeAlbumPrivacy } from '@shared/photo-delete'
 
 // Extract raw QQ number from cookie uin (strip "o" prefix)
 const rawUin = (uin) => String(uin).replace(/^o/, '')
@@ -311,18 +312,8 @@ export async function cgi_delpic_multi_v2(
   const url =
     'https://user.qzone.qq.com/proxy/domain/photo.qzone.qq.com/cgi-bin/common/cgi_delpic_multi_v2'
 
-  // 构造codelist格式，根据官方源码：
-  // imageId|picrefer|时间戳|||imageId|imageType|0
-  // 多张照片用 _ 分隔
-  const codelistParts = photoData.map((photo) => {
-    const photoId = photo.id
-    const picrefer = photo.picrefer || ''
-    const imageType = photo.imageType || 1
-    const timestamp = Date.now()
-    // 格式：[imageId, picrefer, 时间戳, "", "", imageId, imageType, 0].join("|")
-    return [photoId, picrefer, timestamp, '', '', photoId, imageType, 0].join('|')
-  })
-  const codelist = codelistParts.join('_')
+  const albumPriv = normalizeAlbumPrivacy(priv)
+  const codelist = buildPhotoDeleteCodelist(photoData, albumPriv)
 
   // ismultiup 是照片数量对应的0字符串
   const ismultiup = '0'.repeat(photoData.length)
@@ -333,7 +324,7 @@ export async function cgi_delpic_multi_v2(
     nvip: '1',
     bgid: 'undefined',
     tpid: 'undefined',
-    priv: priv.toString(),
+    priv: albumPriv.toString(),
     albumname: albumName,
     codelist: codelist,
     ismultiup: ismultiup,

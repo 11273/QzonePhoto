@@ -402,6 +402,8 @@ import {
 } from '@renderer/utils/downloadBatch'
 import { ALBUM_LOAD_STATUS, createAlbumLoadState } from '@shared/album-load-state'
 import { CONTENT_LOAD_STATUS, classifyContentLoadFailure } from '@shared/content-load-state'
+import { toIpcSafeValue } from '@shared/ipc-payload'
+import { normalizeAlbumPrivacy, normalizePhotoDeleteItem } from '@shared/photo-delete'
 import Hls from 'hls.js'
 
 const props = defineProps({
@@ -793,12 +795,12 @@ const cleanPhotoData = (photos) => {
 const addDownloadTask = async (albumData) => {
   try {
     // 确保传递用户信息，好友模式下附带 friendUin
-    const enrichedAlbumData = {
+    const enrichedAlbumData = toIpcSafeValue({
       ...albumData,
       uin: resolveSelfQzoneUin(userStore) || 'unknown',
       p_skey: userStore.PSkey || null,
       ...(isFriendContext.value ? { friendUin: hostUinOverride.value } : {})
-    }
+    })
 
     // 如果照片数量很多，显示提示
     const photoCount = enrichedAlbumData.photos?.length || 0
@@ -1428,18 +1430,16 @@ const deleteSelected = async () => {
     return
   }
 
-  // 提取照片数据（包含ID、picrefer和imageType）
-  const photoData = selectedPhotoList.map((photo) => ({
-    id: photo.lloc || photo.picKey || photo.id,
-    picrefer: photo.picrefer || '',
-    imageType: photo.uploadtype || photo.type || 1,
-    modifytime: photo.modifytime || Math.floor(Date.now() / 1000)
-  }))
+  // 历史照片与新上传照片必须统一使用 QQ 空间返回的 lloc/sloc 定位串。
+  const photoData = selectedPhotoList.map(normalizePhotoDeleteItem)
+  if (photoData.some((photo) => !photo)) {
+    ElMessage.error('部分照片缺少删除所需的定位信息，请刷新相册后重试')
+    return
+  }
 
-  console.log('[deleteSelected] 准备删除的照片数据:', photoData)
-
+  let loadingInstance = null
   try {
-    const loadingInstance = ElLoading.service({
+    loadingInstance = ElLoading.service({
       lock: true,
       text: '正在删除照片...',
       background: 'var(--theme-backdrop)'
@@ -1452,12 +1452,10 @@ const deleteSelected = async () => {
         albumId: currentAlbum.value.id,
         photoData: photoData,
         albumName: currentAlbum.value.name,
-        priv: currentAlbum.value.priv || 3
+        priv: normalizeAlbumPrivacy(currentAlbum.value.priv)
       },
       friendMeta.value
     )
-
-    loadingInstance.close()
 
     // 检查删除结果
     if (result.code === 0) {
@@ -1475,6 +1473,8 @@ const deleteSelected = async () => {
   } catch (error) {
     console.error('删除照片失败:', error)
     ElMessage.error(error.message || '删除照片失败，请重试')
+  } finally {
+    loadingInstance?.close()
   }
 }
 
