@@ -66,6 +66,8 @@ test('R2 promotion separates forward promotion, rollback, and protected same-ver
   assert.match(workflow, /restoring the previous R2 release objects/)
   assert.match(workflow, /CLOUDFLARE_API_TOKEN/)
   assert.match(workflow, /purge_cache/)
+  assert.match(workflow, /cache_purge:[\s\S]*?- automatic\n\s+- manual/)
+  assert.match(workflow, /Manual cache purge selected/)
 })
 
 test('release assets can be verified then safely rebased to an immutable R2 version directory', async (t) => {

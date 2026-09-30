@@ -17,6 +17,14 @@ on:
         required: false
         default: ''
         type: string
+      cache_purge:
+        description: 同版本覆盖后的 CDN 清理方式（令牌无 Cache Purge 权限时选择 manual）
+        required: true
+        default: automatic
+        type: choice
+        options:
+          - automatic
+          - manual
 
 permissions:
   contents: read
@@ -38,6 +46,7 @@ jobs:
       R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
       RELEASE_TAG: ${{ inputs.tag }}
       PROMOTION_OPERATION: ${{ inputs.operation }}
+      CACHE_PURGE_MODE: ${{ inputs.cache_purge }}
       R2_VERSIONED_REPLACEMENT: 'false'
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
@@ -62,6 +71,10 @@ jobs:
           case "${PROMOTION_OPERATION}" in
             promote|rollback|replace) ;;
             *) echo "Unsupported R2 operation: ${PROMOTION_OPERATION}"; exit 1 ;;
+          esac
+          case "${CACHE_PURGE_MODE}" in
+            automatic|manual) ;;
+            *) echo "Unsupported cache purge mode: ${CACHE_PURGE_MODE}"; exit 1 ;;
           esac
           if [ "${PROMOTION_OPERATION}" != 'promote' ] && [ -z "${RELEASE_TAG}" ]; then
             echo "${PROMOTION_OPERATION} requires an explicit stable tag"
@@ -98,6 +111,7 @@ jobs:
             echo
             echo "- Tag: \`${RELEASE_TAG}\`"
             echo "- Operation: \`${PROMOTION_OPERATION}\`"
+            echo "- Cache purge: \`${CACHE_PURGE_MODE}\`"
             echo '- Source: published stable GitHub Release'
           } >> "${GITHUB_STEP_SUMMARY}"
 
@@ -517,7 +531,9 @@ jobs:
               done < verified-release-files.txt
               restore_versioned_object "manifests/${RELEASE_TAG}.json" \
                 versioned-backup/manifest.json 'application/json'
-              purge_versioned_cache || echo 'Warning: restored R2 objects but CDN purge retry failed.'
+              if [ "${CACHE_PURGE_MODE}" = 'automatic' ]; then
+                purge_versioned_cache || echo 'Warning: restored R2 objects but CDN purge retry failed.'
+              fi
             fi
             if [ "${stable_switched}" = 'true' ] && [ "${stable_committed}" != 'true' ]; then
               echo 'Stable channel verification failed; restoring the previous public pointers.'
@@ -558,10 +574,14 @@ jobs:
                 files.push(`${base}/manifests/${tag}.json`)
                 fs.writeFileSync("cache-purge-payload.json", JSON.stringify({ files }))
               ' "${R2_PUBLIC_BASE_URL}" "${RELEASE_TAG}" verified-release-files.txt
-              resolve_cloudflare_zone
-              # This harmless preflight purge proves the token has Cache Purge permission
-              # before any live versioned object is changed.
-              purge_versioned_cache
+              if [ "${CACHE_PURGE_MODE}" = 'automatic' ]; then
+                resolve_cloudflare_zone
+                # This harmless preflight purge proves the token has Cache Purge permission
+                # before any live versioned object is changed.
+                purge_versioned_cache
+              else
+                echo 'Manual cache purge selected; the operator must purge the listed versioned URLs after this workflow succeeds.'
+              fi
               mkdir -p versioned-backup/releases
               while IFS= read -r name; do
                 backup_versioned_object "${release_prefix}/${name}" \
@@ -586,7 +606,8 @@ jobs:
             # The versioned manifest is an inspectable snapshot, not an updater pointer.
             upload_immutable_release_object "artifacts/${RELEASE_TAG}.json" "manifests/${RELEASE_TAG}.json" \
               "public, max-age=31536000, immutable" "application/json"
-            if [ "${versioned_replacement_started}" = 'true' ]; then
+            if [ "${versioned_replacement_started}" = 'true' ] && \
+              [ "${CACHE_PURGE_MODE}" = 'automatic' ]; then
               purge_versioned_cache
             fi
           else
@@ -620,8 +641,13 @@ jobs:
             echo
             echo "- Release: \`${RELEASE_TAG}\`"
             echo "- Operation: \`${PROMOTION_OPERATION}\`"
+            echo "- Cache purge: \`${CACHE_PURGE_MODE}\`"
             echo '- Normal releases remain immutable; rollback reuses a verified historical snapshot.'
             echo '- Explicit same-version replacement backs up every target object and purges affected CDN URLs.'
             echo '- All three updater pointers were switched before the website manifest, then the public domain was audited.'
             echo '- If verification fails, previous stable pointers and any overwritten versioned objects are restored automatically.'
+            if [ "${PROMOTION_OPERATION}" = 'replace' ] && \
+              [ "${CACHE_PURGE_MODE}" = 'manual' ]; then
+              echo '- Action required: purge the URLs in `cache-purge-payload.json` from Cloudflare before announcing completion.'
+            fi
           } >> "${GITHUB_STEP_SUMMARY}"
