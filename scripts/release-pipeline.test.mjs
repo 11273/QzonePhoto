@@ -34,6 +34,21 @@ test('release workflow never passes an empty signing certificate to electron-bui
   assert.match(workflow, /append_env CSC_LINK "\$\{signing_link\}"/)
 })
 
+test('R2 workflows install locked dependencies before running the full release suite', async () => {
+  for (const workflowName of ['promote-r2.yml', 'maintain-r2.yml']) {
+    const workflow = await readFile(
+      new URL(`../.github/workflows/${workflowName}`, import.meta.url),
+      'utf8'
+    )
+    const installIndex = workflow.indexOf('pnpm install --frozen-lockfile --ignore-scripts')
+    const testIndex = workflow.indexOf('pnpm test:release')
+
+    assert.notEqual(installIndex, -1, `${workflowName} must install test dependencies`)
+    assert.notEqual(testIndex, -1, `${workflowName} must run the release test suite`)
+    assert.ok(installIndex < testIndex, `${workflowName} must install dependencies before tests`)
+  }
+})
+
 test('release assets can be verified then safely rebased to an immutable R2 version directory', async (t) => {
   const fixture = await createFixture()
   t.after(() => rm(fixture.root, { recursive: true, force: true }))
