@@ -136,15 +136,67 @@ jobs:
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         run: pnpm install --frozen-lockfile
 
+      - name: Configure optional code signing
+        shell: bash
+        env:
+          QZONE_MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          QZONE_MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          QZONE_WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          QZONE_WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          QZONE_APPLE_ID: ${{ secrets.APPLE_ID }}
+          QZONE_APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          QZONE_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+
+          append_env() {
+            local name="$1"
+            local value="$2"
+            local marker="QZONE_${name}_${RANDOM}_${RANDOM}"
+            {
+              printf '%s<<%s\n' "${name}" "${marker}"
+              printf '%s\n' "${value}"
+              printf '%s\n' "${marker}"
+            } >> "${GITHUB_ENV}"
+          }
+
+          signing_link=''
+          signing_password=''
+          case "${{ runner.os }}" in
+            macOS)
+              signing_link="${QZONE_MAC_CSC_LINK}"
+              signing_password="${QZONE_MAC_CSC_KEY_PASSWORD}"
+              ;;
+            Windows)
+              signing_link="${QZONE_WIN_CSC_LINK}"
+              signing_password="${QZONE_WIN_CSC_KEY_PASSWORD}"
+              ;;
+          esac
+
+          if [[ -n "${signing_link}" ]]; then
+            append_env CSC_LINK "${signing_link}"
+            if [[ -n "${signing_password}" ]]; then
+              append_env CSC_KEY_PASSWORD "${signing_password}"
+            fi
+            echo 'Code signing certificate configured.'
+          else
+            append_env CSC_IDENTITY_AUTO_DISCOVERY false
+            echo 'Code signing disabled: no certificate configured.'
+          fi
+
+          if [[ "${{ runner.os }}" == 'macOS' && -n "${signing_link}" && \
+                -n "${QZONE_APPLE_ID}" && -n "${QZONE_APPLE_ID_PASSWORD}" && \
+                -n "${QZONE_APPLE_TEAM_ID}" ]]; then
+            append_env APPLE_ID "${QZONE_APPLE_ID}"
+            append_env APPLE_ID_PASSWORD "${QZONE_APPLE_ID_PASSWORD}"
+            append_env APPLE_TEAM_ID "${QZONE_APPLE_TEAM_ID}"
+            echo 'Apple notarization credentials configured.'
+          fi
+
       - name: Build application
         env:
           ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
-          CSC_LINK: ${{ startsWith(matrix.os, 'macos-') && secrets.MAC_CSC_LINK || startsWith(matrix.os, 'windows-') && secrets.WIN_CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && secrets.MAC_CSC_KEY_PASSWORD || startsWith(matrix.os, 'windows-') && secrets.WIN_CSC_KEY_PASSWORD || '' }}
-          APPLE_ID: ${{ startsWith(matrix.os, 'macos-') && secrets.APPLE_ID || '' }}
-          APPLE_ID_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && secrets.APPLE_ID_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ startsWith(matrix.os, 'macos-') && secrets.APPLE_TEAM_ID || '' }}
         run: ${{ matrix.command }}
 
       - name: Upload artifacts

@@ -20,6 +20,20 @@ const assets = {
   linuxDeb: `QzonePhoto-${version}-linux-amd64.deb`
 }
 
+test('release workflow never passes an empty signing certificate to electron-builder', async () => {
+  const workflow = await readFile(
+    new URL('../.github/workflows/release.yml', import.meta.url),
+    'utf8'
+  )
+  const buildStep = workflow.match(/- name: Build application[\s\S]*?- name: Upload artifacts/)?.[0]
+
+  assert.ok(buildStep, 'Build application step must exist')
+  assert.doesNotMatch(buildStep, /^\s+CSC_(?:LINK|KEY_PASSWORD):/m)
+  assert.match(workflow, /- name: Configure optional code signing/)
+  assert.match(workflow, /append_env CSC_IDENTITY_AUTO_DISCOVERY false/)
+  assert.match(workflow, /append_env CSC_LINK "\$\{signing_link\}"/)
+})
+
 test('release assets can be verified then safely rebased to an immutable R2 version directory', async (t) => {
   const fixture = await createFixture()
   t.after(() => rm(fixture.root, { recursive: true, force: true }))
