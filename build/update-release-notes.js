@@ -1,12 +1,12 @@
-// scripts/update-release-notes.js
+// build/update-release-notes.js
 const fs = require('fs')
-const { execSync } = require('child_process')
 const path = require('path')
 
 // 配置
 const CONFIG = {
   GITHUB_OWNER: '11273',
   GITHUB_REPO: 'QzonePhoto',
+  CHANGELOG_FILE: path.join(__dirname, '../CHANGELOG.md'),
   OUTPUT_FILE: 'RELEASE_NOTES.md'
 }
 
@@ -22,18 +22,30 @@ const utils = {
   // 生成唯一的访问统计ID
   generateViewCounterId: (version) => {
     return `${CONFIG.GITHUB_OWNER}-${CONFIG.GITHUB_REPO}-${version.replace(/\./g, '-')}`
-  },
-
-  // 执行Git命令
-  gitAdd: (file) => {
-    try {
-      execSync(`git add ${file}`, { stdio: 'inherit' })
-      return true
-    } catch (error) {
-      console.error(`❌ Failed to add ${file} to git:`, error.message)
-      return false
-    }
   }
+}
+
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const extractVersionChangelog = (content, version) => {
+  const normalizedVersion = String(version).replace(/^v/, '')
+  const heading = new RegExp(`^## \\[${escapeRegExp(normalizedVersion)}\\][^\\r\\n]*$`, 'm')
+  const match = heading.exec(String(content))
+
+  if (!match) {
+    throw new Error(`CHANGELOG.md does not contain a section for v${normalizedVersion}`)
+  }
+
+  const start = match.index
+  const remaining = String(content).slice(start)
+  const nextSection = remaining.slice(match[0].length).search(/^## \[/m)
+  const end = nextSection === -1 ? undefined : match[0].length + nextSection
+
+  return remaining.slice(0, end).trim()
+}
+
+const readVersionChangelog = (version) => {
+  return extractVersionChangelog(fs.readFileSync(CONFIG.CHANGELOG_FILE, 'utf8'), version)
 }
 
 // 生成徽标
@@ -101,11 +113,9 @@ ${changelog}`
 
 // 主函数
 const main = () => {
-  // 获取命令行参数
-  const changelog = process.argv[2] || ''
-
   // 获取版本号
   const currentVersion = utils.getPackageVersion()
+  const changelog = readVersionChangelog(currentVersion)
 
   // 生成内容
   const content = generateReleaseNotes(currentVersion, changelog)
@@ -113,18 +123,18 @@ const main = () => {
   // 写入文件
   fs.writeFileSync(CONFIG.OUTPUT_FILE, content.trim())
   console.log(`✅ Generated ${CONFIG.OUTPUT_FILE} for ${currentVersion}`)
+}
 
-  // 添加到Git
-  if (utils.gitAdd(CONFIG.OUTPUT_FILE)) {
-    console.log(`✅ ${CONFIG.OUTPUT_FILE} has been added to git`)
+if (require.main === module) {
+  try {
+    main()
+  } catch (error) {
+    console.error('❌ Unexpected error:', error.message)
+    process.exitCode = 1
   }
 }
 
-// 错误处理
-process.on('uncaughtException', (error) => {
-  console.error('❌ Unexpected error:', error.message)
-  process.exit(1)
-})
-
-// 执行
-main()
+module.exports = {
+  extractVersionChangelog,
+  generateReleaseNotes
+}

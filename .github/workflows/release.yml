@@ -140,8 +140,8 @@ jobs:
         env:
           ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
-          CSC_LINK: ${{ startsWith(matrix.os, 'macos-') && secrets.MAC_CSC_LINK || secrets.WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && secrets.MAC_CSC_KEY_PASSWORD || secrets.WIN_CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ startsWith(matrix.os, 'macos-') && secrets.MAC_CSC_LINK || startsWith(matrix.os, 'windows-') && secrets.WIN_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && secrets.MAC_CSC_KEY_PASSWORD || startsWith(matrix.os, 'windows-') && secrets.WIN_CSC_KEY_PASSWORD || '' }}
           APPLE_ID: ${{ startsWith(matrix.os, 'macos-') && secrets.APPLE_ID || '' }}
           APPLE_ID_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && secrets.APPLE_ID_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ startsWith(matrix.os, 'macos-') && secrets.APPLE_TEAM_ID || '' }}

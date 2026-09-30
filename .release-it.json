@@ -47,7 +47,7 @@
     }
   },
   "hooks": {
-    "after:bump": "node build/update-release-notes.js \"${changelog}\""
+    "after:@release-it/conventional-changelog:beforeRelease": "node build/update-release-notes.js"
   },
   "git": {
     "tagName": "v${version}",
