@@ -1199,12 +1199,14 @@ const overallProgress = computed(() => {
   return Math.round((completedTasks.value / total) * 100)
 })
 const overallProgressColor = computed(() => {
-  if ((taskStats.value.error || 0) > 0) return 'var(--theme-danger)'
   if (globalTotalTasks.value > 0 && completedTasks.value === globalTotalTasks.value) {
     return 'var(--theme-success)'
   }
   if ((taskStats.value.downloading || 0) > 0) return 'var(--theme-info)'
-  if ((taskStats.value.paused || 0) > 0) return 'var(--theme-warning)'
+  if ((taskStats.value.error || 0) > 0 || (taskStats.value.paused || 0) > 0) {
+    return 'var(--theme-warning)'
+  }
+  if (completedTasks.value > 0) return 'var(--theme-success)'
   return 'var(--theme-brand-accent)'
 })
 

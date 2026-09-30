@@ -151,13 +151,18 @@
               <el-button
                 text
                 class="action-btn download-btn manager-btn"
-                :class="{ 'has-active-tasks': hasActiveTasks }"
+                :class="{
+                  'has-active-tasks': hasActiveTasks,
+                  'is-fetching-albums': isPreparingDownloads
+                }"
+                :aria-busy="hasActiveTasks || isPreparingDownloads"
                 title="下载管理器"
                 @click="showDownloadProgress"
               >
                 <div class="manager-btn-content">
                   <div class="icon-wrapper">
-                    <el-icon><Download /></el-icon>
+                    <el-icon v-if="isPreparingDownloads" class="fetching-icon"><Loading /></el-icon>
+                    <el-icon v-else><Download /></el-icon>
                     <div v-if="hasActiveTasks" class="active-indicator">
                       <div class="pulse-ring"></div>
                       <div class="pulse-dot"></div>
@@ -165,8 +170,8 @@
                   </div>
                   <div class="text-wrapper">
                     <div class="main-text">下载管理</div>
-                    <div v-if="activeTaskCount > 0" class="status-text">
-                      {{ statusText }}
+                    <div v-if="downloadStatusText" class="status-text" aria-live="polite">
+                      {{ downloadStatusText }}
                     </div>
                   </div>
                 </div>
@@ -289,13 +294,18 @@
               <el-button
                 text
                 class="action-btn download-btn manager-btn"
-                :class="{ 'has-active-tasks': hasActiveTasks }"
+                :class="{
+                  'has-active-tasks': hasActiveTasks,
+                  'is-fetching-albums': isPreparingDownloads
+                }"
+                :aria-busy="hasActiveTasks || isPreparingDownloads"
                 title="下载管理器"
                 @click="showDownloadProgress"
               >
                 <div class="manager-btn-content">
                   <div class="icon-wrapper">
-                    <el-icon><Download /></el-icon>
+                    <el-icon v-if="isPreparingDownloads" class="fetching-icon"><Loading /></el-icon>
+                    <el-icon v-else><Download /></el-icon>
                     <!-- 活跃任务指示器 -->
                     <div v-if="hasActiveTasks" class="active-indicator">
                       <div class="pulse-ring"></div>
@@ -304,8 +314,8 @@
                   </div>
                   <div class="text-wrapper">
                     <div class="main-text">下载管理</div>
-                    <div v-if="activeTaskCount > 0" class="status-text">
-                      {{ statusText }}
+                    <div v-if="downloadStatusText" class="status-text" aria-live="polite">
+                      {{ downloadStatusText }}
                     </div>
                   </div>
                 </div>
@@ -1568,6 +1578,11 @@ const hasActiveTasks = computed(() => {
   return activeTaskCount.value > 0
 })
 
+// 相册内容尚在获取且还未生成下载任务时，复用下载管理按钮原有的状态行。
+const isPreparingDownloads = computed(() => {
+  return downloadStore.fetchingAlbums.size > 0 && !hasActiveTasks.value
+})
+
 // 计算状态显示文本
 const statusText = computed(() => {
   const status = detailedStatus.value
@@ -1588,6 +1603,15 @@ const statusText = computed(() => {
   } else {
     return ''
   }
+})
+
+const downloadStatusText = computed(() => {
+  if (isPreparingDownloads.value) {
+    const albumCount = downloadStore.fetchingAlbums.size
+    return albumCount > 1 ? `正在获取 ${albumCount} 个相册…` : '正在获取相册…'
+  }
+
+  return statusText.value
 })
 
 // 上传相关计算属性
@@ -2371,6 +2395,7 @@ const downloadListenerCleanups = []
 
 // 设置下载状态监听器
 const setupDownloadListeners = () => {
+  cleanupDownloadListeners()
   // 监听活跃任务数量更新（主要监听器）
   const cleanup1 = window.QzoneAPI.download.onActiveCountUpdate((count) => {
     activeTaskCount.value = count
@@ -2482,6 +2507,7 @@ const debouncedRefreshAlbum = () => {
 
 // 设置上传状态监听器
 const setupUploadListeners = () => {
+  cleanupUploadListeners()
   // 监听活跃任务数量更新（主要监听器）
   const cleanup1 = window.QzoneAPI.upload.onActiveCountUpdate((count) => {
     activeUploadTaskCount.value = count
@@ -3382,6 +3408,21 @@ defineExpose({
             &.has-active-tasks.download-btn {
               .icon-wrapper .el-icon {
                 color: var(--theme-info);
+              }
+
+              .main-text {
+                color: var(--theme-info);
+              }
+
+              .status-text {
+                color: color-mix(in srgb, var(--theme-info) 80%, transparent);
+              }
+            }
+
+            &.is-fetching-albums.download-btn {
+              .fetching-icon {
+                color: var(--theme-info);
+                animation: loading-spin 1s linear infinite;
               }
 
               .main-text {
@@ -4387,6 +4428,10 @@ defineExpose({
   .fd-panel-toggle,
   .fd-panel-toggle .el-icon {
     transition: none;
+  }
+
+  .manager-btn .fetching-icon {
+    animation: none !important;
   }
 }
 .fd-mix-track {

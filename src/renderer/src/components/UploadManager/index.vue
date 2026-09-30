@@ -141,10 +141,17 @@
         >
           <div class="progress-top">
             <div class="progress-circle">
-              <el-progress :percentage="overallProgress" type="circle" :width="50" />
+              <el-progress
+                :percentage="overallProgress"
+                type="circle"
+                :width="50"
+                :color="overallProgressColor"
+              />
             </div>
             <div class="progress-info">
-              <div class="progress-percentage">{{ overallProgress }}%</div>
+              <div class="progress-percentage" :style="{ color: overallProgressColor }">
+                {{ overallProgress }}%
+              </div>
               <div class="progress-text">整体进度</div>
             </div>
           </div>
@@ -478,6 +485,16 @@ const overallProgress = computed(() => {
   return Math.round((taskStats.value.completed / taskStats.value.total) * 100)
 })
 
+const overallProgressColor = computed(() => {
+  if (taskStats.value.total > 0 && taskStats.value.completed === taskStats.value.total) {
+    return 'var(--theme-success)'
+  }
+  if (taskStats.value.uploading > 0 || taskStats.value.waiting > 0) return 'var(--theme-info)'
+  if (taskStats.value.error > 0 || taskStats.value.paused > 0) return 'var(--theme-warning)'
+  if (taskStats.value.completed > 0) return 'var(--theme-success)'
+  return 'var(--theme-info)'
+})
+
 const hasPausedTasks = computed(() => {
   return taskStats.value.paused > 0
 })
@@ -621,7 +638,7 @@ const handleVideoPreviewError = async (event, task) => {
 const getProgressColor = (status) => {
   switch (status) {
     case 'uploading':
-      return 'var(--theme-brand)'
+      return 'var(--theme-info)'
     case 'completed':
       return 'var(--theme-success)'
     case 'error':
@@ -953,6 +970,7 @@ const handleAlbumChange = () => {
 const listenerCleanups = []
 
 const setupEventListeners = () => {
+  cleanupEventListeners()
   const statsUpdateListener = (stats) => {
     taskStats.value = stats
   }
@@ -1084,9 +1102,9 @@ onMounted(async () => {
 })
 
 onUnmounted(async () => {
-  await window.QzoneAPI.upload.setManagerOpen(false)
-  // 只在组件销毁时才清理监听器
+  // 先同步移除监听，避免卸载期间的异步 IPC 让热更新/重挂载叠加监听器。
   cleanupEventListeners()
+  await window.QzoneAPI.upload.setManagerOpen(false)
   console.log('[UploadManager] 组件销毁，清理监听器')
 })
 </script>

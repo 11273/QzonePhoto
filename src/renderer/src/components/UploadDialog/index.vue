@@ -528,7 +528,12 @@
           </h5>
           <div class="progress-content">
             <div class="progress-circle-wrapper">
-              <el-progress :percentage="overallProgress" type="circle" :width="56" />
+              <el-progress
+                :percentage="overallProgress"
+                type="circle"
+                :width="56"
+                :color="overallProgressColor"
+              />
             </div>
             <div class="progress-stats">
               <div class="stat-row">
@@ -888,6 +893,20 @@ const overallProgress = computed(() => {
   const total = uploadStats.value.total
   if (total === 0) return 0
   return Math.round((uploadStats.value.completed / total) * 100)
+})
+
+const overallProgressColor = computed(() => {
+  if (uploadStats.value.total > 0 && uploadStats.value.completed === uploadStats.value.total) {
+    return 'var(--theme-success)'
+  }
+  if (uploadStats.value.uploading > 0 || uploadStats.value.waiting > 0) {
+    return 'var(--theme-info)'
+  }
+  if (uploadStats.value.error > 0 || uploadStats.value.paused > 0) {
+    return 'var(--theme-warning)'
+  }
+  if (uploadStats.value.completed > 0) return 'var(--theme-success)'
+  return 'var(--theme-info)'
 })
 
 // 选中的文件
