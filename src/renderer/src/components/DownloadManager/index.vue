@@ -376,7 +376,11 @@
             >
               <div class="task-container">
                 <!-- 左侧：缩略图 -->
-                <div class="task-thumbnail">
+                <div
+                  class="task-thumbnail"
+                  @mouseenter="scheduleTaskVideoPreview(task)"
+                  @mouseleave="stopTaskVideoPreview(task)"
+                >
                   <div
                     v-if="privacyStore.privacyMode && task.type !== 'contact-backup'"
                     class="privacy-overlay"
@@ -410,8 +414,17 @@
                       </div>
                     </template>
                   </el-image>
+                  <HoverVideoPreview
+                    v-if="task.type === 'video'"
+                    :active="hoverPreviewTaskId === task.id"
+                    :src="task.url || ''"
+                    :poster="task.thumbnail_url || ''"
+                  />
                   <!-- 文件类型标识 -->
-                  <div v-if="task.type === 'video'" class="type-badge">
+                  <div
+                    v-if="task.type === 'video' && hoverPreviewTaskId !== task.id"
+                    class="type-badge"
+                  >
                     <el-icon><VideoPlay /></el-icon>
                   </div>
                 </div>
@@ -704,6 +717,7 @@ import EmptyState from '@renderer/components/EmptyState/index.vue'
 import AppActionButton from '@renderer/components/AppActionButton/index.vue'
 import AppDialogHeader from '@renderer/components/AppDialogHeader/index.vue'
 import AppNumberStepper from '@renderer/components/AppNumberStepper/index.vue'
+import HoverVideoPreview from '@renderer/components/HoverVideoPreview/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { useFriendStore } from '@renderer/store/friend.store'
 import { formatTaskCount, formatTaskName } from '@renderer/utils/formatters'
@@ -728,6 +742,37 @@ const downloadSettingsVisible = ref(false)
 const downloadSettingsTriggerRef = ref(null)
 const downloadSettingsPanelRef = ref(null)
 const shouldRestoreDownloadSettingsFocus = ref(false)
+const hoverPreviewTaskId = ref('')
+let hoverPreviewTimer = null
+
+const clearTaskVideoPreviewTimer = () => {
+  if (!hoverPreviewTimer) return
+  window.clearTimeout(hoverPreviewTimer)
+  hoverPreviewTimer = null
+}
+
+const scheduleTaskVideoPreview = (task) => {
+  clearTaskVideoPreviewTimer()
+  if (
+    task?.type !== 'video' ||
+    !task?.url ||
+    privacyStore.privacyMode ||
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ||
+    !window.matchMedia?.('(hover: hover) and (pointer: fine)').matches
+  ) {
+    return
+  }
+
+  hoverPreviewTimer = window.setTimeout(() => {
+    hoverPreviewTimer = null
+    hoverPreviewTaskId.value = task.id
+  }, 520)
+}
+
+const stopTaskVideoPreview = (task = null) => {
+  clearTaskVideoPreviewTimer()
+  if (!task || hoverPreviewTaskId.value === task.id) hoverPreviewTaskId.value = ''
+}
 
 const focusableSelector =
   'input:not([disabled]), button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -1121,6 +1166,7 @@ watch(visible, async (newVisible) => {
     loadBatches()
     setupEventListeners()
   } else {
+    stopTaskVideoPreview()
     clearDownloadSettingsPopover()
     await window.QzoneAPI.download.setManagerOpen(false)
     cleanupEventListeners()
@@ -1159,6 +1205,7 @@ onMounted(async () => {
 
 // 组件销毁时清理
 onUnmounted(async () => {
+  stopTaskVideoPreview()
   if (batchReloadTimer) clearTimeout(batchReloadTimer)
   await window.QzoneAPI.download.setManagerOpen(false)
   cleanupEventListeners()

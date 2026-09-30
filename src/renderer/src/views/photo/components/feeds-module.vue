@@ -2176,13 +2176,28 @@ const formatBigNum = (n) => {
   if (n < 10000) return String(n)
   return (n / 10000).toFixed(n < 100000 ? 1 : 0) + '万'
 }
-const isVideoMedia = (media) => media?.type === 'video' || media?.is_video
+const isVideoMedia = (media) =>
+  media?.type === 'video' ||
+  media?.is_video === true ||
+  media?.is_video === 1 ||
+  media?.is_video === '1' ||
+  !!media?.videourl ||
+  !!media?.videoUrl
 const hoverPreviewKey = ref('')
 let hoverPreviewTimer = null
 const mediaHoverKey = (feed, index) =>
   `${activeKey.value}:${feed?.tid || feed?.id || feed?.abstime || 'feed'}:${index}`
 const mediaPreviewSource = (media) =>
-  media?.origin || media?.raw || media?.url || media?.video_url || media?.videourl || ''
+  media?.origin ||
+  media?.raw ||
+  media?.videoUrl ||
+  media?.videourl ||
+  media?.video_url ||
+  media?.video_play_url ||
+  media?.video_download_url ||
+  media?.url ||
+  media?.src ||
+  ''
 const canUseHoverPreview = () =>
   !privacyStore.privacyMode &&
   !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches &&
@@ -3271,17 +3286,20 @@ const handleScroll = async () => {
 
 const openPreview = (feed, startIdx) => {
   if (!feed.media?.length) return
-  previewItems.value = feed.media.map((media, i) => ({
-    type: media.type === 'video' || media.is_video ? 'video' : 'image',
-    src: media.origin || media.url || media.thumb,
-    thumb: media.thumb || media.origin || media.url,
-    fallbackSrcs: getMediaThumbCandidates(media),
-    key: `${feed.tid}-${i}`,
-    title: feed.name,
-    subtitle: feed.feedstime || formatTime(feed.abstime),
-    _feed: feed,
-    _media: media
-  }))
+  previewItems.value = feed.media.map((media, i) => {
+    const video = isVideoMedia(media)
+    return {
+      type: video ? 'video' : 'image',
+      src: video ? mediaPreviewSource(media) : media.origin || media.url || media.thumb,
+      thumb: media.thumb || media.pre || media.cover || media.origin || media.url,
+      fallbackSrcs: getMediaThumbCandidates(media),
+      key: `${feed.tid}-${i}`,
+      title: feed.name,
+      subtitle: feed.feedstime || formatTime(feed.abstime),
+      _feed: feed,
+      _media: media
+    }
+  })
   previewIndex.value = startIdx
   previewVisible.value = true
 }

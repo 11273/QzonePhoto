@@ -1336,8 +1336,8 @@ onUnmounted(() => {
 
 .mp-cover-overlay {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 50%;
+  left: 50%;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1349,6 +1349,8 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--theme-backdrop) 78%, transparent);
   box-shadow: var(--theme-shadow-sm);
   backdrop-filter: blur(10px);
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
 
   .el-icon {
     font-size: 15px;

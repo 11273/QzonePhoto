@@ -99,7 +99,7 @@
                   type="button"
                   class="photo-preview-trigger"
                   aria-keyshortcuts="Space"
-                  :aria-label="`${photo.is_video ? '播放视频' : '查看图片'}${photo.name ? `：${photo.name}` : ''}；按空格${
+                  :aria-label="`${isVideoPhoto(photo) ? '播放视频' : '查看图片'}${photo.name ? `：${photo.name}` : ''}；按空格${
                     selectedPhotos.has(
                       photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
                     )
@@ -176,7 +176,7 @@
 
                     <!-- 视频图标 -->
                     <span
-                      v-if="photo.is_video && hoverPreviewKey !== photoMediaKey(photo)"
+                      v-if="isVideoPhoto(photo) && hoverPreviewKey !== photoMediaKey(photo)"
                       class="video-badge"
                     >
                       <el-icon><VideoPlay /></el-icon>
@@ -195,7 +195,6 @@
                   type="button"
                   class="selection-checkbox"
                   tabindex="-1"
-                  aria-hidden="true"
                   :class="{
                     checked: selectedPhotos.has(
                       photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
@@ -470,6 +469,9 @@ const photoList = ref([])
 // 选择状态
 const selectedPhotos = ref(new Set())
 
+const isVideoPhoto = (photo) =>
+  photo?.is_video === true || photo?.is_video === 1 || photo?.is_video === '1'
+
 const isCopyableImageUrl = (value) => {
   if (typeof value !== 'string' || !value.trim()) return false
   try {
@@ -484,7 +486,7 @@ const selectedImageLinks = computed(() => {
   const links = new Set()
   photoList.value.forEach((photo) => {
     const photoKey = photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
-    const isVideo = photo.is_video === true || photo.is_video === 1 || photo.is_video === '1'
+    const isVideo = isVideoPhoto(photo)
     const url = photo.raw || photo.url || ''
     if (selectedPhotos.value.has(photoKey) && !isVideo && isCopyableImageUrl(url)) {
       links.add(url)
@@ -1816,7 +1818,7 @@ const checkAndLoadMore = async () => {
 // 把当前 photoList 转成 MediaPreview items（图片 + 视频混合）
 const buildPreviewItems = () =>
   photoList.value.map((p) => {
-    const isVideo = !!p.is_video
+    const isVideo = isVideoPhoto(p)
     return {
       type: isVideo ? 'video' : 'image',
       src: isVideo ? '' : p.url || p.raw, // 视频先空 src，开预览时再异步解析
@@ -1877,8 +1879,7 @@ const stopPhotoHoverPreview = (photo = null) => {
 }
 
 const canPreviewPhotoVideo = (photo) => {
-  const isVideo = photo?.is_video === true || photo?.is_video === 1 || photo?.is_video === '1'
-  if (!isVideo || privacyStore.privacyMode || previewVisible.value) return false
+  if (!isVideoPhoto(photo) || privacyStore.privacyMode || previewVisible.value) return false
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   const supportsHover = window.matchMedia?.('(hover: hover)').matches ?? true
   return !reducedMotion && supportsHover
@@ -1900,7 +1901,13 @@ const getPhotoVideoUrl = async (photo, { silent = false } = {}) => {
   try {
     const info = await window.QzoneAPI.getVideoInfo({ hostUin, topicId, picKey }, friendMeta.value)
     const url =
-      info?.video_download_url || info?.video_play_url || info?.video_info?.video_url || ''
+      info?.video_download_url ||
+      info?.video_play_url ||
+      info?.video_url ||
+      info?.url ||
+      info?.raw ||
+      info?.video_info?.video_url ||
+      ''
     if (url) videoUrlCache.value.set(cacheKey, url)
     else if (!silent) ElMessage.warning('无法获取视频播放地址')
     return url
@@ -1967,6 +1974,10 @@ const playPhotoHoverPreview = (url, requestId) => {
       })
       photoPreviewHls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal && requestId === photoHoverRequestId) stopPhotoHoverPreview()
+      })
+      photoPreviewHls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (requestId !== photoHoverRequestId || photoHoverVideoRef.value !== element) return
+        element.play().catch(() => stopPhotoHoverPreview())
       })
       photoPreviewHls.loadSource(url)
       photoPreviewHls.attachMedia(element)
@@ -2432,6 +2443,11 @@ onUnmounted(() => {
     }
   }
 
+  /* 静音预览时让画面保持干净；鼠标进入右下角命中区后再显示选择按钮。 */
+  &.is-previewing .selection-checkbox:not(:hover):not(:focus-visible) {
+    opacity: 0;
+  }
+
   &:focus-within .selection-checkbox {
     opacity: 1;
     pointer-events: auto;
@@ -2626,6 +2642,17 @@ onUnmounted(() => {
   z-index: 5; // 确保选择复选框在隐私遮罩之上
   opacity: 0;
   pointer-events: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+  }
+
+  .photo-item.is-previewing & {
+    pointer-events: auto;
+  }
 
   &:hover {
     background: var(--theme-text-muted);

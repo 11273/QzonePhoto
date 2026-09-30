@@ -102,16 +102,14 @@
                   </template>
                 </el-image>
                 <HoverVideoPreview
-                  v-if="feed.media?.[0]?.type === 'video'"
+                  v-if="isVideoMedia(feed.media?.[0])"
                   :active="hoverPreviewKey === mediaHoverKey(feed, 0)"
                   :src="mediaPreviewSource(feed.media[0])"
                   :poster="feed.media[0].cover || feed.media[0].url"
                 />
                 <!-- 视频标记 -->
                 <div
-                  v-if="
-                    feed.media?.[0]?.type === 'video' && hoverPreviewKey !== mediaHoverKey(feed, 0)
-                  "
+                  v-if="isVideoMedia(feed.media?.[0]) && hoverPreviewKey !== mediaHoverKey(feed, 0)"
                   class="card-video-badge"
                 >
                   <el-icon><VideoPlay /></el-icon>
@@ -296,10 +294,10 @@
                           type="button"
                           class="media-item tl-media-item"
                           :class="{
-                            'is-video': item.type === 'video',
+                            'is-video': isVideoMedia(item),
                             'privacy-mode': privacyStore.privacyMode
                           }"
-                          :aria-label="`${item.type === 'video' ? '播放视频' : '查看图片'} ${idx + 1}`"
+                          :aria-label="`${isVideoMedia(item) ? '播放视频' : '查看图片'} ${idx + 1}`"
                           @mouseenter="scheduleMediaHoverPreview(feed, item, idx)"
                           @mouseleave="stopMediaHoverPreview(feed, idx)"
                           @focus="scheduleMediaHoverPreview(feed, item, idx)"
@@ -307,7 +305,7 @@
                           @click="previewMedia(feed.media, idx, feed, $event)"
                         >
                           <!-- 视频 -->
-                          <div v-if="item.type === 'video'" class="media-video">
+                          <div v-if="isVideoMedia(item)" class="media-video">
                             <el-icon
                               v-if="hoverPreviewKey !== mediaHoverKey(feed, idx)"
                               class="video-play-icon"
@@ -823,7 +821,7 @@ const formatDateLabel = (dateStr) => {
 // 媒体类型判定（all / photo / video / text）
 const detectFeedMedia = (feed) => {
   if (!feed.media || feed.media.length === 0) return 'text'
-  const hasVideo = feed.media.some((m) => m.type === 'video')
+  const hasVideo = feed.media.some(isVideoMedia)
   if (hasVideo && feed.media.length === 1) return 'video'
   return 'photo'
 }
@@ -1525,8 +1523,24 @@ const deleteFeed = async (feed) => {
 const hoverPreviewKey = ref('')
 let hoverPreviewTimer = null
 const mediaHoverKey = (feed, index) => `${feed?.id || feed?.time || 'feed'}:${index}`
+const isVideoMedia = (media) =>
+  media?.type === 'video' ||
+  media?.is_video === true ||
+  media?.is_video === 1 ||
+  media?.is_video === '1' ||
+  !!media?.videourl ||
+  !!media?.videoUrl
 const mediaPreviewSource = (media) =>
-  media?.raw || media?.videoUrl || media?.videourl || media?.url || ''
+  media?.origin ||
+  media?.raw ||
+  media?.videoUrl ||
+  media?.videourl ||
+  media?.video_url ||
+  media?.video_play_url ||
+  media?.video_download_url ||
+  media?.url ||
+  media?.src ||
+  ''
 const clearHoverPreviewTimer = () => {
   if (!hoverPreviewTimer) return
   clearTimeout(hoverPreviewTimer)
@@ -1538,7 +1552,7 @@ const canUseHoverPreview = () =>
   !!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches
 const scheduleMediaHoverPreview = (feed, media, index) => {
   clearHoverPreviewTimer()
-  if (media?.type !== 'video' || !mediaPreviewSource(media) || !canUseHoverPreview()) return
+  if (!isVideoMedia(media) || !mediaPreviewSource(media) || !canUseHoverPreview()) return
   const key = mediaHoverKey(feed, index)
   hoverPreviewTimer = window.setTimeout(() => {
     hoverPreviewTimer = null
@@ -1559,11 +1573,11 @@ const previewMedia = async (media, index, feed = null, event = null) => {
     ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
     : null
   previewItems.value = media.map((m) => ({
-    type: m.type === 'video' ? 'video' : 'image',
-    src: m.type === 'video' ? '' : m.bigUrl || m.url,
+    type: isVideoMedia(m) ? 'video' : 'image',
+    src: isVideoMedia(m) ? '' : m.bigUrl || m.url,
     thumb: m.thumb || m.url,
     title: m.title || '',
-    needsResolve: m.type === 'video',
+    needsResolve: isVideoMedia(m),
     _media: m,
     _feed: feed
   }))
@@ -1580,8 +1594,9 @@ const handlePreviewVisibility = (visible) => {
 const resolvePreviewItem = async (item, idx) => {
   if (item.type !== 'video' || item.src) return item
   const m = item._media
-  if (m?.url) {
-    previewItems.value[idx] = { ...item, src: m.url, needsResolve: false }
+  const source = mediaPreviewSource(m)
+  if (source) {
+    previewItems.value[idx] = { ...item, src: source, needsResolve: false }
     return previewItems.value[idx]
   }
   return item

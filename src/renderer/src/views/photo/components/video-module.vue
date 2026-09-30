@@ -569,7 +569,17 @@ const resetVideoList = () => {
 }
 
 const getVideoDownloadUrl = (video) =>
-  video?.url || video?.raw || video?.videoUrl || video?.downloadUrl || ''
+  video?.url ||
+  video?.raw ||
+  video?.videoUrl ||
+  video?.videourl ||
+  video?.video_url ||
+  video?.video_play_url ||
+  video?.video_download_url ||
+  video?.playUrl ||
+  video?.downloadUrl ||
+  video?.video_info?.video_url ||
+  ''
 
 const videoKey = (video) =>
   String(video?.vid || video?.id || getVideoDownloadUrl(video) || video?.pre || '')
@@ -691,6 +701,10 @@ const playHoverPreview = (video, requestId) => {
       })
       previewHls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal && requestId === previewRequestId) stopHoverPreview()
+      })
+      previewHls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (requestId !== previewRequestId || hoverVideoRef.value !== element) return
+        element.play().catch(() => stopHoverPreview())
       })
       previewHls.loadSource(url)
       previewHls.attachMedia(element)
