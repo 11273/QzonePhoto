@@ -1,6 +1,6 @@
 {
   "name": "qzone-photo",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "description": "企鹅相册 · QzonePhoto",
   "desktopName": "com.qzonephoto.app.desktop",
   "main": "./out/main/index.js",
