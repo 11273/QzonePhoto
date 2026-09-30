@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   hasUsableQrCode,
-  normalizeQrCodePayload
+  normalizeQrCodePayload,
+  resolveLoginBusyState
 } from '../src/renderer/src/views/login/login-state.mjs'
 
 test('rejects empty QR responses instead of letting the login view crash', () => {
@@ -34,4 +35,18 @@ test('normalizes a complete QR response without discarding compatible fields', (
     compatible: true
   })
   assert.equal(hasUsableQrCode(payload), true)
+})
+
+test('uses one card-level loading state and prioritizes account login copy', () => {
+  assert.deepEqual(resolveLoginBusyState({ loading: false, isLoggingIn: false }), {
+    busy: false,
+    title: '',
+    description: '',
+    note: ''
+  })
+  assert.equal(resolveLoginBusyState({ loading: true }).title, '正在获取登录二维码')
+  assert.equal(
+    resolveLoginBusyState({ loading: true, isLoggingIn: true, loginMessage: '正在切换账号' }).title,
+    '正在切换账号'
+  )
 })

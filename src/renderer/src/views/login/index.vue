@@ -4,14 +4,17 @@
       <el-image class="login-brand-logo" :src="QZoneLogo" alt="企鹅相册" />
     </section>
     <section class="login-box" aria-label="登录 QQ 空间">
-      <div class="content" :class="{ 'has-local-accounts': localAccounts.length }">
-        <!-- 全屏登录遮罩 -->
+      <div
+        class="content"
+        :class="{ 'has-local-accounts': localAccounts.length }"
+        :aria-busy="loginBusyState.busy"
+      >
+        <!-- 整张登录卡片只保留一个加载态，避免二维码和头像登录同时出现 loading。 -->
         <div
-          v-if="isLoggingIn"
+          v-if="loginBusyState.busy"
           class="login-progress-overlay"
           role="status"
           aria-live="polite"
-          aria-busy="true"
         >
           <div class="login-progress-card">
             <div class="login-progress-row">
@@ -21,14 +24,14 @@
                 </el-icon>
               </div>
               <div class="login-progress-main">
-                <div class="login-progress-title">{{ loginMessage }}</div>
-                <div class="login-progress-desc">正在同步登录状态，请稍等</div>
+                <div class="login-progress-title">{{ loginBusyState.title }}</div>
+                <div class="login-progress-desc">{{ loginBusyState.description }}</div>
               </div>
             </div>
             <div class="login-progress-track" aria-hidden="true">
               <i></i>
             </div>
-            <div class="login-progress-note">请保持应用开启，完成后将自动进入空间</div>
+            <div class="login-progress-note">{{ loginBusyState.note }}</div>
           </div>
         </div>
 
@@ -65,7 +68,7 @@
         <div class="login-auth-stack" :class="{ 'has-local-accounts': localAccounts.length }">
           <!-- 二维码容器 -->
           <div class="qrcode-stage">
-            <div v-loading="loading" class="qrcode-container">
+            <div class="qrcode-container">
               <el-image
                 v-if="qrcodeInfo.img"
                 class="qrcode-image"
@@ -135,12 +138,12 @@
 <script setup>
 import QZoneLogo from '@renderer/assets/qzone_logo.png'
 import { Loading, SuccessFilled, Refresh, WarningFilled } from '@element-plus/icons-vue'
-import { onBeforeMount, onUnmounted, ref, toRaw } from 'vue'
+import { computed, onBeforeMount, onUnmounted, ref, toRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@renderer/store/user.store'
 import { ElMessage } from 'element-plus'
 import AppActionButton from '@renderer/components/AppActionButton/index.vue'
-import { hasUsableQrCode, normalizeQrCodePayload } from './login-state.mjs'
+import { hasUsableQrCode, normalizeQrCodePayload, resolveLoginBusyState } from './login-state.mjs'
 
 const userStore = useUserStore()
 const router = useRouter()
@@ -158,6 +161,13 @@ const localAccountsLoading = ref(false)
 const localAccounts = ref([]) // 本地账号列表
 const isLoggingIn = ref(false) // 专门用于头像登录的等待状态
 const loginMessage = ref('正在登录中...')
+const loginBusyState = computed(() =>
+  resolveLoginBusyState({
+    loading: loading.value,
+    isLoggingIn: isLoggingIn.value,
+    loginMessage: loginMessage.value
+  })
+)
 const scanStatus = ref('waiting') // 扫码状态: waiting(待扫码), scanned(已扫码待确认), expired(已过期)
 let previousScanStatus = 'waiting' // 记录上一次的状态，用于检测取消扫码
 const LOCAL_FACE_CACHE_KEY = 'qzone.local-login.face-cache'
@@ -652,18 +662,7 @@ onUnmounted(() => {
       width: min(320px, calc(100% - 56px));
       display: grid;
       gap: 13px;
-      padding: 18px;
-      border-radius: var(--theme-radius-lg);
-      background:
-        linear-gradient(145deg, var(--theme-material-highlight), transparent 38%),
-        var(--theme-material-regular);
-      border: 1px solid var(--theme-material-border);
-      box-shadow:
-        inset 0 1px 0 var(--theme-material-highlight),
-        var(--theme-shadow-lg);
-      -webkit-backdrop-filter: blur(var(--theme-material-blur))
-        saturate(var(--theme-material-saturation));
-      backdrop-filter: blur(var(--theme-material-blur)) saturate(var(--theme-material-saturation));
+      padding: 20px 18px;
     }
 
     .login-progress-row {
