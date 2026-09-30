@@ -14,6 +14,11 @@ import {
   normalizeDownloadTimePreference
 } from '@main/utils/download-file-time.mjs'
 import { writeTaskMediaMetadata } from '@main/utils/media-metadata-writer.mjs'
+import {
+  isExpectedMediaKind,
+  readMediaFileSignature,
+  replaceMediaFilenameExtension
+} from '@main/utils/download-media-file.mjs'
 import { isVideoPhoto, mergeEnrichedImagesInOriginalOrder } from '@main/utils/photo-order.mjs'
 import { downloadFolderUin } from '@main/utils/download-directory.mjs'
 import {
@@ -1256,7 +1261,7 @@ export class DownloadService {
 
     try {
       await fs.promises.mkdir(task.directory, { recursive: true })
-      const filePath = path.join(task.directory, task.filename)
+      let filePath = path.join(task.directory, task.filename)
 
       // 检查文件是否已存在
       const fileExists = await fs.promises
@@ -1266,24 +1271,36 @@ export class DownloadService {
       if (fileExists) {
         const replaceExisting = this.getReplaceExistingSetting()
         if (!replaceExisting) {
-          // 设置为不替换，跳过下载
-          task.status = TASK_STATUS.COMPLETED
-          task.progress = 100
-          task.speed = 0
-          task.downloaded = task.total || 0
+          const existingMedia = await readMediaFileSignature(filePath).catch(() => null)
+          if (!isExpectedMediaKind(task.type, existingMedia)) {
+            const fileSize = await fs.promises
+              .stat(filePath)
+              .then((stat) => stat.size)
+              .catch(() => 0)
+            if (fileSize === 0) {
+              await fs.promises.unlink(filePath).catch(() => {})
+            } else {
+              throw new Error('同名文件已存在，但内容不是有效的图片或视频，请移走后重试')
+            }
+          } else {
+            filePath = await this.correctDownloadedMediaExtension(task, filePath, existingMedia)
+            const existingSize = await fs.promises.stat(filePath).then((stat) => stat.size)
+            // 设置为不替换，跳过下载
+            task.status = TASK_STATUS.COMPLETED
+            task.progress = 100
+            task.speed = 0
+            task.total = existingSize
+            task.downloaded = existingSize
 
-          // if (is.dev) {
-          //   console.debug(`[DownloadService] 文件已存在，跳过下载: ${task.filename}`)
-          // }
+            await this.applyTaskMediaMetadata(filePath, task)
+            await this.applyTaskFileTime(filePath, task)
 
-          await this.applyTaskMediaMetadata(filePath, task)
-          await this.applyTaskFileTime(filePath, task)
-
-          // 完成的任务从内存中移除
-          this.activeTasks.delete(task.id)
-          await this.updateTaskInDB(task)
-          this.triggerUpdate([task.id])
-          return
+            // 完成的任务从内存中移除
+            this.activeTasks.delete(task.id)
+            await this.updateTaskInDB(task)
+            this.triggerUpdate([task.id])
+            return
+          }
         } else {
           // 设置为替换，删除现有文件
           await fs.promises.unlink(filePath).catch(() => {})
@@ -1296,9 +1313,13 @@ export class DownloadService {
       const cancelToken = axios.CancelToken.source()
       this.cancelTokens.set(task.id, cancelToken)
 
-      await this.downloadTaskWithFallback(task, filePath, cancelToken)
+      const responseMeta = await this.downloadTaskWithFallback(task, filePath, cancelToken)
 
       if (task.status !== TASK_STATUS.CANCELLED) {
+        filePath = await this.correctDownloadedMediaExtension(task, filePath, responseMeta.media)
+        const downloadedSize = await fs.promises.stat(filePath).then((stat) => stat.size)
+        task.total = downloadedSize
+        task.downloaded = downloadedSize
         await this.applyTaskMediaMetadata(filePath, task)
         await this.applyTaskFileTime(filePath, task)
         task.status = TASK_STATUS.COMPLETED
@@ -1336,7 +1357,8 @@ export class DownloadService {
       candidateIndex,
       candidateCount: candidates.length,
       httpStatus: status,
-      networkError: Boolean(error?.request && !error?.response),
+      networkError:
+        Boolean(error?.request && !error?.response) || error?.code === 'INVALID_MEDIA_CONTENT',
       cancelled: axios.isCancel(error)
     })
   }
@@ -1358,12 +1380,23 @@ export class DownloadService {
       task.speed = 0
 
       try {
-        await this.downloadFile(task, filePath, cancelToken)
+        const responseMeta = await this.downloadFile(task, filePath, cancelToken)
+        const media = await readMediaFileSignature(filePath, responseMeta.contentType)
+        if (!isExpectedMediaKind(task.type, media)) {
+          await fs.promises.unlink(filePath).catch(() => {})
+          const error = new Error(
+            task.type === 'video'
+              ? '视频地址返回的内容不是有效视频'
+              : '图片地址返回的内容不是有效图片'
+          )
+          error.code = 'INVALID_MEDIA_CONTENT'
+          throw error
+        }
         task.used_fallback = index > 0
         if (index > 0 && !task.download_fallback_reason) {
           task.download_fallback_reason = '原图不可用，已自动使用可下载版本'
         }
-        return
+        return { ...responseMeta, media }
       } catch (error) {
         if (!this.shouldTryDownloadFallback(error, task, index, candidates)) throw error
 
@@ -1406,7 +1439,7 @@ export class DownloadService {
 
   // 下载文件 - 保持原有逻辑
   async downloadFile(task, filePath, cancelToken) {
-    const writer = fs.createWriteStream(filePath)
+    let writer = null
     let lastTime = Date.now()
     let lastBytes = 0
     let lastProgressUpdate = Date.now()
@@ -1436,6 +1469,16 @@ export class DownloadService {
         cancelToken: cancelToken.token,
         headers
       })
+
+      const contentType = String(response.headers['content-type'] || '')
+      if (/^(?:text\/|application\/(?:json|xml|javascript|xhtml\+xml))/i.test(contentType)) {
+        response.data.destroy()
+        const error = new Error(`下载地址返回了非媒体内容（${contentType.split(';')[0]}）`)
+        error.code = 'INVALID_MEDIA_CONTENT'
+        throw error
+      }
+
+      writer = fs.createWriteStream(filePath)
 
       const totalBytes = parseInt(response.headers['content-length'], 10) || 0
       if (totalBytes > 0) {
@@ -1489,11 +1532,37 @@ export class DownloadService {
         writer.on('error', reject)
         response.data.on('error', reject)
       })
+      return { contentType }
     } catch (error) {
-      writer.destroy()
+      writer?.destroy()
       await fs.promises.unlink(filePath).catch(() => {})
       throw error
     }
+  }
+
+  async correctDownloadedMediaExtension(task, filePath, media) {
+    const correctedFilename = replaceMediaFilenameExtension(task.filename, media.extension)
+    if (correctedFilename === task.filename) return filePath
+
+    const correctedPath = path.join(task.directory, correctedFilename)
+    const correctedExists = await fs.promises
+      .access(correctedPath)
+      .then(() => true)
+      .catch(() => false)
+
+    if (correctedExists) {
+      const existingMedia = await readMediaFileSignature(correctedPath).catch(() => null)
+      if (!isExpectedMediaKind(task.type, existingMedia)) {
+        throw new Error(`正确后缀的同名文件已存在且内容无效：${correctedFilename}`)
+      }
+      await fs.promises.unlink(filePath).catch(() => {})
+    } else {
+      await fs.promises.rename(filePath, correctedPath)
+    }
+
+    task.filename = correctedFilename
+    task.name = correctedFilename
+    return correctedPath
   }
 
   async applyTaskFileTime(filePath, task) {
@@ -1871,7 +1940,7 @@ export class DownloadService {
     }
 
     // 文件扩展名
-    const extension = photo.is_video ? '.mp4' : '.jpg'
+    const extension = isVideoPhoto(photo) ? '.mp4' : '.jpg'
 
     // 基础文件名
     const baseName = photo.name || `photo_${uniqueId}`
@@ -1880,7 +1949,10 @@ export class DownloadService {
     const sanitizedBaseName = this.sanitizeFilename(baseName)
     const sanitizedUniqueId = this.sanitizeFilename(uniqueId)
 
-    return `${dateStr}_${timeStr}_${sanitizedBaseName}_${sanitizedUniqueId}${extension}`
+    return replaceMediaFilenameExtension(
+      `${dateStr}_${timeStr}_${sanitizedBaseName}_${sanitizedUniqueId}${extension}`,
+      extension
+    )
   }
 
   // 获取当前用户信息（从相册数据中提取）

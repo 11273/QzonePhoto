@@ -21,7 +21,7 @@ export const replaceFileSafely = async (tempPath, targetPath) => {
 
   const backupPath = path.join(
     path.dirname(targetPath),
-    `.${path.basename(targetPath)}.${crypto.randomUUID()}.backup`
+    `.qzonephoto-${crypto.randomUUID()}.backup`
   )
   let originalMoved = false
   let replacementMoved = false

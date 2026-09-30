@@ -4,6 +4,8 @@ import path from 'path'
 import { replaceFileSafely } from './replace-file.mjs'
 
 const MAX_DESCRIPTION_LENGTH = 2000
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const PNG_XMP_KEYWORD = 'XML:com.adobe.xmp'
 const XMP_HEADER = Buffer.from('http://ns.adobe.com/xap/1.0/\0', 'utf8')
 const EXIF_HEADER = Buffer.from('Exif\0\0', 'ascii')
 const EXIF_TAG = {
@@ -88,6 +90,99 @@ const isManagedXmpPacket = (packet) => {
   return /^<\?xpacket begin="[^"]*" id="W5M0MpCehiHzreSzNTczkc9d"\?><x:xmpmeta xmlns:x="adobe:ns:meta\/"><rdf:RDF xmlns:rdf="http:\/\/www\.w3\.org\/1999\/02\/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http:\/\/purl\.org\/dc\/elements\/1\.1\/"><dc:description><rdf:Alt><rdf:li xml:lang="x-default">[\s\S]*<\/rdf:li><\/rdf:Alt><\/dc:description><\/rdf:Description><\/rdf:RDF><\/x:xmpmeta><\?xpacket end="w"\?>$/.test(
     text
   )
+}
+
+const CRC32_TABLE = Array.from({ length: 256 }, (_, index) => {
+  let value = index
+  for (let bit = 0; bit < 8; bit += 1) {
+    value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1
+  }
+  return value >>> 0
+})
+
+const crc32 = (buffer) => {
+  let checksum = 0xffffffff
+  for (const byte of buffer) checksum = CRC32_TABLE[(checksum ^ byte) & 0xff] ^ (checksum >>> 8)
+  return (checksum ^ 0xffffffff) >>> 0
+}
+
+const createPngChunk = (type, data) => {
+  const typeBuffer = Buffer.from(type, 'ascii')
+  const header = Buffer.alloc(8)
+  header.writeUInt32BE(data.length, 0)
+  typeBuffer.copy(header, 4)
+  const checksum = Buffer.alloc(4)
+  checksum.writeUInt32BE(crc32(Buffer.concat([typeBuffer, data])), 0)
+  return Buffer.concat([header, data, checksum])
+}
+
+const createPngXmpChunk = (xmpPacket) =>
+  createPngChunk(
+    'iTXt',
+    Buffer.concat([
+      Buffer.from(`${PNG_XMP_KEYWORD}\0`, 'latin1'),
+      Buffer.from([0, 0, 0, 0]),
+      xmpPacket
+    ])
+  )
+
+const createSiblingTempPath = (filePath, suffix = '.tmp') =>
+  path.join(path.dirname(filePath), `.qzonephoto-${crypto.randomUUID()}${suffix}`)
+
+const writePngMetadata = async (filePath, metadata) => {
+  const source = await fs.promises.readFile(filePath)
+  if (!source.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+    throw new Error('文件不是有效的 PNG 图片')
+  }
+
+  const metadataHash = crypto.createHash('sha256').update(JSON.stringify(metadata)).digest('hex')
+  const xmpPacket = createXmpPacket({ ...metadata, metadataHash })
+  const chunks = []
+  let offset = PNG_SIGNATURE.length
+  let foundEnd = false
+  let existingManagedCount = 0
+  let matchingManagedCount = 0
+
+  while (offset + 12 <= source.length) {
+    const length = source.readUInt32BE(offset)
+    const end = offset + 12 + length
+    if (end > source.length) throw new Error('PNG 数据块无效')
+
+    const type = source.subarray(offset + 4, offset + 8).toString('ascii')
+    const data = source.subarray(offset + 8, end - 4)
+    const isManagedXmp =
+      type === 'iTXt' &&
+      data.subarray(0, PNG_XMP_KEYWORD.length).toString('latin1') === PNG_XMP_KEYWORD &&
+      data.includes(Buffer.from('qzonephoto:generated="true"', 'utf8'))
+
+    if (isManagedXmp) {
+      existingManagedCount += 1
+      if (data.includes(Buffer.from(`qzonephoto:metadataHash="${metadataHash}"`, 'utf8'))) {
+        matchingManagedCount += 1
+      }
+    } else if (type === 'IEND') {
+      chunks.push(createPngXmpChunk(xmpPacket), source.subarray(offset, end))
+      foundEnd = true
+      offset = end
+      break
+    } else {
+      chunks.push(source.subarray(offset, end))
+    }
+    offset = end
+  }
+
+  if (!foundEnd || offset !== source.length) throw new Error('PNG 文件结尾无效')
+  if (existingManagedCount === 1 && matchingManagedCount === 1) return false
+
+  const tempPath = createSiblingTempPath(filePath)
+  try {
+    await fs.promises.writeFile(tempPath, Buffer.concat([PNG_SIGNATURE, ...chunks]), { flag: 'wx' })
+    await replaceFileSafely(tempPath, filePath)
+    return true
+  } catch (error) {
+    await fs.promises.unlink(tempPath).catch(() => {})
+    throw error
+  }
 }
 
 const scanJpegMetadataSegments = (jpeg) => {
@@ -507,10 +602,7 @@ const writeJpegMetadata = async (filePath, metadata) => {
     Buffer.concat([exifSegment, xmpSegment])
   )
 
-  const tempPath = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${crypto.randomUUID()}.tmp`
-  )
+  const tempPath = createSiblingTempPath(filePath)
   try {
     await fs.promises.writeFile(tempPath, updated, { flag: 'wx' })
     await replaceFileSafely(tempPath, filePath)
@@ -535,10 +627,7 @@ const writeJpegDateTime = async (filePath, captureAt) => {
     exifSegment
   )
 
-  const tempPath = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${crypto.randomUUID()}.tmp`
-  )
+  const tempPath = createSiblingTempPath(filePath)
   try {
     await fs.promises.writeFile(tempPath, updated, { flag: 'wx' })
     await replaceFileSafely(tempPath, filePath)
@@ -547,28 +636,6 @@ const writeJpegDateTime = async (filePath, captureAt) => {
     await fs.promises.unlink(tempPath).catch(() => {})
     throw error
   }
-}
-
-const writeXmpSidecar = async (filePath, xmpPacket) => {
-  const sidecarPath = path.join(path.dirname(filePath), `${path.parse(filePath).name}.xmp`)
-  const existing = await fs.promises.readFile(sidecarPath).catch(() => null)
-  if (existing && !existing.includes(Buffer.from('qzonephoto:generated="true"', 'utf8'))) {
-    return { written: false, reason: 'sidecar-exists' }
-  }
-
-  const tempPath = path.join(
-    path.dirname(filePath),
-    `.${path.basename(sidecarPath)}.${crypto.randomUUID()}.tmp`
-  )
-  try {
-    await fs.promises.writeFile(tempPath, xmpPacket, { flag: 'wx' })
-    if (existing) await replaceFileSafely(tempPath, sidecarPath)
-    else await fs.promises.rename(tempPath, sidecarPath)
-  } catch (error) {
-    await fs.promises.unlink(tempPath).catch(() => {})
-    throw error
-  }
-  return { written: true, sidecarPath }
 }
 
 export const writeImageDescription = async (filePath, description, details = {}) => {
@@ -590,7 +657,6 @@ export const writeImageDescription = async (filePath, description, details = {})
     captureAtIso: normalizeText(details.captureAtIso || '', 64)
   }
 
-  const xmpPacket = createXmpPacket(metadata)
   const handle = await fs.promises.open(filePath, 'r')
   const signature = Buffer.alloc(2)
   try {
@@ -603,17 +669,32 @@ export const writeImageDescription = async (filePath, description, details = {})
       const changed = await writeJpegMetadata(filePath, metadata)
       return { written: true, changed, format: 'embedded-exif-and-xmp' }
     } catch (error) {
-      const fallback = await writeXmpSidecar(filePath, xmpPacket)
       return {
-        ...fallback,
-        fallback: true,
-        format: 'xmp-sidecar-fallback',
+        written: false,
+        reason: 'embedded-write-failed',
+        format: 'metadata-not-written',
         embeddedError: error.message
       }
     }
   }
 
-  return writeXmpSidecar(filePath, xmpPacket)
+  if (signature[0] === PNG_SIGNATURE[0] && signature[1] === PNG_SIGNATURE[1]) {
+    try {
+      const changed = await writePngMetadata(filePath, metadata)
+      return { written: true, changed, format: 'embedded-png-xmp' }
+    } catch (error) {
+      return {
+        written: false,
+        reason: 'embedded-write-failed',
+        format: 'metadata-not-written',
+        embeddedError: error.message
+      }
+    }
+  }
+
+  // 不在下载目录生成独立 .xmp 文件。它虽然是标准元数据旁车文件，
+  // 但会在资源管理器中和照片并列展示，让用户误以为照片被下载成了不可打开的文件。
+  return { written: false, reason: 'unsupported-format', format: 'metadata-not-written' }
 }
 
 export const writeImageDateTime = async (filePath, captureAt) => {

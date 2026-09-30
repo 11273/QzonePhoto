@@ -10,6 +10,9 @@ const MAX_FIELD_LENGTH = 2000
 const MAX_COMMENT_LENGTH = 6000
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov'])
 
+const createSiblingTempPath = (filePath, suffix) =>
+  path.join(path.dirname(filePath), `.qzonephoto-${crypto.randomUUID()}${suffix}`)
+
 const normalizeText = (value, limit = MAX_FIELD_LENGTH) => {
   const cleaned = [...String(value || '')]
     .filter((character) => {
@@ -106,10 +109,7 @@ const escapeXml = (value) =>
 const writeFinderComment = async (filePath, comment) => {
   if (process.platform !== 'darwin' || !comment)
     return { written: false, reason: 'unsupported-platform' }
-  const tempBase = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${crypto.randomUUID()}.finder-comment`
-  )
+  const tempBase = createSiblingTempPath(filePath, '.finder-comment')
   const plistPath = `${tempBase}.plist`
   const binaryPlistPath = `${tempBase}.bin`
   try {
@@ -142,16 +142,16 @@ export const writeVideoMetadata = async (filePath, metadata, fallbackDescription
   if (!normalized.comment) return { written: false, reason: 'empty-description' }
 
   const writeFallback = async (reason) => {
-    const [sidecar, finderComment] = await Promise.all([
+    const [embeddedMetadata, finderComment] = await Promise.all([
       writeImageDescription(filePath, normalized.comment, normalized),
       writeFinderComment(filePath, normalized.comment)
     ])
     return {
-      written: Boolean(sidecar.written || finderComment.written),
+      written: Boolean(embeddedMetadata.written || finderComment.written),
       fallback: true,
-      format: 'xmp-sidecar-and-finder-comment',
+      format: finderComment.written ? 'finder-comment' : 'metadata-not-written',
       reason,
-      sidecar,
+      embeddedMetadata,
       finderComment,
       metadata: normalized
     }
@@ -159,10 +159,7 @@ export const writeVideoMetadata = async (filePath, metadata, fallbackDescription
 
   if (!VIDEO_EXTENSIONS.has(extension)) return writeFallback('unsupported-video-format')
 
-  const tempPath = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${crypto.randomUUID()}${extension}`
-  )
+  const tempPath = createSiblingTempPath(filePath, extension)
   const metadataArgs = [
     '-metadata',
     `title=${normalized.title}`,
@@ -230,9 +227,22 @@ export const writeTaskMediaMetadata = async (filePath, task) => {
 
   if (task?.type === 'image') {
     if (!metadata.comment) return writeImageDateTime(filePath, metadata.captureAt)
-    const result = await writeImageDescription(filePath, metadata.comment, metadata)
-    await writeFinderComment(filePath, metadata.comment)
-    return { ...result, metadata }
+    const [result, finderComment] = await Promise.all([
+      writeImageDescription(filePath, metadata.comment, metadata),
+      writeFinderComment(filePath, metadata.comment)
+    ])
+    return {
+      ...result,
+      written: Boolean(result.written || finderComment.written),
+      fallback: !result.written && finderComment.written,
+      format: result.written
+        ? result.format
+        : finderComment.written
+          ? 'finder-comment'
+          : result.format,
+      finderComment,
+      metadata
+    }
   }
   if (!metadata.comment) return { written: false, reason: 'empty-description' }
   if (task?.type === 'video')

@@ -64,3 +64,25 @@ test('description metadata uses capture time for EXIF and keeps publish time sep
 
   assert.equal(output.includes(Buffer.from('2014:03:02 08:09:10\0', 'ascii')), true)
 })
+
+test('PNG metadata is embedded without creating visible XMP sidecar files', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'qzone-photo-no-sidecar-'))
+  t.after(() => fs.rm(directory, { recursive: true, force: true }))
+  const filePath = path.join(directory, 'photo.png')
+  await fs.writeFile(
+    filePath,
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64'
+    )
+  )
+
+  const result = await writeImageDescription(filePath, '动态正文')
+  const output = await fs.readFile(filePath)
+
+  assert.equal(result.written, true)
+  assert.equal(result.format, 'embedded-png-xmp')
+  assert.equal(output.includes(Buffer.from('XML:com.adobe.xmp', 'latin1')), true)
+  assert.equal(output.includes(Buffer.from('动态正文', 'utf8')), true)
+  await assert.rejects(fs.access(path.join(directory, 'photo.xmp')), { code: 'ENOENT' })
+})
