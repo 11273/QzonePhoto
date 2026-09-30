@@ -34,6 +34,10 @@ export const useFriendStore = defineStore('friend', () => {
     [CONTACT_SCOPE.GROUPS]: 0,
     [CONTACT_SCOPE.INTIMACY]: 0
   })
+  const intimacyScrollPositions = ref({
+    [FRIEND_TAB.CARE]: 0,
+    [FRIEND_TAB.CARE_BY]: 0
+  })
   const intimacyTab = ref(FRIEND_TAB.CARE)
   const loading = ref(false)
   const tabLoading = ref(false)
@@ -258,11 +262,8 @@ export const useFriendStore = defineStore('friend', () => {
       return
     }
     if (scope === CONTACT_SCOPE.GROUPS) {
-      selectedQQGroup.value = null
-      groupMembers.value = []
-      visibleGroupMemberLimit.value = QQ_GROUP_MEMBER_PAGE_SIZE
-      setScopeSearchQuery(CONTACT_SCOPE.GROUPS, '')
-      setScopeScrollPosition(CONTACT_SCOPE.GROUPS, 0)
+      // 返回群面板时保留已选群、成员分页和滚动位置。
+      // 只有用户主动选择其他群时，selectQQGroup 才会重置这些浏览状态。
       if (!groupsLoaded.value) await fetchQQGroups()
       return
     }
@@ -281,6 +282,12 @@ export const useFriendStore = defineStore('friend', () => {
     if (!Object.values(CONTACT_SCOPE).includes(scope)) return
     const value = Number(scrollTop)
     scopeScrollPositions.value[scope] = Number.isFinite(value) ? Math.max(0, value) : 0
+  }
+
+  const setIntimacyScrollPosition = (tab, scrollTop) => {
+    if (![FRIEND_TAB.CARE, FRIEND_TAB.CARE_BY].includes(tab)) return
+    const value = Number(scrollTop)
+    intimacyScrollPositions.value[tab] = Number.isFinite(value) ? Math.max(0, value) : 0
   }
 
   const selectQQGroup = async (group) => {
@@ -684,6 +691,10 @@ export const useFriendStore = defineStore('friend', () => {
       [CONTACT_SCOPE.GROUPS]: 0,
       [CONTACT_SCOPE.INTIMACY]: 0
     }
+    intimacyScrollPositions.value = {
+      [FRIEND_TAB.CARE]: 0,
+      [FRIEND_TAB.CARE_BY]: 0
+    }
     intimacyTab.value = FRIEND_TAB.CARE
     currentScope.value = CONTACT_SCOPE.FRIENDS
     careList.value = []
@@ -710,6 +721,7 @@ export const useFriendStore = defineStore('friend', () => {
     searchQuery,
     scopeSearchQueries,
     scopeScrollPositions,
+    intimacyScrollPositions,
     loading,
     tabLoading,
     groups,
@@ -748,6 +760,7 @@ export const useFriendStore = defineStore('friend', () => {
     switchScope,
     setScopeSearchQuery,
     setScopeScrollPosition,
+    setIntimacyScrollPosition,
     selectQQGroup,
     selectQQGroupById,
     resetQQGroupMemberPagination,

@@ -196,7 +196,7 @@
             :aria-label="intimacyTabAriaLabel(FRIEND_TAB.CARE)"
             :aria-selected="friendStore.currentTab === FRIEND_TAB.CARE"
             :tabindex="friendStore.currentTab === FRIEND_TAB.CARE ? 0 : -1"
-            @click="friendStore.switchTab(FRIEND_TAB.CARE)"
+            @click="handleIntimacyTabChange(FRIEND_TAB.CARE)"
             @keydown="handleDrawerTabKeydown($event, 0)"
           >
             <svg class="tab-heart" viewBox="0 0 16 16" fill="currentColor">
@@ -214,7 +214,7 @@
             :aria-label="intimacyTabAriaLabel(FRIEND_TAB.CARE_BY)"
             :aria-selected="friendStore.currentTab === FRIEND_TAB.CARE_BY"
             :tabindex="friendStore.currentTab === FRIEND_TAB.CARE_BY ? 0 : -1"
-            @click="friendStore.switchTab(FRIEND_TAB.CARE_BY)"
+            @click="handleIntimacyTabChange(FRIEND_TAB.CARE_BY)"
             @keydown="handleDrawerTabKeydown($event, 1)"
           >
             <svg class="tab-heart" viewBox="0 0 16 16" fill="currentColor">
@@ -970,26 +970,37 @@ const avatarUrl = (friend) => (friend.img || '').replace(/\/30(\?|$)/, '/100$1')
 
 const handleContactListScroll = (event) => {
   const target = event.currentTarget
-  friendStore.setScopeScrollPosition(friendStore.currentScope, target.scrollTop)
+  rememberContactListPosition(target.scrollTop)
   if (friendStore.currentScope !== CONTACT_SCOPE.GROUPS) return
   if (target.scrollTop + target.clientHeight >= target.scrollHeight - 72) {
     friendStore.loadMoreQQGroupMembers()
   }
 }
 
-const rememberContactListPosition = () => {
-  if (!contactListRef.value) return
-  friendStore.setScopeScrollPosition(friendStore.currentScope, contactListRef.value.scrollTop)
+const rememberContactListPosition = (scrollTop = contactListRef.value?.scrollTop) => {
+  if (!Number.isFinite(Number(scrollTop))) return
+  const position = Number(scrollTop)
+  friendStore.setScopeScrollPosition(friendStore.currentScope, position)
+  if (friendStore.currentScope === CONTACT_SCOPE.INTIMACY) {
+    friendStore.setIntimacyScrollPosition(friendStore.currentTab, position)
+  }
 }
 
 const restoreContactListPosition = async (scope = friendStore.currentScope) => {
   await nextTick()
   if (!isExpanded.value || friendStore.currentScope !== scope || !contactListRef.value) return
-  contactListRef.value.scrollTop = friendStore.scopeScrollPositions[scope] || 0
+  const position =
+    scope === CONTACT_SCOPE.INTIMACY
+      ? friendStore.intimacyScrollPositions[friendStore.currentTab]
+      : friendStore.scopeScrollPositions[scope]
+  contactListRef.value.scrollTop = position || 0
 }
 
 const resetContactListPosition = async (scope = friendStore.currentScope) => {
   friendStore.setScopeScrollPosition(scope, 0)
+  if (scope === CONTACT_SCOPE.INTIMACY) {
+    friendStore.setIntimacyScrollPosition(friendStore.currentTab, 0)
+  }
   await nextTick()
   if (friendStore.currentScope === scope && contactListRef.value) {
     contactListRef.value.scrollTop = 0
@@ -1063,6 +1074,12 @@ onMounted(() => window.addEventListener('keydown', handleDrawerEscape, true))
 onUnmounted(() => window.removeEventListener('keydown', handleDrawerEscape, true))
 
 const drawerTabs = [FRIEND_TAB.CARE, FRIEND_TAB.CARE_BY]
+const handleIntimacyTabChange = async (tab) => {
+  rememberContactListPosition()
+  await friendStore.switchTab(tab)
+  await restoreContactListPosition(CONTACT_SCOPE.INTIMACY)
+}
+
 const handleDrawerTabKeydown = (event, currentIndex) => {
   const key = event.key
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) return
@@ -1075,7 +1092,7 @@ const handleDrawerTabKeydown = (event, currentIndex) => {
     nextIndex = (currentIndex - 1 + drawerTabs.length) % drawerTabs.length
   else nextIndex = (currentIndex + 1) % drawerTabs.length
 
-  friendStore.switchTab(drawerTabs[nextIndex])
+  void handleIntimacyTabChange(drawerTabs[nextIndex])
   event.currentTarget.parentElement?.querySelectorAll('[role="tab"]')?.[nextIndex]?.focus()
 }
 
