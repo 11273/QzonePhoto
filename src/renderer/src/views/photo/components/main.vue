@@ -111,7 +111,7 @@
                 >
                   <div class="photo-wrapper">
                     <el-image
-                      :src="photo.pre"
+                      :src="photoCoverSource(photo)"
                       fit="cover"
                       class="photo-image"
                       lazy
@@ -404,6 +404,10 @@ import { ALBUM_LOAD_STATUS, createAlbumLoadState } from '@shared/album-load-stat
 import { CONTENT_LOAD_STATUS, classifyContentLoadFailure } from '@shared/content-load-state'
 import { toIpcSafeValue } from '@shared/ipc-payload'
 import { normalizeAlbumPrivacy, normalizePhotoDeleteItem } from '@shared/photo-delete'
+import {
+  resolveVideoCoverSource,
+  resolveVideoPlaybackSource
+} from '@renderer/utils/video-playback.mjs'
 import Hls from 'hls.js'
 
 const props = defineProps({
@@ -514,7 +518,7 @@ const pageGuard = createPaginationGuard({ cooldownMs: 1500, maxFailures: 3 })
 const previewVisible = ref(false)
 const previewIndex = ref(0)
 const previewItems = ref([])
-// 视频 src 缓存：picKey -> 真实播放 URL（避免重复请求）
+// 视频播放信息缓存：picKey -> 已验证的播放地址与封面（避免悬停、点开重复请求）
 const videoUrlCache = ref(new Map())
 const hoverPreviewKey = ref('')
 const hoverPreviewReady = ref(false)
@@ -1827,7 +1831,7 @@ const buildPreviewItems = () =>
     return {
       type: isVideo ? 'video' : 'image',
       src: isVideo ? '' : p.url || p.raw, // 视频先空 src，开预览时再异步解析
-      thumb: p.pre || p.url,
+      thumb: photoCoverSource(p),
       title: p.name || '',
       subtitle: p.modifytime ? formatTime(p.modifytime) : '',
       needsResolve: isVideo,
@@ -1837,6 +1841,12 @@ const buildPreviewItems = () =>
 
 const photoMediaKey = (photo) =>
   String(photo?.lloc || photo?.picKey || `${photo?.id}_${photo?.name}_${photo?.modifytime}`)
+
+const photoVideoCacheKey = (photo) =>
+  `${currentAlbum.value?.id || ''}:${photo?.picKey || photo?.lloc || ''}`
+
+const photoCoverSource = (photo) =>
+  resolveVideoCoverSource(videoUrlCache.value.get(photoVideoCacheKey(photo)) || {}, photo)
 
 const setPhotoHoverVideoRef = (element) => {
   photoHoverVideoRef.value = element || null
@@ -1890,38 +1900,36 @@ const canPreviewPhotoVideo = (photo) => {
   return !reducedMotion && supportsHover
 }
 
-const getPhotoVideoUrl = async (photo, { silent = false } = {}) => {
+const getPhotoVideoPlayback = async (photo, { silent = false } = {}) => {
   const picKey = photo?.picKey || photo?.lloc
   const topicId = currentAlbum.value?.id
   const hostUin = effectiveHostUin.value
 
   if (!picKey || !topicId) {
     if (!silent) ElMessage.warning('视频信息不完整，无法预览')
-    return ''
+    return { url: '', cover: resolveVideoCoverSource(photo) }
   }
 
-  const cacheKey = `${topicId}:${picKey}`
+  const cacheKey = photoVideoCacheKey(photo)
   if (videoUrlCache.value.has(cacheKey)) return videoUrlCache.value.get(cacheKey)
 
   try {
     const info = await window.QzoneAPI.getVideoInfo({ hostUin, topicId, picKey }, friendMeta.value)
-    const url =
-      info?.video_download_url ||
-      info?.video_play_url ||
-      info?.video_url ||
-      info?.url ||
-      info?.raw ||
-      info?.video_info?.video_url ||
-      ''
-    if (url) videoUrlCache.value.set(cacheKey, url)
+    const playback = {
+      url: resolveVideoPlaybackSource(info || {}),
+      cover: resolveVideoCoverSource(info || {}, photo)
+    }
+    if (playback.url) videoUrlCache.value.set(cacheKey, playback)
     else if (!silent) ElMessage.warning('无法获取视频播放地址')
-    return url
+    return playback
   } catch (error) {
     console.error('[AlbumVideoPreview] 获取视频 URL 失败:', error)
     if (!silent) ElMessage.error('获取视频信息失败')
-    return ''
+    return { url: '', cover: resolveVideoCoverSource(photo) }
   }
 }
+
+const getPhotoVideoUrl = async (photo, options) => (await getPhotoVideoPlayback(photo, options)).url
 
 const setupPhotoHoverEvents = (element, requestId) => {
   const isCurrent = () => requestId === photoHoverRequestId && photoHoverVideoRef.value === element
@@ -2045,9 +2053,14 @@ const handlePhotoClick = (photo, event) => {
 const resolvePreviewItem = async (item, idx) => {
   if (item.type !== 'video' || item.src) return item
   const photo = item._photo
-  const url = await getPhotoVideoUrl(photo)
-  if (!url) return item
-  previewItems.value[idx] = { ...item, src: url, needsResolve: false }
+  const playback = await getPhotoVideoPlayback(photo)
+  if (!playback.url) return item
+  previewItems.value[idx] = {
+    ...item,
+    src: playback.url,
+    thumb: playback.cover || item.thumb,
+    needsResolve: false
+  }
   return previewItems.value[idx]
 }
 

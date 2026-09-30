@@ -172,12 +172,16 @@
                 v-if="current.src"
                 :key="currentIndex + '-' + current.src"
                 ref="videoEl"
-                :src="current.src"
                 :poster="current.thumb"
                 class="mp-media mp-video"
-                controls
+                :controls="!mediaLoading"
                 playsinline
                 preload="metadata"
+                @canplay="onVideoCanPlay"
+                @playing="onVideoPlaying"
+                @pause="videoPaused = true"
+                @volumechange="onVideoVolumeChange"
+                @loadedmetadata="onMediaLoad"
                 @loadeddata="onMediaLoad"
                 @error="onMediaError"
               ></video>
@@ -203,6 +207,24 @@
               <el-icon class="is-loading"><Loading /></el-icon>
               <span>正在加载图片…</span>
             </div>
+            <div
+              v-if="mediaLoading && current?.type === 'video' && current.src"
+              class="mp-video-status"
+              role="status"
+              aria-live="polite"
+            >
+              <el-icon class="is-loading"><Loading /></el-icon>
+              <span>正在加载视频…</span>
+            </div>
+            <button
+              v-else-if="current?.type === 'video' && current.src && videoPaused && !mediaError"
+              type="button"
+              class="mp-video-play"
+              aria-label="播放视频"
+              @click="playCurrentVideo"
+            >
+              <el-icon><VideoPlay /></el-icon>
+            </button>
             <div v-if="mediaError" class="mp-error" role="alert">
               <el-icon><WarningFilled /></el-icon>
               <span>无法加载该媒体</span>
@@ -413,6 +435,12 @@ import {
   Download
 } from '@element-plus/icons-vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
+import {
+  applyVideoPlaybackPreference,
+  isHlsVideoSource,
+  saveVideoPlaybackPreference
+} from '@renderer/utils/video-playback.mjs'
+import Hls from 'hls.js'
 
 const privacyStore = usePrivacyStore()
 const privacyMode = computed(() => !!privacyStore.privacyMode)
@@ -449,6 +477,7 @@ const emit = defineEmits(['update:visible', 'index-change', 'toggle-select'])
 const currentIndex = ref(0)
 const mediaLoading = ref(false)
 const mediaError = ref(false)
+const videoPaused = ref(true)
 const imageFallbackSrc = ref('')
 const loadingMore = ref(false)
 const boundaryHint = ref('')
@@ -462,6 +491,89 @@ let previousActiveElement = null
 let chromeIdleTimer = null
 let sourceTransition = null
 let sourceTransitionPlayed = false
+let videoHls = null
+let videoLoadId = 0
+
+const destroyVideoHls = () => {
+  if (!videoHls) return
+  videoHls.destroy()
+  videoHls = null
+}
+
+const playCurrentVideo = async () => {
+  const element = videoEl.value
+  if (!element || !props.visible || current.value?.type !== 'video') return false
+
+  mediaLoading.value = true
+  videoHls?.startLoad?.()
+  try {
+    await element.play()
+    videoPaused.value = false
+    return true
+  } catch {
+    mediaLoading.value = false
+    videoPaused.value = true
+    return false
+  }
+}
+
+const loadCurrentVideoSource = async (source) => {
+  const loadId = ++videoLoadId
+  await nextTick()
+  const element = videoEl.value
+  if (
+    loadId !== videoLoadId ||
+    !element ||
+    !props.visible ||
+    current.value?.type !== 'video' ||
+    !source
+  )
+    return
+
+  destroyVideoHls()
+  mediaLoading.value = true
+  mediaError.value = false
+  videoPaused.value = true
+  applyVideoPlaybackPreference(element)
+
+  if (isHlsVideoSource(source)) {
+    if (element.canPlayType('application/vnd.apple.mpegurl')) {
+      element.src = source
+      element.load()
+      return
+    }
+
+    if (!Hls.isSupported()) {
+      mediaLoading.value = false
+      mediaError.value = true
+      return
+    }
+
+    videoHls = new Hls({
+      enableWorker: true,
+      lowLatencyMode: false,
+      autoStartLoad: false,
+      maxBufferLength: 30,
+      maxMaxBufferLength: 60,
+      debug: false
+    })
+    videoHls.on(Hls.Events.ERROR, (_event, data) => {
+      if (!data.fatal) return
+      mediaLoading.value = false
+      mediaError.value = true
+      destroyVideoHls()
+    })
+    videoHls.on(Hls.Events.MANIFEST_PARSED, () => {
+      if (loadId === videoLoadId) mediaLoading.value = false
+    })
+    videoHls.loadSource(source)
+    videoHls.attachMedia(element)
+    return
+  }
+
+  element.src = source
+  element.load()
+}
 
 const cancelSourceTransition = () => {
   sourceTransition?.cancel?.()
@@ -705,6 +817,7 @@ const setIndex = (i) => {
   currentIndex.value = i
   mediaLoading.value = true
   mediaError.value = false
+  videoPaused.value = true
   imageFallbackSrc.value = ''
   resetTransform() // 切换 item 时归零缩放/旋转/位移
   emit('index-change', i)
@@ -742,7 +855,17 @@ const onMediaLoad = (event) => {
     return
   }
   mediaLoading.value = false
-  playSourceTransition(event?.target)
+  if (current.value?.type === 'image') playSourceTransition(event?.target)
+}
+const onVideoCanPlay = () => {
+  mediaLoading.value = false
+}
+const onVideoPlaying = () => {
+  mediaLoading.value = false
+  videoPaused.value = false
+}
+const onVideoVolumeChange = () => {
+  if (videoEl.value) saveVideoPlaybackPreference(videoEl.value)
 }
 const onMediaError = () => {
   if (current.value?.type === 'image') {
@@ -785,7 +908,7 @@ const retryCurrentMedia = async () => {
 
   await nextTick()
   if (current.value?.type === 'video') {
-    videoEl.value?.load?.()
+    await loadCurrentVideoSource(current.value.src)
   }
 }
 
@@ -899,6 +1022,19 @@ const onKey = (e) => {
 }
 
 watch(
+  () => [props.visible, currentIndex.value, current.value?.type || '', current.value?.src || ''],
+  ([visible, , type, source]) => {
+    if (!visible || type !== 'video' || !source) {
+      videoLoadId += 1
+      destroyVideoHls()
+      return
+    }
+    void loadCurrentVideoSource(source)
+  },
+  { flush: 'post', immediate: true }
+)
+
+watch(
   () => props.visible,
   (v) => {
     if (v) {
@@ -925,6 +1061,9 @@ watch(
       } catch {
         // ignore
       }
+      videoLoadId += 1
+      videoPaused.value = true
+      destroyVideoHls()
       nextTick(() => previousActiveElement?.focus?.())
     }
   },
@@ -933,6 +1072,8 @@ watch(
 
 onUnmounted(() => {
   cancelSourceTransition()
+  destroyVideoHls()
+  videoLoadId += 1
   window.removeEventListener('keydown', onKey)
   document.body.style.overflow = ''
   if (chromeIdleTimer) window.clearTimeout(chromeIdleTimer)
@@ -1316,13 +1457,72 @@ onUnmounted(() => {
 
 .mp-video {
   outline: none;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.mp-video-status,
+.mp-video-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+}
+
+.mp-video-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 13px;
+  border: 1px solid var(--theme-border);
+  border-radius: 999px;
+  color: var(--theme-text-inverse);
+  font-size: 13px;
+  background: color-mix(in srgb, var(--theme-backdrop) 82%, transparent);
+  box-shadow: var(--theme-shadow-sm);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.mp-video-play {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 42%, transparent);
+  border-radius: 50%;
+  color: var(--theme-text-inverse);
+  background: color-mix(in srgb, var(--theme-backdrop) 68%, transparent);
+  box-shadow: var(--theme-shadow-md);
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    background-color 0.16s ease;
+
+  .el-icon {
+    font-size: 28px;
+  }
+
+  &:hover {
+    background: color-mix(in srgb, var(--theme-backdrop) 82%, transparent);
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 3px;
+  }
 }
 
 .mp-video-cover {
   position: relative;
-  width: min(80vw, 800px);
-  aspect-ratio: 16 / 9;
-  border-radius: 6px;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: var(--theme-canvas);
 }
@@ -1330,7 +1530,7 @@ onUnmounted(() => {
 .mp-cover-img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   opacity: 0.88;
 }
 
@@ -1646,6 +1846,7 @@ onUnmounted(() => {
   .mp-nav,
   .mp-thumb,
   .mp-media,
+  .mp-video-play,
   .mp-fade-enter-active,
   .mp-fade-leave-active {
     transition: none;

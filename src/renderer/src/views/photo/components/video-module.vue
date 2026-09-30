@@ -209,9 +209,29 @@
       <div v-if="currentVideo" class="video-player-wrapper">
         <!-- 视频播放器容器 -->
         <div class="video-player-container">
-          <video ref="videoPlayerRef" :poster="currentVideo.pre" controls class="video-player">
+          <video
+            ref="videoPlayerRef"
+            :poster="currentVideo.pre"
+            controls
+            playsinline
+            preload="metadata"
+            class="video-player"
+            @playing="handleOpenedVideoPlaying"
+            @pause="videoPaused = true"
+            @volumechange="handleOpenedVideoVolumeChange"
+          >
             您的浏览器不支持视频播放
           </video>
+
+          <button
+            v-if="!videoLoading && !videoError && videoPaused"
+            type="button"
+            class="video-start-button"
+            aria-label="播放视频"
+            @click="playOpenedVideo"
+          >
+            <el-icon><VideoPlay /></el-icon>
+          </button>
 
           <!-- 加载状态 -->
           <div v-if="videoLoading" class="video-loading-overlay" role="status" aria-live="polite">
@@ -219,7 +239,7 @@
               <el-icon><Loading /></el-icon>
             </div>
             <strong>正在准备视频</strong>
-            <span>缓冲完成后会自动开始播放</span>
+            <span>准备完成后可手动播放</span>
           </div>
 
           <!-- 错误提示 -->
@@ -314,6 +334,11 @@ import {
   classifyContentLoadFailure,
   createContentLoadState
 } from '@shared/content-load-state'
+import {
+  applyVideoPlaybackPreference,
+  isHlsVideoSource,
+  saveVideoPlaybackPreference
+} from '@renderer/utils/video-playback.mjs'
 import Hls from 'hls.js'
 
 const userStore = useUserStore()
@@ -355,6 +380,7 @@ const currentVideo = ref(null)
 const videoPlayerRef = ref(null)
 const videoLoading = ref(false)
 const videoError = ref('')
+const videoPaused = ref(true)
 const downloadingAll = ref(false)
 const downloadingCurrent = ref(false)
 const hoverPreviewKey = ref('')
@@ -958,13 +984,15 @@ const handleVideoClick = (video) => {
   videoDialogVisible.value = true
   videoError.value = ''
   videoLoading.value = true
+  videoPaused.value = true
 
   nextTick(() => playVideo(url))
 }
 
 // 播放视频（自动选择播放方式）
 const playVideo = (url) => {
-  if (!videoPlayerRef.value) return
+  const element = videoPlayerRef.value
+  if (!element) return
 
   // 清理旧的 HLS 实例
   if (hls) {
@@ -972,13 +1000,19 @@ const playVideo = (url) => {
     hls = null
   }
 
-  if (url.includes('.m3u8')) {
-    if (videoPlayerRef.value.canPlayType('application/vnd.apple.mpegurl')) {
-      videoPlayerRef.value.src = url
+  videoPaused.value = true
+  applyVideoPlaybackPreference(element)
+  setupVideoEvents()
+
+  if (isHlsVideoSource(url)) {
+    if (element.canPlayType('application/vnd.apple.mpegurl')) {
+      element.src = url
+      element.load()
     } else if (Hls.isSupported()) {
       hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
+        autoStartLoad: false,
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
         debug: false
@@ -987,9 +1021,12 @@ const playVideo = (url) => {
       hls.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) handleHLSError(data)
       })
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        videoLoading.value = false
+      })
 
       hls.loadSource(url)
-      hls.attachMedia(videoPlayerRef.value)
+      hls.attachMedia(element)
     } else {
       videoLoading.value = false
       videoError.value = '您的浏览器不支持 HLS 视频播放'
@@ -997,10 +1034,32 @@ const playVideo = (url) => {
       return
     }
   } else {
-    videoPlayerRef.value.src = url
+    element.src = url
+    element.load()
   }
+}
 
-  setupVideoEvents()
+const playOpenedVideo = async () => {
+  const element = videoPlayerRef.value
+  if (!element) return
+  videoLoading.value = element.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
+  hls?.startLoad?.()
+  try {
+    await element.play()
+  } catch {
+    videoLoading.value = false
+    videoPaused.value = true
+    ElMessage.info('视频尚未准备好，请稍后再试')
+  }
+}
+
+const handleOpenedVideoPlaying = () => {
+  videoLoading.value = false
+  videoPaused.value = false
+}
+
+const handleOpenedVideoVolumeChange = () => {
+  if (videoPlayerRef.value) saveVideoPlaybackPreference(videoPlayerRef.value)
 }
 
 // 设置视频事件监听
@@ -1009,21 +1068,19 @@ const setupVideoEvents = () => {
 
   // 移除之前的监听器，避免重复
   videoPlayerRef.value.onloadeddata = null
+  videoPlayerRef.value.onloadedmetadata = null
   videoPlayerRef.value.oncanplay = null
   videoPlayerRef.value.onwaiting = null
   videoPlayerRef.value.onplaying = null
   videoPlayerRef.value.onerror = null
 
-  videoPlayerRef.value.onloadeddata = () => {
+  videoPlayerRef.value.onloadedmetadata = () => {
     videoLoading.value = false
     videoError.value = ''
   }
 
   videoPlayerRef.value.oncanplay = () => {
     videoLoading.value = false
-    videoPlayerRef.value.play().catch(() => {
-      ElMessage.info('请点击播放按钮开始观看')
-    })
   }
 
   videoPlayerRef.value.onwaiting = () => {
@@ -1033,6 +1090,7 @@ const setupVideoEvents = () => {
   videoPlayerRef.value.onplaying = () => {
     videoLoading.value = false
     videoError.value = ''
+    videoPaused.value = false
   }
 
   videoPlayerRef.value.onerror = () => {
@@ -1088,6 +1146,7 @@ const handleDialogClose = () => {
   if (videoPlayerRef.value) {
     // 移除所有事件监听器
     videoPlayerRef.value.onloadeddata = null
+    videoPlayerRef.value.onloadedmetadata = null
     videoPlayerRef.value.oncanplay = null
     videoPlayerRef.value.onwaiting = null
     videoPlayerRef.value.onplaying = null
@@ -1106,6 +1165,7 @@ const handleDialogClose = () => {
   currentVideo.value = null
   videoLoading.value = false
   videoError.value = ''
+  videoPaused.value = true
 }
 
 // 打开视频地址
@@ -1669,6 +1729,52 @@ onUnmounted(() => {
   object-fit: contain;
   background: var(--theme-canvas);
   display: block;
+}
+
+.video-start-button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 6;
+  display: grid;
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 44%, transparent);
+  border-radius: 50%;
+  color: var(--theme-text-inverse);
+  background: color-mix(in srgb, var(--theme-backdrop) 72%, transparent);
+  box-shadow: var(--theme-shadow-md);
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  transition:
+    background-color 0.16s ease,
+    transform 0.16s ease;
+
+  .el-icon {
+    font-size: 27px;
+  }
+
+  &:hover {
+    background: color-mix(in srgb, var(--theme-backdrop) 86%, transparent);
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-focus);
+    outline-offset: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-start-button {
+    transition: none;
+
+    &:hover {
+      transform: translate(-50%, -50%);
+    }
+  }
 }
 
 .video-loading-overlay,
