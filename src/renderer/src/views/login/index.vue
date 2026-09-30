@@ -65,14 +65,19 @@
         <div class="login-auth-stack" :class="{ 'has-local-accounts': localAccounts.length }">
           <!-- 二维码容器 -->
           <div class="qrcode-stage">
-            <div class="qrcode-container">
+            <div v-loading="loading" class="qrcode-container">
               <el-image
-                v-loading="loading"
+                v-if="qrcodeInfo.img"
                 class="qrcode-image"
                 :src="qrcodeInfo.img"
                 alt="QQ 登录二维码"
                 :class="{ 'opacity-30': isLoggingIn, 'blur-sm': scanStatus === 'scanned' }"
               />
+
+              <div v-else class="qrcode-unavailable" role="status" aria-live="polite">
+                <el-icon :size="22"><WarningFilled /></el-icon>
+                <span>{{ loading ? '正在获取二维码' : '暂时无法连接' }}</span>
+              </div>
 
               <!-- 已扫码等待确认的遮罩 -->
               <transition name="scan-success">
@@ -93,7 +98,9 @@
                 <button type="button" :disabled="loading" @click="refreshQrcode">重新获取</button>
               </div>
             </div>
-            <span class="qrcode-caption">使用手机 QQ 扫描</span>
+            <span class="qrcode-caption">{{
+              qrcodeInfo.img ? '使用手机 QQ 扫描' : '连接恢复后即可登录'
+            }}</span>
           </div>
 
           <div v-if="localAccounts.length" class="local-account-section">
@@ -127,12 +134,13 @@
 
 <script setup>
 import QZoneLogo from '@renderer/assets/qzone_logo.png'
-import { Loading, SuccessFilled, Refresh } from '@element-plus/icons-vue'
+import { Loading, SuccessFilled, Refresh, WarningFilled } from '@element-plus/icons-vue'
 import { onBeforeMount, onUnmounted, ref, toRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@renderer/store/user.store'
 import { ElMessage } from 'element-plus'
 import AppActionButton from '@renderer/components/AppActionButton/index.vue'
+import { hasUsableQrCode, normalizeQrCodePayload } from './login-state.mjs'
 
 const userStore = useUserStore()
 const router = useRouter()
@@ -143,6 +151,8 @@ const loginError = ref('')
 const qrcodeInfo = ref({})
 let qrTimer = null // 用于二维码刷新
 let scanTimer = null // 用于监听扫码状态
+let qrSessionId = 0 // 丢弃刷新前仍在返回的旧二维码/扫码请求
+let scanRetryDelay = 1500
 let localAccountsTimer = null // 用于定时刷新本地账号列表
 const localAccountsLoading = ref(false)
 const localAccounts = ref([]) // 本地账号列表
@@ -153,6 +163,7 @@ let previousScanStatus = 'waiting' // 记录上一次的状态，用于检测取
 const LOCAL_FACE_CACHE_KEY = 'qzone.local-login.face-cache'
 const LOCAL_ACCOUNT_MISSING_LIMIT = 2
 const DEFAULT_LOCAL_FACE = 'https://ui.ptlogin2.qq.com/style/0/images/1.gif'
+const QR_UNAVAILABLE_MESSAGE = '暂时无法获取登录二维码，请检查网络后重试。'
 
 const readFaceCache = () => {
   try {
@@ -218,33 +229,45 @@ const mergeLocalAccounts = (accounts = []) => {
 }
 
 // 获取二维码
-const getQrcode = () => {
+const clearQrTimers = () => {
   if (qrTimer) {
     clearTimeout(qrTimer)
     qrTimer = null
   }
+  if (scanTimer) {
+    clearTimeout(scanTimer)
+    scanTimer = null
+  }
+}
+
+const getQrcode = async () => {
+  clearQrTimers()
+  const sessionId = ++qrSessionId
+  scanRetryDelay = 1500
   loading.value = true
   scanStatus.value = 'waiting' // 重置扫码状态
   previousScanStatus = 'waiting'
   msg.value = ''
   loginError.value = ''
 
-  window.QzoneAPI.getAuthQRCode()
-    .then((res) => {
-      // console.log('getQrcodeImg :>> ', res)
-      qrcodeInfo.value = res
-      checkScanStatus()
-    })
-    .catch((err) => {
-      // 报错等待3秒重新获取
-      console.error(err)
-      loginError.value = '暂时无法获取登录二维码，请检查网络后重试。'
-      msg.value = ''
-      qrTimer = setTimeout(() => getQrcode(), 3000)
-    })
-    .finally(() => {
-      loading.value = false
-    })
+  qrcodeInfo.value = {}
+
+  try {
+    const payload = normalizeQrCodePayload(await window.QzoneAPI.getAuthQRCode())
+    if (sessionId !== qrSessionId) return
+    if (!payload) throw new Error('二维码接口没有返回完整数据')
+
+    qrcodeInfo.value = payload
+    checkScanStatus(sessionId)
+  } catch (err) {
+    if (sessionId !== qrSessionId) return
+    console.error('获取登录二维码失败:', err)
+    qrcodeInfo.value = {}
+    loginError.value = QR_UNAVAILABLE_MESSAGE
+    msg.value = ''
+  } finally {
+    if (sessionId === qrSessionId) loading.value = false
+  }
 }
 
 // 手动刷新二维码
@@ -252,25 +275,33 @@ const refreshQrcode = () => {
   if (loading.value) return
 
   ElMessage.info('正在刷新二维码...')
-  clearTimers()
+  clearQrTimers()
   loginError.value = ''
   getQrcode()
 }
 
 // 监听扫码情况
-const checkScanStatus = () => {
+const checkScanStatus = (sessionId = qrSessionId) => {
+  if (sessionId !== qrSessionId) return
   if (scanTimer) {
     clearTimeout(scanTimer)
     scanTimer = null
   }
 
+  const activeQrCode = normalizeQrCodePayload(qrcodeInfo.value)
+  if (!activeQrCode) return
+
   window.QzoneAPI.checkLoginState({
-    qrsig: qrcodeInfo.value.qrsig,
-    pt_login_sig: qrcodeInfo.value.pt_login_sig
+    qrsig: activeQrCode.qrsig,
+    pt_login_sig: activeQrCode.pt_login_sig
   })
     .then(async (res) => {
+      if (sessionId !== qrSessionId) return
       // console.log('listenScanResult :>> ', res)
+      if (!res || typeof res !== 'object') throw new Error('扫码状态接口没有返回有效数据')
       const { code, data, message } = res
+      scanRetryDelay = 1500
+      loginError.value = ''
 
       if (code == 0) {
         // 登录成功
@@ -291,7 +322,8 @@ const checkScanStatus = () => {
           loginMessage.value = '正在登录中...'
           msg.value = '登录失败，请重试'
           loginError.value = '登录没有完成，请重新扫描二维码或选择本机账号。'
-          scanStatus.value = 'waiting'
+          scanStatus.value = 'expired'
+          qrcodeInfo.value = {}
           ElMessage.error('登录失败，请重试')
           qrTimer = setTimeout(() => getQrcode(), 1500)
         }
@@ -332,13 +364,20 @@ const checkScanStatus = () => {
       }
     })
     .catch((err) => {
+      if (sessionId !== qrSessionId) return
       console.error('检查扫码状态失败:', err)
-      // 出错时不中断轮询，继续检查
+      loginError.value = '网络连接不稳定，正在等待恢复；也可以手动刷新二维码。'
+      scanRetryDelay = Math.min(scanRetryDelay * 2, 10000)
     })
     .finally(() => {
       // 继续轮询
-      if (!isLoggingIn.value && scanStatus.value !== 'success') {
-        scanTimer = setTimeout(() => checkScanStatus(), 1500)
+      if (
+        sessionId === qrSessionId &&
+        !isLoggingIn.value &&
+        ['waiting', 'scanned'].includes(scanStatus.value) &&
+        hasUsableQrCode(qrcodeInfo.value)
+      ) {
+        scanTimer = setTimeout(() => checkScanStatus(sessionId), scanRetryDelay)
       }
     })
 }
@@ -378,6 +417,10 @@ const handleWindowFocus = () => {
   if (!isLoggingIn.value) getLocalAccounts()
 }
 
+const handleOnline = () => {
+  if (loginError.value && !loading.value && !isLoggingIn.value) getQrcode()
+}
+
 // 点击本地头像登录
 const loginWithLocalAccount = async (user) => {
   // 防止重复点击
@@ -390,6 +433,7 @@ const loginWithLocalAccount = async (user) => {
     msg.value = '正在登录...'
     loginError.value = ''
     scanStatus.value = 'waiting' // 重置扫码状态
+    qrSessionId += 1
 
     // 停止二维码轮询，避免干扰
     clearTimers()
@@ -420,14 +464,8 @@ const loginWithLocalAccount = async (user) => {
 
 // 清除所有定时器
 const clearTimers = () => {
-  if (qrTimer) {
-    clearTimeout(qrTimer)
-    qrTimer = null
-  }
-  if (scanTimer) {
-    clearTimeout(scanTimer)
-    scanTimer = null
-  }
+  qrSessionId += 1
+  clearQrTimers()
   if (localAccountsTimer) {
     clearInterval(localAccountsTimer)
     localAccountsTimer = null
@@ -439,11 +477,13 @@ onBeforeMount(() => {
   getLocalAccounts()
   startLocalAccountsPolling() // 启动定时刷新本地账号列表
   window.addEventListener('focus', handleWindowFocus)
+  window.addEventListener('online', handleOnline)
 })
 
 onUnmounted(() => {
   clearTimers()
   window.removeEventListener('focus', handleWindowFocus)
+  window.removeEventListener('online', handleOnline)
 })
 </script>
 
@@ -763,6 +803,26 @@ onUnmounted(() => {
         box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-text-inverse) 22%, transparent);
       }
 
+      .qrcode-unavailable {
+        width: 122px;
+        height: 122px;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 8px;
+        padding: 12px;
+        border-radius: var(--theme-radius-md);
+        color: var(--theme-text-muted);
+        background: var(--theme-surface-soft);
+        text-align: center;
+
+        span {
+          font-size: 11px;
+          font-weight: 600;
+          line-height: 1.4;
+        }
+      }
+
       // 已扫码成功的遮罩层
       .scan-success-overlay {
         position: absolute;
@@ -867,6 +927,11 @@ onUnmounted(() => {
         height: 128px;
 
         .qrcode-image {
+          width: 114px;
+          height: 114px;
+        }
+
+        .qrcode-unavailable {
           width: 114px;
           height: 114px;
         }

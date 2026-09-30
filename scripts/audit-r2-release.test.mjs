@@ -9,7 +9,7 @@ const sha512 = `${'A'.repeat(86)}==`
 const assets = [
   { filename: `QzonePhoto-${version}-win-x64-setup.exe`, size: 101, id: 'windows-x64' },
   { filename: `QzonePhoto-${version}-mac-arm64.zip`, size: 102, id: 'macos-arm64' },
-  { filename: `QzonePhoto-${version}-linux-x86_64.AppImage`, size: 103, id: 'linux-x64' }
+  { filename: `QzonePhoto-${version}-x86_64.AppImage`, size: 103, id: 'linux-x64' }
 ]
 
 function metadata(asset, { stable = false, unsafeDefault = false } = {}) {

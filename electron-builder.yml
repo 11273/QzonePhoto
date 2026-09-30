@@ -8,6 +8,10 @@ productName: 企鹅相册
 directories:
   buildResources: build # 指定构建资源目录（图标等）
 
+# 使用无 FUSE 依赖的静态 AppImage 运行时，兼容未预装 libfuse2 的新旧 Linux 桌面。
+toolsets:
+  appimage: 1.0.3
+
 # 应用运行时白名单。package.json 与 production 依赖由 electron-builder 自动加入；
 # 官网、发布脚本、测试、日志和本地截图不得进入桌面端安装包。
 files:
@@ -50,6 +54,8 @@ nsis:
 # Linux平台配置
 linux:
   icon: build/icons
+  # 让 .desktop 文件名、StartupWMClass 与 Electron 的 Linux app_id 保持一致。
+  syncDesktopName: true
   target:
     - target: AppImage
       arch: [x64]
@@ -91,7 +97,8 @@ dmg:
 
 # AppImage配置
 appImage:
-  artifactName: QzonePhoto-${version}-${os}-${arch}.${ext} # 命名格式
+  # AppImage 本身已标识平台，避免目录服务将文件名中的 linux 误判为兼容性问题。
+  artifactName: QzonePhoto-${version}-${arch}.${ext}
   synopsis: 企鹅相册 · QzonePhoto
   category: Utility
 

@@ -38,15 +38,18 @@ const invokeSafe = (channel, ...args) => {
 try {
   const QzoneAPI = {
     // 获取二维码图片
-    getAuthQRCode: () => ipcClient.call(IPC_AUTH.GET_QR),
+    getAuthQRCode: () => ipcClient.call(IPC_AUTH.GET_QR, {}, {}, { throwOnResponseError: true }),
     // 监听登录结果
-    checkLoginState: (data) => ipcClient.call(IPC_AUTH.LISTEN_QR, data),
+    checkLoginState: (data) =>
+      ipcClient.call(IPC_AUTH.LISTEN_QR, data, {}, { throwOnResponseError: true }),
     // 获取登录ck
-    getLoginInfo: (url) => ipcClient.call(IPC_AUTH.LOGIN_INFO, { url }),
+    getLoginInfo: (url) =>
+      ipcClient.call(IPC_AUTH.LOGIN_INFO, { url }, {}, { throwOnResponseError: true }),
     // 获取本地账号列表
     getLocalUnis: () => ipcClient.call(IPC_AUTH.LOCAL_UNIS),
     // 获取本地登录跳转的url用于登录
-    getLocalLoginJump: (userInfo) => ipcClient.call(IPC_AUTH.LOCAL_LOGIN, { userInfo }),
+    getLocalLoginJump: (userInfo) =>
+      ipcClient.call(IPC_AUTH.LOCAL_LOGIN, { userInfo }, {}, { throwOnResponseError: true }),
     // 获取个人信息
     fetchUserInfo: () => ipcClient.call(IPC_USER.ME_INFO),
     // 获取相册列表

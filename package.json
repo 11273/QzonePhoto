@@ -2,6 +2,7 @@
   "name": "qzone-photo",
   "version": "2.7.0",
   "description": "企鹅相册 · QzonePhoto",
+  "desktopName": "com.qzonephoto.app.desktop",
   "main": "./out/main/index.js",
   "author": "github.com/11273",
   "homepage": "https://qzonephoto.getgit.one",

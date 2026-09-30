@@ -16,7 +16,7 @@ const assets = {
   macosArm64Zip: `QzonePhoto-${version}-mac-arm64.zip`,
   macosX64Dmg: `QzonePhoto-${version}-mac-x64.dmg`,
   macosArm64Dmg: `QzonePhoto-${version}-mac-arm64.dmg`,
-  linuxAppImage: `QzonePhoto-${version}-linux-x86_64.AppImage`,
+  linuxAppImage: `QzonePhoto-${version}-x86_64.AppImage`,
   linuxDeb: `QzonePhoto-${version}-linux-amd64.deb`
 }
 

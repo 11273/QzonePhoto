@@ -1,5 +1,53 @@
 const { join } = require('path')
 const { execFileSync } = require('child_process')
+const { outputFile } = require('fs-extra')
+
+function escapeXml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+async function writeLinuxAppStreamMetadata(appOutDir, version) {
+  const metadataPath = join(
+    appOutDir,
+    'usr',
+    'share',
+    'metainfo',
+    'com.qzonephoto.app.metainfo.xml'
+  )
+  const safeVersion = escapeXml(version)
+  const metadata = `<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.qzonephoto.app</id>
+  <name>QzonePhoto</name>
+  <name xml:lang="zh-CN">企鹅相册</name>
+  <summary>Back up and manage QQ Zone albums locally</summary>
+  <summary xml:lang="zh-CN">在本地管理与备份 QQ 空间相册</summary>
+  <metadata_license>GPL-3.0-only</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <description>
+    <p>QzonePhoto is a desktop utility for browsing, downloading and managing QQ Zone albums, photos, videos and posts.</p>
+    <p xml:lang="zh-CN">企鹅相册是一款用于浏览、下载和管理 QQ 空间相册、照片、视频与动态的桌面工具。</p>
+  </description>
+  <launchable type="desktop-id">com.qzonephoto.app.desktop</launchable>
+  <provides>
+    <binary>qzone-photo</binary>
+  </provides>
+  <url type="homepage">https://qzonephoto.getgit.one</url>
+  <url type="bugtracker">https://github.com/11273/QzonePhoto/issues</url>
+  <releases>
+    <release version="${safeVersion}" />
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>
+`
+
+  await outputFile(metadataPath, metadata, { mode: 0o644 })
+}
 
 // macOS Tahoe 开始 dyld 严格要求主二进制与其加载的所有 framework/dylib
 // 必须共享同一签名 seal；无 Developer ID 证书构建时，统一使用 ad-hoc
@@ -25,6 +73,11 @@ function adhocResignMac(appPath) {
 }
 
 exports.default = async ({ appOutDir, packager, electronPlatformName }) => {
+  if (electronPlatformName === 'linux') {
+    await writeLinuxAppStreamMetadata(appOutDir, packager.appInfo.version)
+    return
+  }
+
   if (electronPlatformName !== 'darwin') return
 
   try {
