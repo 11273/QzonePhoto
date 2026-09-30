@@ -180,7 +180,10 @@ export const useUserStore = defineStore('user', () => {
       console.warn('[UserStore] 清除上传服务用户失败:', error)
     }
 
-    location.reload()
+    // 先把地址替换为登录页再重载：既彻底释放当前账号相关状态，
+    // 又避免重载后先恢复旧页面、再重定向登录页造成多余的进度条闪烁。
+    window.history.replaceState(null, '', '#/login')
+    window.location.reload()
   }
 
   return {

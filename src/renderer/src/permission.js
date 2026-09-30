@@ -9,8 +9,9 @@ NProgress.configure({ showSpinner: false }) // NProgress Configuration
 const whiteList = ['/login'] // no redirect whitelist
 
 router.beforeEach((to, from, next) => {
-  // start progress bar
-  NProgress.start()
+  // 登录页通常来自启动或退出登录，不显示一闪而过的路由进度条。
+  if (to.path === '/login') NProgress.remove()
+  else NProgress.start()
 
   // set page title
   document.title = APP_DESCRIPTION

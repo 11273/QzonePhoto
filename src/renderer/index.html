@@ -8,9 +8,24 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     />
     <style>
+      html,
+      body,
+      #app {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #111014;
+      }
+
+      html {
+        color-scheme: dark;
+      }
+
       .app-boot-fallback {
         box-sizing: border-box;
-        min-height: 100vh;
+        width: 100%;
+        height: 100%;
         display: grid;
         place-content: center;
         gap: 8px;
