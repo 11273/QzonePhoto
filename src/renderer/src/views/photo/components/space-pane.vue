@@ -34,12 +34,21 @@
       width="min(1180px, calc(100vw - 32px))"
       :close-on-click-modal="false"
       :close-on-press-escape="true"
-      :show-close="true"
-      class="album-dialog"
+      :show-close="false"
+      align-center
+      class="album-dialog ds-dialog"
+      modal-class="ds-dialog-overlay album-dialog-overlay"
       @closed="currentDialogAlbum = null"
     >
       <template #header="{ close }">
         <div class="dialog-header-custom">
+          <AppRefreshButton
+            class="dialog-refresh-action"
+            :loading="dialogRefreshLoading"
+            :disabled="dialogRefreshLoading"
+            aria-label="刷新相册"
+            @click="refreshDialogAlbum"
+          />
           <el-button text aria-label="关闭相册弹窗" title="关闭" @click="close">
             <el-icon><Close /></el-icon>
           </el-button>
@@ -49,6 +58,7 @@
         v-if="albumDialogVisible && currentDialogAlbum"
         ref="dialogMainRef"
         class="dialog-main-content"
+        dialog-mode
       />
     </el-dialog>
   </div>
@@ -58,6 +68,7 @@
 import { computed, nextTick, provide, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
+import AppRefreshButton from '@renderer/components/AppRefreshButton/index.vue'
 import Left from './left.vue'
 import Main from './main.vue'
 import PhotoModule from './photo-module.vue'
@@ -77,6 +88,7 @@ const mainRef = ref()
 const leftRef = ref()
 const dialogMainRef = ref()
 const albumDialogVisible = ref(false)
+const dialogRefreshLoading = ref(false)
 const currentDialogAlbum = ref(null)
 const albumLoadState = ref(createAlbumLoadState())
 const enterFriend = (friend) =>
@@ -108,6 +120,16 @@ const refreshCurrentAlbum = async () => {
 }
 provide('refreshAlbumCallback', refreshCurrentAlbum)
 
+const refreshDialogAlbum = async () => {
+  if (dialogRefreshLoading.value || !dialogMainRef.value?.refreshCurrentAlbum) return
+  dialogRefreshLoading.value = true
+  try {
+    await dialogMainRef.value.refreshCurrentAlbum()
+  } finally {
+    dialogRefreshLoading.value = false
+  }
+}
+
 const handleAlbumClick = async ({ albumId, albumName }) => {
   const album = await leftRef.value?.findAlbumById?.(albumId)
   if (!album) {
@@ -126,28 +148,48 @@ const handleAlbumClick = async ({ albumId, albumName }) => {
   min-width: 0;
 }
 :deep(.album-dialog) {
-  margin-top: max(24px, 6vh);
-  .el-dialog {
-    background: var(--theme-surface-overlay);
-    backdrop-filter: blur(20px);
-    border: 1px solid var(--theme-border);
-    border-radius: var(--theme-radius-xl);
-    box-shadow: var(--theme-shadow-lg);
-  }
+  display: flex;
+  max-height: min(84dvh, 820px);
+  margin: 0 !important;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--theme-material-thick);
+  border-color: var(--theme-material-border);
+
   .el-dialog__header {
     padding: 0;
     border: none;
     background: transparent;
     min-height: 0;
     height: 0;
-    overflow: hidden;
+    overflow: visible;
+    position: relative;
+    z-index: 3;
   }
   .dialog-header-custom {
     position: absolute;
     top: 16px;
     right: 16px;
     z-index: 1000;
-    .el-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .dialog-refresh-action {
+      min-width: 76px;
+      color: var(--theme-text-secondary);
+      background: transparent;
+      border-color: transparent;
+
+      &:hover,
+      &:focus-visible {
+        color: var(--theme-text-primary);
+        background: var(--theme-surface-hover);
+        border-color: var(--theme-border-subtle);
+      }
+    }
+
+    > .el-button:last-child {
       width: var(--theme-control);
       height: var(--theme-control);
       color: var(--theme-text-secondary) !important;
@@ -156,6 +198,7 @@ const handleAlbumClick = async ({ albumId, albumName }) => {
       border: 1px solid var(--theme-border);
       padding: 8px !important;
       border-radius: var(--theme-radius-md);
+      box-shadow: var(--theme-shadow-sm);
       &:hover {
         color: var(--theme-text-primary) !important;
         background: var(--theme-surface-raised) !important;
@@ -171,11 +214,40 @@ const handleAlbumClick = async ({ albumId, albumName }) => {
     }
   }
   .el-dialog__body {
+    flex: 1 1 auto;
+    min-height: 0;
     padding: 0;
-    height: min(75vh, 760px);
+    height: min(78dvh, 760px);
     overflow: hidden;
   }
+
+  /* 仅标题区为右上角操作组留位；底部操作行保持左右等距并贴齐右边界。 */
+  .top-bar {
+    padding-right: 20px;
+    box-shadow: none !important;
+  }
+
+  .top-bar.collapsed {
+    padding-right: 20px;
+  }
+
+  .top-bar .album-header {
+    padding-right: 136px;
+  }
+
+  .top-bar .bottom-controls {
+    box-shadow: none;
+  }
 }
+
+:deep(.album-dialog-overlay .el-overlay-dialog) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 20px;
+}
+
 .dialog-main-content {
   height: 100%;
   background: transparent;

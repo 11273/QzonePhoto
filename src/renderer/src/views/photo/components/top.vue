@@ -19,7 +19,7 @@
             <h2 class="album-title" :title="currentAlbum.name">{{ currentAlbum.name }}</h2>
 
             <!-- 相册刷新按钮 -->
-            <div class="title-right">
+            <div v-if="!props.dialogMode" class="title-right">
               <AppRefreshButton
                 class="album-refresh-action"
                 :loading="refreshLoading"
@@ -392,6 +392,13 @@ import { useDownloadStore } from '@renderer/store/download.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { useUserStore } from '@renderer/store/user.store'
 import { QZONE_UTILS, QZONE_CONFIG } from '@shared/const'
+
+const props = defineProps({
+  dialogMode: {
+    type: Boolean,
+    default: false
+  }
+})
 
 const downloadStore = useDownloadStore()
 const privacyStore = usePrivacyStore()

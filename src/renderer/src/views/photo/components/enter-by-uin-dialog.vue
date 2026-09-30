@@ -6,7 +6,9 @@
     :close-on-click-modal="false"
     :close-on-press-escape="true"
     :append-to-body="true"
+    align-center
     class="enter-by-uin-dialog dark-theme ds-dialog"
+    modal-class="ds-dialog-overlay"
     @update:model-value="handleVisibleChange"
     @closed="reset"
   >

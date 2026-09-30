@@ -556,7 +556,9 @@
       :close-on-click-modal="false"
       :close-on-press-escape="false"
       :show-close="false"
-      class="delete-progress-dialog"
+      align-center
+      class="delete-progress-dialog ds-dialog"
+      modal-class="ds-dialog-overlay"
     >
       <div class="delete-progress-content">
         <div class="progress-info">
@@ -604,7 +606,7 @@
       width="min(800px, calc(100vw - 32px))"
       align-center
       class="video-preview-dialog ds-dialog"
-      modal-class="media-dialog-overlay"
+      modal-class="ds-dialog-overlay media-dialog-overlay"
       :close-on-click-modal="false"
       @close="closeVideoPreview"
     >
@@ -2810,8 +2812,8 @@ onUnmounted(() => {
   padding: 6px 10px;
   margin-bottom: 8px;
   appearance: none;
-  background: var(--theme-info-soft);
-  border: 1px solid var(--theme-info-border);
+  background: var(--theme-brand-soft);
+  border: 1px solid var(--theme-brand-border);
   border-radius: var(--theme-radius-sm);
   color: inherit;
   font: inherit;
@@ -2820,8 +2822,8 @@ onUnmounted(() => {
   transition: var(--ds-transition-all);
 
   &:hover {
-    background: color-mix(in srgb, var(--theme-info-soft) 70%, var(--theme-surface-hover));
-    border-color: var(--theme-info);
+    background: var(--theme-brand-soft-hover);
+    border-color: var(--theme-brand-accent);
     transform: translateX(2px);
   }
 
@@ -2832,7 +2834,7 @@ onUnmounted(() => {
 
   .album-icon {
     font-size: 14px;
-    color: var(--theme-info);
+    color: var(--theme-brand-accent);
     flex-shrink: 0;
   }
 
@@ -2840,7 +2842,7 @@ onUnmounted(() => {
     flex: 1;
     font-size: 13px;
     font-weight: 500;
-    color: var(--theme-info-text);
+    color: var(--theme-brand-text);
     line-height: 1.4;
   }
 

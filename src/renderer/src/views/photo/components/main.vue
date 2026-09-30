@@ -1,6 +1,6 @@
 <template>
   <div class="photo-main">
-    <Top ref="topRef" />
+    <Top ref="topRef" :dialog-mode="props.dialogMode" />
 
     <!-- 照片网格区域 -->
     <div class="photo-container">
@@ -311,6 +311,7 @@
       :close-on-press-escape="true"
       width="380px"
       class="album-access-dialog ds-dialog"
+      modal-class="ds-dialog-overlay"
       align-center
       @close="handleAccessCancel"
     >
@@ -409,6 +410,10 @@ const props = defineProps({
   albumLoadState: {
     type: Object,
     default: () => createAlbumLoadState()
+  },
+  dialogMode: {
+    type: Boolean,
+    default: false
   }
 })
 const emit = defineEmits(['retry-albums'])

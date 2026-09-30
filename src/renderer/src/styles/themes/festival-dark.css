@@ -255,6 +255,35 @@
     color-mix(in srgb, var(--theme-material-thick) 94%, transparent);
 }
 
+/* 从照片动态进入的相册详情弹窗也延续同一套节日材质，避免跳回普通黑灰界面。 */
+:root[data-theme-family='festival'] .album-dialog {
+  border-color: rgba(var(--festival-accent-rgb), 0.15);
+  background:
+    radial-gradient(
+      520px 220px at 86% -80px,
+      rgba(var(--festival-primary-rgb), 0.13),
+      transparent 72%
+    ),
+    radial-gradient(
+      420px 180px at 8% 108%,
+      rgba(var(--festival-accent-rgb), 0.055),
+      transparent 76%
+    ),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.045), transparent 25%),
+    color-mix(in srgb, var(--theme-material-thick) 96%, transparent);
+}
+
+:root[data-theme-family='festival'] .album-dialog .top-bar {
+  border-bottom-color: rgba(var(--festival-accent-rgb), 0.1);
+  background:
+    linear-gradient(105deg, rgba(var(--festival-primary-rgb), 0.055), transparent 44%),
+    color-mix(in srgb, var(--theme-surface-soft) 94%, transparent);
+}
+
+:root[data-theme-family='festival'] .album-dialog .dialog-header-custom .el-button {
+  border-color: rgba(var(--festival-accent-rgb), 0.13);
+}
+
 :root[data-theme-family='festival']
   :where(.download-manager-dialog, .upload-manager-dialog, .download-batch-message-box)::after {
   content: '';
