@@ -3,8 +3,17 @@ name: Promote verified release to R2
 on:
   workflow_dispatch:
     inputs:
+      operation:
+        description: 操作类型：正常发布、回退到历史快照、覆盖当前同版本
+        required: true
+        default: promote
+        type: choice
+        options:
+          - promote
+          - rollback
+          - replace
       tag:
-        description: 指定要同步的已验证标签（可选；留空自动选择最新公开版本。选择旧标签即回退）
+        description: 指定已发布标签（正常发布可留空；回退和覆盖必须填写）
         required: false
         default: ''
         type: string
@@ -28,7 +37,9 @@ jobs:
       R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
       R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
       RELEASE_TAG: ${{ inputs.tag }}
+      PROMOTION_OPERATION: ${{ inputs.operation }}
       R2_VERSIONED_REPLACEMENT: 'false'
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: 11273/QzonePhoto
     steps:
@@ -47,8 +58,15 @@ jobs:
       - name: Resolve release to promote
         run: |
           set -euo pipefail
+          case "${PROMOTION_OPERATION}" in
+            promote|rollback|replace) ;;
+            *) echo "Unsupported R2 operation: ${PROMOTION_OPERATION}"; exit 1 ;;
+          esac
+          if [ "${PROMOTION_OPERATION}" != 'promote' ] && [ -z "${RELEASE_TAG}" ]; then
+            echo "${PROMOTION_OPERATION} requires an explicit stable tag"
+            exit 1
+          fi
           if [ -z "${RELEASE_TAG}" ]; then
-            PROMOTION_MODE='automatic'
             RELEASE_TAG="$(gh release list --repo "${GH_REPO}" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')"
             test -n "${RELEASE_TAG}" || {
               echo 'No published stable GitHub Release is available to promote'
@@ -56,7 +74,6 @@ jobs:
             }
             echo "Automatically selected latest published release: ${RELEASE_TAG}"
           else
-            PROMOTION_MODE='manual'
             echo "Manually selected release: ${RELEASE_TAG}"
           fi
           [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
@@ -75,17 +92,12 @@ jobs:
           echo "RELEASE_TAG=${RELEASE_TAG}" >> "${GITHUB_ENV}"
           echo "RELEASE_VERSION=${RELEASE_TAG#v}" >> "${GITHUB_ENV}"
           echo "RELEASE_PUBLISHED_AT=${published_at}" >> "${GITHUB_ENV}"
-          echo "PROMOTION_MODE=${PROMOTION_MODE}" >> "${GITHUB_ENV}"
           {
             echo '### R2 release selected'
             echo
             echo "- Tag: \`${RELEASE_TAG}\`"
-            if [ "${PROMOTION_MODE}" = 'manual' ]; then
-              echo '- Source: manually selected published GitHub Release'
-              echo '- Stable channel: selected tag may intentionally replace the current stable release'
-            else
-              echo '- Source: latest published GitHub Release'
-            fi
+            echo "- Operation: \`${PROMOTION_OPERATION}\`"
+            echo '- Source: published stable GitHub Release'
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Check out release scripts from main
@@ -112,6 +124,7 @@ jobs:
         run: pnpm test:release
 
       - name: Download matching public release assets
+        if: env.PROMOTION_OPERATION != 'rollback'
         run: |
           set -euo pipefail
           mkdir -p artifacts
@@ -125,6 +138,7 @@ jobs:
           }
 
       - name: Verify release and prepare its public manifest
+        if: env.PROMOTION_OPERATION != 'rollback'
         run: |
           set -euo pipefail
           node scripts/verify-release-assets.mjs \
@@ -154,21 +168,24 @@ jobs:
               exit 1
             }
           fi
-          allow_inactive_release_replacement() {
-            if [ "${current_stable_tag}" = "${RELEASE_TAG}" ]; then
-              echo "${RELEASE_TAG} is already the stable R2 release and its published assets changed."
-              echo 'Create a new patch version instead of replacing files that active clients may be downloading.'
-              exit 1
-            fi
+          enable_versioned_replacement() {
+            local reason="$1"
             echo 'R2_VERSIONED_REPLACEMENT=true' >> "${GITHUB_ENV}"
             {
-              echo '### Replacing an inactive R2 release copy'
+              echo '### Replacing an R2 release copy'
               echo
               echo "- Release: \`${RELEASE_TAG}\`"
               echo "- Current stable R2 release: \`${current_stable_tag:-none}\`"
-              echo '- The selected release is not in the live stable channel, so its incomplete or superseded versioned files may be safely rebuilt and verified.'
+              echo "- Reason: ${reason}"
+              if [ "${PROMOTION_OPERATION}" = 'replace' ]; then
+                echo '- Safety: all changed versioned objects are backed up, restored on failure, and purged from CDN cache after either outcome.'
+              fi
             } >> "${GITHUB_STEP_SUMMARY}"
           }
+          if [ "${PROMOTION_OPERATION}" = 'replace' ] && [ "${current_stable_tag}" != "${RELEASE_TAG}" ]; then
+            echo "Replacement is allowed only for the current stable R2 tag (${current_stable_tag:-none})."
+            exit 1
+          fi
           versioned_object_count="$(aws s3api list-objects-v2 --bucket "${R2_BUCKET}" \
             --prefix "releases/${RELEASE_TAG}/" --max-keys 1 --endpoint-url "${R2_ENDPOINT}" \
             --query 'KeyCount' --output text)"
@@ -184,7 +201,7 @@ jobs:
             # stale manifest, metadata file, blockmap, or installer fail one-by-one later.
             mv "${candidate_manifest}" "artifacts/${RELEASE_TAG}.json"
             echo "Found an inactive R2 copy of ${RELEASE_TAG}; rebuilding it from verified GitHub assets."
-            allow_inactive_release_replacement
+            enable_versioned_replacement 'inactive copy is incomplete or superseded'
           elif [ "${existing_versioned_manifest}" = true ]; then
             aws s3 cp "s3://${R2_BUCKET}/${manifest_key}" existing-release-manifest.json \
               --endpoint-url "${R2_ENDPOINT}" --only-show-errors
@@ -199,9 +216,13 @@ jobs:
                 echo "Reused the existing immutable manifest for ${RELEASE_TAG}."
                 ;;
               replace)
-                echo "${RELEASE_TAG} is already the stable R2 release and its published assets changed."
-                echo 'Create a new patch version instead of replacing files that active clients may be downloading.'
-                exit 1
+                if [ "${PROMOTION_OPERATION}" != 'replace' ]; then
+                  echo "${RELEASE_TAG} is already the stable R2 release and its published assets changed."
+                  echo 'Run this workflow with operation=replace to perform a protected same-version replacement.'
+                  exit 1
+                fi
+                mv "${candidate_manifest}" "artifacts/${RELEASE_TAG}.json"
+                enable_versioned_replacement 'explicit same-version replacement requested'
                 ;;
               *)
                 echo "Unexpected manifest reconciliation result: ${manifest_state}"
@@ -209,13 +230,73 @@ jobs:
                 ;;
             esac
           elif [ "${current_stable_tag}" = "${RELEASE_TAG}" ]; then
-            echo "${RELEASE_TAG} is the current stable R2 release, but its versioned manifest is missing."
-            echo 'Refusing to repair a live release in place; create a new patch version instead.'
-            exit 1
+            if [ "${PROMOTION_OPERATION}" != 'replace' ]; then
+              echo "${RELEASE_TAG} is the current stable R2 release, but its versioned manifest is missing."
+              echo 'Run this workflow with operation=replace to perform a protected repair.'
+              exit 1
+            fi
+            mv "${candidate_manifest}" "artifacts/${RELEASE_TAG}.json"
+            enable_versioned_replacement 'explicit repair of a missing live manifest'
           else
             mv "${candidate_manifest}" "artifacts/${RELEASE_TAG}.json"
             echo "No prior R2 copy of ${RELEASE_TAG}; this is the first promotion for the tag."
           fi
+
+      - name: Prepare and verify historical R2 rollback snapshot
+        if: env.PROMOTION_OPERATION == 'rollback'
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts github-metadata
+          manifest_key="manifests/${RELEASE_TAG}.json"
+          aws s3api head-object --bucket "${R2_BUCKET}" --key "${manifest_key}" \
+            --endpoint-url "${R2_ENDPOINT}" >/dev/null 2>&1 || {
+            echo "R2 does not contain a versioned manifest for ${RELEASE_TAG}; rollback cannot continue."
+            exit 1
+          }
+          aws s3 cp "s3://${R2_BUCKET}/${manifest_key}" "artifacts/${RELEASE_TAG}.json" \
+            --endpoint-url "${R2_ENDPOINT}" --only-show-errors
+          gh release download "${RELEASE_TAG}" --repo "${GH_REPO}" --dir github-metadata \
+            --pattern 'latest*.yml'
+          gh release view "${RELEASE_TAG}" --repo "${GH_REPO}" --json assets > github-release-assets.json
+          for name in latest.yml latest-mac.yml latest-linux.yml; do
+            aws s3 cp "s3://${R2_BUCKET}/releases/${RELEASE_TAG}/${name}" "artifacts/${name}" \
+              --endpoint-url "${R2_ENDPOINT}" --only-show-errors
+            cmp --silent "artifacts/${name}" "github-metadata/${name}" || {
+              echo "Historical R2 ${name} differs from the published GitHub Release."
+              exit 1
+            }
+          done
+          node scripts/prepare-r2-rollback.mjs \
+            --tag="${RELEASE_TAG}" --manifest="artifacts/${RELEASE_TAG}.json" \
+            --metadata=artifacts --out=stable-update-metadata \
+            --fileList=verified-release-files.txt --assetList=verified-rollback-assets.tsv \
+            --publicBaseUrl="${R2_PUBLIC_BASE_URL}"
+          node -e '
+            const fs = require("node:fs")
+            const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+            const release = JSON.parse(fs.readFileSync(process.argv[2], "utf8"))
+            const github = new Map(release.assets.map((asset) => [asset.name, Number(asset.size)]))
+            for (const asset of manifest.assets) {
+              if (github.get(asset.filename) !== Number(asset.size)) {
+                throw new Error(`GitHub Release asset mismatch: ${asset.filename}`)
+              }
+            }
+          ' "artifacts/${RELEASE_TAG}.json" github-release-assets.json
+          while IFS=$'\t' read -r name expected_size; do
+            remote_size="$(aws s3api head-object --bucket "${R2_BUCKET}" \
+              --key "releases/${RELEASE_TAG}/${name}" --endpoint-url "${R2_ENDPOINT}" \
+              --query ContentLength --output text)"
+            test "${remote_size}" = "${expected_size}" || {
+              echo "Historical R2 asset is missing or incomplete: ${name}"
+              exit 1
+            }
+          done < verified-rollback-assets.tsv
+          {
+            echo '### Verified rollback snapshot'
+            echo
+            echo "- Release: \`${RELEASE_TAG}\`"
+            echo '- Existing immutable R2 files were reused; historical packages were not rebuilt or overwritten.'
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Prevent stable channel rollback
         run: |
@@ -226,11 +307,11 @@ jobs:
               --endpoint-url "${R2_ENDPOINT}" >/dev/null 2>&1; then
               aws s3 cp "s3://${R2_BUCKET}/releases/latest/${metadata}" "current-${metadata}" \
                 --endpoint-url "${R2_ENDPOINT}" --only-show-errors
-              if [ "${PROMOTION_MODE}" = 'manual' ]; then
-                echo "Manual tag selected: ${metadata} may replace the current stable metadata"
-              else
+              if [ "${PROMOTION_OPERATION}" = 'promote' ]; then
                 node scripts/assert-forward-promotion.mjs \
                   --current="current-${metadata}" --candidate="artifacts/${metadata}"
+              else
+                echo "Explicit ${PROMOTION_OPERATION}: ${metadata} may replace the current stable pointer"
               fi
             else
               echo "No existing ${metadata}; its first stable promotion is allowed"
@@ -294,6 +375,11 @@ jobs:
                 --endpoint-url "${R2_ENDPOINT}" --query ContentLength --output text)"
               remote_sha512="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
                 --endpoint-url "${R2_ENDPOINT}" --query 'Metadata."qzone-sha512"' --output text)"
+              if [ "${R2_VERSIONED_REPLACEMENT}" = 'true' ]; then
+                echo "Replacing explicitly authorized versioned release object: ${key}"
+                upload_and_verify "${file}" "${key}" "${cache_control}" "${content_type}"
+                return
+              fi
               if [ "${remote_size}" = "${size}" ] && { [ "${remote_sha512}" = 'None' ] || [ -z "${remote_sha512}" ]; }; then
                 # 兼容旧流程上传、没有 qzone-sha512 元数据的历史对象：只在下载后
                 # 确认字节完全相同的前提下，用同一文件补齐元数据与缓存策略。
@@ -307,11 +393,6 @@ jobs:
                   return 1
                 }
                 echo "Verified legacy immutable object bytes; repairing its metadata: ${key}"
-                upload_and_verify "${file}" "${key}" "${cache_control}" "${content_type}"
-                return
-              fi
-              if [ "${R2_VERSIONED_REPLACEMENT}" = 'true' ]; then
-                echo "Replacing inactive versioned release object: ${key}"
                 upload_and_verify "${file}" "${key}" "${cache_control}" "${content_type}"
                 return
               fi
@@ -339,11 +420,97 @@ jobs:
             fi
           }
 
+          backup_versioned_object() {
+            local key="$1"
+            local backup="$2"
+            mkdir -p "$(dirname "${backup}")"
+            if aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
+              --endpoint-url "${R2_ENDPOINT}" >/dev/null 2>&1; then
+              aws s3 cp "s3://${R2_BUCKET}/${key}" "${backup}" \
+                --endpoint-url "${R2_ENDPOINT}" --only-show-errors
+            else
+              : > "${backup}.absent"
+            fi
+          }
+
+          restore_versioned_object() {
+            local key="$1"
+            local backup="$2"
+            local content_type="${3:-}"
+            if [ -f "${backup}" ]; then
+              upload_and_verify "${backup}" "${key}" \
+                'public, max-age=31536000, immutable' "${content_type}"
+            elif [ -f "${backup}.absent" ]; then
+              aws s3api delete-object --bucket "${R2_BUCKET}" --key "${key}" \
+                --endpoint-url "${R2_ENDPOINT}" >/dev/null
+            fi
+          }
+
+          resolve_cloudflare_zone() {
+            test -n "${CLOUDFLARE_API_TOKEN:-}" || {
+              echo 'Same-version replacement requires the CLOUDFLARE_API_TOKEN secret for CDN cache purge.'
+              return 1
+            }
+            local zones_response
+            zones_response="$(curl --fail --silent --show-error \
+              --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              --header 'Content-Type: application/json' \
+              'https://api.cloudflare.com/client/v4/zones?status=active&per_page=50')"
+            CLOUDFLARE_ZONE_ID="$(node -e '
+              const payload = JSON.parse(process.argv[1])
+              const host = new URL(process.argv[2]).hostname
+              if (!payload.success) throw new Error("Cloudflare zone lookup failed")
+              const matches = payload.result.filter((zone) => host === zone.name || host.endsWith(`.${zone.name}`))
+              matches.sort((left, right) => right.name.length - left.name.length)
+              if (!matches[0]?.id) throw new Error(`No Cloudflare zone contains ${host}`)
+              process.stdout.write(matches[0].id)
+            ' "${zones_response}" "${R2_PUBLIC_BASE_URL}")"
+            export CLOUDFLARE_ZONE_ID
+          }
+
+          purge_versioned_cache() {
+            local response
+            response="$(curl --fail --silent --show-error \
+              --request POST \
+              --url "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
+              --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              --header 'Content-Type: application/json' \
+              --data @cache-purge-payload.json)"
+            node -e '
+              const payload = JSON.parse(process.argv[1])
+              if (!payload.success) {
+                throw new Error(`Cloudflare cache purge failed: ${JSON.stringify(payload.errors || [])}`)
+              }
+            ' "${response}"
+          }
+
           stable_switched=false
           stable_committed=false
-          restore_stable_channel() {
+          versioned_replacement_started=false
+          versioned_replacement_committed=false
+          restore_promotion() {
             local failed_status="$1"
+            trap - ERR
             set +e
+            if [ "${versioned_replacement_started}" = 'true' ] && \
+              [ "${versioned_replacement_committed}" != 'true' ]; then
+              echo 'Versioned replacement failed; restoring the previous R2 release objects.'
+              while IFS= read -r name; do
+                case "${name}" in
+                  latest*.yml)
+                    restore_versioned_object "releases/${RELEASE_TAG}/${name}" \
+                      "versioned-backup/releases/${name}" 'application/x-yaml'
+                    ;;
+                  *)
+                    restore_versioned_object "releases/${RELEASE_TAG}/${name}" \
+                      "versioned-backup/releases/${name}"
+                    ;;
+                esac
+              done < verified-release-files.txt
+              restore_versioned_object "manifests/${RELEASE_TAG}.json" \
+                versioned-backup/manifest.json 'application/json'
+              purge_versioned_cache || echo 'Warning: restored R2 objects but CDN purge retry failed.'
+            fi
             if [ "${stable_switched}" = 'true' ] && [ "${stable_committed}" != 'true' ]; then
               echo 'Stable channel verification failed; restoring the previous public pointers.'
               for name in latest.yml latest-mac.yml latest-linux.yml; do
@@ -368,25 +535,55 @@ jobs:
             fi
             exit "${failed_status}"
           }
-          trap 'restore_stable_channel $?' ERR
+          trap 'restore_promotion $?' ERR
 
           release_prefix="releases/${RELEASE_TAG}"
-          while IFS= read -r name; do
-            case "${name}" in
-              latest*.yml)
-                upload_immutable_release_object "artifacts/${name}" "${release_prefix}/${name}" \
-                  "public, max-age=31536000, immutable" "application/x-yaml"
-                ;;
-              *)
-                upload_immutable_release_object "verified-assets/${name}" "${release_prefix}/${name}" \
-                  "public, max-age=31536000, immutable"
-                ;;
-            esac
-          done < verified-release-files.txt
-          # The versioned manifest is an inspectable snapshot, not an updater pointer.
-          # It is rebuilt deterministically from the GitHub release's published timestamp.
-          upload_immutable_release_object "artifacts/${RELEASE_TAG}.json" "manifests/${RELEASE_TAG}.json" \
-            "public, max-age=31536000, immutable" "application/json"
+          if [ "${PROMOTION_OPERATION}" != 'rollback' ]; then
+            if [ "${PROMOTION_OPERATION}" = 'replace' ] && \
+              [ "${R2_VERSIONED_REPLACEMENT}" = 'true' ]; then
+              node -e '
+                const fs = require("node:fs")
+                const base = process.argv[1].replace(/\/$/, "")
+                const tag = process.argv[2]
+                const names = fs.readFileSync(process.argv[3], "utf8").trim().split(/\r?\n/).filter(Boolean)
+                const files = names.map((name) => `${base}/releases/${tag}/${encodeURIComponent(name)}`)
+                files.push(`${base}/manifests/${tag}.json`)
+                fs.writeFileSync("cache-purge-payload.json", JSON.stringify({ files }))
+              ' "${R2_PUBLIC_BASE_URL}" "${RELEASE_TAG}" verified-release-files.txt
+              resolve_cloudflare_zone
+              # This harmless preflight purge proves the token has Cache Purge permission
+              # before any live versioned object is changed.
+              purge_versioned_cache
+              mkdir -p versioned-backup/releases
+              while IFS= read -r name; do
+                backup_versioned_object "${release_prefix}/${name}" \
+                  "versioned-backup/releases/${name}"
+              done < verified-release-files.txt
+              backup_versioned_object "manifests/${RELEASE_TAG}.json" versioned-backup/manifest.json
+              versioned_replacement_started=true
+            fi
+
+            while IFS= read -r name; do
+              case "${name}" in
+                latest*.yml)
+                  upload_immutable_release_object "artifacts/${name}" "${release_prefix}/${name}" \
+                    "public, max-age=31536000, immutable" "application/x-yaml"
+                  ;;
+                *)
+                  upload_immutable_release_object "verified-assets/${name}" "${release_prefix}/${name}" \
+                    "public, max-age=31536000, immutable"
+                  ;;
+              esac
+            done < verified-release-files.txt
+            # The versioned manifest is an inspectable snapshot, not an updater pointer.
+            upload_immutable_release_object "artifacts/${RELEASE_TAG}.json" "manifests/${RELEASE_TAG}.json" \
+              "public, max-age=31536000, immutable" "application/json"
+            if [ "${versioned_replacement_started}" = 'true' ]; then
+              purge_versioned_cache
+            fi
+          else
+            echo "Rollback reuses the verified immutable ${RELEASE_TAG} snapshot; no versioned object is uploaded."
+          fi
 
           mkdir stable-backup
           for name in latest.yml latest-mac.yml latest-linux.yml; do
@@ -408,13 +605,15 @@ jobs:
           node scripts/audit-r2-release.mjs \
             --tag="${RELEASE_TAG}" --publicBaseUrl="${R2_PUBLIC_BASE_URL}" --githubRepo="${GH_REPO}"
           stable_committed=true
+          versioned_replacement_committed=true
           trap - ERR
           {
             echo '### R2 promotion complete'
             echo
             echo "- Release: \`${RELEASE_TAG}\`"
-            echo '- Versioned assets were uploaded once and verified by size plus SHA-512 metadata.'
-            echo '- Re-running an unchanged tag is idempotent. A changed tag may replace only an inactive R2 release; a live stable tag remains immutable.'
+            echo "- Operation: \`${PROMOTION_OPERATION}\`"
+            echo '- Normal releases remain immutable; rollback reuses a verified historical snapshot.'
+            echo '- Explicit same-version replacement backs up every target object and purges affected CDN URLs.'
             echo '- All three updater pointers were switched before the website manifest, then the public domain was audited.'
-            echo '- If the final public audit fails, the previous stable pointers are restored automatically.'
+            echo '- If verification fails, previous stable pointers and any overwritten versioned objects are restored automatically.'
           } >> "${GITHUB_STEP_SUMMARY}"

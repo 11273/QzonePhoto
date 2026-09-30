@@ -49,6 +49,25 @@ test('R2 workflows install locked dependencies before running the full release s
   }
 })
 
+test('R2 promotion separates forward promotion, rollback, and protected same-version replacement', async () => {
+  const workflow = await readFile(
+    new URL('../.github/workflows/promote-r2.yml', import.meta.url),
+    'utf8'
+  )
+
+  assert.match(
+    workflow,
+    /operation:\n\s+description:[\s\S]*?options:\n\s+- promote\n\s+- rollback\n\s+- replace/
+  )
+  assert.match(workflow, /Prepare and verify historical R2 rollback snapshot/)
+  assert.match(workflow, /prepare-r2-rollback\.mjs/)
+  assert.match(workflow, /Rollback reuses the verified immutable/)
+  assert.match(workflow, /versioned_replacement_started=true/)
+  assert.match(workflow, /restoring the previous R2 release objects/)
+  assert.match(workflow, /CLOUDFLARE_API_TOKEN/)
+  assert.match(workflow, /purge_cache/)
+})
+
 test('release assets can be verified then safely rebased to an immutable R2 version directory', async (t) => {
   const fixture = await createFixture()
   t.after(() => rm(fixture.root, { recursive: true, force: true }))

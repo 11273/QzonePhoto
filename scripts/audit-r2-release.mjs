@@ -6,7 +6,13 @@ const DEFAULT_GITHUB_REPOSITORY = '11273/QzonePhoto'
 const STABLE_TAG_PATTERN = /^v\d+\.\d+\.\d+$/
 const ASSET_NAME_PATTERN = /^QzonePhoto-[A-Za-z0-9._-]+\.(?:exe|zip|dmg|AppImage|deb)$/
 
-export async function auditR2Release({ tag, publicBaseUrl, githubRepo, fetchImpl = fetch } = {}) {
+export async function auditR2Release({
+  tag,
+  publicBaseUrl,
+  githubRepo,
+  githubToken = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '',
+  fetchImpl = fetch
+} = {}) {
   const baseUrl = normalizePublicBaseUrl(publicBaseUrl || DEFAULT_PUBLIC_BASE_URL)
   const repository = String(githubRepo || DEFAULT_GITHUB_REPOSITORY).trim()
   const manifestUrl = `${baseUrl}/manifests/latest.json${cacheBust()}`
@@ -33,7 +39,8 @@ export async function auditR2Release({ tag, publicBaseUrl, githubRepo, fetchImpl
     fetchJson(
       fetchImpl,
       `https://api.github.com/repos/${repository}/releases/tags/${releaseTag}`,
-      'GitHub release API'
+      'GitHub release API',
+      { headers: githubApiHeaders(githubToken) }
     ),
     ...METADATA_NAMES.map(async (name) => {
       const stableUrl = `${baseUrl}/releases/latest/${name}${cacheBust()}`
@@ -246,14 +253,26 @@ function verifyStablePointerHeaders(headers, expectedContentType, label) {
   }
 }
 
-async function fetchText(fetchImpl, url, label) {
-  const response = await fetchImpl(url, { headers: { 'cache-control': 'no-cache' } })
+function githubApiHeaders(token) {
+  const headers = {
+    accept: 'application/vnd.github+json',
+    'cache-control': 'no-cache',
+    'user-agent': 'QzonePhoto-R2-Audit'
+  }
+  if (token) headers.authorization = `Bearer ${token}`
+  return headers
+}
+
+async function fetchText(fetchImpl, url, label, { headers = {} } = {}) {
+  const response = await fetchImpl(url, {
+    headers: { 'cache-control': 'no-cache', ...headers }
+  })
   if (!response.ok) throw new Error(`${label} request failed: HTTP ${response.status}`)
   return response.text()
 }
 
-async function fetchJson(fetchImpl, url, label) {
-  const content = await fetchText(fetchImpl, url, label)
+async function fetchJson(fetchImpl, url, label, options) {
+  const content = await fetchText(fetchImpl, url, label, options)
   try {
     return JSON.parse(content)
   } catch {

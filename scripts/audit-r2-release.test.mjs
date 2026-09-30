@@ -26,7 +26,7 @@ function metadata(asset, { stable = false, unsafeDefault = false } = {}) {
   ].join('\n')
 }
 
-function createFetch({ unsafeDefault = false, unsafeCache = false } = {}) {
+function createFetch({ unsafeDefault = false, unsafeCache = false, onRequest } = {}) {
   const stableCacheControl = unsafeCache ? 'public, max-age=14400' : 'no-cache, no-store, max-age=0'
   const manifest = {
     tag,
@@ -44,6 +44,7 @@ function createFetch({ unsafeDefault = false, unsafeCache = false } = {}) {
   }
 
   return async (input, options = {}) => {
+    onRequest?.(String(input), options)
     const url = new URL(String(input))
     const cleanUrl = `${url.origin}${url.pathname}`
     if (cleanUrl === `${baseUrl}/manifests/latest.json`) {
@@ -90,6 +91,25 @@ test('accepts a complete versioned R2 release layout', async () => {
   const result = await auditR2Release({ tag, publicBaseUrl: baseUrl, fetchImpl: createFetch() })
   assert.equal(result.tag, tag)
   assert.equal(result.installers, assets.length)
+})
+
+test('authenticates only the GitHub API audit request when a workflow token is available', async () => {
+  const requests = []
+  await auditR2Release({
+    tag,
+    publicBaseUrl: baseUrl,
+    githubToken: 'test-token',
+    fetchImpl: createFetch({ onRequest: (url, options) => requests.push({ url, options }) })
+  })
+
+  const githubApiRequest = requests.find(({ url }) => url.startsWith('https://api.github.com/'))
+  assert.equal(githubApiRequest.options.headers.authorization, 'Bearer test-token')
+  assert.equal(
+    requests
+      .filter(({ url }) => !url.startsWith('https://api.github.com/'))
+      .some(({ options }) => options.headers?.authorization),
+    false
+  )
 })
 
 test('rejects a stable metadata file whose top-level default path escapes the release directory', async () => {
