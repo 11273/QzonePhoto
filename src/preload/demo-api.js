@@ -332,6 +332,7 @@ export const createDemoQzoneAPI = (realApi) => ({
     fetchNotices: async () => ({ code: 0, data: [] }),
     reportHealth: noop,
     submitFeedback: noop,
+    fetchFeedbackReplies: async () => ({ replies: [] }),
     uploadLogs: noop
   },
   update: {

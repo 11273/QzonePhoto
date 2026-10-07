@@ -317,6 +317,7 @@ try {
     app: {
       fetchNotices: (options = {}) => ipcClient.call(IPC_APP.FETCH_NOTICES, options),
       submitFeedback: (payload = {}) => ipcClient.call(IPC_APP.SUBMIT_FEEDBACK, payload),
+      fetchFeedbackReplies: () => ipcClient.call(IPC_APP.FETCH_FEEDBACK_REPLIES),
       uploadLogs: (payload = {}) => ipcClient.call(IPC_APP.UPLOAD_LOGS, payload),
       reportHealth: (payload = {}) => ipcClient.call(IPC_APP.REPORT_HEALTH, payload)
     }

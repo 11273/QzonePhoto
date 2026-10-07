@@ -8,6 +8,7 @@ import {
   fetchNotices,
   reportHealthEvent,
   submitFeedback,
+  fetchFeedbackReplies,
   uploadDiagnosticLogs
 } from '@main/services/app-telemetry'
 
@@ -144,6 +145,10 @@ export function registerWindowControl() {
       const payload = context?.payload || context || {}
       return await submitFeedback(payload)
     })
+  })
+
+  ipcMain.handle(IPC_APP.FETCH_FEEDBACK_REPLIES, async () => {
+    return withIpcData(async () => await fetchFeedbackReplies())
   })
 
   ipcMain.handle(IPC_APP.UPLOAD_LOGS, async (event, context = {}) => {

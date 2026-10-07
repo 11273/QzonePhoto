@@ -17,10 +17,12 @@ import {
 } from './telemetry-safety.mjs'
 
 const INSTALL_ID_FILENAME = 'analytics-install-id'
+const FEEDBACK_REPLY_TOKEN_FILENAME = 'feedback-reply-access-token'
 const REQUEST_TIMEOUT_MS = 4500
 const LOG_UPLOAD_REUSE_WINDOW_MS = 5 * 60 * 1000
 const SESSION_ID = `${Date.now()}-${process.pid}`
 let installIdCache = ''
+let feedbackReplyTokenCache = ''
 let launchReported = false
 let pendingLogUpload = null
 let recentLogUpload = null
@@ -32,6 +34,7 @@ export async function submitFeedback(payload = {}) {
 
   const body = {
     ...payload,
+    replyAccessToken: await ensureFeedbackReplyToken(),
     env: {
       ...buildRuntimeEnv(payload.env?.page),
       ...(payload.env || {}),
@@ -46,6 +49,27 @@ export async function submitFeedback(payload = {}) {
     data: body
   })
   return parseFeedbackResponse(response)
+}
+
+export async function fetchFeedbackReplies() {
+  const config = await getAppApiConfig()
+  const baseUrls = getBaseUrls(config)
+  if (!baseUrls.length) return { replies: [] }
+
+  const token = await ensureFeedbackReplyToken()
+  const response = await requestWithFallback(baseUrls, '/api/feedback/replies', {
+    method: 'get',
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  const data = response?.data || {}
+  if (response.status === 429) throw new Error('查询太频繁了，请稍后再试')
+  if (response.status >= 500) throw new Error('反馈回复暂时无法读取，请稍后再试')
+  if (response.status >= 400 || data?.ok === false) {
+    throw new Error(data?.message || '反馈回复读取失败')
+  }
+  return {
+    replies: Array.isArray(data.data?.replies) ? data.data.replies : []
+  }
 }
 
 export async function uploadDiagnosticLogs(options = {}) {
@@ -278,6 +302,28 @@ export async function ensureInstallId() {
     logger.debug(`[Telemetry] 安装 ID 写入失败: ${error?.message || error}`)
   }
   return installIdCache
+}
+
+async function ensureFeedbackReplyToken() {
+  if (feedbackReplyTokenCache) return feedbackReplyTokenCache
+  const filePath = path.join(app.getPath('userData'), FEEDBACK_REPLY_TOKEN_FILENAME)
+  try {
+    const cached = (await fs.readFile(filePath, 'utf8')).trim()
+    if (/^[A-Za-z0-9_-]{43}$/.test(cached)) {
+      feedbackReplyTokenCache = cached
+      return feedbackReplyTokenCache
+    }
+  } catch {
+    // create below
+  }
+
+  feedbackReplyTokenCache = crypto.randomBytes(32).toString('base64url')
+  try {
+    await fs.writeFile(filePath, feedbackReplyTokenCache, { encoding: 'utf8', mode: 0o600 })
+  } catch (error) {
+    logger.debug(`[Telemetry] 反馈回复凭证写入失败: ${error?.message || error}`)
+  }
+  return feedbackReplyTokenCache
 }
 
 function normalizeText(value, maxLength = 120) {

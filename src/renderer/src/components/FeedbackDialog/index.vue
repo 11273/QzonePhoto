@@ -39,6 +39,48 @@
         </button>
       </div>
 
+      <button
+        class="fd-reply-fold"
+        type="button"
+        :aria-expanded="repliesExpanded"
+        aria-controls="feedback-replies"
+        @click="repliesExpanded = !repliesExpanded"
+      >
+        <span class="fd-reply-fold-main">
+          <el-icon><ChatDotRound /></el-icon>
+          <span>收到的回复</span>
+          <span v-if="repliesLoading" class="fd-reply-meta">读取中…</span>
+          <span v-else-if="feedbackReplies.length" class="fd-reply-count">
+            {{ feedbackReplies.length }}
+          </span>
+          <span v-else class="fd-reply-meta">暂无回复</span>
+        </span>
+        <el-icon :class="{ expanded: repliesExpanded }"><ArrowDown /></el-icon>
+      </button>
+      <transition name="fd-slide">
+        <div v-if="repliesExpanded" id="feedback-replies" class="fd-replies">
+          <div v-if="repliesLoading" class="fd-reply-empty">正在安全读取本机收到的回复…</div>
+          <template v-else-if="feedbackReplies.length">
+            <article
+              v-for="reply in feedbackReplies"
+              :key="`${reply.feedbackId}-${reply.repliedAt}`"
+              class="fd-reply-item"
+            >
+              <div class="fd-reply-title">
+                <span>{{ reply.title || '反馈回复' }}</span>
+                <time v-if="reply.repliedAt">{{ formatReplyTime(reply.repliedAt) }}</time>
+              </div>
+              <p>{{ reply.reply }}</p>
+            </article>
+          </template>
+          <div v-else-if="repliesError" class="fd-reply-empty is-error">
+            <span>{{ repliesError }}</span>
+            <button type="button" @click="loadFeedbackReplies">重试</button>
+          </div>
+          <div v-else class="fd-reply-empty">管理员回复后会显示在这里，无需公开设备信息。</div>
+        </div>
+      </transition>
+
       <label class="fd-label" for="feedback-content">反馈内容</label>
       <el-input
         id="feedback-content"
@@ -214,8 +256,13 @@ const submitting = ref(false)
 const attachLogs = ref(false)
 const extraExpanded = ref(false)
 const recentErrors = ref([])
+const feedbackReplies = ref([])
+const repliesLoading = ref(false)
+const repliesExpanded = ref(false)
+const repliesError = ref('')
 let errorSeq = 0
 let feedbackNoticeTimer = 0
+let repliesRequestId = 0
 
 const feedbackNotice = reactive({
   visible: false,
@@ -249,6 +296,35 @@ const contentTitle = computed(() => {
 })
 
 const hasEnoughContent = computed(() => form.content.trim().length >= 8)
+
+const formatReplyTime = (value) => {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return ''
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date)
+}
+
+const loadFeedbackReplies = async () => {
+  if (!window.QzoneAPI?.app?.fetchFeedbackReplies || repliesLoading.value) return
+  const requestId = ++repliesRequestId
+  repliesLoading.value = true
+  repliesError.value = ''
+  try {
+    const result = await window.QzoneAPI.app.fetchFeedbackReplies()
+    if (requestId !== repliesRequestId) return
+    feedbackReplies.value = Array.isArray(result?.replies) ? result.replies : []
+    if (feedbackReplies.value.length) repliesExpanded.value = true
+  } catch (error) {
+    if (requestId !== repliesRequestId) return
+    repliesError.value = error?.message || '回复暂时无法读取'
+  } finally {
+    if (requestId === repliesRequestId) repliesLoading.value = false
+  }
+}
 
 const smartHint = computed(() => {
   const content = form.content.trim()
@@ -519,6 +595,8 @@ watch(
   (visible) => {
     if (visible) {
       resetFeedbackForm()
+      repliesExpanded.value = false
+      loadFeedbackReplies()
     }
   }
 )
@@ -542,6 +620,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  repliesRequestId += 1
   window.removeEventListener('error', handleWindowError)
   window.removeEventListener('unhandledrejection', handleUnhandledRejection)
   clearFeedbackNoticeTimer()
@@ -661,6 +740,140 @@ onUnmounted(() => {
   color: var(--qz-active-text);
   background: var(--theme-brand-soft);
   border-color: var(--theme-brand-border);
+}
+
+.fd-reply-fold {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 34px;
+  margin: -2px 0 12px;
+  padding: 0 10px;
+  color: var(--ds-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--ds-border-faint);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: var(--ds-transition-all);
+}
+
+.fd-reply-fold:hover {
+  color: var(--ds-text-primary);
+  background: var(--theme-surface-hover);
+  border-color: var(--ds-border-light);
+}
+
+.fd-reply-fold-main {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.fd-reply-fold > .el-icon {
+  transition: transform var(--ds-dur-base) var(--ds-ease-soft);
+}
+
+.fd-reply-fold > .el-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.fd-reply-meta {
+  color: var(--ds-text-quaternary);
+  font-weight: 500;
+}
+
+.fd-reply-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  color: var(--qz-active-text);
+  font-size: 10px;
+  background: var(--theme-brand-soft);
+  border-radius: var(--theme-radius-pill);
+}
+
+.fd-replies {
+  display: grid;
+  max-height: 180px;
+  gap: 7px;
+  margin: -5px 0 12px;
+  padding: 8px;
+  overflow: auto;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--ds-border-faint);
+  border-radius: 10px;
+}
+
+.fd-reply-item {
+  padding: 9px 10px;
+  background: var(--theme-surface-raised);
+  border: 1px solid var(--ds-border-faint);
+  border-radius: 9px;
+}
+
+.fd-reply-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 10px;
+  color: var(--ds-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fd-reply-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fd-reply-title time {
+  flex: 0 0 auto;
+  color: var(--ds-text-quaternary);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.fd-reply-item p {
+  margin: 5px 0 0;
+  color: var(--ds-text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fd-reply-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  gap: 8px;
+  padding: 0 2px;
+  color: var(--ds-text-quaternary);
+  font-size: 11px;
+}
+
+.fd-reply-empty.is-error {
+  color: var(--theme-warning-text);
+}
+
+.fd-reply-empty button {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  color: var(--theme-info-text);
+  font: inherit;
+  background: transparent;
+  border: 1px solid var(--theme-info-border);
+  border-radius: var(--theme-radius-pill);
+  cursor: pointer;
 }
 
 :deep(.fd-content .el-textarea__inner),
