@@ -249,19 +249,23 @@
             </div>
           </div>
 
-          <div class="card-stats">
+          <div class="card-stats self-card-stats" aria-label="账号与相册概览">
             <div class="stat-grid">
               <div class="stat-item">
+                <span class="label">相册</span>
+                <span class="value content-stat" title="当前账号的相册总数">
+                  {{ selfAlbumCount }}
+                </span>
+              </div>
+              <div class="stat-item">
+                <span class="label">照片</span>
+                <span class="value content-stat" title="全部相册中的照片总数">
+                  {{ selfPhotoTotal }}
+                </span>
+              </div>
+              <div class="stat-item">
                 <span class="label">黄钻等级</span>
-                <span class="value level">{{ userStore.userInfo?.level || 0 }}</span>
-              </div>
-              <div class="stat-item">
-                <span class="label">成长值</span>
-                <span class="value growth">{{ userStore.userInfo?.score || 0 }}</span>
-              </div>
-              <div class="stat-item">
-                <span class="label">成长速度</span>
-                <span class="value speed">{{ formatSpeed(userStore.userInfo?.speed || 0) }}</span>
+                <span class="value level">{{ yellowDiamondLevel }}</span>
               </div>
               <div class="stat-item capacity-stat">
                 <span class="label capacity-label">
@@ -419,39 +423,94 @@
     <!-- 二级内容区 - 根据模块动态切换 -->
     <div class="flex-1 overflow-hidden menu-container">
       <el-scrollbar class="h-full" :tabindex="-1">
+        <div
+          v-if="currentModule === 'album' && albumLoadState.status === ALBUM_LOAD_STATUS.READY"
+          class="album-display-toolbar"
+        >
+          <span class="album-display-summary">{{ albumDisplaySummary }}</span>
+          <el-popover
+            v-model:visible="albumDisplaySettingsVisible"
+            placement="right-start"
+            trigger="click"
+            :width="236"
+            :show-arrow="false"
+            popper-class="album-display-popover"
+          >
+            <template #reference>
+              <button
+                type="button"
+                class="album-display-trigger"
+                aria-label="调整相册展示设置"
+                :aria-expanded="albumDisplaySettingsVisible"
+                title="调整相册展示方式和排序"
+              >
+                <el-icon><Setting /></el-icon>
+                <span>{{ albumDisplayViewLabel }}</span>
+                <el-icon class="album-display-chevron"><ArrowDown /></el-icon>
+              </button>
+            </template>
+            <div class="album-display-settings" aria-label="相册展示设置">
+              <section class="album-display-setting-group" aria-labelledby="album-view-label">
+                <span id="album-view-label" class="album-display-setting-label">视图</span>
+                <div class="album-display-setting-options is-view">
+                  <button
+                    v-for="option in ALBUM_VIEW_OPTIONS"
+                    :key="option.value"
+                    type="button"
+                    :class="{ active: albumDisplayView === option.value }"
+                    :aria-pressed="albumDisplayView === option.value"
+                    @click="setAlbumDisplayView(option.value)"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
+              </section>
+              <section class="album-display-setting-group" aria-labelledby="album-sort-label">
+                <span id="album-sort-label" class="album-display-setting-label">排序</span>
+                <div class="album-display-setting-options is-sort">
+                  <button
+                    v-for="option in ALBUM_SORT_OPTIONS"
+                    :key="option.value"
+                    type="button"
+                    :class="{ active: albumSortOrder === option.value }"
+                    :aria-pressed="albumSortOrder === option.value"
+                    @click="setAlbumSortOrder(option.value)"
+                  >
+                    <el-icon class="album-display-check" aria-hidden="true">
+                      <Check v-if="albumSortOrder === option.value" />
+                    </el-icon>
+                    <span>{{ option.label }}</span>
+                  </button>
+                </div>
+              </section>
+            </div>
+          </el-popover>
+        </div>
+
         <!-- 相册模块 -->
         <el-menu
           v-if="currentModule === 'album' && albumLoadState.status === ALBUM_LOAD_STATUS.READY"
-          :default-openeds="Array.from(openedKeys)"
+          :key="albumDisplayView"
+          :default-openeds="albumDefaultOpeneds"
           :default-active="selectedAlbumKey"
           mode="vertical"
           class="album-menu"
+          :class="{ 'is-flat-view': albumDisplayView === 'normal' }"
           @select="handleMenuSelect"
         >
-          <el-sub-menu
-            v-for="category in menuList"
-            :key="category.classId"
-            :index="String(category.classId)"
-          >
-            <template #title>
-              <span class="category-title">
-                <span class="category-name">{{ category.className }}</span>
-                <span class="category-count">{{ category.albums.length }}</span>
-              </span>
-            </template>
+          <template v-if="albumDisplayView === 'normal'">
             <el-menu-item
-              v-for="album in category.albums"
+              v-for="album in flatAlbumList"
               :key="album.id"
-              :index="`${category.classId}-${album.id}`"
+              :index="albumMenuItemKey(resolveAlbumCategoryId(album.id), album)"
               class="album-item"
               :class="{
                 'is-downloading': isAlbumDownloading(album.id),
                 'is-fetching': isAlbumFetching(album.id)
               }"
-              @click="selectAlbumItem(category.classId, album)"
+              @click="selectAlbumItem(resolveAlbumCategoryId(album.id), album)"
             >
               <div class="album-content">
-                <!-- 下载状态指示器 -->
                 <div
                   v-if="isAlbumDownloading(album.id) || isAlbumFetching(album.id)"
                   class="download-indicator"
@@ -545,7 +604,129 @@
                 </span>
               </div>
             </el-menu-item>
-          </el-sub-menu>
+          </template>
+          <template v-else>
+            <el-sub-menu
+              v-for="category in albumMenuGroups"
+              :key="category.classId"
+              :index="String(category.classId)"
+            >
+              <template #title>
+                <span class="category-title">
+                  <span class="category-name">{{ category.className }}</span>
+                  <span class="category-count">{{ category.albums.length }}</span>
+                </span>
+              </template>
+              <el-menu-item
+                v-for="album in category.albums"
+                :key="album.id"
+                :index="albumMenuItemKey(category.classId, album)"
+                class="album-item"
+                :class="{
+                  'is-downloading': isAlbumDownloading(album.id),
+                  'is-fetching': isAlbumFetching(album.id)
+                }"
+                @click="selectAlbumItem(category.classId, album)"
+              >
+                <div class="album-content">
+                  <!-- 下载状态指示器 -->
+                  <div
+                    v-if="isAlbumDownloading(album.id) || isAlbumFetching(album.id)"
+                    class="download-indicator"
+                  >
+                    <el-icon class="is-loading"><Loading /></el-icon>
+                  </div>
+                  <div class="album-info">
+                    <span v-if="getViewtypeText(album.viewtype)" class="viewtype-badge">
+                      {{ getViewtypeText(album.viewtype) }}
+                    </span>
+                    <span class="album-text" :title="album.name">{{ album.name }}</span>
+                  </div>
+                  <el-icon
+                    v-if="album.priv === 3"
+                    class="album-lock-icon priv-self"
+                    title="仅自己可见"
+                  >
+                    <Lock />
+                  </el-icon>
+                  <el-icon
+                    v-else-if="album.priv === 2"
+                    class="album-lock-icon priv-password"
+                    title="密码访问"
+                  >
+                    <Key />
+                  </el-icon>
+                  <el-popover
+                    v-else-if="album.priv === 5"
+                    trigger="click"
+                    placement="right"
+                    :width="200"
+                    :show-arrow="false"
+                    popper-class="qa-popper"
+                    @before-enter="fetchAlbumQA(album)"
+                  >
+                    <template #reference>
+                      <el-icon
+                        class="album-lock-icon priv-question clickable"
+                        title="查看问答"
+                        @click.stop.prevent
+                        @mousedown.stop.prevent
+                      >
+                        <QuestionFilled />
+                      </el-icon>
+                    </template>
+                    <div class="qa-popover">
+                      <div class="qa-item">
+                        <span class="qa-label">问题</span>
+                        <span class="qa-text">{{ album.question || '...' }}</span>
+                      </div>
+                      <div class="qa-item">
+                        <span class="qa-label">答案</span>
+                        <span
+                          v-if="albumQAMap[album.id]?.answer != null"
+                          class="qa-text qa-answer"
+                          >{{ albumQAMap[album.id].answer }}</span
+                        >
+                        <span v-else-if="albumQAMap[album.id]?.loading" class="qa-text qa-muted"
+                          >...</span
+                        >
+                        <span v-else class="qa-text qa-muted">{{
+                          isFriendMode ? '仅主人可见' : '-'
+                        }}</span>
+                      </div>
+                    </div>
+                  </el-popover>
+                  <el-icon
+                    v-else-if="album.priv === 4"
+                    class="album-lock-icon priv-friend"
+                    title="QQ好友可见"
+                  >
+                    <User />
+                  </el-icon>
+                  <el-icon
+                    v-else-if="album.priv === 6"
+                    class="album-lock-icon priv-partial"
+                    title="部分好友可见"
+                  >
+                    <View />
+                  </el-icon>
+                  <el-icon
+                    v-else-if="album.priv === 8"
+                    class="album-lock-icon priv-partial-hide"
+                    title="部分好友不可见"
+                  >
+                    <Hide />
+                  </el-icon>
+                  <span class="album-num">
+                    <span v-if="getAlbumStatusText(album.id)" class="download-progress">
+                      {{ getAlbumStatusText(album.id) }}
+                    </span>
+                    <span v-else>{{ album.total }}</span>
+                  </span>
+                </div>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
         </el-menu>
 
         <section
@@ -593,36 +774,8 @@
           </template>
         </section>
 
-        <!-- 照片模块：来源 + 类型 + 年份 -->
+        <!-- 照片模块：来源在内容区以二级 Tab 切换；侧栏只保留筛选和统计 -->
         <div v-else-if="currentModule === 'photo'" class="photo-side">
-          <!-- 来源切换（保留原 menu 风格但更紧凑） -->
-          <div class="filter-block">
-            <div class="filter-title">来源</div>
-            <div class="chip-row">
-              <button
-                type="button"
-                class="chip"
-                :class="{ active: selectedPhotoType === 'my-photos' }"
-                :aria-pressed="selectedPhotoType === 'my-photos'"
-                @click="handlePhotoTypeSelect('my-photos')"
-              >
-                <el-icon><User /></el-icon>
-                我的照片
-              </button>
-              <button
-                v-if="!isFriendMode"
-                type="button"
-                class="chip"
-                :class="{ active: selectedPhotoType === 'friend-photos' }"
-                :aria-pressed="selectedPhotoType === 'friend-photos'"
-                @click="handlePhotoTypeSelect('friend-photos')"
-              >
-                <el-icon><UserFilled /></el-icon>
-                好友照片
-              </button>
-            </div>
-          </div>
-
           <!-- 媒体类型 -->
           <div v-if="selectedPhotoType === 'my-photos'" class="filter-block">
             <div class="filter-title">媒体</div>
@@ -1079,7 +1232,6 @@ import {
   Picture,
   RefreshRight,
   User,
-  UserFilled,
   VideoPlay,
   WarningFilled,
   Lock,
@@ -1087,6 +1239,8 @@ import {
   Key,
   View,
   ArrowDown,
+  Setting,
+  Check,
   QuestionFilled,
   ChatLineRound
 } from '@element-plus/icons-vue'
@@ -1127,10 +1281,6 @@ const handleMenuSelect = (index) => {
 const handleModuleSelect = (module) => {
   if (currentModule.value === module) return
   currentModule.value = module
-  // 切换到照片模块时，重置为"我的照片"
-  if (module === 'photo') {
-    selectedPhotoType.value = 'my-photos'
-  }
   emit('module-changed', module, module === 'photo' ? selectedPhotoType.value : undefined)
 
   // 当切换回相册模块时，如果有选中的相册，重新触发选择事件以确保刷新
@@ -1158,12 +1308,6 @@ const handleModuleKeydown = (event, currentIndex) => {
       ?.querySelectorAll('[role="tab"]')
       ?.[nextIndex]?.focus()
   })
-}
-
-// 处理照片类型选择
-const handlePhotoTypeSelect = (type) => {
-  selectedPhotoType.value = type
-  emit('module-changed', 'photo', type)
 }
 
 // 处理好友名称中的表情代码
@@ -1277,7 +1421,7 @@ const friendPhotoTotal = computed(() => {
 
 const selectAlbumItem = (categoryId, album) => {
   // 立即更新选中状态，避免延迟
-  selectedAlbumKey.value = `${categoryId}-${album.id}`
+  selectedAlbumKey.value = albumMenuItemKey(categoryId, album)
   // 同步调用选择函数
   selectAlbum(album)
 }
@@ -1961,15 +2105,6 @@ const cancelDownloadAll = async () => {
   }, 1000)
 }
 
-const formatSpeed = (speed) => {
-  if (speed > 0) {
-    return `+${speed}/天`
-  } else if (speed < 0) {
-    return `${speed}/天`
-  }
-  return '0/天'
-}
-
 /**
  * 格式化存储空间显示
  * @returns {string} 格式化的存储空间字符串
@@ -1990,16 +2125,37 @@ const clickItem = ref({})
 const apiData = ref()
 const selectedAlbumKey = ref('')
 const openedKeys = ref(new Set())
+const ALBUM_VIEW_STORAGE_KEY = 'album-display-view'
+const ALBUM_SORT_STORAGE_KEY = 'album-display-sort'
+const ALBUM_VIEW_OPTIONS = [
+  { value: 'normal', label: '普通视图' },
+  { value: 'class', label: '分类视图' }
+]
+const ALBUM_SORT_OPTIONS = [
+  { value: 'uploadDesc', label: '最近上传在前' },
+  { value: 'createDesc', label: '最新创建在前' },
+  { value: 'createAsc', label: '最新创建在后' },
+  { value: 'custom', label: '自定义排序' }
+]
+const readStoredOption = (key, options, fallback) => {
+  const stored = localStorage.getItem(key)
+  return options.some((option) => option.value === stored) ? stored : fallback
+}
+const albumDisplayView = ref(readStoredOption(ALBUM_VIEW_STORAGE_KEY, ALBUM_VIEW_OPTIONS, 'class'))
+const albumSortOrder = ref(
+  readStoredOption(ALBUM_SORT_STORAGE_KEY, ALBUM_SORT_OPTIONS, 'createDesc')
+)
+const albumDisplaySettingsVisible = ref(false)
 // 当前相册ID，用于上传任务过滤
 const currentAlbumId = ref(null)
 
 const menuList = computed(() => {
-  if (!apiData.value || !apiData.value.classList) {
+  if (!apiData.value) {
     return []
   }
 
   const classMap = {}
-  apiData.value.classList.forEach((cls) => {
+  ;(apiData.value.classList || []).forEach((cls) => {
     classMap[cls.id] = cls.name
   })
 
@@ -2032,6 +2188,124 @@ const menuList = computed(() => {
 
   return []
 })
+
+const normalizeAlbumTimestamp = (value) => {
+  const numeric = Number(value)
+  if (Number.isFinite(numeric) && numeric > 0) return numeric
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const sortAlbumItems = (albums = []) =>
+  albums
+    .map((album, index) => ({ album, index }))
+    .sort((left, right) => {
+      let difference = 0
+      if (albumSortOrder.value === 'uploadDesc') {
+        difference =
+          normalizeAlbumTimestamp(right.album.lastuploadtime) -
+          normalizeAlbumTimestamp(left.album.lastuploadtime)
+      } else if (albumSortOrder.value === 'createAsc') {
+        difference =
+          normalizeAlbumTimestamp(left.album.createtime) -
+          normalizeAlbumTimestamp(right.album.createtime)
+      } else if (albumSortOrder.value === 'custom') {
+        difference = Number(left.album.order ?? 0) - Number(right.album.order ?? 0)
+      } else {
+        difference =
+          normalizeAlbumTimestamp(right.album.createtime) -
+          normalizeAlbumTimestamp(left.album.createtime)
+      }
+      return difference || left.index - right.index
+    })
+    .map(({ album }) => album)
+
+const flatAlbumList = computed(() =>
+  sortAlbumItems(menuList.value.flatMap((category) => category.albums || []))
+)
+
+const formatOverviewCount = (value) => {
+  const count = Number(value)
+  return Number.isFinite(count) ? Math.max(0, count).toLocaleString('zh-CN') : '--'
+}
+
+const selfAlbumCount = computed(() => {
+  if (!apiData.value) return '--'
+  const reportedTotal = Number(apiData.value.albumsInUser)
+  const totalAlbums = Number.isFinite(reportedTotal)
+    ? reportedTotal
+    : menuList.value.reduce((sum, category) => sum + (category.albums?.length || 0), 0)
+  return formatOverviewCount(totalAlbums)
+})
+
+const selfPhotoTotal = computed(() => {
+  if (!apiData.value) return '--'
+  const totalPhotos = menuList.value.reduce(
+    (sum, category) =>
+      sum +
+      (category.albums || []).reduce((albumSum, album) => albumSum + (Number(album.total) || 0), 0),
+    0
+  )
+  return formatOverviewCount(totalPhotos)
+})
+
+const yellowDiamondLevel = computed(() => {
+  const level = Number(userStore.userInfo?.level)
+  return Number.isFinite(level) ? `Lv.${Math.max(0, level)}` : '--'
+})
+
+const albumMenuGroups = computed(() =>
+  menuList.value.map((category) => ({
+    ...category,
+    albums: sortAlbumItems(category.albums)
+  }))
+)
+
+const albumDefaultOpeneds = computed(() => Array.from(openedKeys.value, (key) => String(key)))
+
+const albumDisplaySummary = computed(() => {
+  const albumCount = menuList.value.reduce(
+    (sum, category) => sum + (category.albums?.length || 0),
+    0
+  )
+  return `${albumCount} 个相册`
+})
+
+const albumDisplayViewLabel = computed(
+  () =>
+    ALBUM_VIEW_OPTIONS.find((option) => option.value === albumDisplayView.value)?.label || '展示'
+)
+
+const albumMenuItemKey = (categoryId, album) =>
+  `${albumDisplayView.value === 'normal' ? 'flat' : categoryId}-${album.id}`
+
+const resolveAlbumCategoryId = (albumId) => {
+  const category = menuList.value.find((item) =>
+    item.albums?.some((album) => String(album.id) === String(albumId))
+  )
+  return category?.classId ?? ''
+}
+
+const syncSelectedAlbumKey = () => {
+  if (!clickItem.value?.id) return
+  selectedAlbumKey.value = albumMenuItemKey(
+    resolveAlbumCategoryId(clickItem.value.id),
+    clickItem.value
+  )
+}
+
+const setAlbumDisplayView = (view) => {
+  if (!ALBUM_VIEW_OPTIONS.some((option) => option.value === view)) return
+  albumDisplayView.value = view
+  localStorage.setItem(ALBUM_VIEW_STORAGE_KEY, view)
+  syncSelectedAlbumKey()
+}
+
+const setAlbumSortOrder = (sortOrder) => {
+  if (!ALBUM_SORT_OPTIONS.some((option) => option.value === sortOrder)) return
+  albumSortOrder.value = sortOrder
+  localStorage.setItem(ALBUM_SORT_STORAGE_KEY, sortOrder)
+}
 
 const selectAlbum = (album) => {
   clickItem.value = album
@@ -2343,7 +2617,7 @@ const fetchPhotoData = async () => {
         if (firstCategory && firstCategory.albumList && firstCategory.albumList.length > 0) {
           const firstAlbum = firstCategory.albumList[0]
           if (firstAlbum) {
-            selectedAlbumKey.value = `${firstCategory.classId}-${firstAlbum.id}`
+            selectedAlbumKey.value = albumMenuItemKey(firstCategory.classId, firstAlbum)
             selectAlbum(firstAlbum)
           }
         }
@@ -3116,19 +3390,23 @@ defineExpose({
               color: var(--theme-text-primary);
             }
 
-            &.growth {
+            &.storage,
+            &.content-stat {
               color: var(--theme-text-primary);
-            }
-
-            &.speed {
-              color: var(--theme-text-primary);
-            }
-
-            &.storage {
-              color: var(--theme-text-primary);
+              font-variant-numeric: tabular-nums;
             }
           }
         }
+      }
+    }
+
+    .self-card-stats {
+      display: flex;
+      min-height: 76px;
+      align-items: center;
+
+      .stat-grid {
+        width: 100%;
       }
     }
 
@@ -3470,11 +3748,185 @@ defineExpose({
   }
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.album-display-toolbar {
+  display: flex;
+  min-height: 32px;
+  margin: 0 12px;
+  padding: 0 2px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--theme-border-subtle);
+  background: transparent;
+
+  .album-display-summary {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--theme-text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .album-display-trigger {
+    display: inline-flex;
+    height: 28px;
+    padding: 0 5px 0 7px;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid transparent;
+    border-radius: var(--theme-radius-sm);
+    background: transparent;
+    color: var(--theme-text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition:
+      color var(--theme-duration-fast) var(--theme-ease),
+      border-color var(--theme-duration-fast) var(--theme-ease),
+      background-color var(--theme-duration-fast) var(--theme-ease);
+
+    .album-display-chevron {
+      color: var(--theme-text-muted);
+      font-size: 10px;
+      transition: transform var(--theme-duration-fast) var(--theme-ease);
+    }
+
+    &:hover,
+    &[aria-expanded='true'] {
+      border-color: var(--theme-border-subtle);
+      background: var(--theme-surface-hover);
+      color: var(--theme-text-primary);
+    }
+
+    &[aria-expanded='true'] .album-display-chevron {
+      transform: rotate(180deg);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--theme-focus);
+      outline-offset: 1px;
+    }
+  }
+}
+
+:global(.album-display-popover.el-popper) {
+  padding: 8px;
+  border-color: var(--theme-border);
+  background: var(--theme-surface-overlay);
+  box-shadow: var(--theme-shadow-lg);
+}
+
+:global(.album-display-popover .album-display-settings) {
+  display: grid;
+  gap: 10px;
+}
+
+:global(.album-display-popover .album-display-setting-group) {
+  display: grid;
+  gap: 6px;
+}
+
+:global(.album-display-popover .album-display-setting-label) {
+  color: var(--theme-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+:global(.album-display-popover .album-display-setting-options) {
+  display: grid;
+}
+
+:global(.album-display-popover .album-display-setting-options.is-view) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: var(--theme-radius-sm);
+}
+
+:global(.album-display-popover .album-display-setting-options button) {
+  min-height: 28px;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: var(--theme-radius-sm);
+  background: transparent;
+  color: var(--theme-text-secondary);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color var(--theme-duration-fast) var(--theme-ease),
+    background-color var(--theme-duration-fast) var(--theme-ease);
+}
+
+:global(.album-display-popover .album-display-setting-options.is-view button) {
+  border-radius: 0;
+  text-align: center;
+}
+
+:global(.album-display-popover .album-display-setting-options.is-view button + button) {
+  border-left: 1px solid var(--theme-border-subtle);
+}
+
+:global(.album-display-popover .album-display-setting-options.is-sort) {
+  gap: 2px;
+}
+
+:global(.album-display-popover .album-display-setting-options.is-sort button) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+:global(.album-display-popover .album-display-check) {
+  width: 14px;
+  flex: 0 0 14px;
+  color: var(--theme-brand-text);
+  font-size: 12px;
+}
+
+:global(.album-display-popover .album-display-setting-options button:hover) {
+  background: var(--theme-surface-hover);
+  color: var(--theme-text-primary);
+}
+
+:global(.album-display-popover .album-display-setting-options button.active) {
+  background: var(--theme-brand-soft);
+  color: var(--theme-brand-text);
+}
+
+:global(.album-display-popover .album-display-setting-options button:focus-visible) {
+  outline: 2px solid var(--theme-focus);
+  outline-offset: 1px;
+}
+
 /* Element Plus 菜单样式 */
 .album-menu {
   background: transparent;
   border: none;
   padding: 4px 0 8px;
+
+  &.is-flat-view {
+    padding-top: 6px;
+
+    > :global(.el-menu-item) {
+      height: 40px;
+      line-height: 40px;
+      margin: 2px 8px;
+    }
+  }
 
   :deep(.el-sub-menu) {
     .el-sub-menu__title {
@@ -3530,7 +3982,7 @@ defineExpose({
     }
   }
 
-  :deep(.el-menu-item) {
+  :global(.el-menu-item) {
     background: transparent;
     color: var(--theme-text-secondary);
     padding: 0 12px;

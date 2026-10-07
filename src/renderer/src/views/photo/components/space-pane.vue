@@ -25,6 +25,7 @@
       class="flex-1"
       @album-click="handleAlbumClick"
       @enter-friend="enterFriend"
+      @photo-type-change="handlePhotoTypeChanged"
     />
     <VideoModule v-if="currentModule === 'video'" class="flex-1" />
     <FeedsModule v-if="currentModule === 'feeds'" class="flex-1" @enter-friend="enterFriend" />
@@ -109,6 +110,9 @@ const retryAlbums = () => leftRef.value?.retryPhotoData?.()
 const handleModuleChanged = (module, type) => {
   currentModule.value = module
   if (type) photoType.value = type
+}
+const handlePhotoTypeChanged = (type) => {
+  if (type === 'my-photos' || type === 'friend-photos') photoType.value = type
 }
 
 const refreshCurrentAlbum = async () => {

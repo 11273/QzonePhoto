@@ -38,6 +38,30 @@
       </template>
     </ModuleHeader>
 
+    <nav
+      v-if="!isFriendContext"
+      class="photo-source-tabs"
+      role="tablist"
+      aria-label="照片来源"
+      aria-orientation="horizontal"
+    >
+      <button
+        v-for="(source, sourceIndex) in photoSources"
+        :key="source.key"
+        type="button"
+        class="photo-source-tab"
+        :class="{ active: source.key === props.photoType }"
+        role="tab"
+        :aria-selected="source.key === props.photoType"
+        :tabindex="source.key === props.photoType ? 0 : -1"
+        @click="switchPhotoSource(source.key)"
+        @keydown="handlePhotoSourceKeydown($event, sourceIndex)"
+      >
+        <component :is="source.icon" :size="13" class="photo-source-icon" />
+        <span>{{ source.label }}</span>
+      </button>
+    </nav>
+
     <!-- 动态时间线内容 -->
     <div class="module-content">
       <el-scrollbar
@@ -693,7 +717,8 @@ import {
   Link2,
   ShieldX,
   TriangleAlert,
-  MoreHorizontal
+  MoreHorizontal,
+  Users
 } from '@lucide/vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { ElDialog, ElButton } from 'element-plus'
@@ -748,9 +773,37 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['album-click', 'enter-friend'])
+const emit = defineEmits(['album-click', 'enter-friend', 'photo-type-change'])
 
 const isFriendPhotos = computed(() => props.photoType === 'friend-photos')
+const photoSources = [
+  { key: 'my-photos', label: '我的照片', icon: ImageIcon },
+  { key: 'friend-photos', label: '好友照片', icon: Users }
+]
+
+const switchPhotoSource = (type) => {
+  if (type === props.photoType) return
+  emit('photo-type-change', type)
+}
+
+const handlePhotoSourceKeydown = (event, currentIndex) => {
+  let nextIndex = currentIndex
+  if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % photoSources.length
+  else if (event.key === 'ArrowLeft') {
+    nextIndex = (currentIndex - 1 + photoSources.length) % photoSources.length
+  } else if (event.key === 'Home') nextIndex = 0
+  else if (event.key === 'End') nextIndex = photoSources.length - 1
+  else return
+
+  event.preventDefault()
+  switchPhotoSource(photoSources[nextIndex].key)
+  nextTick(() => {
+    event.currentTarget
+      ?.closest('[role="tablist"]')
+      ?.querySelectorAll('[role="tab"]')
+      ?.[nextIndex]?.focus()
+  })
+}
 
 const loading = ref(false)
 const loadingMore = ref(false)
@@ -2347,6 +2400,64 @@ onUnmounted(() => {
   min-width: 0;
   height: 100%;
   background: color-mix(in srgb, var(--theme-canvas) 82%, transparent);
+}
+
+.photo-source-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0;
+  padding: 6px 12px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--theme-border-subtle);
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.photo-source-tab {
+  position: relative;
+  display: inline-flex;
+  flex: 1 0 112px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 38px;
+  margin-bottom: -1px;
+  padding: 6px 8px 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--theme-text-muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.18s ease;
+
+  &:hover:not(.active) {
+    color: var(--theme-text-secondary);
+  }
+
+  &.active {
+    color: var(--theme-text-primary);
+    border-bottom-color: var(--theme-brand-accent);
+  }
+
+  &:focus-visible {
+    z-index: 1;
+    outline: 2px solid var(--theme-focus);
+    outline-offset: -2px;
+  }
+}
+
+.photo-source-icon {
+  opacity: 0.85;
 }
 
 .module-content {
