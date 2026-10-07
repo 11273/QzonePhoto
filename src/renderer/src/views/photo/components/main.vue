@@ -1,9 +1,9 @@
 <template>
-  <div class="photo-main">
+  <div class="photo-main" :class="{ 'is-marquee-selecting': marquee.active }">
     <Top ref="topRef" :dialog-mode="props.dialogMode" />
 
     <!-- 照片网格区域 -->
-    <div class="photo-container">
+    <div ref="photoContainerRef" class="photo-container">
       <LoadingState v-if="loading" text="正在加载照片..." />
 
       <template v-else-if="!currentAlbum">
@@ -59,7 +59,7 @@
       />
       <el-scrollbar v-else ref="scrollbarRef" class="h-full" @scroll="handleScroll">
         <!-- 按日期分组的照片 -->
-        <div class="photo-timeline">
+        <div ref="photoTimelineRef" class="photo-timeline" @pointerdown="handleMarqueePointerDown">
           <div v-for="group in photoGroups" :key="group.date" class="date-group">
             <!-- 日期标题 -->
             <div class="date-header">
@@ -84,10 +84,9 @@
                 v-for="(photo, index) in group.photos"
                 :key="photo.lloc || index"
                 class="photo-item"
+                :data-photo-key="photoSelectionKey(photo)"
                 :class="{
-                  selected: selectedPhotos.has(
-                    photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
-                  ),
+                  selected: selectedPhotos.has(photoSelectionKey(photo)),
                   'privacy-mode': privacyStore.privacyMode,
                   'is-previewing': hoverPreviewKey === photoMediaKey(photo),
                   'is-preview-ready': hoverPreviewReady && hoverPreviewKey === photoMediaKey(photo)
@@ -100,11 +99,7 @@
                   class="photo-preview-trigger"
                   aria-keyshortcuts="Space"
                   :aria-label="`${isVideoPhoto(photo) ? '播放视频' : '查看图片'}${photo.name ? `：${photo.name}` : ''}；按空格${
-                    selectedPhotos.has(
-                      photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
-                    )
-                      ? '取消选择'
-                      : '选择'
+                    selectedPhotos.has(photoSelectionKey(photo)) ? '取消选择' : '选择'
                   }`"
                   @click="handlePhotoClick(photo, $event, index)"
                   @keydown.space.prevent.stop="selectPhoto(photo)"
@@ -196,37 +191,19 @@
                   class="selection-checkbox"
                   tabindex="-1"
                   :class="{
-                    checked: selectedPhotos.has(
-                      photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
-                    )
+                    checked: selectedPhotos.has(photoSelectionKey(photo))
                   }"
-                  :aria-pressed="
-                    selectedPhotos.has(
-                      photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
-                    )
-                  "
+                  :aria-pressed="selectedPhotos.has(photoSelectionKey(photo))"
                   :aria-label="
-                    selectedPhotos.has(
-                      photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
-                    )
+                    selectedPhotos.has(photoSelectionKey(photo))
                       ? '取消选择当前媒体'
                       : '选择当前媒体'
                   "
-                  :title="
-                    selectedPhotos.has(
-                      photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
-                    )
-                      ? '取消选择'
-                      : '选择'
-                  "
+                  :title="selectedPhotos.has(photoSelectionKey(photo)) ? '取消选择' : '选择'"
                   @click.stop="selectPhoto(photo)"
                 >
                   <el-icon
-                    v-if="
-                      selectedPhotos.has(
-                        photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
-                      )
-                    "
+                    v-if="selectedPhotos.has(photoSelectionKey(photo))"
                     class="selected-icon"
                   >
                     <Check />
@@ -258,6 +235,13 @@
           </div>
         </div>
       </el-scrollbar>
+
+      <div
+        v-if="marquee.active"
+        class="selection-marquee"
+        :style="marqueeStyle"
+        aria-hidden="true"
+      ></div>
     </div>
 
     <!-- 底部悬浮工具栏 -->
@@ -462,6 +446,8 @@ const topRef = ref(null)
 
 // 滚动容器引用
 const scrollbarRef = ref(null)
+const photoContainerRef = ref(null)
+const photoTimelineRef = ref(null)
 const loadMoreTrigger = ref(null)
 let observer = null
 
@@ -477,6 +463,8 @@ const photoList = ref([])
 
 // 选择状态
 const selectedPhotos = ref(new Set())
+const photoSelectionKey = (photo) =>
+  String(photo?.lloc || `${photo?.id}_${photo?.name}_${photo?.modifytime}`)
 
 const isVideoPhoto = (photo) =>
   photo?.is_video === true || photo?.is_video === 1 || photo?.is_video === '1'
@@ -494,7 +482,7 @@ const isCopyableImageUrl = (value) => {
 const selectedImageLinks = computed(() => {
   const links = new Set()
   photoList.value.forEach((photo) => {
-    const photoKey = photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+    const photoKey = photoSelectionKey(photo)
     const isVideo = isVideoPhoto(photo)
     const url = photo.raw || photo.url || ''
     if (selectedPhotos.value.has(photoKey) && !isVideo && isCopyableImageUrl(url)) {
@@ -871,12 +859,10 @@ const loadMorePhotos = async () => {
       currentPageStart.value = result.nextPageStart
 
       // 过滤重复照片（根据 lloc 或组合键）
-      const existingKeys = new Set(
-        photoList.value.map((p) => p.lloc || `${p.id}_${p.name}_${p.modifytime}`)
-      )
+      const existingKeys = new Set(photoList.value.map(photoSelectionKey))
 
       const newPhotos = result.photos.filter((photo) => {
-        const key = photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+        const key = photoSelectionKey(photo)
         return !existingKeys.has(key)
       })
 
@@ -1399,9 +1385,7 @@ const toggleSelectAll = () => {
     selectedPhotos.value = new Set()
   } else {
     // 当前非全选状态，执行全选
-    const allPhotoKeys = photoList.value.map(
-      (photo) => photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
-    )
+    const allPhotoKeys = photoList.value.map(photoSelectionKey)
     selectedPhotos.value = new Set(allPhotoKeys)
   }
 }
@@ -1432,7 +1416,7 @@ const deleteSelected = async () => {
 
   // 获取选中的照片信息
   const selectedPhotoList = photoList.value.filter((photo) => {
-    const photoKey = photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+    const photoKey = photoSelectionKey(photo)
     return selectedPhotos.value.has(photoKey)
   })
 
@@ -1498,7 +1482,7 @@ const downloadSelected = async () => {
   try {
     // 获取选中的照片对象
     const selectedPhotoObjects = photoList.value.filter((photo) =>
-      selectedPhotos.value.has(photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`)
+      selectedPhotos.value.has(photoSelectionKey(photo))
     )
 
     if (selectedPhotoObjects.length === 0) {
@@ -2035,15 +2019,201 @@ const handlePhotoPreviewVisibility = () => {
   if (document.hidden) stopPhotoHoverPreview()
 }
 
+const marquee = ref({
+  active: false,
+  startX: 0,
+  startY: 0,
+  currentX: 0,
+  currentY: 0
+})
+const lastSelectedPhotoKey = ref('')
+let marqueeSession = null
+let marqueeScrollFrame = 0
+
+const marqueeViewportRect = () => {
+  const containerRect = photoContainerRef.value?.getBoundingClientRect()
+  if (!containerRect) return null
+  const left = Math.max(containerRect.left, Math.min(marquee.value.startX, marquee.value.currentX))
+  const right = Math.min(
+    containerRect.right,
+    Math.max(marquee.value.startX, marquee.value.currentX)
+  )
+  const top = Math.max(containerRect.top, Math.min(marquee.value.startY, marquee.value.currentY))
+  const bottom = Math.min(
+    containerRect.bottom,
+    Math.max(marquee.value.startY, marquee.value.currentY)
+  )
+  return { left, right, top, bottom, containerRect }
+}
+
+const marqueeStyle = computed(() => {
+  const rect = marqueeViewportRect()
+  if (!rect) return {}
+  return {
+    left: `${rect.left - rect.containerRect.left}px`,
+    top: `${rect.top - rect.containerRect.top}px`,
+    width: `${Math.max(0, rect.right - rect.left)}px`,
+    height: `${Math.max(0, rect.bottom - rect.top)}px`
+  }
+})
+
+const updateMarqueeSelection = () => {
+  const rect = marqueeViewportRect()
+  if (!rect || !marqueeSession) return
+
+  const nextSelection = new Set(marqueeSession.baseSelection)
+  photoTimelineRef.value?.querySelectorAll('.photo-item[data-photo-key]').forEach((element) => {
+    const itemRect = element.getBoundingClientRect()
+    const intersects =
+      itemRect.right >= rect.left &&
+      itemRect.left <= rect.right &&
+      itemRect.bottom >= rect.top &&
+      itemRect.top <= rect.bottom
+    if (intersects) nextSelection.add(element.dataset.photoKey)
+  })
+  selectedPhotos.value = nextSelection
+}
+
+const stopMarqueeAutoScroll = () => {
+  if (marqueeScrollFrame) cancelAnimationFrame(marqueeScrollFrame)
+  marqueeScrollFrame = 0
+}
+
+const runMarqueeAutoScroll = () => {
+  stopMarqueeAutoScroll()
+  const step = () => {
+    if (!marquee.value.active) return
+    const wrapElement =
+      scrollbarRef.value?.wrapRef || scrollbarRef.value?.$el?.querySelector('.el-scrollbar__wrap')
+    if (!wrapElement) return
+
+    const bounds = wrapElement.getBoundingClientRect()
+    const edge = 40
+    let delta = 0
+    if (marquee.value.currentY < bounds.top + edge) {
+      delta = -Math.ceil((bounds.top + edge - marquee.value.currentY) / 5)
+    } else if (marquee.value.currentY > bounds.bottom - edge) {
+      delta = Math.ceil((marquee.value.currentY - (bounds.bottom - edge)) / 5)
+    }
+    delta = Math.max(-14, Math.min(14, delta))
+
+    if (delta) {
+      const previousTop = wrapElement.scrollTop
+      wrapElement.scrollTop += delta
+      if (wrapElement.scrollTop !== previousTop) updateMarqueeSelection()
+    }
+    marqueeScrollFrame = requestAnimationFrame(step)
+  }
+  marqueeScrollFrame = requestAnimationFrame(step)
+}
+
+const handleMarqueePointerMove = (event) => {
+  if (!marqueeSession || event.pointerId !== marqueeSession.pointerId) return
+  marquee.value.currentX = event.clientX
+  marquee.value.currentY = event.clientY
+
+  if (!marquee.value.active) {
+    const distance = Math.hypot(
+      event.clientX - marquee.value.startX,
+      event.clientY - marquee.value.startY
+    )
+    if (distance < 5) return
+    marquee.value.active = true
+    stopPhotoHoverPreview()
+    runMarqueeAutoScroll()
+  }
+
+  event.preventDefault()
+  updateMarqueeSelection()
+}
+
+const removeMarqueeListeners = () => {
+  window.removeEventListener('pointermove', handleMarqueePointerMove)
+  window.removeEventListener('pointerup', handleMarqueePointerEnd)
+  window.removeEventListener('pointercancel', handleMarqueePointerEnd)
+}
+
+function handleMarqueePointerEnd(event) {
+  if (
+    !marqueeSession ||
+    (event?.pointerId != null && event.pointerId !== marqueeSession.pointerId)
+  ) {
+    return
+  }
+  const wasActive = marquee.value.active
+  const shouldClear = !wasActive && !marqueeSession.additive
+  removeMarqueeListeners()
+  stopMarqueeAutoScroll()
+  marquee.value.active = false
+  marqueeSession = null
+  if (shouldClear) clearSelection()
+}
+
+const handleMarqueePointerDown = (event) => {
+  const target = event.target
+  if (
+    event.pointerType !== 'mouse' ||
+    event.button !== 0 ||
+    !(target instanceof Element) ||
+    target.closest('.photo-item, .date-header, button, a, input, textarea, select, [role="button"]')
+  ) {
+    return
+  }
+
+  const additive = event.metaKey || event.ctrlKey || event.shiftKey
+  marqueeSession = {
+    pointerId: event.pointerId,
+    additive,
+    baseSelection: additive ? new Set(selectedPhotos.value) : new Set()
+  }
+  marquee.value = {
+    active: false,
+    startX: event.clientX,
+    startY: event.clientY,
+    currentX: event.clientX,
+    currentY: event.clientY
+  }
+  window.addEventListener('pointermove', handleMarqueePointerMove, { passive: false })
+  window.addEventListener('pointerup', handleMarqueePointerEnd)
+  window.addEventListener('pointercancel', handleMarqueePointerEnd)
+}
+
+const selectPhotoRange = (photo, additive = false) => {
+  const targetKey = photoSelectionKey(photo)
+  const targetIndex = photoList.value.findIndex((item) => photoSelectionKey(item) === targetKey)
+  const anchorIndex = photoList.value.findIndex(
+    (item) => photoSelectionKey(item) === lastSelectedPhotoKey.value
+  )
+  if (targetIndex < 0 || anchorIndex < 0) {
+    selectPhoto(photo)
+    return
+  }
+
+  const start = Math.min(anchorIndex, targetIndex)
+  const end = Math.max(anchorIndex, targetIndex)
+  const nextSelection = additive ? new Set(selectedPhotos.value) : new Set()
+  photoList.value.slice(start, end + 1).forEach((item) => {
+    nextSelection.add(photoSelectionKey(item))
+  })
+  selectedPhotos.value = nextSelection
+  lastSelectedPhotoKey.value = targetKey
+}
+
 // 处理照片点击 —— 统一开 MediaPreview
 const handlePhotoClick = (photo, event) => {
   event.stopPropagation()
   stopPhotoHoverPreview()
+  if (event.shiftKey) {
+    selectPhotoRange(photo, event.metaKey || event.ctrlKey)
+    return
+  }
+  if (event.metaKey || event.ctrlKey) {
+    selectPhoto(photo)
+    return
+  }
   previewItems.value = buildPreviewItems()
   const idx = photoList.value.findIndex(
-    (p) =>
-      (p.lloc || `${p.id}_${p.name}_${p.modifytime}`) ===
-      (photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`)
+    (item) => photoSelectionKey(item) === photoSelectionKey(photo)
   )
   previewIndex.value = idx >= 0 ? idx : 0
   previewVisible.value = true
@@ -2068,7 +2238,7 @@ const resolvePreviewItem = async (item, idx) => {
 const isPreviewItemSelected = (item) => {
   const p = item?._photo
   if (!p) return false
-  const key = p.lloc || `${p.id}_${p.name}_${p.modifytime}`
+  const key = photoSelectionKey(p)
   return selectedPhotos.value.has(key)
 }
 
@@ -2101,7 +2271,7 @@ const handlePreviewLoadMore = async () => {
 
 // 选择照片
 const selectPhoto = (photo) => {
-  const photoKey = photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+  const photoKey = photoSelectionKey(photo)
 
   if (selectedPhotos.value.has(photoKey)) {
     // 如果已选中，则取消选择
@@ -2110,6 +2280,7 @@ const selectPhoto = (photo) => {
     // 否则添加到选择中
     selectedPhotos.value = new Set([...selectedPhotos.value, photoKey])
   }
+  lastSelectedPhotoKey.value = photoKey
 }
 
 // 旧的 previewPhoto/closeVideoPreview 已整合到 MediaPreview 中
@@ -2119,13 +2290,12 @@ const selectPhoto = (photo) => {
 // 清除选择
 const clearSelection = () => {
   selectedPhotos.value = new Set()
+  lastSelectedPhotoKey.value = ''
 }
 
 // 判断某个日期是否全选
 const isDateSelected = (group) => {
-  return group.photos.every((photo) =>
-    selectedPhotos.value.has(photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`)
-  )
+  return group.photos.every((photo) => selectedPhotos.value.has(photoSelectionKey(photo)))
 }
 
 // 切换日期选择状态
@@ -2136,13 +2306,13 @@ const toggleDateSelection = (group) => {
   if (isSelected) {
     // 取消选择该日期下的所有照片
     group.photos.forEach((photo) => {
-      const photoKey = photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+      const photoKey = photoSelectionKey(photo)
       newSelection.delete(photoKey)
     })
   } else {
     // 选择该日期下的所有照片
     group.photos.forEach((photo) => {
-      const photoKey = photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`
+      const photoKey = photoSelectionKey(photo)
       newSelection.add(photoKey)
     })
   }
@@ -2177,6 +2347,7 @@ onMounted(() => {
 
 // 组件销毁时清理
 onUnmounted(() => {
+  handleMarqueePointerEnd()
   window.removeEventListener('blur', handlePhotoPreviewWindowBlur)
   document.removeEventListener('visibilitychange', handlePhotoPreviewVisibility)
   stopPhotoHoverPreview()
@@ -2197,9 +2368,20 @@ onUnmounted(() => {
   min-width: 0;
   height: 100%;
   position: relative;
+
+  &.is-marquee-selecting {
+    cursor: crosshair;
+    user-select: none;
+
+    .photo-item,
+    .photo-preview-trigger {
+      cursor: crosshair;
+    }
+  }
 }
 
 .photo-container {
+  position: relative;
   flex: 1;
   overflow: hidden;
 
@@ -2207,6 +2389,17 @@ onUnmounted(() => {
   :deep(.el-scrollbar__wrap) {
     padding-right: 6px;
   }
+}
+
+.selection-marquee {
+  position: absolute;
+  z-index: calc(var(--theme-z-popover) - 1);
+  box-sizing: border-box;
+  border: 1px solid var(--theme-brand-accent);
+  border-radius: var(--theme-radius-sm);
+  background: color-mix(in srgb, var(--theme-brand-accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-brand-accent) 18%, transparent);
+  pointer-events: none;
 }
 
 .album-collection-state {

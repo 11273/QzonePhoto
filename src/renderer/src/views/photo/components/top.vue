@@ -666,12 +666,12 @@ defineExpose({
 })
 
 const hasPhotos = computed(() => allPhotos.value && allPhotos.value.length > 0)
+const photoSelectionKey = (photo) =>
+  String(photo?.lloc || `${photo?.id}_${photo?.name}_${photo?.modifytime}`)
 
 const isAllSelected = computed(() => {
   if (!hasPhotos.value) return false
-  return allPhotos.value.every((photo) =>
-    selectedPhotos.value.has(photo.lloc || `${photo.id}_${photo.name}_${photo.modifytime}`)
-  )
+  return allPhotos.value.every((photo) => selectedPhotos.value.has(photoSelectionKey(photo)))
 })
 
 const isIndeterminate = computed(() => {
