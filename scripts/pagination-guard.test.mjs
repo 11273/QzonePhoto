@@ -50,6 +50,24 @@ test('trusts an advancing server cursor even when the visible page deduplicates 
 test('stops at an explicit end-of-list and infers legacy terminal pages', () => {
   assert.equal(shouldContinuePagination({ serverHasMore: 'false', cursorMoved: true }), false)
   assert.equal(
+    shouldContinuePagination({
+      serverHasMore: false,
+      continueOnCursorProgress: true,
+      cursorMoved: true,
+      itemCount: 1
+    }),
+    true
+  )
+  assert.equal(
+    shouldContinuePagination({
+      serverHasMore: false,
+      continueOnCursorProgress: true,
+      cursorMoved: true,
+      itemCount: 0
+    }),
+    false
+  )
+  assert.equal(
     shouldContinuePagination({ nextOffset: 40, total: 41, itemCount: 1, pageSize: 20 }),
     true
   )

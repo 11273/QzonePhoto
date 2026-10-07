@@ -3128,6 +3128,10 @@ const loadPage = async ({ reset = false } = {}) => {
             : Number(pager.value.year) >= LAST_YEAR_MIN
           : shouldContinuePagination({
               serverHasMore: res.hasMore,
+              // feeds3_html_more keeps advancing its official cursor even when
+              // hasMoreFeeds is false. The web UI stops early, but requesting
+              // that returned cursor continues to yield older feed pages.
+              continueOnCursorProgress: source.key === 'friend' || source.key === 'special',
               cursorMoved: pagerMoved,
               itemCount: rawList.length,
               pageSize: PAGE_SIZE

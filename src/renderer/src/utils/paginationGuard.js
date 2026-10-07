@@ -14,6 +14,7 @@ export const normalizePaginationFlag = (value) => {
 
 export const shouldContinuePagination = ({
   serverHasMore,
+  continueOnCursorProgress = false,
   cursorMoved = true,
   itemCount = 0,
   pageSize = 0,
@@ -23,7 +24,15 @@ export const shouldContinuePagination = ({
   if (!cursorMoved) return false
 
   const normalizedServerFlag = normalizePaginationFlag(serverHasMore)
-  if (normalizedServerFlag !== null) return normalizedServerFlag
+  if (normalizedServerFlag !== null) {
+    // A few legacy Qzone feeds expose a valid next cursor while reporting
+    // hasMore=false on every page. Callers must opt in explicitly so normal
+    // list APIs continue to trust the server's end marker.
+    if (normalizedServerFlag === false && continueOnCursorProgress) {
+      return Number(itemCount) > 0
+    }
+    return normalizedServerFlag
+  }
 
   const normalizedNextOffset = Number(nextOffset)
   const normalizedTotal = Number(total)
