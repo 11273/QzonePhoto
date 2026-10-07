@@ -5,7 +5,6 @@ import {
   getGenericLatestMetadataUrl,
   getGithubLatestMetadataUrl,
   getUpdaterMetadataFilename,
-  hasUsableUpdateCheckResult,
   UPDATE_REQUEST_TIMEOUT_MS,
   matchesPinnedUpdateCandidate,
   selectCompatibleUpdateFile,
@@ -46,7 +45,7 @@ test('uses R2 only when GitHub confirms the same release asset', () => {
   assert.equal(selection.reason, UPDATE_SELECTION_REASON.R2_VERIFIED)
 })
 
-test('uses the higher version from either official source', () => {
+test('uses GitHub as release authority when source versions differ', () => {
   const architecture = { platform: 'win32', arch: 'x64' }
   const r2Candidate = { source: 'r2', updateInfo: { version: '2.7.1', files: [windowsAsset()] } }
   const githubNewer = {
@@ -87,11 +86,11 @@ test('uses the higher version from either official source', () => {
     githubResponded: true,
     architecture
   })
-  assert.equal(r2Selection.candidate, r2Newer)
-  assert.equal(r2Selection.reason, UPDATE_SELECTION_REASON.R2_NEWER)
+  assert.equal(r2Selection.candidate, githubOlder)
+  assert.equal(r2Selection.reason, UPDATE_SELECTION_REASON.GITHUB_AUTHORITY)
 })
 
-test('allows one source to offer a newer update while the other is current or unavailable', () => {
+test('only uses an R2-only update when GitHub is unavailable', () => {
   const architecture = { platform: 'win32', arch: 'x64' }
   const r2Candidate = { source: 'r2', updateInfo: { version: '2.7.1', files: [windowsAsset()] } }
 
@@ -101,8 +100,8 @@ test('allows one source to offer a newer update while the other is current or un
     githubResponded: true,
     architecture
   })
-  assert.equal(githubCurrent.candidate, r2Candidate)
-  assert.equal(githubCurrent.reason, UPDATE_SELECTION_REASON.R2_UNVERIFIED)
+  assert.equal(githubCurrent.candidate, null)
+  assert.equal(githubCurrent.reason, UPDATE_SELECTION_REASON.GITHUB_CURRENT)
 
   const githubUnavailable = selectVerifiedUpdateCandidate({
     r2Candidate,
@@ -130,7 +129,7 @@ test('allows one source to offer a newer update while the other is current or un
   assert.equal(r2Current.reason, UPDATE_SELECTION_REASON.GITHUB_ONLY)
 })
 
-test('blocks automatic update when the same version has different package metadata', () => {
+test('uses GitHub when the same version has different package metadata', () => {
   const architecture = { platform: 'win32', arch: 'x64' }
   const r2Candidate = { source: 'r2', updateInfo: { version: '2.7.1', files: [windowsAsset()] } }
   const githubCandidate = {
@@ -147,34 +146,12 @@ test('blocks automatic update when the same version has different package metada
     githubResponded: true,
     architecture
   })
-  assert.equal(selection.candidate, null)
-  assert.equal(selection.reason, UPDATE_SELECTION_REASON.METADATA_CONFLICT)
+  assert.equal(selection.candidate, githubCandidate)
+  assert.equal(selection.reason, UPDATE_SELECTION_REASON.GITHUB_HASH_MISMATCH)
 })
 
 test('uses a short, explicit request timeout instead of electron-updater default', () => {
   assert.equal(UPDATE_REQUEST_TIMEOUT_MS, 4_000)
-})
-
-test('lets R2 finish the foreground check only with usable stable metadata', () => {
-  const result = { updateInfo: { version: '2.7.1' }, isUpdateAvailable: false }
-  const candidate = {
-    source: 'r2',
-    updateInfo: { version: '2.7.2', files: [windowsAsset('2.7.2')] }
-  }
-
-  assert.equal(hasUsableUpdateCheckResult(result, null), true)
-  assert.equal(
-    hasUsableUpdateCheckResult(
-      { updateInfo: candidate.updateInfo, isUpdateAvailable: true },
-      candidate
-    ),
-    true
-  )
-  assert.equal(
-    hasUsableUpdateCheckResult({ updateInfo: candidate.updateInfo, isUpdateAvailable: true }, null),
-    false
-  )
-  assert.equal(hasUsableUpdateCheckResult({ updateInfo: { version: '2.7.1-beta.1' } }, null), false)
 })
 
 test('builds fixed-source metadata URLs without making them a download authority', () => {

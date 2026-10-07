@@ -7,8 +7,8 @@ export const OFFICIAL_UPDATE_SOURCES = Object.freeze({
   })
 })
 
-// 前台检查依次尝试 R2 和 GitHub；单一来源最多占用 4 秒，使失败场景也能在
-// 标题栏 8 秒反馈窗口内结束。下载前仍会由 electron-updater 复核 SHA-512。
+// 前台并行检查 R2 和 GitHub；单一来源最多占用 4 秒，使失败场景也能在
+// 标题栏反馈窗口内结束。下载前仍会由 electron-updater 复核 SHA-512。
 export const UPDATE_REQUEST_TIMEOUT_MS = 4_000
 
 export function isStableReleaseVersion(value) {
@@ -16,25 +16,25 @@ export function isStableReleaseVersion(value) {
 }
 
 /**
- * R2 是优先的国内分发源，GitHub 是独立的公开备用源。
+ * GitHub 是正式发布的版本权威，R2 只负责加速同一份安装包。
  *
  * 每次检查两个来源，并按用户可感知、可验证的规则选择：
- * - 两端均有可安装更新时，选择版本号更高的一端；
  * - 两端同版本且当前架构的文件大小、SHA-512 一致，优先走 R2；
- * - 两端同版本但安装包元数据不一致，停止自动更新，不下载任一文件；
- * - 只有一端有可安装更新时，使用该端（包括另一端仍是旧版的发布验证场景）。
+ * - R2 版本、大小或 SHA-512 与 GitHub 不一致时，使用 GitHub；
+ * - GitHub 明确响应但没有更新时，不接受 R2 单独发布的新版本；
+ * - 只有 GitHub 不可访问时，才允许使用 R2 的有效候选作为网络兜底。
  *
- * 因此发布者可以先将已验证版本推至 R2；同时 GitHub 的更高正式版不会被
- * R2 的旧元数据遮蔽。相同版本出现内容冲突时则宁可提示稍后重试，也不猜测
- * 哪个包可信。
+ * 这样既保留国内下载加速，也避免 R2 上传顺序、缓存或覆盖造成的元数据
+ * 暂时不一致影响正式版本判断。
  */
 export const UPDATE_SELECTION_REASON = Object.freeze({
   R2_UNVERIFIED: 'r2-unverified',
   R2_VERIFIED: 'r2-verified',
   GITHUB_ONLY: 'github-only',
-  R2_NEWER: 'r2-newer',
   GITHUB_NEWER: 'github-newer',
-  METADATA_CONFLICT: 'metadata-conflict',
+  GITHUB_AUTHORITY: 'github-authority',
+  GITHUB_HASH_MISMATCH: 'github-hash-mismatch',
+  GITHUB_CURRENT: 'github-current',
   NO_CANDIDATE: 'no-candidate'
 })
 
@@ -52,16 +52,6 @@ export function compareStableReleaseVersions(left, right) {
     }
   }
   return 0
-}
-
-/**
- * R2 给出稳定版本且没有“有更新但没有当前架构安装包”的异常时，前台即可
- * 结束检查。GitHub 的交叉核验可在后台继续，不阻塞用户点击下载。
- */
-export function hasUsableUpdateCheckResult(result, candidate) {
-  return Boolean(
-    isStableReleaseVersion(result?.updateInfo?.version) && (!result?.isUpdateAvailable || candidate)
-  )
 }
 
 export function getUpdaterMetadataFilename(architecture) {
@@ -143,17 +133,10 @@ export function selectVerifiedUpdateCandidate({
     }
   }
 
-  if (!r2Candidate && !githubCandidate) {
-    return {
-      candidate: null,
-      reason: UPDATE_SELECTION_REASON.NO_CANDIDATE
-    }
-  }
-
   if (!githubCandidate) {
     return {
-      candidate: r2Candidate,
-      reason: UPDATE_SELECTION_REASON.R2_UNVERIFIED
+      candidate: null,
+      reason: UPDATE_SELECTION_REASON.GITHUB_CURRENT
     }
   }
 
@@ -169,17 +152,19 @@ export function selectVerifiedUpdateCandidate({
     githubCandidate.updateInfo?.version
   )
 
-  if (versionComparison > 0) {
-    return {
-      candidate: r2Candidate,
-      reason: UPDATE_SELECTION_REASON.R2_NEWER
-    }
-  }
-
   if (versionComparison < 0) {
     return {
       candidate: githubCandidate,
       reason: UPDATE_SELECTION_REASON.GITHUB_NEWER
+    }
+  }
+
+  // R2 即使显示了更高版本，也不能领先 GitHub 正式发布；GitHub 始终是
+  // 版本权威，R2 只在内容完全一致时才成为下载加速源。
+  if (versionComparison > 0) {
+    return {
+      candidate: githubCandidate,
+      reason: UPDATE_SELECTION_REASON.GITHUB_AUTHORITY
     }
   }
 
@@ -193,8 +178,8 @@ export function selectVerifiedUpdateCandidate({
   }
 
   return {
-    candidate: null,
-    reason: UPDATE_SELECTION_REASON.METADATA_CONFLICT
+    candidate: githubCandidate,
+    reason: UPDATE_SELECTION_REASON.GITHUB_HASH_MISMATCH
   }
 }
 
