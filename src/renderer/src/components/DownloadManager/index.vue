@@ -161,15 +161,10 @@
         </div>
 
         <div v-if="hasAnyTasks" class="actions-right">
-          <AppActionButton
-            variant="primary"
-            ui-size="compact"
-            :disabled="!canStartAll"
-            @click="startAll"
-          >
+          <AppActionButton v-if="canStartAll" variant="primary" ui-size="compact" @click="startAll">
             全部开始
           </AppActionButton>
-          <AppActionButton ui-size="compact" :disabled="!canPauseAll" @click="pauseAll">
+          <AppActionButton v-if="canPauseAll" ui-size="compact" @click="pauseAll">
             暂停全部
           </AppActionButton>
           <el-popconfirm
@@ -200,7 +195,7 @@
     <!-- 分栏布局 -->
     <div v-if="hasAnyTasks" class="layout-columns">
       <!-- 左侧进度和统计 - 优化布局 -->
-      <div class="left-column optimized-layout">
+      <div class="left-column optimized-layout" :class="{ 'is-settled': !hasRunningDownloads }">
         <!-- 总体进度区域 -->
         <div
           class="progress-card"
@@ -237,7 +232,7 @@
         </div>
 
         <!-- 下载速度区域 -->
-        <div class="speed-card">
+        <div v-if="hasRunningDownloads" class="speed-card">
           <h5>下载速度</h5>
           <div class="speed-info">
             <div class="current-speed">{{ getCurrentSpeed() }}</div>
@@ -249,46 +244,11 @@
         <div class="status-card">
           <h5>任务状态</h5>
           <div class="status-list">
-            <div class="status-item">
-              <span class="status-dot downloading"></span>
+            <div v-for="item in visibleStatusItems" :key="item.value" class="status-item">
+              <span class="status-dot" :class="item.value"></span>
               <span class="status-info">
-                <span class="status-name">下载中</span>
-                <span class="status-count">{{ getTasksByStatus('downloading').length }}</span>
-              </span>
-            </div>
-            <div class="status-item">
-              <span class="status-dot completed"></span>
-              <span class="status-info">
-                <span class="status-name">已完成</span>
-                <span class="status-count">{{ getTasksByStatus('completed').length }}</span>
-              </span>
-            </div>
-            <div class="status-item">
-              <span class="status-dot paused"></span>
-              <span class="status-info">
-                <span class="status-name">已暂停</span>
-                <span class="status-count">{{ getTasksByStatus('paused').length }}</span>
-              </span>
-            </div>
-            <div class="status-item">
-              <span class="status-dot waiting"></span>
-              <span class="status-info">
-                <span class="status-name">等待中</span>
-                <span class="status-count">{{ getTasksByStatus('waiting').length }}</span>
-              </span>
-            </div>
-            <div class="status-item">
-              <span class="status-dot error"></span>
-              <span class="status-info">
-                <span class="status-name">出错</span>
-                <span class="status-count">{{ getTasksByStatus('error').length }}</span>
-              </span>
-            </div>
-            <div class="status-item">
-              <span class="status-dot cancelled"></span>
-              <span class="status-info">
-                <span class="status-name">已取消</span>
-                <span class="status-count">{{ getTasksByStatus('cancelled').length }}</span>
+                <span class="status-name">{{ item.label }}</span>
+                <span class="status-count">{{ item.count }}</span>
               </span>
             </div>
           </div>
@@ -339,12 +299,13 @@
           <div class="task-filter">
             <el-radio-group v-model="statusFilter" size="small">
               <el-radio-button value="all">全部</el-radio-button>
-              <el-radio-button value="downloading">下载中</el-radio-button>
-              <el-radio-button value="completed">已完成</el-radio-button>
-              <el-radio-button value="paused">已暂停</el-radio-button>
-              <el-radio-button value="waiting">等待中</el-radio-button>
-              <el-radio-button value="error">出错</el-radio-button>
-              <el-radio-button value="cancelled">已取消</el-radio-button>
+              <el-radio-button
+                v-for="option in DOWNLOAD_STATUS_OPTIONS"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </el-radio-button>
             </el-radio-group>
           </div>
           <div class="task-list-meta">
@@ -1226,6 +1187,21 @@ const canStartAll = computed(
 const canPauseAll = computed(
   () => (taskStats.value.downloading || 0) + (taskStats.value.waiting || 0) > 0
 )
+const hasRunningDownloads = computed(() => (taskStats.value.downloading || 0) > 0)
+const DOWNLOAD_STATUS_OPTIONS = [
+  { value: 'downloading', label: '下载中' },
+  { value: 'completed', label: '已完成' },
+  { value: 'paused', label: '已暂停' },
+  { value: 'waiting', label: '等待中' },
+  { value: 'error', label: '出错' },
+  { value: 'cancelled', label: '已取消' }
+]
+const visibleStatusItems = computed(() =>
+  DOWNLOAD_STATUS_OPTIONS.map((option) => ({
+    ...option,
+    count: Number(taskStats.value[option.value] || 0)
+  })).filter((option) => option.count > 0)
+)
 const compactDownloadPath = computed(() => {
   if (!downloadPath.value) return '正在获取…'
   const normalized = downloadPath.value.replace(/\\/g, '/')
@@ -1372,13 +1348,6 @@ const getContactBackupIcon = (category) => {
   if (category === '群') return UsersRound
   if (category === '亲密度') return HeartHandshake
   return ContactRound
-}
-
-const getTasksByStatus = (status) => {
-  if (taskStats.value && typeof taskStats.value[status] === 'number') {
-    return { length: taskStats.value[status] }
-  }
-  return { length: 0 }
 }
 
 const getCurrentSpeed = () => {
@@ -2125,6 +2094,17 @@ const handleTimePreferenceChange = async (preference) => {
     gap: 8px;
 
     &.optimized-layout {
+      &.is-settled {
+        .progress-card {
+          flex: 0 0 154px;
+        }
+
+        .status-card {
+          min-height: 88px;
+          flex: 0 0 auto;
+        }
+      }
+
       .progress-card {
         display: flex;
         flex-direction: column;

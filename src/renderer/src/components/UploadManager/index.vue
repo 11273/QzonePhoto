@@ -69,12 +69,12 @@
             @change="loadTasks"
           >
             <el-option label="全部" value="all" />
-            <el-option label="上传中" value="uploading" />
-            <el-option label="等待中" value="waiting" />
-            <el-option label="已暂停" value="paused" />
-            <el-option label="失败" value="error" />
-            <el-option label="已完成" value="completed" />
-            <el-option label="已取消" value="cancelled" />
+            <el-option
+              v-for="option in UPLOAD_STATUS_OPTIONS"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </div>
       </div>
@@ -123,7 +123,7 @@
           <template #icon
             ><el-icon><Delete /></el-icon
           ></template>
-          清空全部
+          清空记录
         </AppActionButton>
       </div>
     </div>
@@ -131,7 +131,11 @@
     <!-- 分栏布局 -->
     <div class="layout-columns" :class="{ 'is-compact-state': !hasTaskWorkspace }">
       <!-- 左侧：统计区域 -->
-      <div v-if="hasTaskWorkspace" class="left-column">
+      <div
+        v-if="hasTaskWorkspace"
+        class="left-column"
+        :class="{ 'is-settled': !hasUploadingTasks }"
+      >
         <!-- 总体进度卡片 -->
         <div
           class="progress-card"
@@ -168,31 +172,15 @@
               <span class="stat-label">总任务</span>
               <span class="stat-value total">{{ taskStats.total }}</span>
             </div>
-            <div class="stat-row">
-              <span class="stat-label">上传中</span>
-              <span class="stat-value uploading">{{ taskStats.uploading }}</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">等待中</span>
-              <span class="stat-value waiting">{{ taskStats.waiting }}</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">已完成</span>
-              <span class="stat-value completed">{{ taskStats.completed }}</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">失败</span>
-              <span class="stat-value error">{{ taskStats.error }}</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">暂停</span>
-              <span class="stat-value paused">{{ taskStats.paused }}</span>
+            <div v-for="item in visibleUploadStatusItems" :key="item.value" class="stat-row">
+              <span class="stat-label">{{ item.label }}</span>
+              <span class="stat-value" :class="item.value">{{ item.count }}</span>
             </div>
           </div>
         </div>
 
         <!-- 上传速度卡片 -->
-        <div class="speed-card">
+        <div v-if="hasUploadingTasks" class="speed-card">
           <h5 class="card-title">
             <el-icon><Timer /></el-icon>
             上传速度
@@ -506,6 +494,21 @@ const hasFailedTasks = computed(() => {
 const hasActiveTasks = computed(() => {
   return taskStats.value.uploading + taskStats.value.waiting > 0
 })
+const hasUploadingTasks = computed(() => taskStats.value.uploading > 0)
+const UPLOAD_STATUS_OPTIONS = [
+  { value: 'uploading', label: '上传中' },
+  { value: 'waiting', label: '等待中' },
+  { value: 'paused', label: '已暂停' },
+  { value: 'error', label: '失败' },
+  { value: 'completed', label: '已完成' },
+  { value: 'cancelled', label: '已取消' }
+]
+const visibleUploadStatusItems = computed(() =>
+  UPLOAD_STATUS_OPTIONS.map((option) => ({
+    ...option,
+    count: Number(taskStats.value[option.value] || 0)
+  })).filter((option) => option.count > 0)
+)
 
 // 没有任何任务时只呈现可操作的空状态，避免用 0% 仪表盘和无效筛选占满弹窗。
 const hasTaskWorkspace = computed(() => {
@@ -1328,6 +1331,17 @@ onUnmounted(async () => {
     display: flex;
     flex-direction: column;
     gap: 8px;
+
+    &.is-settled {
+      .progress-card {
+        flex: 0 0 120px;
+      }
+
+      .stats-card {
+        min-height: 78px;
+        flex: 0 0 auto;
+      }
+    }
 
     .progress-card,
     .stats-card,
