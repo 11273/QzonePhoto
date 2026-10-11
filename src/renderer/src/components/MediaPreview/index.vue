@@ -39,6 +39,18 @@
 
           <div class="mp-actions">
             <button
+              v-if="currentDetailRows.length"
+              class="mp-action"
+              :class="{ active: detailsVisible }"
+              type="button"
+              :aria-pressed="detailsVisible"
+              :aria-label="detailsVisible ? '收起媒体详情' : '查看媒体详情'"
+              :title="detailsVisible ? '收起详情' : '媒体详情'"
+              @click="detailsVisible = !detailsVisible"
+            >
+              <el-icon><InfoFilled /></el-icon>
+            </button>
+            <button
               v-if="selectable"
               class="mp-action mp-action-check"
               :class="{ checked: isSelected }"
@@ -174,9 +186,9 @@
                 ref="videoEl"
                 :poster="current.thumb"
                 class="mp-media mp-video"
-                :controls="!mediaLoading"
+                :controls="videoSourceAttached && !mediaLoading"
                 playsinline
-                preload="metadata"
+                preload="none"
                 @canplay="onVideoCanPlay"
                 @playing="onVideoPlaying"
                 @pause="videoPaused = true"
@@ -265,6 +277,31 @@
             </div>
           </transition>
         </div>
+
+        <transition name="mp-details">
+          <aside
+            v-if="detailsVisible && currentDetailRows.length"
+            class="mp-details"
+            aria-label="当前媒体详情"
+            @click.stop
+          >
+            <header>
+              <div>
+                <strong>媒体详情</strong>
+                <span>{{ current?.type === 'video' ? '视频' : '照片' }}</span>
+              </div>
+              <button type="button" aria-label="收起媒体详情" @click="detailsVisible = false">
+                <el-icon><Close /></el-icon>
+              </button>
+            </header>
+            <dl>
+              <template v-for="row in currentDetailRows" :key="row.label">
+                <dt>{{ row.label }}</dt>
+                <dd :title="row.value">{{ row.value }}</dd>
+              </template>
+            </dl>
+          </aside>
+        </transition>
 
         <!-- 底部工具栏 + 缩略图（独立安全区，不遮挡媒体和导航） -->
         <div class="mp-bottom" @click.stop>
@@ -432,7 +469,9 @@ import {
   VideoPlay,
   WarningFilled,
   Hide,
-  Download
+  Download,
+  InfoFilled,
+  Close
 } from '@element-plus/icons-vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import {
@@ -482,11 +521,13 @@ const imageFallbackSrc = ref('')
 const loadingMore = ref(false)
 const boundaryHint = ref('')
 const videoEl = ref(null)
+const videoSourceAttached = ref(false)
 const thumbsRef = ref(null)
 const previewMaskRef = ref(null)
 const reloadNonce = ref(0)
 const downloadingCurrent = ref(false)
 const chromeIdle = ref(false)
+const detailsVisible = ref(false)
 let previousActiveElement = null
 let chromeIdleTimer = null
 let sourceTransition = null
@@ -500,9 +541,30 @@ const destroyVideoHls = () => {
   videoHls = null
 }
 
-const playCurrentVideo = async () => {
+const detachCurrentVideoSource = () => {
+  videoLoadId += 1
+  destroyVideoHls()
+  videoSourceAttached.value = false
   const element = videoEl.value
-  if (!element || !props.visible || current.value?.type !== 'video') return false
+  if (!element) return
+  try {
+    element.pause()
+    element.removeAttribute('src')
+    element.load()
+  } catch {
+    // 元素可能正在随预览切换卸载，忽略清理阶段的媒体异常。
+  }
+}
+
+const playCurrentVideo = async () => {
+  if (!props.visible || current.value?.type !== 'video' || !current.value?.src) return false
+
+  if (!videoSourceAttached.value) {
+    await loadCurrentVideoSource(current.value.src)
+  }
+
+  const element = videoEl.value
+  if (!element || !videoSourceAttached.value) return false
 
   mediaLoading.value = true
   videoHls?.startLoad?.()
@@ -534,11 +596,13 @@ const loadCurrentVideoSource = async (source) => {
   mediaLoading.value = true
   mediaError.value = false
   videoPaused.value = true
+  videoSourceAttached.value = false
   applyVideoPlaybackPreference(element)
 
   if (isHlsVideoSource(source)) {
     if (element.canPlayType('application/vnd.apple.mpegurl')) {
       element.src = source
+      videoSourceAttached.value = true
       element.load()
       return
     }
@@ -568,10 +632,12 @@ const loadCurrentVideoSource = async (source) => {
     })
     videoHls.loadSource(source)
     videoHls.attachMedia(element)
+    videoSourceAttached.value = true
     return
   }
 
   element.src = source
+  videoSourceAttached.value = true
   element.load()
 }
 
@@ -705,6 +771,19 @@ const isMac =
 
 const total = computed(() => props.items.length)
 const current = computed(() => props.items[currentIndex.value] || null)
+const currentDetailRows = computed(() => {
+  const source = current.value?.details
+  if (!source) return []
+  const rows = Array.isArray(source)
+    ? source
+    : Object.entries(source).map(([label, value]) => ({ label, value }))
+  return rows
+    .map((row) => ({
+      label: String(row?.label || '').trim(),
+      value: String(row?.value ?? '').trim()
+    }))
+    .filter((row) => row.label && row.value && row.value !== '--')
+})
 const uniqueSources = (sources = []) => [
   ...new Set(sources.flat().filter((source) => typeof source === 'string' && source.trim()))
 ]
@@ -824,6 +903,7 @@ const setIndex = (i) => {
   scrollThumbIntoView(i)
   // 若当前项标记 needsResolve（如视频需异步拉真实 URL），调用 resolveItem
   const item = props.items[i]
+  if (!item?.details) detailsVisible.value = false
   if (item && item.needsResolve && typeof props.resolveItem === 'function') {
     Promise.resolve(props.resolveItem(item, i)).catch((e) => {
       console.warn('[MediaPreview] resolveItem 失败:', e)
@@ -868,6 +948,9 @@ const onVideoVolumeChange = () => {
   if (videoEl.value) saveVideoPlaybackPreference(videoEl.value)
 }
 const onMediaError = () => {
+  // 切换或关闭视频时会主动移除 src；这不是播放失败，不能显示错误遮罩。
+  if (current.value?.type === 'video' && !videoSourceAttached.value) return
+
   if (current.value?.type === 'image') {
     if (showNextImageCandidate()) {
       return
@@ -908,7 +991,10 @@ const retryCurrentMedia = async () => {
 
   await nextTick()
   if (current.value?.type === 'video') {
-    await loadCurrentVideoSource(current.value.src)
+    detachCurrentVideoSource()
+    mediaLoading.value = false
+    videoPaused.value = true
+    await playCurrentVideo()
   }
 }
 
@@ -1025,11 +1111,17 @@ watch(
   () => [props.visible, currentIndex.value, current.value?.type || '', current.value?.src || ''],
   ([visible, , type, source]) => {
     if (!visible || type !== 'video' || !source) {
-      videoLoadId += 1
-      destroyVideoHls()
+      detachCurrentVideoSource()
       return
     }
-    void loadCurrentVideoSource(source)
+    // 打开或切换视频时只展示封面；用户主动点击播放后才请求媒体，避免误耗流量。
+    nextTick(() => {
+      detachCurrentVideoSource()
+      mediaLoading.value = false
+      mediaError.value = false
+      videoPaused.value = true
+      if (videoEl.value) applyVideoPlaybackPreference(videoEl.value)
+    })
   },
   { flush: 'post', immediate: true }
 )
@@ -1042,6 +1134,7 @@ watch(
       previousActiveElement = document.activeElement
       const initial = Math.max(0, Math.min(props.items.length - 1, props.initialIndex || 0))
       boundaryHint.value = ''
+      detailsVisible.value = false
       wakeChrome()
       window.addEventListener('keydown', onKey)
       document.body.style.overflow = 'hidden'
@@ -1054,6 +1147,7 @@ watch(
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = ''
       chromeIdle.value = false
+      detailsVisible.value = false
       if (chromeIdleTimer) window.clearTimeout(chromeIdleTimer)
       // 关闭后停止视频
       try {
@@ -1061,9 +1155,8 @@ watch(
       } catch {
         // ignore
       }
-      videoLoadId += 1
+      detachCurrentVideoSource()
       videoPaused.value = true
-      destroyVideoHls()
       nextTick(() => previousActiveElement?.focus?.())
     }
   },
@@ -1072,8 +1165,7 @@ watch(
 
 onUnmounted(() => {
   cancelSourceTransition()
-  destroyVideoHls()
-  videoLoadId += 1
+  detachCurrentVideoSource()
   window.removeEventListener('keydown', onKey)
   document.body.style.overflow = ''
   if (chromeIdleTimer) window.clearTimeout(chromeIdleTimer)
@@ -1208,6 +1300,11 @@ onUnmounted(() => {
       background: var(--theme-brand-hover);
       border-color: var(--theme-focus);
     }
+  }
+
+  &.active {
+    color: var(--theme-brand-accent);
+    background: var(--theme-brand-soft);
   }
 
   &.mp-action-close:hover {
@@ -1372,6 +1469,112 @@ onUnmounted(() => {
   position: relative;
   padding: 8px 68px 12px;
   overflow: hidden; /* 缩放/平移时不溢出到顶/底 caption 工具栏 */
+}
+
+.mp-details {
+  position: absolute;
+  z-index: 6;
+  top: 64px;
+  right: 14px;
+  bottom: 92px;
+  width: min(300px, calc(100vw - 28px));
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--theme-material-border);
+  border-radius: 14px;
+  color: var(--theme-text-primary);
+  background:
+    linear-gradient(145deg, var(--theme-material-highlight), transparent 34%),
+    var(--theme-material-regular);
+  box-shadow:
+    inset 0 1px 0 var(--theme-material-highlight),
+    var(--theme-shadow-lg);
+  -webkit-backdrop-filter: blur(var(--theme-material-blur))
+    saturate(var(--theme-material-saturation));
+  backdrop-filter: blur(var(--theme-material-blur)) saturate(var(--theme-material-saturation));
+  user-select: text;
+
+  > header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+
+    > div {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    strong {
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    span {
+      color: var(--theme-text-muted);
+      font-size: 11px;
+    }
+
+    button {
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 7px;
+      color: var(--theme-text-secondary);
+      background: transparent;
+      cursor: pointer;
+
+      &:hover {
+        color: var(--theme-text-primary);
+        background: var(--theme-surface-hover);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--theme-focus);
+        outline-offset: 1px;
+      }
+    }
+  }
+
+  dl {
+    display: grid;
+    grid-template-columns: 68px minmax(0, 1fr);
+    gap: 9px 10px;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  dt {
+    color: var(--theme-text-muted);
+  }
+
+  dd {
+    min-width: 0;
+    margin: 0;
+    color: var(--theme-text-secondary);
+    overflow-wrap: anywhere;
+  }
+}
+
+.mp-details-enter-active,
+.mp-details-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.mp-details-enter-from,
+.mp-details-leave-to {
+  opacity: 0;
+  transform: translateX(12px);
 }
 
 .mp-nav {
@@ -1789,6 +1992,13 @@ onUnmounted(() => {
     padding: 12px 58px;
   }
 
+  .mp-details {
+    top: 66px;
+    right: 10px;
+    bottom: 78px;
+    width: min(280px, calc(100vw - 20px));
+  }
+
   .mp-nav {
     width: 42px;
     height: 42px;
@@ -1848,7 +2058,9 @@ onUnmounted(() => {
   .mp-media,
   .mp-video-play,
   .mp-fade-enter-active,
-  .mp-fade-leave-active {
+  .mp-fade-leave-active,
+  .mp-details-enter-active,
+  .mp-details-leave-active {
     transition: none;
   }
 
@@ -1874,6 +2086,12 @@ onUnmounted(() => {
   .mp-nav {
     background: var(--theme-material-thick);
   }
+
+  .mp-details {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--theme-material-thick);
+  }
 }
 
 @media (prefers-contrast: more) {
@@ -1881,6 +2099,11 @@ onUnmounted(() => {
   .mp-caption,
   .mp-toolbar,
   .mp-nav {
+    border-color: var(--theme-border-strong);
+    background: var(--theme-material-thick);
+  }
+
+  .mp-details {
     border-color: var(--theme-border-strong);
     background: var(--theme-material-thick);
   }

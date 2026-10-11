@@ -13,7 +13,7 @@
       muted
       loop
       playsinline
-      preload="metadata"
+      preload="none"
       tabindex="-1"
       @canplay="handleReady"
       @playing="handleReady"

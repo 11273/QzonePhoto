@@ -389,9 +389,11 @@ import { CONTENT_LOAD_STATUS, classifyContentLoadFailure } from '@shared/content
 import { toIpcSafeValue } from '@shared/ipc-payload'
 import { normalizeAlbumPrivacy, normalizePhotoDeleteItem } from '@shared/photo-delete'
 import {
+  isHlsVideoSource,
   resolveVideoCoverSource,
   resolveVideoPlaybackSource
 } from '@renderer/utils/video-playback.mjs'
+import { buildMediaDetailRows } from '@renderer/utils/mediaDetails'
 import Hls from 'hls.js'
 
 const props = defineProps({
@@ -781,7 +783,39 @@ const cleanPhotoData = (photos) => {
       shoottime: photo.shoottime,
       exif: photo.exif,
       is_video: photo.is_video,
-      size: photo.size || 0,
+      // QQ 空间照片列表的真实字节数字段是 photocubage；部分接口才返回 size。
+      size: Number(photo.size || photo.photocubage) || 0,
+      photocubage: Number(photo.photocubage || photo.size) || 0,
+      desc: photo.desc || '',
+      poiName: photo.poiName || '',
+      width: Number(photo.width) || 0,
+      height: Number(photo.height) || 0,
+      batchId: photo.batchId || photo.batch_id || '',
+      // forum 在不同接口里可能是评论数量，也可能是包含 total/num 的对象。
+      forum: photo.forum ?? 0,
+      commentNum: Number(photo.commentNum || photo.commentnum) || 0,
+      praiseNum: Number(photo.praiseNum || photo.likeCount) || 0,
+      viewCount: Number(photo.viewCount || photo.visitCount) || 0,
+      sloc: photo.sloc || '',
+      owner: photo.owner || '',
+      ownername: photo.ownername || '',
+      platformId: photo.platformId,
+      platformSubId: photo.platformSubId,
+      browser: photo.browser,
+      cameratype: photo.cameratype || '',
+      phototype: photo.phototype,
+      picrefer: photo.picrefer,
+      picmark_flag: photo.picmark_flag,
+      tag: photo.tag || '',
+      cp_flag: photo.cp_flag,
+      cp_x: photo.cp_x,
+      cp_y: photo.cp_y,
+      origin: photo.origin,
+      origin_url: photo.origin_url || '',
+      origin_upload: photo.origin_upload,
+      raw_upload: photo.raw_upload,
+      shorturl: photo.shorturl || '',
+      yurl: photo.yurl,
       metadataDescription: mediaMetadata?.description || '',
       mediaMetadata,
       // 保留关键字段
@@ -1818,6 +1852,18 @@ const buildPreviewItems = () =>
       thumb: photoCoverSource(p),
       title: p.name || '',
       subtitle: p.modifytime ? formatTime(p.modifytime) : '',
+      details: buildMediaDetailRows(p, {
+        type: isVideo ? '视频' : '照片',
+        albumName: currentAlbum.value?.name || '',
+        commentCount:
+          (typeof p.forum === 'object' ? p.forum?.total || p.forum?.num : p.forum) ||
+          p.commentNum ||
+          p.commentnum ||
+          0,
+        likeCount: p.praiseNum || p.likeCount || 0,
+        viewCount: p.viewCount || p.visitCount || 0,
+        batchId: p.batchId || p.batch_id || ''
+      }),
       needsResolve: isVideo,
       _photo: p
     }
@@ -1955,7 +2001,7 @@ const playPhotoHoverPreview = (url, requestId) => {
   element.playsInline = true
   setupPhotoHoverEvents(element, requestId)
 
-  if (url.includes('.m3u8')) {
+  if (isHlsVideoSource(url)) {
     if (element.canPlayType('application/vnd.apple.mpegurl')) {
       element.src = url
       element.play().catch(() => stopPhotoHoverPreview())

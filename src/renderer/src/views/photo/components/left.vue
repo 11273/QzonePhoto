@@ -10,7 +10,7 @@
                 friendCardInfo?.realname ||
                 friendCardInfo?.astroText ||
                 friendCardInfo?.location ||
-                friendLastActiveText ||
+                friendLastVisitText ||
                 friendDeviceName
               "
               placement="bottom"
@@ -32,11 +32,11 @@
                         .join(' · ')
                     }}
                   </div>
-                  <div v-if="friendLastActiveText" class="online-tooltip-sub">
-                    {{ friendLastActiveText }}
+                  <div v-if="friendLastVisitText" class="online-tooltip-sub">
+                    {{ friendLastVisitText }}
                   </div>
                   <div v-if="friendDeviceName" class="online-tooltip-sub">
-                    {{ friendDeviceName }}
+                    最近说说来自 {{ friendDeviceName }}
                   </div>
                 </div>
               </template>
@@ -1145,22 +1145,44 @@
                 feedsStats.visitorLoading ||
                 feedsStats.visitorLoaded ||
                 feedsStats.visitorError ||
-                feedsStats.recentVisitors?.length
+                feedsStats.recentVisitors?.length ||
+                feedsStats.incomingVisitors?.length ||
+                feedsStats.outgoingVisitors?.length
               "
               class="fd-panel fd-visitors"
             >
               <div class="fd-panel-head">
-                <span>最近来过</span>
-                <em v-if="feedsStats.recentVisitors?.length">{{
-                  feedsStats.recentVisitors.length
-                }}</em>
+                <span>空间访客</span>
+                <em v-if="activeVisitorTotal">{{ activeVisitorTotal }}</em>
               </div>
               <p v-if="feedsStats.visitorLoading" class="fd-visitor-state" role="status">
                 正在读取访客记录…
               </p>
-              <div v-if="feedsStats.recentVisitors?.length" class="mn-avatars">
+              <div class="fd-visitor-tabs" role="tablist" aria-label="访客方向">
                 <button
-                  v-for="v in feedsStats.recentVisitors.slice(0, 12)"
+                  type="button"
+                  role="tab"
+                  :aria-selected="visitorDirection === 'incoming'"
+                  :class="{ active: visitorDirection === 'incoming' }"
+                  @click="visitorDirection = 'incoming'"
+                >
+                  谁看过我
+                  <small>{{ visitorTotalLabel('incoming') }}</small>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  :aria-selected="visitorDirection === 'outgoing'"
+                  :class="{ active: visitorDirection === 'outgoing' }"
+                  @click="visitorDirection = 'outgoing'"
+                >
+                  我看过谁
+                  <small>{{ visitorTotalLabel('outgoing') }}</small>
+                </button>
+              </div>
+              <div v-if="activeVisitorList.length" class="mn-avatars">
+                <button
+                  v-for="v in activeVisitorList"
                   :key="v.uin"
                   type="button"
                   class="mn-avatar"
@@ -1172,18 +1194,44 @@
                   <span v-if="v.haveNewFeeds" class="mn-avatar-dot"></span>
                 </button>
               </div>
+              <button
+                v-if="visitorListCanLoadMore"
+                type="button"
+                class="fd-visitor-more"
+                :disabled="feedsStats.visitorListLoading"
+                @click="feedsStats.loadMoreVisitors?.(visitorDirection)"
+              >
+                <el-icon v-if="feedsStats.visitorListLoading" class="is-loading"
+                  ><Loading
+                /></el-icon>
+                {{ feedsStats.visitorListLoading ? '正在加载…' : '查看更多' }}
+              </button>
+              <div v-if="activeVisitorError" class="fd-visitor-state is-error" role="alert">
+                <span>{{ activeVisitorError }}</span>
+                <button
+                  type="button"
+                  :disabled="feedsStats.visitorListLoading"
+                  @click="feedsStats.loadMoreVisitors?.(visitorDirection, { reset: true })"
+                >
+                  重试
+                </button>
+              </div>
               <div v-if="feedsStats.visitorError" class="fd-visitor-state is-error" role="alert">
                 <span>{{ feedsStats.visitorError }}</span>
                 <button type="button" @click="feedsStats.retryVisitors?.()">重试</button>
               </div>
               <p
-                v-else-if="feedsStats.visitorLoaded && !feedsStats.recentVisitors?.length"
+                v-else-if="activeVisitorLoaded && !activeVisitorList.length && !activeVisitorError"
                 class="fd-visitor-state"
               >
-                当前没有可见的最近访客
+                {{
+                  visitorDirection === 'incoming'
+                    ? '当前没有可见的最近访客'
+                    : '近期没有可见的访问记录'
+                }}
               </p>
               <p v-if="feedsStats.visitorLoaded" class="fd-visitor-note">
-                仅展示当前账号有权限看到的记录
+                仅展示当前账号有权限查看的官方记录
               </p>
             </section>
           </div>
@@ -1343,16 +1391,16 @@ const ASTRO_MAP = [
   '摩羯座'
 ]
 
-const friendLastActiveText = computed(() => {
+const friendLastVisitText = computed(() => {
   if (!friendLastActiveTime.value) return ''
   const diff = Date.now() - friendLastActiveTime.value * 1000
   const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return '刚刚活跃'
-  if (minutes < 60) return `${minutes}分钟前活跃`
+  if (minutes < 1) return '刚刚访问过我'
+  if (minutes < 60) return `${minutes}分钟前访问过我`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}小时前活跃`
+  if (hours < 24) return `${hours}小时前访问过我`
   const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}天前活跃`
+  if (days < 30) return `${days}天前访问过我`
   return ''
 })
 
@@ -2979,12 +3027,59 @@ const feedsStats = reactive({
   mods: [],
   trend: [],
   recentVisitors: [],
+  incomingVisitors: [],
+  outgoingVisitors: [],
+  incomingVisitorTotal: null,
+  outgoingVisitorTotal: null,
+  incomingVisitorLoaded: false,
+  outgoingVisitorLoaded: false,
+  incomingVisitorError: '',
+  outgoingVisitorError: '',
+  incomingVisitorHasMore: false,
+  outgoingVisitorHasMore: false,
+  visitorListLoading: false,
+  visitorListError: '',
+  loadMoreVisitors: null,
   visitorLoaded: false,
   visitorLoading: false,
   visitorError: '',
   retryVisitors: null
 })
 const feedsPeopleExpanded = ref(false)
+const visitorDirection = ref('incoming')
+const activeVisitorList = computed(() => {
+  if (visitorDirection.value === 'outgoing') {
+    return (feedsStats.outgoingVisitors || []).slice(0, 24)
+  }
+  const incoming = feedsStats.incomingVisitors || []
+  return (incoming.length ? incoming : feedsStats.recentVisitors || []).slice(0, 24)
+})
+const visitorTotal = (direction) => {
+  const total =
+    direction === 'outgoing' ? feedsStats.outgoingVisitorTotal : feedsStats.incomingVisitorTotal
+  if (total === null || total === undefined) return null
+  return Math.max(0, Number(total) || 0)
+}
+const visitorTotalLabel = (direction) => {
+  const total = visitorTotal(direction)
+  return total === null ? '—' : formatFeedsBigNum(total)
+}
+const activeVisitorTotal = computed(() => visitorTotal(visitorDirection.value))
+const activeVisitorLoaded = computed(() =>
+  visitorDirection.value === 'outgoing'
+    ? !!feedsStats.outgoingVisitorLoaded
+    : !!feedsStats.incomingVisitorLoaded
+)
+const activeVisitorError = computed(() =>
+  visitorDirection.value === 'outgoing'
+    ? feedsStats.outgoingVisitorError
+    : feedsStats.incomingVisitorError
+)
+const visitorListCanLoadMore = computed(() =>
+  visitorDirection.value === 'outgoing'
+    ? !!feedsStats.outgoingVisitorHasMore
+    : !!feedsStats.incomingVisitorHasMore
+)
 const updateFeedsStats = (stats) => {
   if (!stats) return
   Object.assign(feedsStats, stats)
@@ -5083,6 +5178,84 @@ defineExpose({
 }
 .fd-visitors {
   padding-bottom: 12px;
+}
+
+.fd-visitor-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  margin: 0 0 10px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--theme-text-inverse) 6%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-canvas) 40%, transparent);
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    min-height: 28px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--theme-text-muted);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+
+    small {
+      color: inherit;
+      font-size: 9px;
+      font-variant-numeric: tabular-nums;
+      opacity: 0.72;
+    }
+
+    &:hover:not(.active) {
+      color: var(--theme-text-secondary);
+      background: color-mix(in srgb, var(--theme-text-inverse) 4%, transparent);
+    }
+
+    &.active {
+      color: var(--theme-text-primary);
+      background: color-mix(in srgb, var(--theme-info) 12%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-info) 18%, transparent);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--theme-focus);
+      outline-offset: 1px;
+    }
+  }
+}
+
+.fd-visitor-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  min-height: 28px;
+  margin-top: 9px;
+  border: 1px solid color-mix(in srgb, var(--theme-info) 16%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--theme-info) 6%, transparent);
+  color: var(--theme-text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    color: var(--theme-info-text);
+    background: color-mix(in srgb, var(--theme-info) 10%, transparent);
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.65;
+  }
 }
 
 .fd-visitor-state {

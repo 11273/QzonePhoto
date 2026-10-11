@@ -154,9 +154,12 @@ const normalizedComments = computed(() => props.comments.map(cleanComment))
 
 const getAvatarUrl = (uin) => getQQAvatarUrl(uin)
 
-const onAvatarError = (e) => {
-  // 头像加载失败兜底为 QQ 默认头像
-  e.target.src = 'https://qzonestyle.gtimg.cn/qzone/em/u120.gif'
+const onAvatarError = (event) => {
+  const image = event.currentTarget || event.target
+  if (!image) return
+  // 当前地址本身已经是 QQ 头像兜底；失败后移除 src，避免远程 GIF 再失败形成循环。
+  image.removeAttribute('src')
+  image.classList.add('is-avatar-placeholder')
 }
 </script>
 

@@ -112,7 +112,11 @@
               >
                 <el-image
                   v-if="feed.media && feed.media[0]"
-                  :src="feed.media[0].url || feed.media[0].cover"
+                  :src="
+                    isVideoMedia(feed.media?.[0])
+                      ? mediaPreviewCover(feed.media[0])
+                      : feed.media[0].url || feed.media[0].cover
+                  "
                   fit="cover"
                   lazy
                   alt=""
@@ -129,7 +133,7 @@
                   v-if="isVideoMedia(feed.media?.[0])"
                   :active="hoverPreviewKey === mediaHoverKey(feed, 0)"
                   :src="mediaPreviewSource(feed.media[0])"
-                  :poster="feed.media[0].cover || feed.media[0].url"
+                  :poster="mediaPreviewCover(feed.media[0])"
                 />
                 <!-- 视频标记 -->
                 <div
@@ -350,7 +354,7 @@
                             <HoverVideoPreview
                               :active="hoverPreviewKey === mediaHoverKey(feed, idx)"
                               :src="mediaPreviewSource(item)"
-                              :poster="item.cover || item.thumb || item.url"
+                              :poster="mediaPreviewCover(item)"
                             />
                             <div
                               v-if="privacyStore.privacyMode"
@@ -640,9 +644,9 @@
           <video
             ref="videoPlayerRef"
             :poster="currentVideoInfo.cover"
-            controls
+            :controls="videoSourceAttached && !videoLoading"
             playsinline
-            preload="metadata"
+            preload="none"
             class="video-player"
             @playing="handleOpenedVideoPlaying"
             @pause="videoPaused = true"
@@ -757,9 +761,11 @@ import {
   classifyContentLoadFailure,
   createContentLoadState
 } from '@shared/content-load-state'
+import { buildMediaDetailRows } from '@renderer/utils/mediaDetails'
 import {
   applyVideoPlaybackPreference,
   isHlsVideoSource,
+  resolveVideoCoverSource,
   saveVideoPlaybackPreference
 } from '@renderer/utils/video-playback.mjs'
 import Hls from 'hls.js'
@@ -948,7 +954,9 @@ const getDownloadableMedia = (feed) => {
     .map((media, index) => {
       const isVideo = media.type === 'video' || media.is_video
       const url = media.raw || media.bigUrl || media.url || media.src || ''
-      const pre = media.thumb || media.pre || media.cover || media.url || media.bigUrl || ''
+      const pre = isVideo
+        ? mediaPreviewCover(media)
+        : media.thumb || media.pre || media.cover || media.url || media.bigUrl || ''
       const picKey = media.picKey || media.lloc || media.key || media.id || ''
 
       if (!url && !pre && !picKey) return null
@@ -1075,6 +1083,7 @@ const currentVideoInfo = ref(null)
 const videoLoading = ref(false)
 const videoError = ref('')
 const videoPaused = ref(true)
+const videoSourceAttached = ref(false)
 let hls = null
 
 // 格式化动态时间显示（精确到秒，与 feeds 一致）
@@ -1617,6 +1626,7 @@ const mediaPreviewSource = (media) =>
   media?.url ||
   media?.src ||
   ''
+const mediaPreviewCover = (media) => resolveVideoCoverSource(media)
 const clearHoverPreviewTimer = () => {
   if (!hoverPreviewTimer) return
   clearTimeout(hoverPreviewTimer)
@@ -1643,6 +1653,8 @@ const stopMediaHoverPreview = (feed, index) => {
 // 预览媒体（图片/视频）—— 统一走 MediaPreview，图视频混合切换
 const previewMedia = async (media, index, feed = null, event = null) => {
   if (!media || !Array.isArray(media) || media.length === 0) return
+  clearHoverPreviewTimer()
+  hoverPreviewKey.value = ''
   const sourceElement = event?.currentTarget
   const rect = sourceElement?.getBoundingClientRect?.()
   previewSourceRect.value = rect
@@ -1651,8 +1663,18 @@ const previewMedia = async (media, index, feed = null, event = null) => {
   previewItems.value = media.map((m) => ({
     type: isVideoMedia(m) ? 'video' : 'image',
     src: isVideoMedia(m) ? '' : m.bigUrl || m.url,
-    thumb: m.thumb || m.url,
+    thumb: isVideoMedia(m) ? mediaPreviewCover(m) : m.thumb || m.url,
     title: m.title || '',
+    details: buildMediaDetailRows(m, {
+      type: isVideoMedia(m) ? '视频' : '照片',
+      albumName: feed?.albumName || feed?.albumTitle || '',
+      author: feed?.owner?.name || feed?.owner?.nick || '',
+      publishedAt: feed?.time || feed?.date || '',
+      description: m.desc || feed?.text || '',
+      commentCount: feed?.commentCount || 0,
+      likeCount: feed?.likeCount || 0,
+      viewCount: feed?.visitorCount || 0
+    }),
     needsResolve: isVideoMedia(m),
     _media: m,
     _feed: feed
@@ -1703,12 +1725,14 @@ const playVideo = (url) => {
   }
 
   videoPaused.value = true
+  videoSourceAttached.value = false
   applyVideoPlaybackPreference(element)
   setupVideoEvents()
 
   if (isHlsVideoSource(url)) {
     if (element.canPlayType('application/vnd.apple.mpegurl')) {
       element.src = url
+      videoSourceAttached.value = true
       element.load()
     } else if (Hls.isSupported()) {
       hls = new Hls({
@@ -1729,6 +1753,7 @@ const playVideo = (url) => {
 
       hls.loadSource(url)
       hls.attachMedia(element)
+      videoSourceAttached.value = true
     } else {
       videoLoading.value = false
       videoError.value = '您的浏览器不支持 HLS 视频播放'
@@ -1737,6 +1762,7 @@ const playVideo = (url) => {
     }
   } else {
     element.src = url
+    videoSourceAttached.value = true
     element.load()
   }
 }
@@ -1744,7 +1770,13 @@ const playVideo = (url) => {
 const playOpenedVideo = async () => {
   const element = videoPlayerRef.value
   if (!element) return
-  videoLoading.value = element.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
+  const url = currentVideoInfo.value?.url
+  if (!url) {
+    videoError.value = '没有可播放的视频地址'
+    return
+  }
+  if (!videoSourceAttached.value) playVideo(url)
+  videoLoading.value = true
   hls?.startLoad?.()
   try {
     await element.play()
@@ -1838,8 +1870,9 @@ const retryPlay = () => {
   }
 
   videoError.value = ''
-  videoLoading.value = true
-  playVideo(currentVideoInfo.value.url)
+  videoLoading.value = false
+  videoSourceAttached.value = false
+  playOpenedVideo()
 }
 
 // 关闭视频预览
@@ -1854,7 +1887,8 @@ const closeVideoPreview = () => {
     videoPlayerRef.value.onerror = null
 
     videoPlayerRef.value.pause()
-    videoPlayerRef.value.src = ''
+    videoPlayerRef.value.removeAttribute('src')
+    videoPlayerRef.value.load()
   }
 
   // 清理 HLS 实例
@@ -1868,6 +1902,7 @@ const closeVideoPreview = () => {
   videoLoading.value = false
   videoError.value = ''
   videoPaused.value = true
+  videoSourceAttached.value = false
 }
 
 // 打开视频地址
@@ -1974,6 +2009,8 @@ const enrichFeedsWithShuoshuo = async () => {
 }
 
 let currentLoadId = 0
+let consecutiveEmptyFriendPhotoPages = 0
+const MAX_EMPTY_FRIEND_PHOTO_PAGES = 3
 
 const getFeedPageKey = () => {
   return `${props.photoType}:${effectiveHostUin.value}:${feedPager.start}:${feedPager.begintime}`
@@ -2001,6 +2038,7 @@ const loadFeeds = async (isLoadMore = false) => {
     pageGuard.reset()
     feedPager.start = 0
     feedPager.begintime = 0
+    consecutiveEmptyFriendPhotoPages = 0
     loadFailureState.value = null
   }
 
@@ -2068,23 +2106,45 @@ const loadFeeds = async (isLoadMore = false) => {
       const responseBegintime =
         Number(response.data.begintime || response.data.beginTime || response.data.nextBegintime) ||
         getRawFeedTime(rawItems[rawItems.length - 1])
-      feedPager.start = previousStart + rawItems.length
+      if (isFriendPhotos.value && rawItems.length === 0 && responseHasMore === true) {
+        consecutiveEmptyFriendPhotoPages += 1
+      } else {
+        consecutiveEmptyFriendPhotoPages = 0
+      }
+      // 好友照片接口可能连续返回空页但明确标记 hasmore=true。
+      // 此时必须按请求窗口推进，否则会永远重试 start=0；同时用连续空页上限兜底。
+      const friendPageAdvance =
+        isFriendPhotos.value && responseHasMore === true ? 20 : rawItems.length
+      feedPager.start = previousStart + friendPageAdvance
       if (responseBegintime > 0) feedPager.begintime = responseBegintime
       const cursorMoved = isFriendPhotos.value
         ? feedPager.start > previousStart
         : feedPager.begintime > 0 && feedPager.begintime !== previousBegintime
 
+      let addedCount = transformedFeeds.length
       if (isLoadMore) {
         const existingIds = new Set(feeds.value.map((f) => f.id))
         const filteredFeeds = transformedFeeds.filter((feed) => !existingIds.has(feed.id))
+        addedCount = filteredFeeds.length
         if (filteredFeeds.length > 0) feeds.value.push(...filteredFeeds)
       } else {
-        feeds.value = transformedFeeds
+        const seenIds = new Set()
+        feeds.value = transformedFeeds.filter((feed) => {
+          if (seenIds.has(feed.id)) return false
+          seenIds.add(feed.id)
+          return true
+        })
+        addedCount = feeds.value.length
       }
 
       hasMore.value = shouldContinuePagination({
         serverHasMore: responseHasMore,
-        cursorMoved,
+        cursorMoved:
+          cursorMoved &&
+          (addedCount > 0 ||
+            (isFriendPhotos.value &&
+              responseHasMore === true &&
+              consecutiveEmptyFriendPhotoPages <= MAX_EMPTY_FRIEND_PHOTO_PAGES)),
         itemCount: rawItems.length,
         // This legacy endpoint does not expose a stable page size. Any non-empty
         // page can have a successor; an empty response confirms the terminal page.
@@ -2379,6 +2439,7 @@ onMounted(() => {
 onUnmounted(() => {
   clearHoverPreviewTimer()
   hoverPreviewKey.value = ''
+  closeVideoPreview()
   // 清理观察器
   if (observer) {
     observer.disconnect()

@@ -212,9 +212,9 @@
           <video
             ref="videoPlayerRef"
             :poster="currentVideo.pre"
-            controls
+            :controls="videoSourceAttached && !videoLoading"
             playsinline
-            preload="metadata"
+            preload="none"
             class="video-player"
             @playing="handleOpenedVideoPlaying"
             @pause="videoPaused = true"
@@ -381,6 +381,7 @@ const videoPlayerRef = ref(null)
 const videoLoading = ref(false)
 const videoError = ref('')
 const videoPaused = ref(true)
+const videoSourceAttached = ref(false)
 const downloadingAll = ref(false)
 const downloadingCurrent = ref(false)
 const hoverPreviewKey = ref('')
@@ -418,7 +419,9 @@ const fetchVideoList = async (isLoadMore = false) => {
       getMethod: 2,
       start: isLoadMore ? currentStart.value : 0,
       count: pageSize.value,
-      need_old: 0,
+      // 官网第一页需要 need_old=1 才会把旧格式/旧批次视频一起返回；
+      // 后续分页再关闭，避免重复拉取历史数据。
+      need_old: isLoadMore ? 0 : 1,
       // 首次拉取时让服务端返回 UserInfo（磁盘配额等），分页时省掉
       getUserInfo: isLoadMore ? 0 : 1
     }
@@ -710,7 +713,7 @@ const playHoverPreview = (video, requestId) => {
   element.playsInline = true
   setupHoverPreviewEvents(element, requestId)
 
-  if (url.includes('.m3u8')) {
+  if (isHlsVideoSource(url)) {
     if (element.canPlayType('application/vnd.apple.mpegurl')) {
       element.src = url
       element.play().catch(() => stopHoverPreview())
@@ -983,10 +986,9 @@ const handleVideoClick = (video) => {
   currentVideo.value = video
   videoDialogVisible.value = true
   videoError.value = ''
-  videoLoading.value = true
+  videoLoading.value = false
   videoPaused.value = true
-
-  nextTick(() => playVideo(url))
+  videoSourceAttached.value = false
 }
 
 // 播放视频（自动选择播放方式）
@@ -1001,12 +1003,14 @@ const playVideo = (url) => {
   }
 
   videoPaused.value = true
+  videoSourceAttached.value = false
   applyVideoPlaybackPreference(element)
   setupVideoEvents()
 
   if (isHlsVideoSource(url)) {
     if (element.canPlayType('application/vnd.apple.mpegurl')) {
       element.src = url
+      videoSourceAttached.value = true
       element.load()
     } else if (Hls.isSupported()) {
       hls = new Hls({
@@ -1027,6 +1031,7 @@ const playVideo = (url) => {
 
       hls.loadSource(url)
       hls.attachMedia(element)
+      videoSourceAttached.value = true
     } else {
       videoLoading.value = false
       videoError.value = '您的浏览器不支持 HLS 视频播放'
@@ -1035,6 +1040,7 @@ const playVideo = (url) => {
     }
   } else {
     element.src = url
+    videoSourceAttached.value = true
     element.load()
   }
 }
@@ -1042,7 +1048,14 @@ const playVideo = (url) => {
 const playOpenedVideo = async () => {
   const element = videoPlayerRef.value
   if (!element) return
-  videoLoading.value = element.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
+  const url = getVideoDownloadUrl(currentVideo.value)
+  if (!url) {
+    videoError.value = '没有可播放的视频地址'
+    return
+  }
+
+  if (!videoSourceAttached.value) playVideo(url)
+  videoLoading.value = true
   hls?.startLoad?.()
   try {
     await element.play()
@@ -1137,8 +1150,9 @@ const retryPlay = () => {
   }
 
   videoError.value = ''
-  videoLoading.value = true
-  playVideo(url)
+  videoLoading.value = false
+  videoSourceAttached.value = false
+  playOpenedVideo()
 }
 
 // 关闭对话框
@@ -1153,7 +1167,8 @@ const handleDialogClose = () => {
     videoPlayerRef.value.onerror = null
 
     videoPlayerRef.value.pause()
-    videoPlayerRef.value.src = ''
+    videoPlayerRef.value.removeAttribute('src')
+    videoPlayerRef.value.load()
   }
 
   // 清理 HLS 实例
@@ -1166,6 +1181,7 @@ const handleDialogClose = () => {
   videoLoading.value = false
   videoError.value = ''
   videoPaused.value = true
+  videoSourceAttached.value = false
 }
 
 // 打开视频地址
@@ -1205,10 +1221,7 @@ onUnmounted(() => {
   window.removeEventListener('blur', handleWindowBlur)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   stopHoverPreview()
-  if (hls) {
-    hls.destroy()
-    hls = null
-  }
+  handleDialogClose()
 })
 </script>
 

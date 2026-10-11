@@ -61,9 +61,21 @@
         :aria-pressed="filter.type === favoriteType"
         @click="switchFavoriteFilter(filter.type)"
       >
-        {{ filter.label }}
+        <span>{{ filter.label }}</span>
+        <em v-if="favoriteTypeCount(filter.type) !== null">
+          {{ formatFilterCount(favoriteTypeCount(filter.type)) }}
+        </em>
       </button>
     </nav>
+
+    <div
+      v-if="activeKey === 'messageBoard' && messageAudit.count > 0"
+      class="fm-audit-notice"
+      role="status"
+    >
+      <span>有 {{ messageAudit.count }} 条留言正在等待审核</span>
+      <small>为避免误操作，请前往 QQ 空间官网处理</small>
+    </div>
 
     <!-- 主体：瀑布流卡片 -->
     <el-scrollbar ref="scrollbarRef" class="fm-scroll" @scroll="handleScroll">
@@ -104,7 +116,7 @@
                   :alt="message.name"
                   class="mb-avatar"
                   referrerpolicy="no-referrer"
-                  @error="onAvatarError"
+                  @error="onAvatarError($event, message.uin)"
                 />
               </button>
               <div class="mb-body">
@@ -219,7 +231,7 @@
                     :alt="feed.name"
                     class="fc-avatar"
                     referrerpolicy="no-referrer"
-                    @error="onAvatarError"
+                    @error="onAvatarError($event, feed.uin)"
                   />
                 </button>
                 <div class="fc-author">
@@ -396,7 +408,7 @@
                       :src="avatarUrl(liker.uin)"
                       :alt="likerLabel(liker)"
                       referrerpolicy="no-referrer"
-                      @error="onAvatarError"
+                      @error="onAvatarError($event, liker.uin)"
                     />
                     <span>{{ likerLabel(liker) }}</span>
                   </button>
@@ -470,7 +482,7 @@
                     :src="avatarUrl(liker.uin)"
                     :alt="likerLabel(liker)"
                     referrerpolicy="no-referrer"
-                    @error="onAvatarError"
+                    @error="onAvatarError($event, liker.uin)"
                   />
                   <span>{{ likerLabel(liker) }}</span>
                 </button>
@@ -599,6 +611,8 @@ import { Loading, Hide, Picture, VideoPlay } from '@element-plus/icons-vue'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import MediaPreview from '@renderer/components/MediaPreview/index.vue'
+import { buildMediaDetailRows } from '@renderer/utils/mediaDetails'
+import { resolveVideoCoverSource } from '@renderer/utils/video-playback.mjs'
 import HoverVideoPreview from '@renderer/components/HoverVideoPreview/index.vue'
 import AppActionButton from '@renderer/components/AppActionButton/index.vue'
 import AppRefreshButton from '@renderer/components/AppRefreshButton/index.vue'
@@ -615,6 +629,7 @@ import {
   Star,
   AtSign,
   History,
+  Clock3,
   Bookmark,
   Home,
   MessagesSquare,
@@ -634,7 +649,11 @@ import {
   shouldContinuePagination
 } from '@renderer/utils/paginationGuard'
 import { buildFeedExportText, countFeedComments } from '@renderer/utils/feedExport'
-import { FAVORITE_FILTERS, favoriteFilterFor } from '@renderer/utils/favoriteFilters'
+import {
+  FAVORITE_FILTERS,
+  favoriteFilterFor,
+  normalizeFavoriteTypeCounts
+} from '@renderer/utils/favoriteFilters'
 import { normalizeBlogRecord, safeWebUrl } from '@renderer/utils/blogRecords'
 import { messageReplyTarget, mergeMessageBoardPages } from '@renderer/utils/messageBoardRecords'
 import { normalizeShuoshuoComments as normalizeShuoshuoCommentItems } from '@renderer/utils/feedShuoshuoComments'
@@ -675,6 +694,11 @@ const LAST_YEAR_MIN = 2010
 const MESSAGE_REPLY_PREVIEW_COUNT = 4
 const favoriteType = ref(FAVORITE_FILTERS[0].type)
 const activeFavoriteFilter = computed(() => favoriteFilterFor(favoriteType.value))
+const favoriteTypeCount = (type) => {
+  const value = favoriteTypeCounts[Number(type)]
+  return Number.isFinite(Number(value)) ? Number(value) : null
+}
+const formatFilterCount = (value) => (Number(value) > 999 ? '999+' : String(Number(value) || 0))
 
 // ============= 数据源配置 =============
 //   key:     内部标识
@@ -783,6 +807,21 @@ const sources = computed(() =>
       }
     },
     {
+      key: 'scheduled',
+      label: '定时说说',
+      icon: Clock3,
+      countKey: null,
+      emptyTitle: '没有待发布的定时说说',
+      emptyDesc: '定时说说会在这里按计划发布时间展示',
+      kind: 'shuoshuo',
+      initialPager: () => ({ pos: 0, num: PAGE_SIZE, total: 0 }),
+      load: (p) =>
+        window.QzoneAPI.getScheduledShuoshuo({
+          pos: p.pos ?? 0,
+          num: p.num ?? PAGE_SIZE
+        })
+    },
+    {
       key: 'fav',
       label: '我的收藏',
       icon: Bookmark,
@@ -888,7 +927,9 @@ const emptyStateDesc = computed(() =>
 const feeds = ref([])
 const messageBoardRawRecords = ref([])
 const messageBoardTotal = ref(0)
+const messageAudit = reactive({ count: 0, enabled: false })
 const favoriteTotal = ref(0)
+const favoriteTypeCounts = reactive({})
 const blogTotal = ref(0)
 const pager = ref(activeSource.value.initialPager())
 const feedsCounts = reactive({}) // { friendFeeds_new_cnt, specialCareFeeds_new_cnt, ... }
@@ -1107,6 +1148,7 @@ const messageRepliesExpanded = reactive({})
 
 // ============= 访客 =============
 const MOD_NAME = { 0: '空间', 2: '相册', 8: '动态', 10: '日志', 43: '个人档' }
+const avatarUrl = (uin) => (uin ? `https://qlogo4.store.qq.com/qzone/${uin}/${uin}/100` : '')
 
 const visitor = reactive({
   loaded: false,
@@ -1119,18 +1161,124 @@ const visitor = reactive({
   mods: [],
   totalViews: 0,
   todayViews: 0,
-  trend: []
+  trend: [],
+  incoming: [],
+  outgoing: [],
+  incomingPage: 0,
+  outgoingPage: 0,
+  incomingTotalPages: 1,
+  outgoingTotalPages: 1,
+  incomingTotal: null,
+  outgoingTotal: null,
+  incomingLoaded: false,
+  outgoingLoaded: false,
+  incomingError: '',
+  outgoingError: '',
+  listLoading: false,
+  listError: ''
 })
 
-const fetchVisitor = async () => {
-  if (visitor.loading) return
-  visitor.loading = true
-  visitor.error = ''
+const visitorItemKey = (item) =>
+  String(item?.uin || item?.id || `${item?.name || ''}-${item?.time || ''}`)
+const isTruthyFlag = (value) => value === true || value === 1 || value === '1'
+const normalizeVisitorItem = (item = {}) => {
+  const uin = String(item.uin || item.visitoruin || item.visitor_uin || item.id || '')
+  const suppliedAvatar = toHttps(
+    item.img || item.imgurl || item.avatar || item.avatar_url || item.face || item.face_url || ''
+  )
+  return {
+    uin,
+    name: item.name || item.nick || item.nickname || '',
+    // 完整访客接口通常只返回 QQ 号；src/platform_src 是来源编号，并非头像地址。
+    img: suppliedAvatar || avatarUrl(uin),
+    time: Number(item.time || item.visittime || item.visitTime || item.visit_time) || 0,
+    count: Number(item.count || item.visitcount || item.visitCount || item.visit_count) || 0,
+    haveNewFeeds: isTruthyFlag(item.haveNewFeeds ?? item.have_new_feeds),
+    isFriend: isTruthyFlag(item.isFriend ?? item.is_friend)
+  }
+}
+const mergeVisitorItems = (current, next) => {
+  const seen = new Set(current.map(visitorItemKey))
+  return [
+    ...current,
+    ...next.filter((item) => {
+      const key = visitorItemKey(item)
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  ]
+}
+
+const fetchVisitorDirection = async (direction, { reset = false } = {}) => {
+  const incoming = direction !== 'outgoing'
+  const listKey = incoming ? 'incoming' : 'outgoing'
+  const pageKey = incoming ? 'incomingPage' : 'outgoingPage'
+  const totalPagesKey = incoming ? 'incomingTotalPages' : 'outgoingTotalPages'
+  const totalKey = incoming ? 'incomingTotal' : 'outgoingTotal'
+  const loadedKey = incoming ? 'incomingLoaded' : 'outgoingLoaded'
+  const errorKey = incoming ? 'incomingError' : 'outgoingError'
+  const currentPage = reset ? 0 : Number(visitor[pageKey] || 0)
+  if (!reset && currentPage >= Number(visitor[totalPagesKey] || 1)) return false
+  const nextPage = currentPage + 1
+  const res = await window.QzoneAPI.getVisitorMore({
+    mask: incoming ? 3 : 5,
+    mod: 8,
+    page: nextPage
+  })
+  if (!res || res.code !== 0) throw new Error(res?.message || '完整访客记录加载失败')
+  const normalized = (Array.isArray(res.items) ? res.items : []).map(normalizeVisitorItem)
+  visitor[listKey] = reset
+    ? mergeVisitorItems([], normalized)
+    : mergeVisitorItems(visitor[listKey], normalized)
+  visitor[pageKey] = Math.max(nextPage, Number(res.page) || nextPage)
+  visitor[totalPagesKey] = Math.max(visitor[pageKey], Number(res.totalPages) || 1)
+  const reportedTotal = Math.max(0, Number(res.total) || 0)
+  // 部分账号下“我看过谁”会返回另一方向的总数，却不给任何名单。
+  // 这种互相矛盾的数据不应展示成真实数量，保留为未知状态交给界面显示“—”。
+  visitor[totalKey] =
+    visitor[listKey].length || reportedTotal === 0
+      ? Math.max(reportedTotal, visitor[listKey].length)
+      : null
+  visitor[loadedKey] = true
+  visitor[errorKey] = ''
+  visitor.blockedCount = Math.max(visitor.blockedCount, Number(res.blockedCount) || 0)
+  return normalized.length > 0
+}
+
+const loadMoreVisitors = async (direction, { reset = false } = {}) => {
+  if (visitor.listLoading || visitor.loading) return
+  visitor.listLoading = true
+  visitor.listError = ''
+  const errorKey = direction === 'outgoing' ? 'outgoingError' : 'incomingError'
+  visitor[errorKey] = ''
   pushVisitorStats()
   try {
-    const [albumResult, allModsResult] = await Promise.allSettled([
+    await fetchVisitorDirection(direction, { reset })
+  } catch (error) {
+    visitor[errorKey] = error?.message || '完整访客记录暂时无法加载'
+    visitor.listError = visitor[errorKey]
+  } finally {
+    visitor.listLoading = false
+    pushVisitorStats()
+  }
+}
+
+const fetchVisitor = async () => {
+  if (visitor.loading || visitor.listLoading) return
+  visitor.loading = true
+  visitor.error = ''
+  visitor.listError = ''
+  visitor.incomingError = ''
+  visitor.outgoingError = ''
+  visitor.blockedCount = 0
+  pushVisitorStats()
+  try {
+    const [albumResult, allModsResult, incomingResult, outgoingResult] = await Promise.allSettled([
       window.QzoneAPI.getVisitorDetail({ mask: 2, mod: 2 }),
-      window.QzoneAPI.getVisitorDetail({ mask: 1, mod: 1 })
+      window.QzoneAPI.getVisitorDetail({ mask: 1, mod: 1 }),
+      fetchVisitorDirection('incoming', { reset: true }),
+      fetchVisitorDirection('outgoing', { reset: true })
     ])
     const albumRes = albumResult.status === 'fulfilled' ? albumResult.value : null
     const allModsRes = allModsResult.status === 'fulfilled' ? allModsResult.value : null
@@ -1147,7 +1295,7 @@ const fetchVisitor = async () => {
         isFriend: it.isFriend === 1
       }))
       visitor.trend = Array.isArray(album.calvisitcount) ? album.calvisitcount.slice(-30) : []
-      visitor.blockedCount = album.visitor_to_blk_count || 0
+      visitor.blockedCount = Math.max(visitor.blockedCount, Number(album.visitor_to_blk_count) || 0)
       visitor.maxShow = album.max_show_visitor_num || 0
     }
     const mods = (all?.modvisitcount || []).map((m) => ({
@@ -1160,10 +1308,21 @@ const fetchVisitor = async () => {
     const mod0 = mods.find((m) => m.mod === 0)
     visitor.totalViews = mod0?.total || 0
     visitor.todayViews = mod0?.today || 0
-    visitor.loaded = !!(album || all) || visitor.loaded
+    visitor.loaded =
+      !!(album || all) ||
+      incomingResult.status === 'fulfilled' ||
+      outgoingResult.status === 'fulfilled' ||
+      visitor.loaded
     if (!album && !all) visitor.error = '访客记录暂时无法加载'
     else if (!album) visitor.error = '最近访客暂时无法加载'
     else if (!all) visitor.error = '访客统计暂时无法加载'
+    if (incomingResult.status === 'rejected') {
+      visitor.incomingError = incomingResult.reason?.message || '“谁看过我”记录暂时无法加载'
+    }
+    if (outgoingResult.status === 'rejected') {
+      visitor.outgoingError = outgoingResult.reason?.message || '“我看过谁”记录暂时无法加载'
+    }
+    visitor.listError = visitor.incomingError || visitor.outgoingError
   } catch {
     visitor.error = '访客记录暂时无法加载'
   } finally {
@@ -1762,6 +1921,8 @@ const ORIGIN_IMAGE_FIELDS = [
   'big_url',
   'largeurl',
   'large_url',
+  'hd_pic',
+  'big_pic',
   'hdurl',
   'hd_url',
   'raw'
@@ -1945,7 +2106,15 @@ const normalizeShuoshuoComments = (items = []) => normalizeShuoshuoCommentItems(
 
 const normalizeShuoshuo = (raw) => {
   const uin = String(raw.uin || raw.owner_uin || activeHostUin.value || '')
-  const time = Number(raw.created_time || raw.create_time || raw.abstime || 0)
+  const time = Number(
+    raw.timer_send_time ||
+      raw.send_time ||
+      raw.publish_time ||
+      raw.created_time ||
+      raw.create_time ||
+      raw.abstime ||
+      0
+  )
   const media = [
     ...mediaFromUnknownList(raw.pic || raw.pics || raw.piclist || raw.photo || [], time),
     ...mediaFromShuoshuoVideos(raw.video || raw.videos || [], time)
@@ -1963,7 +2132,12 @@ const normalizeShuoshuo = (raw) => {
     feedstime: formatTime(time),
     appid: 311,
     typeid: Number(raw.typeid) || 0,
-    appType: media.some((item) => item.type === 'video' || item.is_video) ? '视频' : '说说',
+    appType:
+      activeKey.value === 'scheduled'
+        ? '定时说说'
+        : media.some((item) => item.type === 'video' || item.is_video)
+          ? '视频'
+          : '说说',
     yearLabel: '',
     actionText: '',
     actionVerb: '',
@@ -2235,6 +2409,9 @@ onUnmounted(() => {
 const getMediaThumbKey = (feed, media, index) =>
   `${feed?.tid || feed?.abstime || 'feed'}-${media?.id || media?.origin || media?.thumb || index}`
 const getMediaThumbCandidates = (media) => {
+  if (isVideoMedia(media)) {
+    return uniqueImageUrls([resolveVideoCoverSource(media)])
+  }
   const mediaUrls = Array.isArray(media?.urls) ? media.urls : [media?.urls]
   return uniqueImageUrls([
     media?.thumb,
@@ -2284,9 +2461,18 @@ const onMessageImageError = (event) => {
   const wrap = img?.closest?.('.mb-image')
   if (wrap) wrap.classList.add('is-broken')
 }
-const avatarUrl = (uin) => (uin ? `https://qlogo4.store.qq.com/qzone/${uin}/${uin}/100` : '')
-const onAvatarError = (e) => {
-  e.target.src = 'https://qzonestyle.gtimg.cn/qzone/em/u120.gif'
+const onAvatarError = (event, uin = '') => {
+  const image = event.currentTarget || event.target
+  if (!image) return
+  const fallback = avatarUrl(uin)
+  if (fallback && image.dataset.qqAvatarFallback !== '1') {
+    image.dataset.qqAvatarFallback = '1'
+    image.src = fallback
+    return
+  }
+  // 回退地址也失败时停止继续请求，避免 error -> GIF -> error 的无限循环。
+  image.removeAttribute('src')
+  image.classList.add('is-avatar-placeholder')
 }
 const uinFromQzoneUrl = (url) => {
   try {
@@ -2332,6 +2518,9 @@ const headerCountText = computed(() => {
   }
   if (activeKey.value === 'blog' && blogTotal.value > filteredFeeds.value.length) {
     return `${filteredFeeds.value.length} / ${blogTotal.value} 篇`
+  }
+  if (activeKey.value === 'scheduled') {
+    return `${filteredFeeds.value.length} 条待发布`
   }
   return `${filteredFeeds.value.length} 条`
 })
@@ -2452,6 +2641,19 @@ const pushStats = () => {
           mods: [],
           trend: [],
           recentVisitors: [],
+          incomingVisitors: [],
+          outgoingVisitors: [],
+          incomingVisitorTotal: 0,
+          outgoingVisitorTotal: 0,
+          incomingVisitorLoaded: false,
+          outgoingVisitorLoaded: false,
+          incomingVisitorError: '',
+          outgoingVisitorError: '',
+          incomingVisitorHasMore: false,
+          outgoingVisitorHasMore: false,
+          visitorListLoading: false,
+          visitorListError: '',
+          loadMoreVisitors: null,
           visitorLoaded: false,
           visitorLoading: false,
           visitorError: '',
@@ -2474,6 +2676,19 @@ const pushVisitorStats = () => {
     mods: visitor.mods,
     trend: visitor.trend,
     recentVisitors: visitor.recent,
+    incomingVisitors: visitor.incoming,
+    outgoingVisitors: visitor.outgoing,
+    incomingVisitorTotal: visitor.incomingTotal,
+    outgoingVisitorTotal: visitor.outgoingTotal,
+    incomingVisitorLoaded: visitor.incomingLoaded,
+    outgoingVisitorLoaded: visitor.outgoingLoaded,
+    incomingVisitorError: visitor.incomingError,
+    outgoingVisitorError: visitor.outgoingError,
+    incomingVisitorHasMore: visitor.incomingPage < visitor.incomingTotalPages,
+    outgoingVisitorHasMore: visitor.outgoingPage < visitor.outgoingTotalPages,
+    visitorListLoading: visitor.listLoading,
+    visitorListError: visitor.listError,
+    loadMoreVisitors,
     visitorLoaded: visitor.loaded,
     visitorLoading: visitor.loading,
     visitorError: visitor.error,
@@ -2921,7 +3136,10 @@ const resetFeedRuntime = (source) => {
   feeds.value = []
   messageBoardRawRecords.value = []
   messageBoardTotal.value = 0
+  messageAudit.count = 0
+  messageAudit.enabled = false
   favoriteTotal.value = 0
+  Object.keys(favoriteTypeCounts).forEach((key) => delete favoriteTypeCounts[key])
   blogTotal.value = 0
   pager.value = source.initialPager()
   hasMore.value = true
@@ -3011,18 +3229,24 @@ const loadPage = async ({ reset = false } = {}) => {
       const previousPos = Number(pager.value.pos || 0)
       pager.value = {
         ...pager.value,
-        pos: previousPos + msgList.length
+        pos: previousPos + msgList.length,
+        total: Number(res.total) || pager.value.total || 0
       }
       hasMore.value = shouldContinuePagination({
+        serverHasMore: res.hasMore,
         cursorMoved: Number(pager.value.pos) > previousPos,
         itemCount: msgList.length,
-        pageSize: PAGE_SIZE
+        pageSize: PAGE_SIZE,
+        nextOffset: pager.value.pos,
+        total: Number(res.total) || 0
       })
     } else if (source.kind === 'messageBoard') {
       const comments = Array.isArray(res.comments) ? res.comments : []
       const previousStart = Number(pager.value.start || 0)
       const start = Number(res.start ?? previousStart)
       messageBoardTotal.value = Number(res.total) || messageBoardTotal.value || comments.length
+      messageAudit.count = Number(res.auditNum) || 0
+      messageAudit.enabled = !!res.auditON
       const previousSnapshot = JSON.stringify(messageBoardRawRecords.value)
       messageBoardRawRecords.value = mergeMessageBoardPages(
         messageBoardRawRecords.value,
@@ -3056,7 +3280,7 @@ const loadPage = async ({ reset = false } = {}) => {
     } else if (source.kind === 'blog') {
       const blogs = Array.isArray(res.blogs) ? res.blogs : []
       const previousPos = Number(pager.value.pos || 0)
-      const added = appendUniqueFeeds(
+      appendUniqueFeeds(
         blogs.map((item) =>
           normalizeBlogRecord(item, {
             hostUin: activeHostUin.value,
@@ -3074,7 +3298,7 @@ const loadPage = async ({ reset = false } = {}) => {
       }
       hasMore.value = shouldContinuePagination({
         serverHasMore: res.hasMore,
-        cursorMoved: Number(pager.value.pos) > previousPos && added > 0,
+        cursorMoved: Number(pager.value.pos) > previousPos,
         itemCount: blogs.length,
         pageSize: Number(pager.value.num) || 15,
         nextOffset: pager.value.pos,
@@ -3085,6 +3309,10 @@ const loadPage = async ({ reset = false } = {}) => {
       const favList = res.favList || []
       appendUniqueFeeds(favList.map(normalizeFav))
       favoriteTotal.value = Math.max(Number(res.total) || 0, feeds.value.length)
+      Object.assign(
+        favoriteTypeCounts,
+        normalizeFavoriteTypeCounts(res.typeCounts, favoriteTotal.value)
+      )
       const previousStart = Number(pager.value.start || 0)
       pager.value = {
         ...pager.value,
@@ -3290,16 +3518,28 @@ const handleScroll = async () => {
 
 const openPreview = (feed, startIdx) => {
   if (!feed.media?.length) return
+  clearHoverPreviewTimer()
+  hoverPreviewKey.value = ''
   previewItems.value = feed.media.map((media, i) => {
     const video = isVideoMedia(media)
     return {
       type: video ? 'video' : 'image',
       src: video ? mediaPreviewSource(media) : media.origin || media.url || media.thumb,
-      thumb: media.thumb || media.pre || media.cover || media.origin || media.url,
+      thumb: getMediaThumb(feed, media, i),
       fallbackSrcs: getMediaThumbCandidates(media),
       key: `${feed.tid}-${i}`,
       title: feed.name,
       subtitle: feed.feedstime || formatTime(feed.abstime),
+      details: buildMediaDetailRows(media, {
+        type: video ? '视频' : '照片',
+        albumName: feed.albumName || feed.albumTitle || '',
+        author: feed.name || '',
+        publishedAt: feed.abstime || feed.feedstime || '',
+        description: feed.contentText || feed.text || '',
+        commentCount: feed.cmtCount || feed.commentCount || 0,
+        likeCount: feed.likeCount || 0,
+        viewCount: feed.viewCount || 0
+      }),
       _feed: feed,
       _media: media
     }
@@ -3483,6 +3723,10 @@ defineExpose({ refresh: handleRefresh })
 }
 
 .fm-fav-filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 32px;
   padding: 0 12px;
   border: 1px solid var(--ds-border-light);
@@ -3511,6 +3755,38 @@ defineExpose({ refresh: handleRefresh })
     border-color: var(--theme-brand-border);
     background: var(--theme-brand-soft);
     color: var(--qz-active-text);
+  }
+
+  em {
+    min-width: 16px;
+    color: var(--theme-text-subtle);
+    font-size: 10px;
+    font-style: normal;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &.active em {
+    color: inherit;
+    opacity: 0.78;
+  }
+}
+
+.fm-audit-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 7px 24px;
+  border-bottom: 1px solid color-mix(in srgb, var(--theme-warning) 16%, transparent);
+  background: color-mix(in srgb, var(--theme-warning) 7%, var(--theme-canvas));
+  color: var(--theme-warning-text);
+  font-size: 12px;
+
+  small {
+    color: var(--theme-text-subtle);
+    font-size: 11px;
   }
 }
 
