@@ -573,6 +573,30 @@ main [id] {
   font-size: 12px;
   text-align: center;
 }
+.manifest-inline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 20px;
+  margin: 3px 0 0;
+  text-align: center;
+}
+.manifest-inline button {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-strong);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.manifest-inline button:hover {
+  border-color: var(--brand);
+  color: var(--brand-dark);
+}
 .platform-choice {
   margin-top: -1px;
   padding: 14px;
@@ -1203,7 +1227,9 @@ main [id] {
     var(--shadow-sm);
 }
 .final-cta img {
+  aspect-ratio: 1 / 1;
   border-radius: 14px;
+  object-fit: cover;
 }
 .final-cta h2 {
   margin-bottom: 4px;
@@ -1299,7 +1325,7 @@ main [id] {
 }
 .manifest-state.fallback,
 .status-pill.fallback {
-  color: var(--danger);
+  color: var(--warning);
 }
 
 .recommended-download {
@@ -1635,7 +1661,7 @@ body.motion-ready .reveal.visible {
 a:focus-visible,
 button:focus-visible,
 summary:focus-visible {
-  outline: 2px solid rgba(0, 113, 227, 0.54);
+  outline: 2px solid #0071e3;
   outline-offset: 2px;
 }
 
@@ -1648,7 +1674,7 @@ body
     .choice-option
   ):focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 2px rgba(0, 113, 227, 0.62);
+  box-shadow: inset 0 0 0 2px #0071e3;
 }
 
 @media (max-width: 1120px) {
@@ -2737,7 +2763,7 @@ body.has-scrolled .site-header {
 .hero {
   min-height: min(760px, calc(100svh - 52px));
   gap: clamp(48px, 5vw, 72px);
-  padding-top: clamp(86px, 10vw, 140px);
+  padding-top: clamp(68px, 7vw, 96px);
   border-radius: 0;
   background: transparent;
 }

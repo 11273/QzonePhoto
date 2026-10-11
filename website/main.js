@@ -35,6 +35,7 @@
   setupReveal()
   setupChoices()
   setupDownloadLinks()
+  setupManifestRetry()
   setupOutboundTracking()
   setupFaqTracking()
   setupEngagementTracking()
@@ -286,6 +287,18 @@
     })
   }
 
+  function setupManifestRetry() {
+    document.querySelectorAll('[data-manifest-retry]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (state.manifestSource === 'loading') return
+        state.manifestSettled = false
+        state.manifestSource = 'loading'
+        setManifestStatus('loading')
+        void loadManifest()
+      })
+    })
+  }
+
   function openChoiceFor(link) {
     const shell = link.closest('[data-download-shell]')
     const panel = shell?.querySelector('[data-platform-choice]')
@@ -519,7 +532,7 @@
     if (state.manifestSettled) return
     state.manifest = manifest
     state.manifestSource = url.startsWith('http') ? 'r2' : 'local'
-    setManifestStatus('ready')
+    setManifestStatus(state.manifestSource === 'r2' ? 'ready' : 'local')
     refreshManifestPresentation()
     renderPlatform(state.platform)
   }
@@ -542,7 +555,8 @@
   }
 
   function patchManifestData() {
-    const version = state.manifest.version
+    const verified = state.manifestSource === 'r2'
+    const version = verified ? state.manifest.version : ''
     document.querySelectorAll('[data-release-version]').forEach((item) => {
       item.textContent = version ? `v${version}` : '开源工具'
     })
@@ -550,15 +564,16 @@
       const asset = state.manifest.assets.find((item) => item.id === card.dataset.assetCard)
       const meta = card.querySelector('[data-asset-meta]')
       if (!meta) return
-      meta.textContent = asset
-        ? [
-            version ? `v${version}` : '',
-            asset.size ? formatBytes(asset.size) : '',
-            asset.sha256 ? `SHA-256 ${asset.sha256.slice(0, 8)}` : ''
-          ]
-            .filter(Boolean)
-            .join(' · ')
-        : '可直接下载；完整版本列表可在 GitHub 查看'
+      meta.textContent =
+        asset && verified
+          ? [
+              version ? `v${version}` : '',
+              asset.size ? formatBytes(asset.size) : '',
+              asset.sha256 ? `SHA-256 ${asset.sha256.slice(0, 8)}` : ''
+            ]
+              .filter(Boolean)
+              .join(' · ')
+          : '可直接下载；完整版本列表可在 GitHub 查看'
     })
     patchGithubReleaseLinks()
     patchGithubFallbacks()
@@ -585,13 +600,21 @@
       item.classList.remove('ready', 'fallback')
       if (status === 'ready') {
         item.classList.add('ready')
-        item.textContent = state.manifestSource === 'r2' ? '最新版本已连接' : '使用页面内置版本信息'
+        item.textContent = '已确认最新版本'
+      } else if (status === 'local') {
+        item.classList.add(shouldTrack() ? 'fallback' : 'ready')
+        item.textContent = shouldTrack()
+          ? '暂时无法确认最新版本，下载仍会由服务端匹配'
+          : '本地预览使用内置版本信息'
       } else if (status === 'fallback') {
         item.classList.add('fallback')
-        item.textContent = '版本信息暂时不可用，下载入口仍可使用'
+        item.textContent = '暂时无法确认最新版本，下载入口仍可使用'
       } else {
         item.textContent = '正在确认版本信息'
       }
+    })
+    document.querySelectorAll('[data-manifest-retry]').forEach((button) => {
+      button.hidden = status !== 'fallback' && !(status === 'local' && shouldTrack())
     })
   }
 
@@ -635,12 +658,14 @@
   }
 
   function buildAssetMeta(asset, fallback) {
-    const manifestAsset = state.manifest.assets.find((item) => item.id === asset)
-    const versionCopy = state.manifest.version
-      ? `v${state.manifest.version}`
-      : state.manifestSource === 'fallback'
-        ? '可直接下载'
-        : '正在确认最新版本'
+    const verified = state.manifestSource === 'r2'
+    const manifestAsset = verified ? state.manifest.assets.find((item) => item.id === asset) : null
+    const versionCopy =
+      verified && state.manifest.version
+        ? `v${state.manifest.version}`
+        : state.manifestSettled
+          ? '可直接下载'
+          : '正在确认最新版本'
     return [versionCopy, manifestAsset?.size ? formatBytes(manifestAsset.size) : '', fallback]
       .filter(Boolean)
       .join(' · ')
@@ -658,7 +683,7 @@
       asset,
       packageType: info.packageType || 'unknown',
       channel: 'worker',
-      releaseVersion: state.manifest.version,
+      releaseVersion: state.manifestSource === 'r2' ? state.manifest.version : '',
       cta
     })
   }
@@ -698,7 +723,10 @@
     const payload = JSON.stringify({
       event,
       eventName: event,
-      appVersion: state.manifest.version || 'website',
+      appVersion:
+        state.manifestSource === 'r2' && state.manifest.version
+          ? state.manifest.version
+          : 'website',
       system: `web / ${state.platform.os}`,
       installMode: 'website',
       page: location.pathname || '/',

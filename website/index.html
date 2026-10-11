@@ -17,7 +17,7 @@
       content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
     />
     <link rel="canonical" href="https://qzonephoto.getgit.one/" />
-    <link rel="icon" href="./assets/icons/app.png" />
+    <link rel="icon" href="./assets/icons/app-72.png" />
     <meta name="application-name" content="企鹅相册 · QzonePhoto" />
     <meta name="apple-mobile-web-app-title" content="企鹅相册" />
     <meta name="theme-color" content="#fbfbfd" />
@@ -48,7 +48,7 @@
       name="twitter:image"
       content="https://qzonephoto.getgit.one/assets/screenshots/album.png"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260929-material" />
+    <link rel="stylesheet" href="./styles.css?v=20261008-desktop" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -352,6 +352,10 @@
               <span>在 GitHub 查看源代码与版本发布</span>
             </a>
             <p class="download-note" data-download-status>支持 Windows、macOS 和 Linux</p>
+            <p class="manifest-inline">
+              <span class="manifest-state" data-manifest-status>正在确认版本信息</span>
+              <button type="button" data-manifest-retry hidden>重试</button>
+            </p>
           </div>
           <noscript>
             <p class="noscript-note">
@@ -556,7 +560,14 @@
       </section>
 
       <section class="final-cta reveal">
-        <img src="./assets/icons/app.png" width="64" height="64" alt="" />
+        <img
+          src="./assets/icons/app-72.png"
+          width="64"
+          height="64"
+          loading="lazy"
+          decoding="async"
+          alt=""
+        />
         <div>
           <h2>想先留下一份，再慢慢整理吗？</h2>
           <p>官网会优先推荐适合当前电脑的版本，也可以自己选择。</p>
@@ -582,6 +593,6 @@
     </footer>
 
     <script src="./download-core.js?v=20260725-motion" defer></script>
-    <script src="./main.js?v=20260929-usability" defer></script>
+    <script src="./main.js?v=20261008-release-safety" defer></script>
   </body>
 </html>
