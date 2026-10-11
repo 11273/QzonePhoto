@@ -88,6 +88,42 @@ test('keeps every member returned by the selected-group endpoint', () => {
   assert.match(members[0].img, /\/10001\/10001\/100$/)
 })
 
+test('parses the official day/week/month score and rank field names', () => {
+  const members = normalizeQQGroupMembers(
+    {
+      groupmeminfo: { 10001: { nickname: '成员甲' } },
+      groupdayscore: [{ uin: 10001, dayscore: '12 9 9 11 9 11 14', todayorder: 3 }],
+      groupweekscore: [{ uin: 10001, thisweekscore: 30, thisweekorder: 2 }],
+      groupmonthscore: [{ uin: 10001, thismonthscore: 75, thismonthorder: 1 }],
+      grouptotalscore: [{ uin: 10001, totalscore: 104023, scorelevel: 108 }]
+    },
+    '20001'
+  )
+
+  assert.deepEqual(
+    {
+      dayScore: members[0].dayScore,
+      dayRank: members[0].dayRank,
+      weekScore: members[0].weekScore,
+      weekRank: members[0].weekRank,
+      monthScore: members[0].monthScore,
+      monthRank: members[0].monthRank,
+      totalScore: members[0].totalScore,
+      level: members[0].level
+    },
+    {
+      dayScore: 12,
+      dayRank: 3,
+      weekScore: 30,
+      weekRank: 2,
+      monthScore: 75,
+      monthRank: 1,
+      totalScore: 104023,
+      level: 108
+    }
+  )
+})
+
 test('reveals group members in local pages without requesting another group', () => {
   const members = Array.from({ length: 75 }, (_, index) => ({ uin: String(10000 + index) }))
 

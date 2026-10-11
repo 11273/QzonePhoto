@@ -20,8 +20,14 @@ export function createUserHandlers(service) {
     [IPC_USER.VISITOR_DETAIL]: async (_, { payload, headers }) => {
       return userService.getVisitorDetail(payload || {}, headers)
     },
+    [IPC_USER.VISITOR_MORE]: async (_, { payload, headers }) => {
+      return userService.getVisitorMore(payload || {}, headers)
+    },
     [IPC_USER.SHUOSHUO]: async (_, { payload, headers }) => {
       return userService.getShuoshuo(payload, headers)
+    },
+    [IPC_USER.SCHEDULED_SHUOSHUO]: async (_, { payload, headers }) => {
+      return userService.getScheduledShuoshuo(payload || {}, headers)
     }
   }
 }

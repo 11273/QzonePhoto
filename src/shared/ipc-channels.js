@@ -69,8 +69,12 @@ export const IPC_USER = {
   VISITOR_STATUS: 'user:getVisitorStatus',
   /** 获取访客详细记录（30天统计） */
   VISITOR_DETAIL: 'user:getVisitorDetail',
+  /** 获取完整访客列表（谁看过我 / 我看过谁） */
+  VISITOR_MORE: 'user:getVisitorMore',
   /** 获取说说列表（含评论IP、设备型号） */
-  SHUOSHUO: 'user:getShuoshuo'
+  SHUOSHUO: 'user:getShuoshuo',
+  /** 获取当前账号的定时说说 */
+  SCHEDULED_SHUOSHUO: 'user:getScheduledShuoshuo'
 }
 
 export const IPC_FRIEND = {

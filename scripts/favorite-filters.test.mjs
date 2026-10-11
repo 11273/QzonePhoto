@@ -1,22 +1,34 @@
-import assert from 'node:assert/strict'
 import test from 'node:test'
+import assert from 'node:assert/strict'
+import { normalizeFavoriteTypeCounts } from '../src/renderer/src/utils/favoriteFilters.js'
 
-import { FAVORITE_FILTERS, favoriteFilterFor } from '../src/renderer/src/utils/favoriteFilters.js'
+test('normalizeFavoriteTypeCounts supports numeric arrays', () => {
+  assert.deepEqual(normalizeFavoriteTypeCounts([12, 2, 3, 4, 1, 1, 1], 12), {
+    0: 12,
+    1: 2,
+    2: 3,
+    3: 4,
+    4: 1,
+    5: 1,
+    6: 1
+  })
+})
 
-test('favorite categories use official filter parameters rather than item type values', () => {
+test('normalizeFavoriteTypeCounts supports official object-like entries', () => {
   assert.deepEqual(
-    FAVORITE_FILTERS.map(({ label, type }) => [label, type]),
-    [
-      ['全部', 0],
-      ['日志', 1],
-      ['说说', 3],
-      ['分享', 4],
-      ['照片', 2],
-      ['文字', 5],
-      ['网页', 6]
-    ]
+    normalizeFavoriteTypeCounts([
+      { type: 1, num: 3 },
+      { type: 3, count: 5 },
+      { id: 4, total: 2 }
+    ]),
+    { 0: 10, 1: 3, 3: 5, 4: 2 }
   )
-  assert.equal(favoriteFilterFor(3).label, '说说')
-  assert.equal(favoriteFilterFor('2').label, '照片')
-  assert.equal(favoriteFilterFor(7).type, 0)
+})
+
+test('normalizeFavoriteTypeCounts prefers total_num for the all filter', () => {
+  assert.deepEqual(normalizeFavoriteTypeCounts({ 1: 3, 3: 5 }, 20), {
+    0: 20,
+    1: 3,
+    3: 5
+  })
 })

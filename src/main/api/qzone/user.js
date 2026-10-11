@@ -92,6 +92,76 @@ export async function getVisitorDetail(uin, p_skey, mask = 2, mod = 2) {
 }
 
 /**
+ * 获取完整访客记录。
+ * 官方访客页使用 mask=3（谁看过我）与 mask=5（我看过谁），按 page 翻页。
+ * 与 simple 接口分开保留，避免首页为了统计一次性拉取完整名单。
+ */
+export async function getVisitorMore(uin, p_skey, mask = 3, mod = 8, page = 1) {
+  const safeMask = Number(mask) === 5 ? 5 : 3
+  const safePage = Math.max(1, Number(page) || 1)
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/g.qzone.qq.com/cgi-bin/friendshow/cgi_get_visitor_more'
+  const params = {
+    uin: rawUin(uin),
+    mask: safeMask,
+    mod: Number(mod) || 8,
+    page: safePage,
+    fupdate: 1,
+    g_tk: getGTK(p_skey)
+  }
+  const response = await request.get(url, {
+    params,
+    telemetry: false,
+    headers: {
+      Cookie: `uin=${uin};p_uin=${uin};p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${rawUin(uin)}`
+    }
+  })
+  const body = extractJSONFromCallback(response.data)
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return {
+      code: -1,
+      message: '访客记录响应异常',
+      page: safePage,
+      totalPages: 1,
+      total: 0,
+      blockedCount: 0,
+      items: []
+    }
+  }
+  const data = body.data && typeof body.data === 'object' ? body.data : {}
+  const items = Array.isArray(data.items)
+    ? data.items
+    : Array.isArray(data.list)
+      ? data.list
+      : Array.isArray(data.visitor)
+        ? data.visitor
+        : Array.isArray(data.visitors)
+          ? data.visitors
+          : []
+  const totalPages = Math.max(
+    1,
+    Number(
+      data.totalpage ??
+        data.total_page ??
+        data.totalPage ??
+        data.pages ??
+        data.pagecount ??
+        data.pageCount
+    ) || 1
+  )
+  return {
+    code: Number(body.code ?? 0),
+    message: body.message || data.message || '',
+    page: Number(data.page ?? data.curpage ?? data.curPage ?? safePage) || safePage,
+    totalPages,
+    total: Number(data.count ?? data.total ?? data.totalcount ?? data.totalCount) || 0,
+    blockedCount: Number(data.visitor_to_blk_count ?? data.blockedCount) || 0,
+    items
+  }
+}
+
+/**
  * 获取说说列表（含评论IP、设备型号等隐藏数据）
  * @param {string} uin cookie uin
  * @param {string} p_skey 登录凭证
@@ -135,4 +205,64 @@ export async function getShuoshuo(uin, p_skey, targetUin, pos = 0, num = 20) {
   }
   const parsed = extractJSONFromCallback(text)
   return typeof parsed === 'object' ? parsed : { code: -1, message: '响应异常', raw: parsed }
+}
+
+/**
+ * 获取当前账号的定时说说。
+ * 参数与官网 mood_v6 的 schedule 数据源保持一致；只读，不包含发布或删除能力。
+ */
+export async function getScheduledShuoshuo(uin, p_skey, pos = 0, num = 20) {
+  const safePos = Math.max(0, Number(pos) || 0)
+  const safeNum = Math.min(50, Math.max(1, Number(num) || 20))
+  const loginUin = rawUin(uin)
+  const url =
+    'https://user.qzone.qq.com/proxy/domain/taotao.qq.com/cgi-bin/emotion_cgi_timershuoshuolist_v6'
+  const params = {
+    uin: loginUin,
+    hostUin: loginUin,
+    notice: 0,
+    sort: 0,
+    pos: safePos,
+    num: safeNum,
+    code_version: 1,
+    format: 'jsonp',
+    need_private_comment: 1,
+    g_tk: getGTK(p_skey)
+  }
+  const response = await request.get(url, {
+    params,
+    telemetry: false,
+    headers: {
+      Cookie: `uin=${uin};p_uin=${uin};p_skey=${p_skey}`,
+      Referer: `https://user.qzone.qq.com/${loginUin}/mood?tab=schedule`
+    }
+  })
+  const body = extractJSONFromCallback(response.data)
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return {
+      code: -1,
+      message: '定时说说响应异常',
+      total: 0,
+      pos: safePos,
+      num: safeNum,
+      hasMore: false,
+      msglist: []
+    }
+  }
+  const result = body.result && typeof body.result === 'object' ? body.result : body
+  const msglist = Array.isArray(result.msglist)
+    ? result.msglist
+    : Array.isArray(result.posts)
+      ? result.posts
+      : []
+  const total = Number(result.total ?? result.total_num ?? result.usrinfo?.msgnum) || 0
+  return {
+    code: Number(result.code ?? body.code ?? 0),
+    message: result.message || result.msg || body.message || '',
+    total,
+    pos: safePos,
+    num: safeNum,
+    hasMore: total > 0 ? safePos + msglist.length < total : msglist.length >= safeNum,
+    msglist
+  }
 }

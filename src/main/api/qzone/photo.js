@@ -983,6 +983,7 @@ export async function get_fav_list(uin, p_skey, opts = {}) {
   return {
     code: body.code ?? 0,
     total: Number(data.total_num) || 0,
+    typeCounts: data.type_num ?? data.typeNum ?? {},
     favList: Array.isArray(data.fav_list) ? data.fav_list : []
   }
 }
@@ -1098,11 +1099,12 @@ export async function get_blog_list(uin, p_skey, hostUin, opts = {}) {
     cateName: '',
     cateHex: '',
     statYear: '',
-    reqInfo: 1,
+    // 官网当前日志列表使用完整摘要模式，包含分类、评论数与更完整的摘要字段。
+    reqInfo: 7,
     pos,
     num,
     sortType: 0,
-    absType: 0,
+    absType: 1,
     startTime: '',
     endTime: '',
     source: 0,
@@ -1132,7 +1134,11 @@ export async function get_blog_list(uin, p_skey, hostUin, opts = {}) {
     num,
     hasMore: total > 0 ? pos + list.length < total : list.length >= num,
     blogs: list,
-    categories: Array.isArray(data.cateInfo) ? data.cateInfo : [],
+    categories: Array.isArray(data.cateInfo)
+      ? data.cateInfo
+      : Array.isArray(data.cateInfo?.categoryList)
+        ? data.cateInfo.categoryList
+        : [],
     months: Array.isArray(data.month_num) ? data.month_num : []
   }
 }

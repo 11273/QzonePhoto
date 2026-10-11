@@ -12,6 +12,12 @@ test('demo visitor APIs stay local and return renderer-compatible data', async (
     getVisitorDetail: async () => {
       realCalls += 1
     },
+    getVisitorMore: async () => {
+      realCalls += 1
+    },
+    getScheduledShuoshuo: async () => {
+      realCalls += 1
+    },
     app: {},
     update: {},
     download: {},
@@ -19,9 +25,11 @@ test('demo visitor APIs stay local and return renderer-compatible data', async (
     window: {}
   })
 
-  const [status, detail] = await Promise.all([
+  const [status, detail, visitorMore, scheduled] = await Promise.all([
     api.getVisitorStatus(),
-    api.getVisitorDetail({ mask: 2, mod: 2 })
+    api.getVisitorDetail({ mask: 2, mod: 2 }),
+    api.getVisitorMore({ page: 1 }),
+    api.getScheduledShuoshuo({ pos: 0, num: 10 })
   ])
 
   assert.equal(realCalls, 0)
@@ -30,4 +38,6 @@ test('demo visitor APIs stay local and return renderer-compatible data', async (
   assert.equal(Array.isArray(detail.data.items), true)
   assert.equal(detail.data.calvisitcount.length, 30)
   assert.equal(Array.isArray(detail.data.modvisitcount), true)
+  assert.deepEqual(visitorMore.items, [])
+  assert.deepEqual(scheduled.msglist, [])
 })

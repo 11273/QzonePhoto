@@ -116,8 +116,12 @@ try {
     getVisitorStatus: (meta) => ipcClient.call(IPC_USER.VISITOR_STATUS, {}, meta),
     // 获取访客详细记录
     getVisitorDetail: (data, meta) => ipcClient.call(IPC_USER.VISITOR_DETAIL, data, meta),
+    // 获取完整访客列表（谁看过我 / 我看过谁）
+    getVisitorMore: (data, meta) => ipcClient.call(IPC_USER.VISITOR_MORE, data, meta),
     // 获取说说列表（含评论IP、设备型号）
     getShuoshuo: (data, meta) => ipcClient.call(IPC_USER.SHUOSHUO, data, meta),
+    // 获取当前账号的定时说说（只读）
+    getScheduledShuoshuo: (data, meta) => ipcClient.call(IPC_USER.SCHEDULED_SHUOSHUO, data, meta),
     // 同步给内置 QQ 空间网页窗口使用，避免打开用户主页时重复登录
     setQzoneAuth: (auth) => ipcRenderer.invoke(IPC_WINDOW.SET_QZONE_AUTH, auth),
 

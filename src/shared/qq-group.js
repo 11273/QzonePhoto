@@ -3,25 +3,29 @@ const GROUP_SCORE_FIELDS = [
     field: 'groupdayscore',
     scoreKey: 'dayScore',
     rankKey: 'dayRank',
-    candidates: ['score', 'dayscore', 'dayScore']
+    candidates: ['score', 'todayScore', 'todayscore', 'dayscore', 'dayScore'],
+    rankCandidates: ['todayorder', 'todayOrder', 'rank', 'ranking', 'order']
   },
   {
     field: 'groupweekscore',
     scoreKey: 'weekScore',
     rankKey: 'weekRank',
-    candidates: ['score', 'weekscore', 'weekScore']
+    candidates: ['thisweekscore', 'thisWeekScore', 'score', 'weekscore', 'weekScore'],
+    rankCandidates: ['thisweekorder', 'thisWeekOrder', 'rank', 'ranking', 'order']
   },
   {
     field: 'groupmonthscore',
     scoreKey: 'monthScore',
     rankKey: 'monthRank',
-    candidates: ['score', 'monthscore', 'monthScore']
+    candidates: ['thismonthscore', 'thisMonthScore', 'score', 'monthscore', 'monthScore'],
+    rankCandidates: ['thismonthorder', 'thisMonthOrder', 'rank', 'ranking', 'order']
   },
   {
     field: 'grouptotalscore',
     scoreKey: 'totalScore',
     rankKey: 'totalRank',
-    candidates: ['totalscore', 'total_score', 'totalScore', 'score']
+    candidates: ['totalscore', 'total_score', 'totalScore', 'score'],
+    rankCandidates: ['totalorder', 'totalOrder', 'rank', 'ranking', 'order']
   }
 ]
 export const QQ_GROUP_MEMBER_PAGE_SIZE = 30
@@ -73,15 +77,25 @@ const profileEntries = (value) => {
 
 const metricNumber = (item, candidates) => {
   for (const key of candidates) {
-    const value = Number(item?.[key])
+    const rawValue = item?.[key]
+    // dayscore 是官网返回的七天积分序列，例如 "12 9 9 11 9 11 14"；
+    // 第一项是今天，不能直接 Number()，否则整列都会退化成 0。
+    const candidate =
+      key === 'dayscore' && typeof rawValue === 'string'
+        ? rawValue.trim().split(/\s+/)[0]
+        : rawValue
+    const value = Number(candidate)
     if (Number.isFinite(value)) return value
   }
   return 0
 }
 
-const metricRank = (item, fallback) => {
-  const rank = Number(item?.rank ?? item?.ranking ?? item?.order)
-  return Number.isFinite(rank) && rank > 0 ? rank : fallback
+const metricRank = (item, candidates, fallback) => {
+  for (const key of candidates) {
+    const rank = Number(item?.[key])
+    if (Number.isFinite(rank) && rank > 0) return rank
+  }
+  return fallback
 }
 
 export const normalizeQQGroupMembers = (response, groupId = '') => {
@@ -102,7 +116,11 @@ export const normalizeQQGroupMembers = (response, groupId = '') => {
       scoreByUin.set(uin, {
         ...scoreByUin.get(uin),
         [metric.scoreKey]: metricNumber(item, metric.candidates),
-        [metric.rankKey]: metricRank(item, index + 1)
+        [metric.rankKey]: metricRank(item, metric.rankCandidates, index + 1),
+        level:
+          metric.field === 'grouptotalscore'
+            ? Number(item?.scorelevel ?? item?.level) || scoreByUin.get(uin)?.level || 0
+            : scoreByUin.get(uin)?.level || 0
       })
       if (!seen.has(uin)) {
         seen.add(uin)
@@ -132,7 +150,7 @@ export const normalizeQQGroupMembers = (response, groupId = '') => {
       name: String(profile.nickname ?? profile.nick ?? profile.name ?? '').trim(),
       remark: String(profile.remark ?? '').trim(),
       img: `https://qlogo4.store.qq.com/qzone/${uin}/${uin}/100`,
-      level: Number(profile.scorelevel ?? profile.level) || 0,
+      level: Number(profile.scorelevel ?? profile.level ?? score.level) || 0,
       dayScore: score.dayScore || 0,
       weekScore: score.weekScore || 0,
       monthScore: score.monthScore || 0,

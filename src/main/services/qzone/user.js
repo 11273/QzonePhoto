@@ -3,7 +3,9 @@ import {
   getPersonalCard,
   getVisitorStatus,
   getVisitorDetail,
-  getShuoshuo
+  getVisitorMore,
+  getShuoshuo,
+  getScheduledShuoshuo
 } from '@main/api'
 
 export class QzoneUserService {
@@ -24,7 +26,15 @@ export class QzoneUserService {
     return await getVisitorDetail(uin, p_skey, mask, mod)
   }
 
+  async getVisitorMore({ mask, mod, page }, { uin, p_skey }) {
+    return await getVisitorMore(uin, p_skey, mask, mod, page)
+  }
+
   async getShuoshuo({ targetUin, pos, num }, { uin, p_skey }) {
     return await getShuoshuo(uin, p_skey, targetUin, pos, num)
+  }
+
+  async getScheduledShuoshuo({ pos, num }, { uin, p_skey }) {
+    return await getScheduledShuoshuo(uin, p_skey, pos, num)
   }
 }

@@ -26,6 +26,28 @@ const cleanUin = (value) => {
   return /^\d+$/.test(uin) ? uin : ''
 }
 
+export const parseBlogTime = (value) => {
+  if (value === null || value === undefined || value === '') return 0
+  const numeric = Number(value)
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric > 100000000000 ? Math.floor(numeric / 1000) : Math.floor(numeric)
+  }
+  const match = String(value).match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/
+  )
+  if (!match) return 0
+  const [, year, month, day, hour = '0', minute = '0', second = '0'] = match
+  const timestamp = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second)
+  ).getTime()
+  return Number.isFinite(timestamp) ? Math.floor(timestamp / 1000) : 0
+}
+
 export const blogOfficialUrl = (hostUin, blogId) => {
   const uin = cleanUin(hostUin)
   const id = String(blogId || '').trim()
@@ -36,7 +58,7 @@ export const blogOfficialUrl = (hostUin, blogId) => {
 export const normalizeBlogRecord = (raw = {}, helpers = {}) => {
   const uin = cleanUin(raw.uin || raw.hostUin || helpers.hostUin)
   const id = raw.blogId || raw.blogid || raw.id || ''
-  const time = Number(raw.pubTime || raw.pubtime || raw.createTime || raw.time) || 0
+  const time = parseBlogTime(raw.pubTime || raw.pubtime || raw.createTime || raw.time)
   const title = compact(raw.title)
   const summary = compact(raw.abstract || raw.summary || raw.content)
   const url = blogOfficialUrl(uin, id)
@@ -78,9 +100,10 @@ export const normalizeBlogRecord = (raw = {}, helpers = {}) => {
     likerFetchable: false,
     viewCount: Number(raw.viewCount || raw.visitCount) || 0,
     deviceName: '',
-    cmtCount: Number(raw.commentCount || raw.cmtCount) || 0,
+    cmtCount: Number(raw.commentCount || raw.commentNum || raw.commentnum || raw.cmtCount) || 0,
     fwdCount: 0,
-    commentsComplete: Number(raw.commentCount || raw.cmtCount || 0) === 0,
+    commentsComplete:
+      Number(raw.commentCount || raw.commentNum || raw.commentnum || raw.cmtCount || 0) === 0,
     commentsFetchable: false,
     isBlog: true
   }
