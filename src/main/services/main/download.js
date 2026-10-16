@@ -309,7 +309,7 @@ export class DownloadService {
       if (!this.db || !this.db.data) {
         return null
       }
-      return this.db.data.settings[key] || null
+      return this.db.data.settings?.[key] ?? null
     } catch (error) {
       logger.error(`获取设置 ${key} 失败:`, error)
       return null
@@ -404,6 +404,8 @@ export class DownloadService {
   createTask(options) {
     const now = Date.now()
     const fileTime = options.fileTime ? new Date(options.fileTime) : null
+    // 在任务创建时统一应用开关，避免媒体自带的动态信息绕过设置。
+    const writeFeedDescription = this.getWriteFeedDescriptionSetting()
     const batch = normalizeDownloadBatch(options.batch || {})
     const candidates = Array.isArray(options.downloadCandidates)
       ? options.downloadCandidates.filter((candidate) => candidate?.url)
@@ -433,8 +435,8 @@ export class DownloadService {
       source_key: options.sourceKey || '',
       referer: options.referer || '',
       file_time: fileTime && !Number.isNaN(fileTime.getTime()) ? fileTime.getTime() : null,
-      metadata_description: options.metadataDescription || '',
-      media_metadata: options.mediaMetadata || null,
+      metadata_description: writeFeedDescription ? options.metadataDescription || '' : '',
+      media_metadata: writeFeedDescription ? options.mediaMetadata || null : null,
       batch_id: batch?.id || '',
       batch_label: batch?.label || '',
       batch_source_type: batch?.sourceType || '',
