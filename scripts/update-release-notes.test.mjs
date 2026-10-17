@@ -31,6 +31,10 @@ test('release notes keep the exact current-version changelog without later versi
   const notes = generateReleaseNotes('v2.8.0', section)
   assert.match(notes, /# 🎉 Release v2\.8\.0/)
   assert.match(notes, /\$\(printf HOOK_EXPANDED\)/)
+  assert.match(notes, /## 🍎 macOS 首次打开/)
+  assert.match(notes, /Control 点按（或右键点按）/)
+  assert.match(notes, /系统设置 → 隐私与安全性/)
+  assert.match(notes, /不需要在终端输入命令/)
 })
 
 test('release notes fail when the bumped version is absent from the changelog', () => {

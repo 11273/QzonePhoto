@@ -628,6 +628,22 @@ main [id] {
   color: var(--muted);
   font-size: 12px;
 }
+.choice-help-note {
+  margin: 10px 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.choice-help-note strong {
+  color: var(--ink-soft);
+}
+.choice-help-note a {
+  margin-left: 4px;
+  color: var(--brand-dark);
+  font-weight: 680;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .platform-tabs {
   --tab-offset: 0px;
   position: relative;

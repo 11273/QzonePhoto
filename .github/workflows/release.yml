@@ -199,6 +199,28 @@ jobs:
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         run: ${{ matrix.command }}
 
+      - name: Verify macOS application can load
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_path="$(find dist -mindepth 2 -maxdepth 2 -type d -name '*.app' -print -quit)"
+          test -n "${app_path}" || {
+            echo 'No packaged macOS application found'
+            exit 1
+          }
+
+          # codesign 的静态校验无法发现 ad-hoc + Hardened Runtime 引发的 Team ID
+          # 不一致。除完整性校验外，还让 Electron 主程序真实加载 Framework；这里
+          # 使用 Node 模式，不打开窗口、不访问网络，也不会产生用户数据。
+          codesign --verify --deep --strict "${app_path}"
+          executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' \
+            "${app_path}/Contents/Info.plist")"
+          executable_path="${app_path}/Contents/MacOS/${executable_name}"
+          test -x "${executable_path}"
+          ELECTRON_RUN_AS_NODE=1 "${executable_path}" -e \
+            'if (!process.versions.electron) process.exit(1); console.log(`Electron ${process.versions.electron} loaded`)'
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -293,6 +315,8 @@ jobs:
               echo "Refusing to replace the published release ${GITHUB_REF_NAME}"
               exit 1
             }
+            gh release edit "${GITHUB_REF_NAME}" --repo "${GH_REPO}" \
+              --title "Release ${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md
           else
             release_args=(--draft --verify-tag --title "Release ${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md)
             if [ "${{ needs.validate-release.outputs.prerelease }}" = 'true' ]; then

@@ -59,8 +59,9 @@ async function writeLinuxAppStreamMetadata(appOutDir, version) {
 }
 
 // macOS Tahoe 开始 dyld 严格要求主二进制与其加载的所有 framework/dylib
-// 必须共享同一签名 seal；无 Developer ID 证书构建时，统一使用 ad-hoc
-// 签名收尾。打包后不再改写 app.asar，避免为开发环境引入原生编译依赖。
+// 必须共享同一签名 seal；无 Developer ID 证书构建时，统一使用不带
+// Hardened Runtime 的 ad-hoc 签名收尾。打包后不再改写 app.asar，避免为
+// 开发环境引入原生编译依赖。
 function adhocResignMac(appPath) {
   const entitlementsPath = join(__dirname, 'entitlements.mac.plist')
   execFileSync(
@@ -70,8 +71,6 @@ function adhocResignMac(appPath) {
       '--deep',
       '--sign',
       '-',
-      '--options',
-      'runtime',
       '--timestamp=none',
       '--entitlements',
       entitlementsPath,

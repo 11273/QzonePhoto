@@ -48,6 +48,16 @@ const readVersionChangelog = (version) => {
   return extractVersionChangelog(fs.readFileSync(CONFIG.CHANGELOG_FILE, 'utf8'), version)
 }
 
+const MACOS_FIRST_OPEN_GUIDE = `## 🍎 macOS 首次打开
+
+当前安装包尚未完成 Apple 开发者签名与公证。请只从[唯一官网](https://qzonephoto.getgit.one/)或本仓库 Release 下载，然后：
+
+1. 打开 DMG，把“企鹅相册”拖进“应用程序”。
+2. 在“应用程序”中按住 Control 点按（或右键点按）“企鹅相册”，选择“打开”，再确认“打开”。
+3. 如果仍被系统拦截，前往“系统设置 → 隐私与安全性”，在安全性提示中选择“仍要打开”。
+
+首次安装或替换应用后通常只需操作一次，不需要在终端输入命令。`
+
 // 生成徽标
 const generateBadges = (version) => {
   const { GITHUB_OWNER, GITHUB_REPO } = CONFIG
@@ -108,6 +118,8 @@ ${platformStrings}
 
 ---
 
+${MACOS_FIRST_OPEN_GUIDE}
+
 ${changelog}`
 }
 
@@ -136,5 +148,6 @@ if (require.main === module) {
 
 module.exports = {
   extractVersionChangelog,
-  generateReleaseNotes
+  generateReleaseNotes,
+  MACOS_FIRST_OPEN_GUIDE
 }
