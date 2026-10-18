@@ -461,6 +461,12 @@ let scrollTimer = null // 滚动防抖定时器
 
 // 相册和照片数据
 const currentAlbum = ref(null)
+const syncCurrentAlbumTotal = (value) => {
+  const parsed = Number(value)
+  if (currentAlbum.value && Number.isFinite(parsed) && parsed >= 0) {
+    currentAlbum.value.total = parsed
+  }
+}
 const photoList = ref([])
 
 // 选择状态
@@ -686,7 +692,7 @@ const fetchPhotosByTopicId = async (topicId, pageStart = 0, pageNum = 100) => {
       const responseTotal = Number(responseData.totalInAlbum)
       const fallbackTotal = Number(currentAlbum.value?.total)
       const total =
-        Number.isFinite(responseTotal) && responseTotal > 0
+        Number.isFinite(responseTotal) && responseTotal >= 0
           ? responseTotal
           : Number.isFinite(fallbackTotal) && fallbackTotal > 0
             ? fallbackTotal
@@ -905,7 +911,8 @@ const loadMorePhotos = async () => {
       }
 
       // 更新总数
-      total.value = result.total > 0 ? result.total : total.value || currentAlbum.value?.total || 0
+      total.value = result.total
+      syncCurrentAlbumTotal(total.value)
 
       hasMore.value = result.hasMore
       pageGuard.succeed()
@@ -1049,7 +1056,8 @@ watch(currentAlbum, async (newAlbum) => {
     if (result.success) {
       photoLoadState.value = null
       photoList.value = result.photos
-      total.value = result.total > 0 ? result.total : newAlbum.total || 0
+      total.value = result.total
+      syncCurrentAlbumTotal(total.value)
       currentPageStart.value = result.nextPageStart
       hasMore.value = result.hasMore
     } else {
@@ -1065,7 +1073,8 @@ watch(currentAlbum, async (newAlbum) => {
           if (retry.success) {
             photoLoadState.value = null
             photoList.value = retry.photos
-            total.value = retry.total > 0 ? retry.total : newAlbum.total || 0
+            total.value = retry.total
+            syncCurrentAlbumTotal(total.value)
             currentPageStart.value = retry.nextPageStart
             hasMore.value = retry.hasMore
           } else if (retry.code === -10805) {
@@ -1379,7 +1388,10 @@ const refreshCurrentAlbum = async () => {
     if (result.success) {
       photoLoadState.value = null
       photoList.value = result.photos
-      total.value = result.total > 0 ? result.total : currentAlbum.value.total || 0
+      total.value = result.total
+      // currentAlbum 与左侧相册列表共享同一个响应式对象。同步服务端最新总数，
+      // 避免上传完成后照片网格已刷新，但标题和侧栏仍显示旧数量。
+      syncCurrentAlbumTotal(total.value)
       currentPageStart.value = result.nextPageStart
       hasMore.value = result.hasMore
 
