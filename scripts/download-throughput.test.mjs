@@ -46,3 +46,13 @@ test('backend samples received bytes and publishes live speed for the UI', async
   assert.match(pusher, /stats\.currentSpeed \|\| 0/)
   assert.match(ui, /taskStats\.value\.currentSpeed \?\?/)
 })
+
+test('clear all tasks discards stale throughput samples', async () => {
+  const service = await readFile(
+    new URL('../src/main/services/main/download.js', import.meta.url),
+    'utf8'
+  )
+  const clearTasks = service.split('async clearTasks() {')[1]?.split('// 选择下载目录')[0]
+  assert.ok(clearTasks, 'clearTasks implementation must exist')
+  assert.match(clearTasks, /this\.downloadThroughput\.reset\(\)/)
+})

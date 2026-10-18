@@ -1821,10 +1821,11 @@ export class DownloadService {
     this.db.data.batches = []
     await this.db.write()
 
-    // 清空内存
+    // 清空内存及近期流量，避免清空后短暂显示过期下载速度
     this.activeTasks.clear()
     this.downloadingTasks.clear()
     this.cancelTokens.clear()
+    this.downloadThroughput.reset()
 
     // 触发事件推送，传递所有被删除的任务ID
     this.triggerUpdate(allIds.map((id) => ({ id, deleted: true })))
