@@ -250,8 +250,8 @@
           </div>
           <p class="drop-text">将文件拖到此处 或 点击「选择文件」</p>
           <div class="drop-formats">
-            <span>JPG</span><span>PNG</span><span>GIF</span><span>WEBP</span><span>MP4</span
-            ><span>MOV</span><span>AVI</span>
+            <span>JPG</span><span>PNG</span><span>GIF</span><span>WEBP</span><span>HEIC→JPG</span
+            ><span>MP4</span><span>MOV</span><span>AVI</span>
           </div>
           <div class="drop-rules">
             <el-icon><InfoFilled /></el-icon>
@@ -683,7 +683,19 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 // 文件类型
-const acceptFileTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'mp4', 'mov', 'avi']
+const acceptFileTypes = [
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'bmp',
+  'webp',
+  'heic',
+  'heif',
+  'mp4',
+  'mov',
+  'avi'
+]
 
 // 本地文件列表（待上传）
 const localFiles = ref([])
@@ -1000,6 +1012,8 @@ const getMimeType = (filename) => {
     gif: 'image/gif',
     bmp: 'image/bmp',
     webp: 'image/webp',
+    heic: 'image/heic',
+    heif: 'image/heif',
     mp4: 'video/mp4',
     mov: 'video/quicktime',
     avi: 'video/x-msvideo'
@@ -1009,7 +1023,7 @@ const getMimeType = (filename) => {
 
 // 文件类型判断辅助函数
 const isImageFile = (filename) => {
-  const imageExt = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']
+  const imageExt = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic', 'heif']
   const ext = filename.split('.').pop().toLowerCase()
   return imageExt.includes(ext)
 }

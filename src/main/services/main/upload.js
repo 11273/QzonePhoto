@@ -16,6 +16,13 @@ import {
   deleteTempFile
 } from '@main/utils/file-processor'
 import { getVideoMetadata } from '@main/services/video-metadata'
+import {
+  cleanupExpiredHeicCache,
+  getHeicUploadCacheDirectory,
+  isHeicImage,
+  prepareHeicForUpload,
+  removePreparedHeicFile
+} from '@main/utils/heic-converter.mjs'
 import windowManager from '@main/core/window'
 import { IPC_UPLOAD } from '@shared/ipc-channels'
 import { reportHealthEvent, telemetryBuckets } from '@main/services/app-telemetry'
@@ -89,6 +96,81 @@ export class UploadService {
     return path.join(app.getPath('userData'), filename)
   }
 
+  getHeicCacheDirectory() {
+    return getHeicUploadCacheDirectory(app.getPath('userData'))
+  }
+
+  async prepareUploadSource(options = {}) {
+    const filePath = options.filePath || options.path
+    const filename = options.filename || options.name || (filePath ? path.basename(filePath) : '')
+    if (!filePath || !isHeicImage(filePath)) {
+      return { ...options, filePath, filename }
+    }
+
+    try {
+      const prepared = await prepareHeicForUpload(filePath, this.getHeicCacheDirectory())
+      return {
+        ...options,
+        filePath: prepared.filePath,
+        filename: prepared.filename,
+        total: prepared.fileSize,
+        sourceFilePath: prepared.sourceFilePath,
+        sourceFilename: prepared.sourceFilename,
+        convertedFromHeic: true
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(`HEIC 转换失败（${filename}）：${detail}`)
+    }
+  }
+
+  async ensurePreparedTaskFile(task) {
+    if (!task?.convertedFromHeic) return
+    if (task.filePath && fs.existsSync(task.filePath)) return
+    if (!task.sourceFilePath || !fs.existsSync(task.sourceFilePath)) {
+      throw new Error('原始 HEIC 图片已被移动或删除，无法重新转换')
+    }
+
+    const prepared = await this.prepareUploadSource({
+      filePath: task.sourceFilePath,
+      filename: task.sourceFilename
+    })
+    task.filePath = prepared.filePath
+    task.filename = prepared.filename
+    task.name = prepared.filename
+    task.total = prepared.total
+    task.md5 = null
+    task.session = null
+    const dimensions = await getImageDimensions(task.filePath)
+    task.picWidth = dimensions.width
+    task.picHeight = dimensions.height
+  }
+
+  async cleanupPreparedTaskFiles(tasks = []) {
+    const candidates = new Set(
+      tasks.filter((task) => task?.convertedFromHeic && task.filePath).map((task) => task.filePath)
+    )
+
+    for (const filePath of candidates) {
+      const stillReferenced = this.db?.data?.tasks?.some((task) => task.filePath === filePath)
+      if (stillReferenced) continue
+      try {
+        await removePreparedHeicFile(filePath, this.getHeicCacheDirectory())
+      } catch (error) {
+        logger.warn(`[UploadService] 清理 HEIC 转换缓存失败: ${filePath}`, error)
+      }
+    }
+  }
+
+  async cleanupExpiredHeicFiles() {
+    try {
+      const removed = await cleanupExpiredHeicCache(this.getHeicCacheDirectory())
+      if (removed > 0) logger.info(`[UploadService] 已清理 ${removed} 个过期 HEIC 转换缓存`)
+    } catch (error) {
+      logger.warn('[UploadService] 清理过期 HEIC 转换缓存失败', error)
+    }
+  }
+
   // 设置当前用户并切换数据库
   async setCurrentUser(uin, p_skey, hostUin) {
     // 串行化所有调用，避免 IPC 并发触发时 steno 写 .tmp 冲突
@@ -156,6 +238,7 @@ export class UploadService {
       // 重新初始化数据库和数据
       this.dbInitialized = false
       await this.initializeDatabase()
+      await this.cleanupExpiredHeicFiles()
       this.loadSettings()
       this.loadActiveTasks()
       this.dbInitialized = true
@@ -188,6 +271,7 @@ export class UploadService {
   async initializeAsync() {
     this.dbPath = this.getUserDbPath()
     await this.initializeDatabase()
+    await this.cleanupExpiredHeicFiles()
     this.loadSettings()
     this.loadActiveTasks()
     this.dbInitialized = true
@@ -409,12 +493,18 @@ export class UploadService {
       lastRetryTime: null, // 最后重试时间
       // 视频元数据（由渲染进程提取，主进程在初始化上传时使用）
       videoDuration: options.videoDuration || null,
-      videoCover: options.videoCover || null
+      videoCover: options.videoCover || null,
+      // HEIC/HEIF 会在本地转换为 JPEG；保留原路径以便缓存被清理后可重新生成。
+      sourceFilePath: options.sourceFilePath || null,
+      sourceFilename: options.sourceFilename || null,
+      convertedFromHeic: options.convertedFromHeic === true
     }
   }
 
   // 添加单个上传任务
   async addTask(options) {
+    options = await this.prepareUploadSource(options)
+
     // 获取图片尺寸
     if (options.filePath && typeof options.filePath === 'string') {
       try {
@@ -491,14 +581,19 @@ export class UploadService {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
+      const preparedFile = await this.prepareUploadSource({
+        ...file,
+        filePath: file.path,
+        filename: file.name
+      })
       // 获取图片尺寸
       let picWidth = 0
       let picHeight = 0
 
-      if (file.path && typeof file.path === 'string') {
+      if (preparedFile.filePath && typeof preparedFile.filePath === 'string') {
         try {
           // console.log(`[UploadService] 正在获取图片尺寸 [${i + 1}/${files.length}]: ${file.name}`)
-          const dimensions = await getImageDimensions(file.path)
+          const dimensions = await getImageDimensions(preparedFile.filePath)
           picWidth = dimensions.width
           picHeight = dimensions.height
 
@@ -516,8 +611,8 @@ export class UploadService {
       }
 
       const task = this.createTask({
-        filePath: file.path,
-        filename: file.name,
+        filePath: preparedFile.filePath,
+        filename: preparedFile.filename,
         albumId,
         albumName,
         picTitle: file.title || file.name.replace(/\.[^/.]+$/, ''),
@@ -526,7 +621,10 @@ export class UploadService {
         picHeight,
         batchId, // 使用统一的批次ID（后端API用）
         sessionId: finalSessionId, // 使用会话ID（前端分组用）
-        total: file.size || 0,
+        total: preparedFile.total || file.size || 0,
+        sourceFilePath: preparedFile.sourceFilePath,
+        sourceFilename: preparedFile.sourceFilename,
+        convertedFromHeic: preparedFile.convertedFromHeic,
         // 视频元数据（由渲染进程提取）
         videoDuration: file.videoDuration || null, // 视频时长（毫秒）
         videoCover: file.videoCover || null // 视频封面（Base64）
@@ -1123,6 +1221,8 @@ export class UploadService {
         throw new Error('文件路径为空')
       }
 
+      await this.ensurePreparedTaskFile(task)
+
       // 检查文件是否存在
       const fileInfo = await getFileInfo(task.filePath)
       if (!fileInfo) {
@@ -1588,6 +1688,7 @@ export class UploadService {
     })
 
     await this.saveDatabase()
+    await this.cleanupPreparedTaskFiles(tasksToRemove)
     // 推送删除事件，包含原始任务的 albumId 信息
     this.triggerUpdate(
       tasksToRemove.map((task) => ({
@@ -1631,6 +1732,7 @@ export class UploadService {
     })
 
     await this.saveDatabase()
+    await this.cleanupPreparedTaskFiles(tasksToRemove)
     // 推送删除事件，包含原始任务的 albumId 信息
     this.triggerUpdate(
       tasksToRemove.map((task) => ({
@@ -1668,6 +1770,7 @@ export class UploadService {
         this.db.data.tasks.splice(index, 1)
         await this.db.write()
       }
+      await this.cleanupPreparedTaskFiles([task])
 
       // 触发更新，通知前端任务已删除，包含原始任务的 albumId 信息
       this.triggerUpdate([
@@ -1795,6 +1898,7 @@ export class UploadService {
 
       // 保存数据库
       await this.saveDatabase()
+      await this.cleanupPreparedTaskFiles(allTasks)
 
       // 触发更新（通知前端任务已删除），包含原始任务的 albumId 信息
       this.triggerUpdate(
@@ -1891,6 +1995,7 @@ export class UploadService {
 
     this.db.data.tasks = []
     await this.db.write()
+    await this.cleanupPreparedTaskFiles(allTasks)
 
     this.activeTasks.clear()
     this.uploadingTasks.clear()
@@ -1942,6 +2047,7 @@ export class UploadService {
 
       this.db.data.tasks = []
       await this.db.write()
+      await this.cleanupPreparedTaskFiles(allTasks)
 
       this.activeTasks.clear()
       this.uploadingTasks.clear()

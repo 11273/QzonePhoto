@@ -1,7 +1,12 @@
-import { dialog } from 'electron'
+import { app, dialog } from 'electron'
 import { getFileInfo } from '@main/utils/file-processor'
 import { getVideoMetadata } from '@main/services/video-metadata'
 import { registerLocalMedia } from '@main/utils/local-media-registry'
+import {
+  getHeicUploadCacheDirectory,
+  isHeicImage,
+  prepareHeicForUpload
+} from '@main/utils/heic-converter.mjs'
 import { IPC_FILE } from '@shared/ipc-channels'
 import fs from 'fs'
 import path from 'path'
@@ -41,9 +46,19 @@ export function createFileHandlers() {
           throw new Error('文件不存在')
         }
 
+        // Chromium 并不能稳定解码 HEIC；预览与正式上传共用同一份本地 JPEG 缓存。
+        const previewPath = isHeicImage(filePath)
+          ? (
+              await prepareHeicForUpload(
+                filePath,
+                getHeicUploadCacheDirectory(app.getPath('userData'))
+              )
+            ).filePath
+          : filePath
+
         // 读取文件并转换为base64
-        const fileBuffer = fs.readFileSync(filePath)
-        const ext = path.extname(filePath).toLowerCase()
+        const fileBuffer = await fs.promises.readFile(previewPath)
+        const ext = path.extname(previewPath).toLowerCase()
 
         let mimeType = 'image/jpeg'
         switch (ext) {
