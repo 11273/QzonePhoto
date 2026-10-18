@@ -1,3 +1,5 @@
+import { classifyContentLoadFailure } from '../../../shared/content-load-state.js'
+
 const itemId = (item) =>
   String(item?.id || [item?.uin, item?.time, item?.text].filter(Boolean).join('\u001f'))
 
@@ -105,11 +107,14 @@ export const canExpandFeedComments = (feed, slot) =>
     Number(feed?.cmtCount) > 0
   )
 
-export const interactionFailureHint = (kind, error) => {
-  const reason = String(error?.message || '')
-  return /无权|权限|私密|未授权|禁止|permission|forbidden|unauthorized|\b403\b/i.test(reason)
-    ? `当前账号暂时无法查看全部${kind}`
-    : `${kind}加载失败`
+export const interactionFailureHint = (kind, error, { friendMode = false } = {}) => {
+  return classifyContentLoadFailure(error, { label: kind, friendMode }).description
+}
+
+const responseFailure = (response, fallback) => {
+  const error = new Error(response?.message || fallback)
+  if (response?.code !== undefined) error.code = response.code
+  return error
 }
 
 const moreFlag = (value) => {
@@ -132,7 +137,7 @@ export async function collectAllLikers({ initial = [], expected = 0, requestPage
     if (cursors.has(cursor)) break
     cursors.add(cursor)
     const response = await requestPage(cursor)
-    if (Number(response?.code) !== 0) throw new Error(response?.message || '点赞者加载失败')
+    if (Number(response?.code) !== 0) throw responseFailure(response, '点赞者加载失败')
     const items = mergeLikers([], response?.likers || [])
     likers = mergeLikers(likers, items)
     total = Math.max(total, Number(response?.total) || 0)
@@ -175,7 +180,7 @@ export async function collectAllComments({
   let stagnantPages = 0
   for (let page = 0; page < 1000; page += 1) {
     const response = await requestPage(page * pageSize, pageSize)
-    if (Number(response?.code) !== 0) throw new Error(response?.message || '评论加载失败')
+    if (Number(response?.code) !== 0) throw responseFailure(response, '评论加载失败')
     const items = Array.isArray(response?.comments) ? response.comments : []
     const signature = items.map(itemId).join('\u001e')
     if (page > 0 && items.length && signature === previousPage) {

@@ -3,11 +3,50 @@ import request from '@main/api/utils/request'
 import { parseSetCookie } from '@main/utils'
 import { buildPhotoDeleteCodelist, normalizeAlbumPrivacy } from '@shared/photo-delete'
 import { buildQzoneBlogListParams } from '@shared/qzone-blog-query'
+import { normalizeQzoneReadResponse } from '@shared/qzone-read-response'
 
 // Extract raw QQ number from cookie uin (strip "o" prefix)
 const rawUin = (uin) => String(uin).replace(/^o/, '')
 
 const cleanArray = (items) => (Array.isArray(items) ? items : []).filter(Boolean)
+const isRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value))
+const responseCode = (...values) => {
+  const candidates = values
+    .flatMap((value) =>
+      isRecord(value)
+        ? [value.code, value.ret, value.subcode, value.errno, value.errorCode]
+        : [value]
+    )
+    .filter((value) => value !== undefined && value !== null && value !== '')
+  const failed = candidates.find((value) => Number.isFinite(Number(value)) && Number(value) !== 0)
+  if (failed !== undefined) return Number(failed)
+  const successful = candidates.find((value) => Number.isFinite(Number(value)))
+  return successful === undefined ? 0 : Number(successful)
+}
+const responseMessage = (...values) =>
+  values
+    .flatMap((value) =>
+      isRecord(value)
+        ? [
+            value.message,
+            value.msg,
+            value.retmsg,
+            value.errmsg,
+            value.err,
+            value.reason,
+            value.detail,
+            value.error_description,
+            value.errorMessage,
+            value.protect_content,
+            value.protectContent
+          ]
+        : []
+    )
+    .find((value) => typeof value === 'string' && value.trim()) || ''
+const invalidContentResponse = (label) => ({
+  code: -1,
+  message: `QQ 空间返回的${label}数据不完整`
+})
 
 const hasMoreFlag = (value) => {
   if (typeof value === 'boolean') return value
@@ -59,8 +98,30 @@ const attachHomeFeedHtml = (feeds, html = '') => {
 }
 
 const normalizeHomeFeedsPayload = (payload, html = '', fallbackPager = {}) => {
-  const body = payload || {}
-  const data = body.data || {}
+  const start = Number(fallbackPager.start || 0)
+  const count = Number(fallbackPager.count || 10)
+  if (!isRecord(payload)) {
+    return {
+      ...invalidContentResponse('主页动态'),
+      hasMore: false,
+      pager: { start, count },
+      feeds: []
+    }
+  }
+  const body = payload
+  const code = responseCode(body)
+  const data = isRecord(body.data) ? body.data : null
+  if (code !== 0 || !data) {
+    return {
+      ...(data ? {} : invalidContentResponse('主页动态')),
+      code: code !== 0 ? code : -1,
+      message:
+        responseMessage(body, data) || (data ? '' : invalidContentResponse('主页动态').message),
+      hasMore: false,
+      pager: { start, count },
+      feeds: []
+    }
+  }
   const main = data.main || {}
   const feeds = cleanArray([
     ...cleanArray(data.host_data),
@@ -70,13 +131,11 @@ const normalizeHomeFeedsPayload = (payload, html = '', fallbackPager = {}) => {
     ...cleanArray(data.data)
   ])
   const withHtml = attachHomeFeedHtml(feeds, html)
-  const start = Number(fallbackPager.start || 0)
-  const count = Number(fallbackPager.count || 10)
   const nextOffset = Number(main.offset)
   const hasMore = hasMoreFlag(main.hasMoreFeeds) || hasMoreFlag(main.hasMoreFeeds_0)
   return {
-    code: body.code === '' ? 0 : Number(body.code ?? 0),
-    message: body.message || '',
+    code,
+    message: responseMessage(body, data),
     hasMore,
     pager: {
       start:
@@ -287,7 +346,22 @@ export async function cgi_video_get_data(
       Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '视频列表',
+    isValid: (body) => {
+      const data = body?.data
+      if (!isRecord(data)) return false
+      if (Array.isArray(data.Videos) || Array.isArray(data.videos)) return true
+      return Number(data.total ?? data.Total ?? data.videoCount) === 0
+    },
+    normalize: (body) => ({
+      ...body,
+      data: {
+        ...body.data,
+        Videos: cleanArray(body.data.Videos ?? body.data.videos)
+      }
+    })
+  })
 }
 
 /**
@@ -385,7 +459,10 @@ export async function feeds2_html_picfeed_qqtab(uin, p_skey, hostUin, begintime 
     }
   })
 
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '照片动态',
+    isValid: (body) => isRecord(body?.data) && Array.isArray(body.data.feeds)
+  })
 }
 
 /**
@@ -445,10 +522,14 @@ export async function emotion_cgi_ic_getcomments(uin, p_skey, feedRef = {}) {
   })
   // axios interceptor 解 frameElement.callback 后：
   //   { ret, needVerify, err, msg, result: { feeds: <HTML>, ... } }
-  const body2 = response.data || {}
+  const body2 = response.data
+  if (!isRecord(body2)) {
+    return { ...invalidContentResponse('评论'), feedsHtml: '' }
+  }
+  const code = responseCode(body2, body2.result)
   return {
-    code: body2.ret ?? body2.code ?? 0,
-    message: body2.msg || body2.message || '',
+    code,
+    message: responseMessage(body2, body2.result, body2.data),
     feedsHtml: body2.result?.feeds || body2.data?.feeds || ''
   }
 }
@@ -487,8 +568,18 @@ export async function get_like_list_app(uin, p_skey, feedRef = {}) {
       }
     }
   )
-  const body = response.data || {}
-  const data = body.data || {}
+  const body = response.data
+  if (!isRecord(body)) {
+    return {
+      ...invalidContentResponse('点赞者'),
+      total: 0,
+      likers: [],
+      nextCursor: cursor,
+      hasMore: false
+    }
+  }
+  const code = responseCode(body)
+  const data = isRecord(body.data) ? body.data : {}
   const likers = cleanArray(data.like_uin_info)
     .map((item) => ({
       uin: String(item.fuin || item.uin || ''),
@@ -496,8 +587,8 @@ export async function get_like_list_app(uin, p_skey, feedRef = {}) {
     }))
     .filter((item) => /^\d+$/.test(item.uin))
   return {
-    code: Number(body.code ?? body.ret ?? 0),
-    message: body.message || body.msg || '',
+    code,
+    message: responseMessage(body, data),
     total: Number(data.total_number ?? body.total_number ?? 0) || 0,
     likers,
     nextCursor: likers.at(-1)?.uin || cursor,
@@ -537,15 +628,19 @@ export async function emotion_cgi_getcmtreply_v6(uin, p_skey, feedRef = {}) {
       }
     }
   )
-  const body = response.data || {}
-  const data = body.data || {}
+  const body = response.data
+  if (!isRecord(body)) {
+    return { ...invalidContentResponse('评论'), comments: [], total: 0, hasMore: false }
+  }
+  const code = responseCode(body)
+  const data = isRecord(body.data) ? body.data : {}
   const comments =
     [body.commentlist, body.comments, data.commentList, data.commentlist, data.comments].find(
       Array.isArray
     ) || []
   return {
-    code: Number(body.code ?? body.ret ?? 0),
-    message: body.message || body.msg || '',
+    code,
+    message: responseMessage(body, data),
     comments,
     total: Number(data.total ?? data.commentnum ?? body.total ?? 0) || 0,
     hasMore: data.hasMore ?? data.has_more ?? data.hasmore ?? null
@@ -618,13 +713,34 @@ export async function feeds3_html_more(uin, p_skey, hostUin, pager = {}) {
   // axios 全局 interceptor 已经把 _Callback({...}) 解包成 object，并把
   // 内部 JS object literal 也 eval 过了。data 长这样：
   //   { code, subcode, message, data: { main: {...}, data: [...] } }
-  const body = response.data || {}
-  const inner = body.data || {}
+  const body = response.data
+  if (!isRecord(body)) {
+    return {
+      ...invalidContentResponse('动态'),
+      hasMore: false,
+      pager: { pagenum, begintime: 0, externparam: '', dayspac: 0 },
+      feeds: []
+    }
+  }
+  const code = responseCode(body)
+  const inner = isRecord(body.data) ? body.data : null
+  if (code !== 0 || !inner) {
+    return {
+      ...(inner ? {} : invalidContentResponse('动态')),
+      code: code !== 0 ? code : -1,
+      message:
+        responseMessage(body, inner) || (inner ? '' : invalidContentResponse('动态').message),
+      hasMore: false,
+      pager: { pagenum, begintime: 0, externparam: '', dayspac: 0 },
+      feeds: []
+    }
+  }
   const main = inner.main || {}
   const list = Array.isArray(inner.data) ? inner.data : []
 
   return {
-    code: body.code ?? 0,
+    code,
+    message: responseMessage(body, inner),
     hasMore: hasMoreFlag(main.hasMoreFeeds),
     pager: {
       pagenum: Number.isFinite(Number(main.pagenum)) ? Number(main.pagenum) : pagenum + 1,
@@ -872,7 +988,10 @@ export async function feeds2_html_picfeed(uin, p_skey, start = 0, count = 20, be
       Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '好友照片',
+    isValid: (body) => isRecord(body?.data) && Array.isArray(body.data.photos)
+  })
 }
 
 /**
@@ -904,7 +1023,14 @@ export async function cgi_get_visitor_simple(uin, p_skey, hostUin, albumId) {
       Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '相册访客',
+    isValid: (body) =>
+      isRecord(body?.data) &&
+      (Array.isArray(body.data.modvisitcount) ||
+        Array.isArray(body.data.items) ||
+        Array.isArray(body.data.calvisitcount))
+  })
 }
 
 export async function cgi_get_albuminfo_v2(uin, p_skey, hostUin, albumId) {
@@ -950,10 +1076,18 @@ export async function cgi_get_feeds_count(uin, p_skey, hostUin) {
     }
   })
   // axios interceptor 已解 callback({...})
-  const body = response.data || {}
+  const body = response.data
+  if (!isRecord(body)) {
+    return { ...invalidContentResponse('动态计数'), counts: {} }
+  }
+  const code = responseCode(body)
+  const counts = isRecord(body.data) ? body.data : null
   return {
-    code: body.code ?? 0,
-    counts: body.data || {}
+    ...(counts ? {} : invalidContentResponse('动态计数')),
+    code: code !== 0 ? code : counts ? 0 : -1,
+    message:
+      responseMessage(body, counts) || (counts ? '' : invalidContentResponse('动态计数').message),
+    counts: counts || {}
   }
 }
 
@@ -989,12 +1123,34 @@ export async function feeds2_html_pav_all(uin, p_skey, hostUin, pager = {}) {
       Referer: `https://user.qzone.qq.com/${hostUin || rawUin(uin)}`
     }
   })
-  const body = response.data || {}
-  const inner = body.data || {}
+  const body = response.data
+  if (!isRecord(body)) {
+    return {
+      ...invalidContentResponse('与我相关动态'),
+      hasMore: false,
+      pager: { offset, hostMore: '' },
+      feeds: []
+    }
+  }
+  const code = responseCode(body)
+  const inner = isRecord(body.data) ? body.data : null
+  if (code !== 0 || !inner) {
+    return {
+      ...(inner ? {} : invalidContentResponse('与我相关动态')),
+      code: code !== 0 ? code : -1,
+      message:
+        responseMessage(body, inner) ||
+        (inner ? '' : invalidContentResponse('与我相关动态').message),
+      hasMore: false,
+      pager: { offset, hostMore: '' },
+      feeds: []
+    }
+  }
   const main = inner.main || {}
   const list = Array.isArray(inner.data) ? inner.data : []
   return {
-    code: body.code ?? 0,
+    code,
+    message: responseMessage(body, inner),
     hasMore: hasMoreFlag(main.hasMoreFeeds),
     pager: {
       offset:
@@ -1044,10 +1200,30 @@ export async function get_fav_list(uin, p_skey, opts = {}) {
       Host: 'user.qzone.qq.com'
     }
   })
-  const body = response.data || {}
-  const data = body.data && typeof body.data === 'object' ? body.data : body
+  const body = response.data
+  if (!isRecord(body)) {
+    return { ...invalidContentResponse('收藏'), total: 0, typeCounts: {}, favList: [] }
+  }
+  const code = responseCode(body)
+  const data = isRecord(body.data) ? body.data : body
+  const hasFavoriteShape = ['fav_list', 'total_num', 'type_num', 'typeNum'].some((key) =>
+    Object.prototype.hasOwnProperty.call(data, key)
+  )
+  if (code !== 0 || !hasFavoriteShape) {
+    return {
+      ...(hasFavoriteShape ? {} : invalidContentResponse('收藏')),
+      code: code !== 0 ? code : -1,
+      message:
+        responseMessage(body, data) ||
+        (hasFavoriteShape ? '' : invalidContentResponse('收藏').message),
+      total: 0,
+      typeCounts: {},
+      favList: []
+    }
+  }
   return {
-    code: body.code ?? 0,
+    code,
+    message: responseMessage(body, data),
     total: Number(data.total_num) || 0,
     typeCounts: data.type_num ?? data.typeNum ?? {},
     favList: Array.isArray(data.fav_list) ? data.fav_list : []
@@ -1079,8 +1255,23 @@ export async function feeds2_html_today_lastyear(uin, p_skey, opts = {}) {
       Referer: `https://user.qzone.qq.com/${rawUin(uin)}`
     }
   })
-  const body = response.data || {}
-  const inner = body.data || {}
+  const body = response.data
+  if (!isRecord(body)) {
+    return { ...invalidContentResponse('那年今日'), hasMore: false, emptyHint: '', feeds: [] }
+  }
+  const code = responseCode(body)
+  const inner = isRecord(body.data) ? body.data : null
+  if (code !== 0 || !inner) {
+    return {
+      ...(inner ? {} : invalidContentResponse('那年今日')),
+      code: code !== 0 ? code : -1,
+      message:
+        responseMessage(body, inner) || (inner ? '' : invalidContentResponse('那年今日').message),
+      hasMore: false,
+      emptyHint: '',
+      feeds: []
+    }
+  }
   const main = inner.main || {}
   const list = [
     ...(Array.isArray(inner.data) ? inner.data : []),
@@ -1090,7 +1281,8 @@ export async function feeds2_html_today_lastyear(uin, p_skey, opts = {}) {
     ...(Array.isArray(inner.firstpage_data) ? inner.firstpage_data : [])
   ].filter((item) => item && typeof item === 'object' && item.html)
   return {
-    code: body.code ?? 0,
+    code,
+    message: responseMessage(body, inner),
     hasMore: hasMoreFlag(main.hasMoreFeeds_0) || hasMoreFlag(main.hasMoreFeeds_1),
     emptyHint: main.friend_more || main.host_more || '',
     feeds: list
@@ -1132,12 +1324,42 @@ export async function get_msgb(uin, p_skey, hostUin, opts = {}) {
       Referer: `https://user.qzone.qq.com/${targetUin}`
     }
   })
-  const body = response.data || {}
-  const data = body.data || {}
+  const body = response.data
+  if (!isRecord(body)) {
+    return {
+      ...invalidContentResponse('留言板'),
+      total: 0,
+      auditNum: 0,
+      auditON: false,
+      authorInfo: {},
+      start,
+      num,
+      hasMore: false,
+      comments: []
+    }
+  }
+  const code = responseCode(body)
+  const data = isRecord(body.data) ? body.data : null
+  if (code !== 0 || !data) {
+    return {
+      ...(data ? {} : invalidContentResponse('留言板')),
+      code: code !== 0 ? code : -1,
+      message:
+        responseMessage(body, data) || (data ? '' : invalidContentResponse('留言板').message),
+      total: 0,
+      auditNum: 0,
+      auditON: false,
+      authorInfo: {},
+      start,
+      num,
+      hasMore: false,
+      comments: []
+    }
+  }
   const comments = Array.isArray(data.commentList) ? data.commentList : []
   return {
-    code: Number(body.code ?? 0),
-    message: body.message || '',
+    code,
+    message: responseMessage(body, data),
     total: Number(data.total) || 0,
     auditNum: Number(data.auditNum) || 0,
     auditON: !!data.auditON,
@@ -1173,13 +1395,40 @@ export async function get_blog_list(uin, p_skey, hostUin, opts = {}) {
       Referer: `https://user.qzone.qq.com/${targetUin}/myhome/blog`
     }
   })
-  const body = extractJSONFromCallback(response.data) || {}
-  const data = body.data && typeof body.data === 'object' ? body.data : {}
+  const body = extractJSONFromCallback(response.data)
+  if (!isRecord(body)) {
+    return {
+      ...invalidContentResponse('日志'),
+      total: 0,
+      pos,
+      num,
+      hasMore: false,
+      blogs: [],
+      categories: [],
+      months: []
+    }
+  }
+  const code = responseCode(body)
+  const data = isRecord(body.data) ? body.data : null
+  if (code !== 0 || !data) {
+    return {
+      ...(data ? {} : invalidContentResponse('日志')),
+      code: code !== 0 ? code : -1,
+      message: responseMessage(body, data) || (data ? '' : invalidContentResponse('日志').message),
+      total: 0,
+      pos,
+      num,
+      hasMore: false,
+      blogs: [],
+      categories: [],
+      months: []
+    }
+  }
   const list = Array.isArray(data.list) ? data.list : []
   const total = Number(data.blog_num ?? data.total ?? data.totalNum) || 0
   return {
-    code: Number(body.code ?? 0),
-    message: body.message || '',
+    code,
+    message: responseMessage(body, data),
     total,
     pos,
     num,

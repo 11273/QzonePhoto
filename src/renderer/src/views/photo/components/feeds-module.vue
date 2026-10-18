@@ -90,11 +90,11 @@
             :icon="MessageCircle"
             :title="emptyStateTitle"
             :description="emptyStateDesc"
-            :semantic-role="loadError ? 'alert' : 'status'"
-            :aria-live="loadError ? 'assertive' : 'polite'"
+            :semantic-role="failureStateIsError ? 'alert' : 'status'"
+            :aria-live="failureStateIsError ? 'assertive' : 'polite'"
           />
           <button
-            v-if="loadError && !loadPermissionDenied"
+            v-if="loadFailureState?.retryable"
             type="button"
             class="fm-retry-btn"
             @click="handleRefresh"
@@ -205,7 +205,13 @@
             <el-icon class="is-loading"><Loading /></el-icon>
             加载更多留言…
           </div>
-          <div v-else-if="!hasMore" class="fm-end">没有更多留言了</div>
+          <ContentPartialNotice
+            v-else-if="loadFailureState && filteredFeeds.length > 0"
+            :state="loadFailureState"
+            :title="`${activeSourceTitle}只显示了已经读取的内容`"
+            @retry="loadPage()"
+          />
+          <div v-else-if="!hasMore" class="fm-end">已加载全部留言</div>
         </template>
 
         <template v-else>
@@ -632,7 +638,13 @@
             <el-icon class="is-loading"><Loading /></el-icon>
             加载更多…
           </div>
-          <div v-else-if="!hasMore" class="fm-end">没有更多了</div>
+          <ContentPartialNotice
+            v-else-if="loadFailureState && filteredFeeds.length > 0"
+            :state="loadFailureState"
+            :title="`${activeSourceTitle}只显示了已经读取的内容`"
+            @retry="loadPage()"
+          />
+          <div v-else-if="!hasMore" class="fm-end">已加载全部内容</div>
         </template>
       </div>
     </el-scrollbar>
@@ -660,6 +672,7 @@ import HoverVideoPreview from '@renderer/components/HoverVideoPreview/index.vue'
 import AppActionButton from '@renderer/components/AppActionButton/index.vue'
 import AppRefreshButton from '@renderer/components/AppRefreshButton/index.vue'
 import ModuleHeader from '@renderer/components/ModuleHeader/index.vue'
+import ContentPartialNotice from '@renderer/components/ContentPartialNotice/index.vue'
 import {
   MessageCircle,
   Repeat2,
@@ -726,7 +739,7 @@ import {
   finishDownloadBatch,
   openDownloadBatchOptions
 } from '@renderer/utils/downloadBatch'
-import { classifyContentLoadFailure } from '@shared/content-load-state'
+import { CONTENT_LOAD_STATUS, classifyContentLoadFailure } from '@shared/content-load-state'
 import { feedMutationErrorText, feedMutationResult } from '@renderer/utils/feed-mutations.mjs'
 
 const userStore = useUserStore()
@@ -764,7 +777,7 @@ const sources = computed(() =>
       countKey: 'myFeeds_new_cnt',
       emptyTitle: isFriendContext.value ? '暂时看不到好友主页动态' : '我的主页还没有动态',
       emptyDesc: isFriendContext.value
-        ? '可能是权限限制，或 TA 最近没有公开说说'
+        ? '当前账号没有读取到可见动态；可能近期没有内容，也可能受 QQ 空间可见范围限制'
         : '发表说说后会在这里展示',
       kind: 'html',
       initialPager: () => ({ start: 0, count: PAGE_SIZE }),
@@ -783,8 +796,8 @@ const sources = computed(() =>
       label: '好友动态',
       icon: Users,
       countKey: 'friendFeeds_new_cnt',
-      emptyTitle: '还没有好友动态',
-      emptyDesc: '好友的说说 / 相册 / 日志会在这里展示',
+      emptyTitle: '当前没有读取到好友动态',
+      emptyDesc: '可能近期没有新内容，也可能部分动态不在当前账号的可见范围',
       initialPager: () => ({ pagenum: 1, begintime: 0, externparam: 'undefined', dayspac: 0 }),
       load: (p) =>
         window.QzoneAPI.getFriendFeeds({
@@ -801,8 +814,8 @@ const sources = computed(() =>
       label: '特别关心',
       icon: Star,
       countKey: 'specialCareFeeds_new_cnt',
-      emptyTitle: '没有特别关心的动态',
-      emptyDesc: '在 QQ 空间网页端把好友加入「特别关心」即可在此查看',
+      emptyTitle: '当前没有读取到特别关心动态',
+      emptyDesc: '可能尚未设置特别关心、近期没有新内容，或相关动态当前不可见',
       initialPager: () => ({ pagenum: 1, begintime: 0, externparam: 'undefined', dayspac: 0 }),
       load: (p) =>
         window.QzoneAPI.getFriendFeeds({
@@ -819,8 +832,8 @@ const sources = computed(() =>
       label: '与我相关',
       icon: AtSign,
       countKey: 'aboutHostFeeds_new_cnt',
-      emptyTitle: '近期没有人提到你',
-      emptyDesc: '别人评论、点赞、@ 你的动态会在这里聚合',
+      emptyTitle: '近期没有读取到与我相关的内容',
+      emptyDesc: '评论、点赞、@ 等记录会在这里聚合；已删除或不可见的记录不会显示',
       initialPager: () => ({ offset: 0 }),
       load: (p) =>
         window.QzoneAPI.getAboutMeFeeds({
@@ -834,7 +847,7 @@ const sources = computed(() =>
       icon: History,
       countKey: null,
       emptyTitle: '那年今日还没有内容',
-      emptyDesc: '去年的今天，你和朋友们都很安静呢',
+      emptyDesc: '没有读取到可见的往年今日内容；可能当日没有动态，或内容已不在当前可见范围',
       initialPager: () => ({
         done: false,
         year: new Date().getFullYear() - 1,
@@ -847,6 +860,7 @@ const sources = computed(() =>
         const count = p.count || PAGE_SIZE
         while (year >= LAST_YEAR_MIN) {
           const res = await window.QzoneAPI.getLastYearFeeds({ year, count, mode })
+          if (!res || Number(res.code) !== 0) return res
           if (res?.feeds?.length || year === LAST_YEAR_MIN) {
             return { ...res, pager: { year, count, mode } }
           }
@@ -896,7 +910,7 @@ const sources = computed(() =>
       countKey: null,
       emptyTitle: isFriendContext.value ? '暂时看不到好友日志' : '还没有日志',
       emptyDesc: isFriendContext.value
-        ? '可能是权限限制，或 TA 没有公开日志'
+        ? '当前账号没有读取到可见日志；可能尚未发布，也可能受 QQ 空间可见范围限制'
         : '在 QQ 空间发布的日志会在这里展示摘要',
       kind: 'blog',
       initialPager: () => ({ pos: 0, num: 15, total: 0 }),
@@ -915,8 +929,10 @@ const sources = computed(() =>
       label: '留言板',
       icon: MessagesSquare,
       countKey: null,
-      emptyTitle: '留言板还没有内容',
-      emptyDesc: '公开或仅彼此可见的留言会在这里按楼层展示',
+      emptyTitle: isFriendContext.value ? '暂时看不到好友留言' : '留言板还没有内容',
+      emptyDesc: isFriendContext.value
+        ? '当前账号没有读取到可见留言；可能尚无留言，也可能受留言可见范围限制'
+        : '公开或仅彼此可见的留言会在这里按楼层展示',
       kind: 'messageBoard',
       initialPager: () => ({ start: 0, num: PAGE_SIZE, total: 0 }),
       load: (p) =>
@@ -951,23 +967,15 @@ const activeSourceTitle = computed(() =>
     : activeSource.value.label
 )
 const emptyStateTitle = computed(() =>
-  loadError.value
-    ? loadPermissionDenied.value
-      ? `暂时无法查看${activeSourceTitle.value}`
-      : `${activeSourceTitle.value}加载失败`
+  loadFailureState.value
+    ? loadFailureState.value.title
     : activeKey.value === 'fav' && favoriteType.value !== 0
       ? `还没有${activeFavoriteFilter.value.label}收藏`
       : activeSource.value.emptyTitle
 )
 const emptyStateDesc = computed(() =>
-  loadError.value
-    ? loadPermissionDenied.value
-      ? /登录|未登录/.test(loadError.value)
-        ? '登录状态已失效，请重新登录后再试。'
-        : isFriendContext.value
-          ? '当前账号没有权限查看这部分内容，其他公开内容仍可继续浏览。'
-          : '当前账号暂时无法查看这部分内容。'
-      : '暂时没有成功读取内容，请稍后重新加载。'
+  loadFailureState.value
+    ? loadFailureState.value.description
     : activeKey.value === 'fav' && favoriteType.value !== 0
       ? '可以切换其他分类，或回到「全部」查看收藏'
       : activeSource.value.emptyDesc
@@ -990,7 +998,10 @@ const badgeCount = (key) => {
 const loading = ref(false)
 const loadingMore = ref(false)
 const hasMore = ref(true)
-const loadError = ref('')
+const loadFailureState = ref(null)
+const failureStateIsError = computed(
+  () => loadFailureState.value?.status === CONTENT_LOAD_STATUS.ERROR
+)
 const loadRetryAfter = ref(0)
 const scrollbarRef = ref(null)
 const requestSeq = ref(0)
@@ -1179,7 +1190,9 @@ const fetchLikerPage = (feed, beginUin = '0') => {
           authOption
         )
         if (Number(result?.code) !== 0) {
-          throw new Error(result?.message || '点赞者加载失败')
+          const error = new Error(result?.message || '点赞者加载失败')
+          error.code = result?.code
+          throw error
         }
         return result
       },
@@ -1262,7 +1275,11 @@ const ensureLikers = async (feed, retry = false) => {
       }
       return result.complete
     } catch (error) {
-      if (loadSeq === requestSeq.value) slot.error = interactionFailureHint('点赞者', error)
+      if (loadSeq === requestSeq.value) {
+        slot.error = interactionFailureHint('点赞者', error, {
+          friendMode: isFriendContext.value
+        })
+      }
       return false
     } finally {
       if (loadSeq === requestSeq.value) slot.loading = false
@@ -1391,7 +1408,11 @@ const fetchVisitorDirection = async (direction, { reset = false } = {}) => {
     mod: 8,
     page: nextPage
   })
-  if (!res || res.code !== 0) throw new Error(res?.message || '完整访客记录加载失败')
+  if (!res || res.code !== 0) {
+    const error = new Error(res?.message || '完整访客记录加载失败')
+    error.code = res?.code
+    throw error
+  }
   const normalized = (Array.isArray(res.items) ? res.items : []).map(normalizeVisitorItem)
   visitor[listKey] = reset
     ? mergeVisitorItems([], normalized)
@@ -1421,12 +1442,27 @@ const loadMoreVisitors = async (direction, { reset = false } = {}) => {
   try {
     await fetchVisitorDirection(direction, { reset })
   } catch (error) {
-    visitor[errorKey] = error?.message || '完整访客记录暂时无法加载'
+    visitor[errorKey] = classifyContentLoadFailure(error, {
+      label: direction === 'outgoing' ? '我看过谁记录' : '谁看过我记录'
+    }).description
     visitor.listError = visitor[errorKey]
   } finally {
     visitor.listLoading = false
     pushVisitorStats()
   }
+}
+
+const readSettledVisitorData = (result, label) => {
+  if (result.status === 'rejected') return { data: null, failure: result.reason }
+  const response = result.value
+  if (Number(response?.code ?? 0) !== 0) return { data: null, failure: response }
+  if (!response?.data || typeof response.data !== 'object' || Array.isArray(response.data)) {
+    return {
+      data: null,
+      failure: new Error(`QQ 空间返回的${label}数据不完整`)
+    }
+  }
+  return { data: response.data, failure: null }
 }
 
 const fetchVisitor = async () => {
@@ -1445,10 +1481,10 @@ const fetchVisitor = async () => {
       fetchVisitorDirection('incoming', { reset: true }),
       fetchVisitorDirection('outgoing', { reset: true })
     ])
-    const albumRes = albumResult.status === 'fulfilled' ? albumResult.value : null
-    const allModsRes = allModsResult.status === 'fulfilled' ? allModsResult.value : null
-    const album = albumRes?.data
-    const all = allModsRes?.data
+    const albumState = readSettledVisitorData(albumResult, '最近访客')
+    const allModsState = readSettledVisitorData(allModsResult, '访客统计')
+    const album = albumState.data
+    const all = allModsState.data
     if (album) {
       visitor.count = album.count || 0
       visitor.recent = (album.items || []).slice(0, 12).map((it) => ({
@@ -1478,18 +1514,31 @@ const fetchVisitor = async () => {
       incomingResult.status === 'fulfilled' ||
       outgoingResult.status === 'fulfilled' ||
       visitor.loaded
-    if (!album && !all) visitor.error = '访客记录暂时无法加载'
-    else if (!album) visitor.error = '最近访客暂时无法加载'
-    else if (!all) visitor.error = '访客统计暂时无法加载'
+    if (!album && !all) {
+      const failure = albumState.failure || allModsState.failure
+      visitor.error = classifyContentLoadFailure(failure, { label: '访客记录' }).description
+    } else if (!album) {
+      visitor.error = classifyContentLoadFailure(albumState.failure, {
+        label: '最近访客'
+      }).description
+    } else if (!all) {
+      visitor.error = classifyContentLoadFailure(allModsState.failure, {
+        label: '访客统计'
+      }).description
+    }
     if (incomingResult.status === 'rejected') {
-      visitor.incomingError = incomingResult.reason?.message || '“谁看过我”记录暂时无法加载'
+      visitor.incomingError = classifyContentLoadFailure(incomingResult.reason, {
+        label: '谁看过我记录'
+      }).description
     }
     if (outgoingResult.status === 'rejected') {
-      visitor.outgoingError = outgoingResult.reason?.message || '“我看过谁”记录暂时无法加载'
+      visitor.outgoingError = classifyContentLoadFailure(outgoingResult.reason, {
+        label: '我看过谁记录'
+      }).description
     }
     visitor.listError = visitor.incomingError || visitor.outgoingError
-  } catch {
-    visitor.error = '访客记录暂时无法加载'
+  } catch (error) {
+    visitor.error = classifyContentLoadFailure(error, { label: '访客记录' }).description
   } finally {
     visitor.loading = false
     pushVisitorStats()
@@ -2981,6 +3030,12 @@ const shouldLoadComments = (feed) =>
   feed?.commentsFetchable !== false &&
   (isShuoshuoFeed(feed) || Number(feed.cmtCount) > 0 || (feed.inlineComments || []).length > 0)
 
+const feedResponseError = (result, fallback) => {
+  const error = new Error(result?.message || fallback)
+  if (result?.code !== undefined) error.code = result.code
+  return error
+}
+
 const loadShuoshuoComments = async (feed, initial, authOption, onPage) => {
   return collectAllComments({
     initial,
@@ -2999,7 +3054,7 @@ const loadShuoshuoComments = async (feed, initial, authOption, onPage) => {
             },
             authOption
           )
-          if (Number(result?.code) !== 0) throw new Error(result?.message || '评论加载失败')
+          if (Number(result?.code) !== 0) throw feedResponseError(result, '评论加载失败')
           return result
         },
         { attempts: 2, delayMs: 350 }
@@ -3030,7 +3085,7 @@ const loadHtmlFeedComments = async (feed, initial, authOption, onPage) => {
           },
           authOption
         )
-        if (Number(result?.code) !== 0) throw new Error(result?.message || '评论加载失败')
+        if (Number(result?.code) !== 0) throw feedResponseError(result, '评论加载失败')
         return result
       },
       { attempts: 2, delayMs: 350 }
@@ -3119,7 +3174,9 @@ const expandMoreComments = async (feed) => {
       if (loadSeq === requestSeq.value) {
         slot.comments = slot.comments?.length ? slot.comments : comments
         slot.expanded = false
-        slot.error = `${interactionFailureHint('评论', error)}，请重试`
+        slot.error = `${interactionFailureHint('评论', error, {
+          friendMode: isFriendContext.value
+        })}，请重试`
       }
     } finally {
       if (loadSeq === requestSeq.value) slot.loading = false
@@ -3328,7 +3385,7 @@ const resetFeedRuntime = (source) => {
   blogTotal.value = 0
   pager.value = source.initialPager()
   hasMore.value = true
-  loadError.value = ''
+  loadFailureState.value = null
   loadRetryAfter.value = 0
   notifiedLoadErrors.clear()
   pageGuard.reset()
@@ -3346,30 +3403,25 @@ const resetFeedRuntime = (source) => {
   pushStats()
 }
 
-const isPermanentLoadError = (message) =>
-  /保密|权限|没有权限|无权|主人设置|访问受限|仅主人|登录|请先登录|未登录/.test(
-    String(message || '')
-  )
-const loadPermissionDenied = computed(() => isPermanentLoadError(loadError.value))
-
-const notifyLoadErrorOnce = (source, message) => {
-  const key = `${source.key}:${activeHostUin.value || ''}:${message}`
+const notifyLoadErrorOnce = (source, state) => {
+  const key = `${source.key}:${activeHostUin.value || ''}:${state.reason}:${state.description}`
   if (notifiedLoadErrors.has(key)) return
   notifiedLoadErrors.add(key)
-  ElMessage.error({
-    message: `加载${source.label}失败：${message}`,
+  ElMessage({
+    type: state.status === CONTENT_LOAD_STATUS.FORBIDDEN ? 'warning' : 'error',
+    message: `${source.label}：${state.description}`,
     grouping: true
   })
 }
 
-const handleLoadFailure = (source, message, pageKey = '') => {
-  const safeMessage = classifyContentLoadFailure(message || '响应异常', {
+const handleLoadFailure = (source, failure, pageKey = '') => {
+  const state = classifyContentLoadFailure(failure || '响应异常', {
     label: source.label,
     friendMode: isFriendContext.value
-  }).description
-  loadError.value = safeMessage
-  notifyLoadErrorOnce(source, safeMessage)
-  if (isPermanentLoadError(safeMessage)) {
+  })
+  loadFailureState.value = state
+  notifyLoadErrorOnce(source, state)
+  if (!state.retryable) {
     hasMore.value = false
     return false
   }
@@ -3403,12 +3455,11 @@ const loadPage = async ({ reset = false } = {}) => {
   try {
     const res = await source.load(pager.value)
     if (!isCurrentLoad()) return
-    const ok =
-      source.kind === 'shuoshuo' ? Array.isArray(res?.msglist) || res?.code === 0 : res?.code === 0
+    const ok = Number(res?.code ?? 0) === 0
     if (!res || !ok) {
-      return handleLoadFailure(source, res?.message || '响应异常', pageKey)
+      return handleLoadFailure(source, res || { message: 'QQ 空间响应异常' }, pageKey)
     }
-    loadError.value = ''
+    loadFailureState.value = null
     loadRetryAfter.value = 0
     pageGuard.succeed()
     if (source.kind === 'shuoshuo') {
@@ -3556,7 +3607,7 @@ const loadPage = async ({ reset = false } = {}) => {
   } catch (e) {
     if (isCurrentLoad()) {
       console.error('[FeedsModule] 加载失败', e)
-      return handleLoadFailure(source, e.message || String(e) || '响应异常', pageKey)
+      return handleLoadFailure(source, e, pageKey)
     }
   } finally {
     if (isCurrentLoad()) {

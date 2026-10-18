@@ -28,6 +28,6 @@ test('动态加载失败不会把乱码或上游原始错误直接展示给用�
   const state = classifyContentLoadFailure('�����ͳ�����', { label: '我的日志' })
 
   assert.equal(state.title, '我的日志暂时加载失败')
-  assert.equal(state.description, '没有成功读取我的日志，请稍后重新加载。')
+  assert.match(state.description, /没有提供可识别的失败原因/)
   assert.doesNotMatch(state.description, /�/)
 })

@@ -1,3 +1,9 @@
+import {
+  CONTENT_LOAD_REASON,
+  CONTENT_LOAD_STATUS,
+  classifyContentLoadFailure
+} from './content-load-state.js'
+
 export const ALBUM_LOAD_STATUS = Object.freeze({
   IDLE: 'idle',
   LOADING: 'loading',
@@ -13,22 +19,22 @@ const readErrorMessage = (value) => {
   return [
     value.message,
     value.msg,
+    value.retmsg,
+    value.errmsg,
     value.error?.message,
     value.detail?.message,
     value.data?.message,
-    value.data?.msg
+    value.data?.msg,
+    value.data?.retmsg,
+    value.data?.errmsg,
+    value.data?.protect_content,
+    value.data?.protectContent,
+    value.protect_content,
+    value.protectContent
   ]
     .filter(Boolean)
     .map(String)
     .join(' ')
-}
-
-const readErrorCode = (value) => {
-  if (!value || typeof value !== 'object') return ''
-  const codes = [value.code, value.error?.code, value.detail?.code, value.data?.code].filter(
-    (code) => code !== undefined && code !== null && code !== ''
-  )
-  return String(codes.find((code) => Number(code) !== 0) ?? codes[0] ?? '')
 }
 
 export const createAlbumLoadState = (status = ALBUM_LOAD_STATUS.IDLE, options = {}) => {
@@ -38,24 +44,27 @@ export const createAlbumLoadState = (status = ALBUM_LOAD_STATUS.IDLE, options = 
     case ALBUM_LOAD_STATUS.LOADING:
       return {
         status,
+        reason: 'loading',
         title: '正在读取相册',
         description: '请稍候，正在从 QQ 空间获取相册列表。',
         retryable: false
       }
     case ALBUM_LOAD_STATUS.READY:
-      return { status, title: '', description: '', retryable: false }
+      return { status, reason: 'ready', title: '', description: '', retryable: false }
     case ALBUM_LOAD_STATUS.EMPTY:
       return {
         status,
+        reason: CONTENT_LOAD_REASON.EMPTY,
         title: '这里还没有可见相册',
         description: friendMode
-          ? '对方可能还没有创建相册，或暂时没有向你公开的相册。'
+          ? '当前账号没有读取到可见相册；对方可能尚未创建相册，也可能没有向你公开。'
           : '当前空间还没有相册，可以稍后再来看看。',
         retryable: false
       }
     case ALBUM_LOAD_STATUS.FORBIDDEN:
       return {
         status,
+        reason: options.reason || CONTENT_LOAD_REASON.FORBIDDEN,
         title: '暂时无法查看相册',
         description: friendMode
           ? '当前账号没有权限查看对方的相册，其他公开内容仍可继续浏览。'
@@ -65,6 +74,7 @@ export const createAlbumLoadState = (status = ALBUM_LOAD_STATUS.IDLE, options = 
     case ALBUM_LOAD_STATUS.ERROR:
       return {
         status,
+        reason: options.reason || CONTENT_LOAD_REASON.UNKNOWN,
         title: '相册暂时加载失败',
         description: options.description || '没有成功读取相册列表，请稍后重新加载。',
         retryable: options.retryable !== false
@@ -72,6 +82,7 @@ export const createAlbumLoadState = (status = ALBUM_LOAD_STATUS.IDLE, options = 
     default:
       return {
         status: ALBUM_LOAD_STATUS.IDLE,
+        reason: 'idle',
         title: '选择一个相册',
         description: '从左侧选择一个相册来查看照片。',
         retryable: false
@@ -80,41 +91,14 @@ export const createAlbumLoadState = (status = ALBUM_LOAD_STATUS.IDLE, options = 
 }
 
 export const classifyAlbumLoadFailure = (failure, { friendMode = false } = {}) => {
-  const code = readErrorCode(failure)
-  const message = readErrorMessage(failure)
-
-  if (
-    code === '403' ||
-    /没有权限|无权限|无权|访问受限|权限访问|空间权限|主人设置|禁止访问|permission|forbidden/i.test(
-      message
-    )
-  ) {
-    return createAlbumLoadState(ALBUM_LOAD_STATUS.FORBIDDEN, { friendMode })
+  const state = classifyContentLoadFailure(failure, { label: '相册', friendMode })
+  return {
+    ...state,
+    status:
+      state.status === CONTENT_LOAD_STATUS.FORBIDDEN
+        ? ALBUM_LOAD_STATUS.FORBIDDEN
+        : ALBUM_LOAD_STATUS.ERROR
   }
-
-  if (code === '401' || /登录态|登录状态|未登录|请先登录|登录过期/i.test(message)) {
-    return createAlbumLoadState(ALBUM_LOAD_STATUS.ERROR, {
-      description: '登录状态已失效，请重新登录后再试。',
-      retryable: false,
-      friendMode
-    })
-  }
-
-  if (/timeout|timed out|网络|network|ECONN|ENOTFOUND/i.test(message)) {
-    return createAlbumLoadState(ALBUM_LOAD_STATUS.ERROR, {
-      description: '网络连接不稳定，请检查网络后重新加载。',
-      friendMode
-    })
-  }
-
-  if (code === '500' || /status code 5\d\d|服务器错误|服务异常/i.test(message)) {
-    return createAlbumLoadState(ALBUM_LOAD_STATUS.ERROR, {
-      description: 'QQ 空间暂时没有返回相册数据，请稍后重新加载。',
-      friendMode
-    })
-  }
-
-  return createAlbumLoadState(ALBUM_LOAD_STATUS.ERROR, { friendMode })
 }
 
 export const albumResponseHasList = (response) => {
@@ -127,16 +111,25 @@ export const albumResponseHasList = (response) => {
 export const resolveAlbumResponseState = (response, { friendMode = false } = {}) => {
   const code = Number(response?.code)
   const message = readErrorMessage(response)
-
-  if ((Number.isFinite(code) && code !== 0) || /没有权限|无权限|访问受限/.test(message)) {
-    return classifyAlbumLoadFailure(response, { friendMode })
+  const classifiedMessage = classifyContentLoadFailure(response, { label: '相册', friendMode })
+  if (
+    (Number.isFinite(code) && code !== 0) ||
+    (message && classifiedMessage.reason !== CONTENT_LOAD_REASON.UNKNOWN)
+  ) {
+    return {
+      ...classifiedMessage,
+      status:
+        classifiedMessage.status === CONTENT_LOAD_STATUS.FORBIDDEN
+          ? ALBUM_LOAD_STATUS.FORBIDDEN
+          : ALBUM_LOAD_STATUS.ERROR
+    }
   }
 
   if (!response?.data) {
-    return createAlbumLoadState(ALBUM_LOAD_STATUS.ERROR, {
-      description: 'QQ 空间没有返回相册数据，请稍后重新加载。',
-      friendMode
-    })
+    return classifyAlbumLoadFailure(
+      { ...response, message: readErrorMessage(response) || 'QQ 空间没有返回相册数据' },
+      { friendMode }
+    )
   }
 
   if (!albumResponseHasList(response)) {
@@ -144,7 +137,10 @@ export const resolveAlbumResponseState = (response, { friendMode = false } = {})
     if (Number.isFinite(total) && total === 0) {
       return createAlbumLoadState(ALBUM_LOAD_STATUS.EMPTY, { friendMode })
     }
-    return createAlbumLoadState(ALBUM_LOAD_STATUS.ERROR, { friendMode })
+    return classifyAlbumLoadFailure(
+      { code: -1, message: 'QQ 空间返回的相册数据不完整' },
+      { friendMode }
+    )
   }
 
   return createAlbumLoadState(ALBUM_LOAD_STATUS.READY, { friendMode })

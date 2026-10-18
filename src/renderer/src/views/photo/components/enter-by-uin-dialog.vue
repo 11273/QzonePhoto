@@ -264,6 +264,8 @@ import { useUserStore } from '@renderer/store/user.store'
 import { copyToClipboard } from '@renderer/utils'
 import { formatBytes } from '@renderer/utils/formatters'
 import { resolveSelfQzoneUin } from '@renderer/utils/qzone-identity'
+import { classifyContentLoadFailure } from '@shared/content-load-state'
+import { ALBUM_LOAD_STATUS, resolveAlbumResponseState } from '@shared/album-load-state'
 
 const props = defineProps({
   visible: { type: Boolean, default: false }
@@ -429,27 +431,37 @@ const handleQuery = async () => {
   // === 解析相册接口 ===
   // QZone 接口约定：code === 0 为成功；非 0 一般是用户不存在 / 未开通空间 / 拒绝访问
   let albumOk = false
+  let albumFailure = null
   if (albumRes.status === 'fulfilled') {
     const r = albumRes.value
-    const code = r?.code ?? r?.ret
     const data = r?.data
-    if ((code === 0 || code == null) && data && typeof data === 'object') {
+    const state = resolveAlbumResponseState(r, { friendMode: true })
+    if ([ALBUM_LOAD_STATUS.READY, ALBUM_LOAD_STATUS.EMPTY].includes(state.status)) {
       albumOk = true
       albumCount.value = data.albumsInUser ?? null
       diskUsedMB.value = data.user?.diskused ?? null
+    } else {
+      albumFailure = r || new Error('QQ 空间返回的相册数据不完整')
     }
+  } else {
+    albumFailure = albumRes.reason
   }
 
   // === 解析名片接口 ===
   // 名片接口对不存在的 uin 也常返回 { uin: 输入值 } 的空壳 —— 必须验证至少有一项实质字段
   let parsedCard = null
+  let cardFailure = null
   if (cardRes.status === 'fulfilled') {
     const r = cardRes.value
     if (r && typeof r === 'object') {
+      const rawIntimacyScore = r.intimacyScore ?? r.intimacy_score
       const card = {
         nickname: r.nickname || r.nick || r.name || '',
         realname: r.realname || '',
-        intimacyScore: Number(r.intimacyScore ?? r.intimacy_score ?? 0) || 0,
+        intimacyScore:
+          rawIntimacyScore !== undefined && Number.isFinite(Number(rawIntimacyScore))
+            ? Number(rawIntimacyScore)
+            : null,
         gender: Number(r.gender) || 0,
         astro: Number(r.astro) || 0,
         astroText: ASTRO_MAP[r.astro] || '',
@@ -483,24 +495,35 @@ const handleQuery = async () => {
         card.vipLevel
       if (hasRealData) parsedCard = card
     }
+    if (!parsedCard) cardFailure = cardRes.value || new Error('QQ 空间返回的个人资料不完整')
+  } else {
+    cardFailure = cardRes.reason
   }
 
   // === 综合判定：用户是否存在 ===
   if (!parsedCard && !albumOk) {
-    errorMsg.value = '该 QQ 号不存在，或空间已注销 / 未开通'
+    errorMsg.value = classifyContentLoadFailure(albumFailure || cardFailure, {
+      label: 'QQ 空间资料',
+      friendMode: true
+    }).description
     loading.value = false
     return
   }
 
   if (parsedCard) {
     cardInfo.value = parsedCard
+    if (!albumOk && albumFailure) {
+      noticeMsg.value = `个人资料已读取，但相册暂时不可用：${
+        classifyContentLoadFailure(albumFailure, { label: '相册', friendMode: true }).description
+      }`
+    }
   } else {
     // 仅相册接口可用：构造最小卡片
     cardInfo.value = {
       nickname: '',
       gender: 0,
       vipLevel: 0,
-      intimacyScore: 0,
+      intimacyScore: null,
       commfrd: 0,
       isFriend: false
     }
@@ -517,7 +540,7 @@ const handleEnter = () => {
     uin,
     name: cardInfo.value?.nickname || `QQ ${uin}`,
     img: `https://qlogo4.store.qq.com/qzone/${uin}/${uin}/50`,
-    score: cardInfo.value?.intimacyScore || 0
+    score: cardInfo.value?.intimacyScore ?? null
   }
   emit('enter-friend', friend)
   emit('update:visible', false)

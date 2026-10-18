@@ -8,6 +8,7 @@ import {
   paginateQQGroupMembers,
   QQ_GROUP_MEMBER_PAGE_SIZE
 } from '@shared/qq-group'
+import { classifyContentLoadFailure } from '@shared/content-load-state'
 
 // 顶层 Tab：0=QQ 分组 1=我在意谁 2=谁在意我
 export const FRIEND_TAB = { QQ_GROUP: 0, CARE: 1, CARE_BY: 2 }
@@ -78,6 +79,16 @@ export const useFriendStore = defineStore('friend', () => {
     if (currentTab.value === FRIEND_TAB.QQ_GROUP) return qqLoaded.value
     return careLoaded.value[currentTab.value === FRIEND_TAB.CARE ? 1 : 2] === true
   })
+  const currentListEmptyText = computed(() => {
+    if (searchQuery.value.trim()) return '没有匹配当前搜索的联系人'
+    if (currentTab.value === FRIEND_TAB.QQ_GROUP) return 'QQ 空间当前没有返回可见好友'
+    return currentTab.value === FRIEND_TAB.CARE
+      ? 'QQ 空间当前没有返回「我在意谁」记录'
+      : 'QQ 空间当前没有返回「谁在意我」记录'
+  })
+
+  const contentFailureText = (failure, label) =>
+    classifyContentLoadFailure(failure, { label }).description
 
   // 选中的好友 & 相册
   const selectedFriend = ref(null)
@@ -155,10 +166,10 @@ export const useFriendStore = defineStore('friend', () => {
         { skipAuthCheck: true }
       )
       if (res?.code !== undefined && Number(res.code) !== 0) {
-        throw new Error('friend-list-unavailable')
+        throw res
       }
       if (!Array.isArray(res?.data?.items) && !Array.isArray(res?.data?.gpnames)) {
-        throw new Error('friend-list-invalid')
+        throw new Error('QQ 空间返回的好友列表数据不完整')
       }
       // follow_flag=1 时"特别关心"的好友会在 items 里出现两次，按 uin 去重
       friends.value = dedupByUin(res?.data?.items)
@@ -166,7 +177,7 @@ export const useFriendStore = defineStore('friend', () => {
       qqLoaded.value = true
     } catch (error) {
       console.error('[FriendStore] 获取 QQ 好友失败:', error)
-      friendError.value = '好友列表暂时无法加载，请稍后重试'
+      friendError.value = contentFailureText(error, '好友列表')
     } finally {
       loading.value = false
     }
@@ -189,8 +200,10 @@ export const useFriendStore = defineStore('friend', () => {
     try {
       const hostUin = resolveSelfQzoneUin(userStore)
       const res = await window.QzoneAPI.getQQGroups({ hostUin }, { skipAuthCheck: true })
-      if (res?.code !== undefined && Number(res.code) !== 0)
-        throw new Error('group-list-unavailable')
+      if (res?.code !== undefined && Number(res.code) !== 0) throw res
+      if (!Array.isArray(res?.data?.groupinfo)) {
+        throw new Error('QQ 空间返回的群列表数据不完整')
+      }
 
       const { groups: visibleGroups, defaultGroupId } = normalizeQQGroups(res)
       qqGroups.value = visibleGroups.map((group) => ({
@@ -207,9 +220,9 @@ export const useFriendStore = defineStore('friend', () => {
       }
       groupsLoaded.value = true
       return qqGroups.value
-    } catch {
-      console.error('[FriendStore] 获取 QQ 群失败')
-      groupError.value = '群列表暂时无法加载，请稍后重试'
+    } catch (error) {
+      console.error('[FriendStore] 获取 QQ 群失败:', error)
+      groupError.value = contentFailureText(error, '群列表')
       return []
     } finally {
       groupLoading.value = false
@@ -234,7 +247,10 @@ export const useFriendStore = defineStore('friend', () => {
         { skipAuthCheck: true }
       )
       if (res?.code !== undefined && Number(res.code) !== 0) {
-        throw new Error('group-members-unavailable')
+        throw res
+      }
+      if (!res?.data?.groupmeminfo || typeof res.data.groupmeminfo !== 'object') {
+        throw new Error('QQ 空间返回的群成员数据不完整')
       }
       const members = normalizeQQGroupMembers(res, group.id)
       groupMemberCache.set(group.id, members)
@@ -242,9 +258,12 @@ export const useFriendStore = defineStore('friend', () => {
       groupMembers.value = members
       updateQQGroupCount(group.id, members.length)
       return members
-    } catch {
-      console.error('[FriendStore] 获取 QQ 群成员失败')
-      groupError.value = '群成员暂时无法加载，请稍后重试'
+    } catch (error) {
+      console.error('[FriendStore] 获取 QQ 群成员失败:', error)
+      const reason = contentFailureText(error, '群成员')
+      groupError.value = cached?.length
+        ? `${reason}；当前显示的是上次成功读取的 ${cached.length} 位成员。`
+        : reason
       if (cached) groupMembers.value = cached
       return cached || []
     } finally {
@@ -334,7 +353,10 @@ export const useFriendStore = defineStore('friend', () => {
         { skipAuthCheck: true }
       )
       if (res?.code !== undefined && Number(res.code) !== 0) {
-        throw new Error('group-members-unavailable')
+        throw res
+      }
+      if (!res?.data?.groupmeminfo || typeof res.data.groupmeminfo !== 'object') {
+        throw new Error('QQ 空间返回的群成员数据不完整')
       }
       const members = normalizeQQGroupMembers(res, group.id)
       groupMemberCache.set(group.id, members)
@@ -342,10 +364,11 @@ export const useFriendStore = defineStore('friend', () => {
       updateQQGroupCount(group.id, members.length)
       if (selectedQQGroup.value?.id === group.id) groupMembers.value = members
       return { members, status: '已读取', requested: true }
-    } catch {
+    } catch (error) {
+      const reason = contentFailureText(error, '群成员')
       return {
         members: cached || [],
-        status: cached?.length ? '读取失败（已保留缓存）' : '读取失败',
+        status: cached?.length ? `读取失败（已保留缓存）：${reason}` : `读取失败：${reason}`,
         requested: true
       }
     }
@@ -454,7 +477,12 @@ export const useFriendStore = defineStore('friend', () => {
 
           const result = await readGroupMembersForBackup(group)
           if (result.status.startsWith('读取失败')) {
-            addWarning('group', `群「${group.name || group.id}」成员未能完整读取`, group.id)
+            const detail = result.status.replace(/^读取失败(?:（已保留缓存）)?：?/, '')
+            addWarning(
+              'group',
+              `群「${group.name || group.id}」成员未能完整读取${detail ? `：${detail}` : ''}`,
+              group.id
+            )
           }
           collectedGroups.push({
             ...group,
@@ -567,10 +595,10 @@ export const useFriendStore = defineStore('friend', () => {
           { skipAuthCheck: true }
         )
         if (res?.code !== undefined && Number(res.code) !== 0) {
-          throw new Error('intimacy-list-unavailable')
+          throw res
         }
         if (!Array.isArray(res?.data?.items_list)) {
-          throw new Error('intimacy-list-invalid')
+          throw new Error('QQ 空间返回的亲密度名单数据不完整')
         }
         const items = dedupByUin(res?.data?.items_list)
         if (doType === 1) careList.value = items
@@ -579,7 +607,10 @@ export const useFriendStore = defineStore('friend', () => {
         return items
       } catch (error) {
         console.error('[FriendStore] 获取好友列表失败:', error)
-        intimacyErrors.value[doType] = '亲密度名单暂时无法加载，请稍后重试'
+        intimacyErrors.value[doType] = contentFailureText(
+          error,
+          doType === 1 ? '我在意谁名单' : '谁在意我名单'
+        )
         return []
       }
     })()
@@ -742,6 +773,7 @@ export const useFriendStore = defineStore('friend', () => {
     intimacyErrors,
     currentListError,
     currentListLoaded,
+    currentListEmptyText,
     selectedFriend,
     friendAlbums,
     albumsLoading,

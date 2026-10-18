@@ -109,7 +109,7 @@
                       d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1 0 1.9.5 2.5 1.3.6-.8 1.5-1.3 2.5-1.3C12 2.5 13.5 4 13.5 6.5 13.5 10.5 8 14 8 14z"
                     />
                   </svg>
-                  {{ friendCardInfo?.intimacyScore ?? currentFriend.score }}
+                  {{ friendCardInfo?.intimacyScore ?? currentFriend.score ?? '--' }}
                 </span>
               </div>
               <div class="stat-item">
@@ -487,6 +487,16 @@
           </el-popover>
         </div>
 
+        <div
+          v-if="currentModule === 'album' && albumPartialWarning"
+          class="album-partial-warning"
+          role="status"
+        >
+          <el-icon><WarningFilled /></el-icon>
+          <span>{{ albumPartialWarning }}</span>
+          <button type="button" :disabled="loading" @click="retryPhotoData">重新读取</button>
+        </div>
+
         <!-- 相册模块 -->
         <el-menu
           v-if="currentModule === 'album' && albumLoadState.status === ALBUM_LOAD_STATUS.READY"
@@ -568,6 +578,12 @@
                       }}</span>
                       <span v-else-if="albumQAMap[album.id]?.loading" class="qa-text qa-muted"
                         >...</span
+                      >
+                      <span
+                        v-else-if="albumQAMap[album.id]?.error"
+                        class="qa-text qa-muted"
+                        :title="albumQAMap[album.id].error"
+                        >暂未读取，重新打开可重试</span
                       >
                       <span v-else class="qa-text qa-muted">{{
                         isFriendMode ? '仅主人可见' : '-'
@@ -689,6 +705,12 @@
                         >
                         <span v-else-if="albumQAMap[album.id]?.loading" class="qa-text qa-muted"
                           >...</span
+                        >
+                        <span
+                          v-else-if="albumQAMap[album.id]?.error"
+                          class="qa-text qa-muted"
+                          :title="albumQAMap[album.id].error"
+                          >暂未读取，重新打开可重试</span
                         >
                         <span v-else class="qa-text qa-muted">{{
                           isFriendMode ? '仅主人可见' : '-'
@@ -1301,6 +1323,7 @@ import LoadingState from '@renderer/components/LoadingState/index.vue'
 import QzoneDisplayName from '@renderer/components/QzoneDisplayName/index.vue'
 import { generateUniqueAlbumName, copyToClipboard } from '@renderer/utils'
 import { QZONE_CONFIG } from '@shared/const'
+import { classifyContentLoadFailure } from '@shared/content-load-state'
 import {
   ALBUM_LOAD_STATUS,
   classifyAlbumLoadFailure,
@@ -1410,7 +1433,9 @@ const fetchFriendCard = async (uin) => {
     if (res?.uin) {
       friendCardInfo.value = {
         realname: res.realname || '',
-        intimacyScore: res.intimacyScore || 0,
+        intimacyScore: Number.isFinite(Number(res.intimacyScore))
+          ? Number(res.intimacyScore)
+          : null,
         gender: res.gender || 0,
         astro: res.astro || 0,
         astroText: ASTRO_MAP[res.astro] || '',
@@ -1461,10 +1486,11 @@ const friendDiskUsed = computed(() => {
 })
 const friendPhotoTotal = computed(() => {
   if (!isFriendMode.value || !menuList.value) return '--'
-  return menuList.value.reduce(
+  const visibleTotal = menuList.value.reduce(
     (sum, cat) => sum + cat.albums.reduce((s, a) => s + (a.total || 0), 0),
     0
   )
+  return albumPartialWarning.value ? `≥ ${visibleTotal}` : visibleTotal
 })
 
 const selectAlbumItem = (categoryId, album) => {
@@ -1503,6 +1529,7 @@ const downloadStore = useDownloadStore()
 const refreshAlbumCallback = inject('refreshAlbumCallback', null)
 const loading = ref(false)
 const albumLoadState = ref(createAlbumLoadState())
+const albumPartialWarning = ref('')
 let albumLoadRequestId = 0
 
 const updateAlbumLoadState = (state) => {
@@ -1512,6 +1539,12 @@ const updateAlbumLoadState = (state) => {
 
 const retryPhotoData = () => {
   if (!loading.value) fetchPhotoData()
+}
+
+const markAlbumPartialFailure = (failure) => {
+  if (albumPartialWarning.value) return
+  const state = classifyAlbumLoadFailure(failure, { friendMode: isFriendMode.value })
+  albumPartialWarning.value = `部分相册未能继续读取：${state.description}`
 }
 
 // 相册问答缓存
@@ -1530,10 +1563,16 @@ const fetchAlbumQA = async (album) => {
     if (res?.code === 0 && res?.data) {
       albumQAMap[album.id] = { answer: res.data.answer, question: res.data.question }
     } else {
-      albumQAMap[album.id] = { answer: null }
+      albumQAMap[album.id] = {
+        answer: null,
+        error: classifyContentLoadFailure(res, { label: '相册答案' }).description
+      }
     }
-  } catch {
-    albumQAMap[album.id] = { answer: null }
+  } catch (error) {
+    albumQAMap[album.id] = {
+      answer: null,
+      error: classifyContentLoadFailure(error, { label: '相册答案' }).description
+    }
   }
 }
 
@@ -2294,7 +2333,8 @@ const selfPhotoTotal = computed(() => {
       (category.albums || []).reduce((albumSum, album) => albumSum + (Number(album.total) || 0), 0),
     0
   )
-  return formatOverviewCount(totalPhotos)
+  const formatted = formatOverviewCount(totalPhotos)
+  return albumPartialWarning.value ? `≥ ${formatted}` : formatted
 })
 
 const yellowDiamondLevel = computed(() => {
@@ -2316,7 +2356,11 @@ const albumDisplaySummary = computed(() => {
     (sum, category) => sum + (category.albums?.length || 0),
     0
   )
-  return `${albumCount} 个相册`
+  if (!albumPartialWarning.value) return `${albumCount} 个相册`
+  const reportedTotal = Number(total.value)
+  return Number.isFinite(reportedTotal) && reportedTotal > albumCount
+    ? `已显示 ${albumCount} / ${reportedTotal} 个相册`
+    : `已显示 ${albumCount} 个相册`
 })
 
 const albumDisplayViewLabel = computed(
@@ -2404,6 +2448,7 @@ const findAlbumById = async (albumId) => {
 const fetchPhotoData = async () => {
   const requestId = ++albumLoadRequestId
   loading.value = true
+  albumPartialWarning.value = ''
   updateAlbumLoadState(
     createAlbumLoadState(ALBUM_LOAD_STATUS.LOADING, { friendMode: isFriendMode.value })
   )
@@ -2468,6 +2513,7 @@ const fetchPhotoData = async () => {
       // 按分类逐个加载剩余数据
       for (let i = 0; i < allAlbumsData.length; i++) {
         const category = allAlbumsData[i]
+        if (!Array.isArray(category.albumList)) category.albumList = []
         const totalInClass = category.totalInClass || 0
         const categoryName = category.className || category.name || `分类${category.classId}`
 
@@ -2498,14 +2544,22 @@ const fetchPhotoData = async () => {
               { attempts: 3, delayMs: 400 }
             )
 
-            if (!categoryRes || !categoryRes.data) {
+            if (!categoryRes || Number(categoryRes.code) !== 0 || !categoryRes.data) {
               console.warn(`[Left] 分类 ${categoryName} 加载失败`)
+              markAlbumPartialFailure(categoryRes || new Error('QQ 空间没有返回相册分页数据'))
               break
             }
 
             // 提取相册列表
-            const newAlbums = categoryRes.data.albumList || []
-            if (newAlbums.length === 0) break
+            const newAlbums = categoryRes.data.albumList
+            if (!Array.isArray(newAlbums)) {
+              markAlbumPartialFailure(new Error('QQ 空间返回的相册分页数据不完整'))
+              break
+            }
+            if (newAlbums.length === 0) {
+              markAlbumPartialFailure(new Error('QQ 空间返回的相册分页数据不完整'))
+              break
+            }
 
             // 去重并合并
             const existingIds = new Set(category.albumList.map((album) => album.id))
@@ -2528,15 +2582,21 @@ const fetchPhotoData = async () => {
             // 可见结果全部重复时仍按服务端游标继续；只有到达总数、空页或游标停滞才结束。
             if (
               category.albumList.length >= category.totalInClass ||
-              newAlbums.length === 0 ||
               category.nextPageStart <= nextPageStart
             ) {
+              if (
+                category.albumList.length < category.totalInClass &&
+                category.nextPageStart <= nextPageStart
+              ) {
+                markAlbumPartialFailure(new Error('QQ 空间返回的相册分页游标没有继续更新'))
+              }
               break
             }
 
             await new Promise((resolve) => setTimeout(resolve, 100))
           } catch (error) {
             console.error(`[Left] 加载分类 ${categoryName} 失败:`, error)
+            markAlbumPartialFailure(error)
             break
           }
         }
@@ -2594,7 +2654,13 @@ const fetchPhotoData = async () => {
             { attempts: 3, delayMs: 400 }
           )
 
-          if (!nextRes || !nextRes.data || !nextRes.data.albumListModeSort) {
+          if (
+            !nextRes ||
+            Number(nextRes.code) !== 0 ||
+            !nextRes.data ||
+            !Array.isArray(nextRes.data.albumListModeSort)
+          ) {
+            markAlbumPartialFailure(nextRes || new Error('QQ 空间没有返回相册分页数据'))
             break
           }
 
@@ -2629,12 +2695,16 @@ const fetchPhotoData = async () => {
               ? responseNextStart
               : previousPageStart + pageAlbums.length
           if (pageAlbums.length === 0 || pageStart <= previousPageStart) {
+            if (pageStart < totalAlbums) {
+              markAlbumPartialFailure(new Error('QQ 空间返回的相册分页数据不完整'))
+            }
             break
           }
 
           await new Promise((resolve) => setTimeout(resolve, 100))
         } catch (error) {
           console.error('[Left] 加载平铺格式数据失败:', error)
+          markAlbumPartialFailure(error)
           break
         }
       }
@@ -2652,6 +2722,16 @@ const fetchPhotoData = async () => {
     // 统计总相册数
     const totalAlbums = allAlbumsData.reduce((sum, cat) => sum + (cat.albumList?.length || 0), 0)
     console.log(`[Left] 所有相册加载完成，总计 ${totalAlbums} 个相册`)
+    const reportedAlbumTotal = Number(total.value)
+    if (totalAlbums === 0 && Number.isFinite(reportedAlbumTotal) && reportedAlbumTotal > 0) {
+      updateAlbumLoadState(
+        classifyAlbumLoadFailure(new Error('QQ 空间返回的相册列表数据不完整'), {
+          friendMode: isFriendMode.value
+        })
+      )
+      albumPartialWarning.value = ''
+      return
+    }
     updateAlbumLoadState(
       createAlbumLoadState(totalAlbums > 0 ? ALBUM_LOAD_STATUS.READY : ALBUM_LOAD_STATUS.EMPTY, {
         friendMode: isFriendMode.value
@@ -3913,6 +3993,46 @@ defineExpose({
     &:focus-visible {
       outline: 2px solid var(--theme-focus);
       outline-offset: 1px;
+    }
+  }
+}
+
+.album-partial-warning {
+  display: flex;
+  margin: 8px 12px 2px;
+  padding: 8px 10px;
+  align-items: flex-start;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--theme-warning) 24%, transparent);
+  border-radius: var(--theme-radius-sm);
+  background: color-mix(in srgb, var(--theme-warning) 7%, transparent);
+  color: var(--theme-text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+
+  > .el-icon {
+    flex: 0 0 auto;
+    margin-top: 1px;
+    color: var(--theme-warning);
+  }
+
+  > span {
+    min-width: 0;
+    flex: 1;
+  }
+
+  > button {
+    flex: 0 0 auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--theme-info-text);
+    font: inherit;
+    cursor: pointer;
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.55;
     }
   }
 }

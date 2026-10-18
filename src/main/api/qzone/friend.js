@@ -1,5 +1,8 @@
 import { getGTK } from '@main/api/utils/helpers'
 import request from '@main/api/utils/request'
+import { normalizeQzoneReadResponse } from '@shared/qzone-read-response'
+
+const isRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value))
 
 /**
  * 获取好友亲密度列表
@@ -26,7 +29,10 @@ export async function getFriendList(uin, p_skey, hostUin, doType = 1) {
       Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '亲密度名单',
+    isValid: (body) => isRecord(body?.data) && Array.isArray(body.data.items_list)
+  })
 }
 
 /**
@@ -52,7 +58,11 @@ export async function getQQFriends(uin, p_skey, hostUin) {
       Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '好友列表',
+    isValid: (body) =>
+      isRecord(body?.data) && (Array.isArray(body.data.items) || Array.isArray(body.data.gpnames))
+  })
 }
 
 /**
@@ -74,7 +84,10 @@ export async function getQQGroups(uin, p_skey, hostUin) {
       Referer: `https://user.qzone.qq.com/${hostUin}/app/points`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '群列表',
+    isValid: (body) => isRecord(body?.data) && Array.isArray(body.data.groupinfo)
+  })
 }
 
 /** 获取指定 QQ 群中当前账号可见的成员资料与积分列表。 */
@@ -95,5 +108,10 @@ export async function getQQGroupMembers(uin, p_skey, hostUin, groupId) {
       Referer: `https://user.qzone.qq.com/${hostUin}/app/points`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '群成员',
+    isValid: (body) =>
+      isRecord(body?.data) &&
+      Boolean(body.data.groupmeminfo && typeof body.data.groupmeminfo === 'object')
+  })
 }

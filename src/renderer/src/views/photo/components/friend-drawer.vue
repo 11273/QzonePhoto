@@ -399,7 +399,7 @@
               class="drawer-empty"
               role="status"
             >
-              {{ friendStore.currentScope === CONTACT_SCOPE.FRIENDS ? '暂无匹配好友' : '暂无记录' }}
+              {{ friendStore.currentListEmptyText }}
             </div>
           </template>
         </div>
@@ -457,7 +457,7 @@
                   class="drawer-empty"
                   role="status"
                 >
-                  暂无可见群成员
+                  这个群当前没有返回可见成员
                 </div>
                 <button
                   v-if="friendStore.hasMoreQQGroupMembers"
@@ -479,7 +479,7 @@
               class="drawer-empty"
               role="status"
             >
-              暂无可查看的群
+              QQ 空间当前没有返回可查看的群
             </div>
             <div
               v-else-if="!friendStore.groupLoading && !friendStore.groupError"
@@ -1106,6 +1106,8 @@ const handleGroupMemberEnter = (member) => {
   handleEnter({
     ...member,
     name: member.name || member.remark || `QQ ${member.uin}`,
+    // 群积分不是好友亲密度。进入空间后再由个人资料接口补充，缺失时显示“--”。
+    score: null,
     source: 'qq-group',
     groupName: friendStore.selectedQQGroup?.name || ''
   })

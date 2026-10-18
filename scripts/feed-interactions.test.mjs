@@ -255,11 +255,14 @@ test('comment and reply display preserves complete multiline content', () => {
 })
 
 test('permission failures have plain-language hints without exposing response details', () => {
-  assert.equal(
-    interactionFailureHint('点赞者', new Error('permission denied: private')),
-    '当前账号暂时无法查看全部点赞者'
-  )
-  assert.equal(interactionFailureHint('评论', new Error('timeout')), '评论加载失败')
+  const permissionHint = interactionFailureHint('点赞者', new Error('permission denied: private'), {
+    friendMode: true
+  })
+  assert.match(permissionHint, /可见范围/)
+  assert.match(permissionHint, /其他公开内容仍可继续浏览/)
+  assert.doesNotMatch(permissionHint, /permission|response|code/i)
+  assert.doesNotMatch(interactionFailureHint('评论', new Error('permission denied')), /对方/)
+  assert.match(interactionFailureHint('评论', new Error('timeout')), /响应时间过长/)
 })
 
 test('a later page replaces a truncated preview without losing replies', async () => {

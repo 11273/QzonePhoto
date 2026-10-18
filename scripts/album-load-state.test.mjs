@@ -26,6 +26,37 @@ test('好友空间权限限制会转换为持久的无权限状态', () => {
   assert.doesNotMatch(state.description, /接口|响应|code/i)
 })
 
+test('接口用成功状态码返回限制说明时仍按权限提示处理', () => {
+  const state = resolveAlbumResponseState(
+    {
+      code: 0,
+      message: '非好友仅可查看最近一年的内容',
+      data: { albumsInUser: 2 }
+    },
+    { friendMode: true }
+  )
+
+  assert.equal(state.status, ALBUM_LOAD_STATUS.FORBIDDEN)
+  assert.match(state.description, /最近一年的内容/)
+  assert.equal(state.retryable, false)
+})
+
+test('嵌套 protect_content 的访问限制不会被当成空相册', () => {
+  const state = resolveAlbumResponseState(
+    {
+      code: 0,
+      data: {
+        albumsInUser: 2,
+        protect_content: '非好友仅可查看最近一年的内容'
+      }
+    },
+    { friendMode: true }
+  )
+
+  assert.equal(state.status, ALBUM_LOAD_STATUS.FORBIDDEN)
+  assert.match(state.description, /最近一年的内容/)
+})
+
 test('空相册与异常响应不会混为一谈', () => {
   const empty = resolveAlbumResponseState(
     { code: 0, data: { albumsInUser: 0 } },
@@ -34,7 +65,7 @@ test('空相册与异常响应不会混为一谈', () => {
   const invalid = resolveAlbumResponseState({ code: 0, data: { albumsInUser: 3 } })
 
   assert.equal(empty.status, ALBUM_LOAD_STATUS.EMPTY)
-  assert.match(empty.description, /没有创建相册|没有向你公开/)
+  assert.match(empty.description, /尚未创建相册|没有向你公开/)
   assert.equal(invalid.status, ALBUM_LOAD_STATUS.ERROR)
   assert.equal(invalid.retryable, true)
 })
@@ -53,7 +84,7 @@ test('网络和登录错误给出合适的恢复方式', () => {
   const auth = classifyAlbumLoadFailure({ code: 401, message: '登录状态已失效' })
 
   assert.equal(network.status, ALBUM_LOAD_STATUS.ERROR)
-  assert.match(network.description, /网络连接/)
+  assert.match(network.description, /响应时间过长/)
   assert.equal(network.retryable, true)
   assert.equal(auth.status, ALBUM_LOAD_STATUS.ERROR)
   assert.equal(auth.retryable, false)

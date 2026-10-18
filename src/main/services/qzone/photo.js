@@ -76,42 +76,53 @@ export class QzonePhotoService {
   }
 
   async getPhotoOrVideoInfo({ hostUin, topicId, picKey }, { uin, p_skey }) {
-    // 参数验证
     if (!topicId || !picKey) {
-      console.error('getPhotoOrVideoInfo 参数不完整:', { hostUin, topicId, picKey })
-      return null
+      const error = new Error('视频记录缺少相册或文件标识，无法向 QQ 空间查询播放地址')
+      error.code = 'INVALID_VIDEO_REFERENCE'
+      throw error
     }
 
     const res = await cgi_floatview_photo_list_v2(uin, p_skey, hostUin, topicId, picKey, 1, 1, 0)
 
-    // 检查响应是否成功
-    if (res.code !== 0 || !res.data || !res.data.photos || res.data.photos.length === 0) {
-      console.error('getPhotoOrVideoInfo API 调用失败:', { code: res.code, message: res.message })
-      return null
+    if (!res || typeof res !== 'object') {
+      throw new Error('QQ 空间没有返回视频详情数据')
     }
 
-    // 根据 picKey 查找
-    const matchedPhoto = res.data.photos.find((photo) => photo.picKey === picKey)
+    const responseCodes = [res.code, res.ret, res.subcode, res.errno, res.errorCode]
+      .map(Number)
+      .filter(Number.isFinite)
+    const code = responseCodes.find((value) => value !== 0) ?? responseCodes[0] ?? 0
+    if (code !== 0) {
+      const error = new Error(
+        String(
+          res.message ||
+            res.msg ||
+            res.retmsg ||
+            res.errmsg ||
+            res.reason ||
+            'QQ 空间拒绝了视频详情请求'
+        )
+      )
+      error.code = code
+      throw error
+    }
 
-    return matchedPhoto || null
+    if (!Array.isArray(res.data?.photos)) {
+      throw new Error('QQ 空间返回的视频详情数据不完整')
+    }
+
+    const matchedPhoto = res.data.photos.find((photo) => photo.picKey === picKey)
+    if (!matchedPhoto) {
+      throw new Error('QQ 空间没有返回目标视频记录，视频可能已删除或当前账号不可见')
+    }
+    return matchedPhoto
   }
 
-  // 新增：专门处理视频信息的方法
   async getVideoInfo({ hostUin, topicId, picKey }, { uin, p_skey }) {
-    // 参数验证
-    if (!topicId || !picKey) {
-      console.error('getVideoInfo 参数不完整:', { hostUin, topicId, picKey })
-      return null
-    }
-
     const photoInfo = await this.getPhotoOrVideoInfo({ hostUin, topicId, picKey }, { uin, p_skey })
 
-    if (!photoInfo || !photoInfo.is_video) {
-      console.log('不是视频或未找到照片信息:', {
-        is_video: photoInfo?.is_video,
-        hasPhotoInfo: !!photoInfo
-      })
-      return null
+    if (!photoInfo.is_video) {
+      throw new Error('QQ 空间返回的目标记录不是可播放的视频')
     }
 
     // 返回视频相关信息
@@ -124,13 +135,6 @@ export class QzonePhotoService {
       video_format: photoInfo.video_info?.format || 'mp4',
       cover_url: photoInfo.pre || photoInfo.url
     }
-
-    // console.log('视频信息获取成功:', {
-    //   name: result.name,
-    //   has_download_url: !!result.video_download_url,
-    //   has_play_url: !!result.video_play_url,
-    //   size: result.video_size
-    // })
 
     return result
   }

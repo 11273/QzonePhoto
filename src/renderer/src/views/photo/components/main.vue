@@ -39,8 +39,8 @@
         :icon="photoLoadStateIcon"
         :title="photoLoadState.title"
         :description="photoLoadState.description"
-        semantic-role="alert"
-        aria-live="assertive"
+        :semantic-role="photoStateIsError ? 'alert' : 'status'"
+        :aria-live="photoStateIsError ? 'assertive' : 'polite'"
       >
         <el-button
           v-if="photoLoadState.retryable"
@@ -54,8 +54,12 @@
       <EmptyState
         v-else-if="photoGroups.length === 0 && !hasMore && total === 0"
         :icon="Inbox"
-        title="相册为空"
-        description="这个相册还没有照片"
+        :title="isFriendContext ? '没有可见照片' : '相册为空'"
+        :description="
+          isFriendContext
+            ? '当前账号没有读取到可见照片；相册可能为空，也可能受 QQ 空间可见范围限制。'
+            : '这个相册还没有照片。'
+        "
       />
       <el-scrollbar v-else ref="scrollbarRef" class="h-full" @scroll="handleScroll">
         <!-- 按日期分组的照片 -->
@@ -114,9 +118,9 @@
                       aria-hidden="true"
                     >
                       <template #error>
-                        <div class="image-error">
+                        <div class="image-error" title="图片地址可能已失效，或当前账号没有查看权限">
                           <el-icon><Picture /></el-icon>
-                          <span>加载失败</span>
+                          <span>图片不可用</span>
                         </div>
                       </template>
                       <template #placeholder>
@@ -219,15 +223,22 @@
             <span>正在加载更多...</span>
           </div>
 
+          <ContentPartialNotice
+            v-else-if="photoPartialState && photoList.length > 0"
+            :state="photoPartialState"
+            title="这个相册只显示了已经读取的照片"
+            @retry="loadMorePhotos"
+          />
+
           <!-- 没有更多数据提示 -->
           <div v-else-if="!hasMore && (photoList.length > 0 || total > 0)" class="no-more">
             <span>
               已加载 {{ photoList.length }} / {{ total || photoList.length }} 张照片
               <template v-if="photoRestrictionMessage && total && photoList.length < total">
-                （其余照片受 QQ 空间访问限制）
+                （{{ photoRestrictionMessage }}）
               </template>
               <template v-else-if="skippedPhotoCount > 0">
-                （其中 {{ skippedPhotoCount }} 张数据异常已跳过）
+                （其中 {{ skippedPhotoCount }} 张未返回可用地址或仅返回占位图，已跳过）
               </template>
               <template v-else-if="total && photoList.length < total">
                 （其余照片当前不可读取）
@@ -375,6 +386,7 @@ import { ElLoading, ElMessage, ElMessageBox } from 'element-plus'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import MediaPreview from '@renderer/components/MediaPreview/index.vue'
+import ContentPartialNotice from '@renderer/components/ContentPartialNotice/index.vue'
 import Top from './top.vue'
 import { generateUniqueAlbumName } from '@renderer/utils'
 import {
@@ -429,10 +441,8 @@ const albumPlaceholderState = computed(() =>
     ? createAlbumLoadState()
     : albumLoadState.value
 )
-const albumStateIsError = computed(() =>
-  [ALBUM_LOAD_STATUS.ERROR, ALBUM_LOAD_STATUS.FORBIDDEN].includes(
-    albumPlaceholderState.value.status
-  )
+const albumStateIsError = computed(
+  () => albumPlaceholderState.value.status === ALBUM_LOAD_STATUS.ERROR
 )
 const albumStateIcon = computed(() => {
   if (albumPlaceholderState.value.status === ALBUM_LOAD_STATUS.FORBIDDEN) return ShieldX
@@ -441,11 +451,13 @@ const albumStateIcon = computed(() => {
   return Picture
 })
 const photoLoadState = ref(null)
+const photoPartialState = ref(null)
 const photoRestrictionMessage = ref('')
 const skippedPhotoCount = ref(0)
 const photoLoadStateIcon = computed(() =>
   photoLoadState.value?.status === CONTENT_LOAD_STATUS.FORBIDDEN ? ShieldX : TriangleAlert
 )
+const photoStateIsError = computed(() => photoLoadState.value?.status === CONTENT_LOAD_STATUS.ERROR)
 const privacyStore = usePrivacyStore()
 const loading = ref(false)
 const loadingMore = ref(false)
@@ -763,7 +775,7 @@ const fetchPhotosByTopicId = async (topicId, pageStart = 0, pageNum = 100) => {
       nextPageStart: pageStart,
       skippedCount: 0,
       requestedCount: pageNum,
-      error: response?.message || '暂时无法读取照片，请稍后重试。',
+      error: response?.message || 'QQ 空间没有返回照片数据',
       code: response?.code
     }
   } catch (error) {
@@ -907,6 +919,10 @@ const loadMorePhotos = async () => {
           nextPageStart: result.nextPageStart
         })
         hasMore.value = false
+        photoPartialState.value = classifyContentLoadFailure(
+          { message: 'QQ 空间返回的照片分页数据不完整，分页位置没有继续推进' },
+          { label: '后续照片', friendMode: isFriendContext.value }
+        )
         return
       }
 
@@ -929,23 +945,45 @@ const loadMorePhotos = async () => {
       syncCurrentAlbumTotal(total.value)
 
       hasMore.value = result.hasMore
+      photoPartialState.value = null
       pageGuard.succeed()
     } else {
       console.error('加载失败:', result.error)
-      if (result.code === -10805 || result.code === 403) {
+      const failureState = classifyContentLoadFailure(
+        { code: result.code, message: result.error },
+        { label: '照片', friendMode: isFriendContext.value }
+      )
+      if (!failureState.retryable) {
         hasMore.value = false
       } else {
         pageGuard.fail(pageKey)
         hasMore.value = true
       }
-      ElMessage.error(result.error || '加载照片失败')
+      photoPartialState.value = failureState
+      ElMessage({
+        type: failureState.status === CONTENT_LOAD_STATUS.FORBIDDEN ? 'warning' : 'error',
+        message: failureState.description,
+        grouping: true
+      })
     }
   } catch (error) {
     console.error('加载更多照片失败:', error)
-
-    ElMessage.error('加载照片失败')
-    pageGuard.fail(pageKey)
-    hasMore.value = true
+    const failureState = classifyContentLoadFailure(error, {
+      label: '照片',
+      friendMode: isFriendContext.value
+    })
+    ElMessage({
+      type: failureState.status === CONTENT_LOAD_STATUS.FORBIDDEN ? 'warning' : 'error',
+      message: failureState.description,
+      grouping: true
+    })
+    photoPartialState.value = failureState
+    if (failureState.retryable) {
+      pageGuard.fail(pageKey)
+      hasMore.value = true
+    } else {
+      hasMore.value = false
+    }
   } finally {
     loadingMore.value = false
     // 简单延迟解锁
@@ -1029,6 +1067,7 @@ watch(currentAlbum, async (newAlbum) => {
   if (!newAlbum) {
     photoList.value = []
     photoLoadState.value = null
+    photoPartialState.value = null
     total.value = 0
     hasMore.value = true
     currentPageStart.value = 0
@@ -1046,6 +1085,7 @@ watch(currentAlbum, async (newAlbum) => {
   loading.value = true
   photoList.value = []
   photoLoadState.value = null
+  photoPartialState.value = null
   photoRestrictionMessage.value = ''
   skippedPhotoCount.value = 0
   selectedPhotos.value.clear()
@@ -1396,6 +1436,7 @@ const refreshCurrentAlbum = async () => {
   loading.value = true
   photoList.value = []
   photoLoadState.value = null
+  photoPartialState.value = null
   photoRestrictionMessage.value = ''
   skippedPhotoCount.value = 0
   selectedPhotos.value.clear()
@@ -1972,8 +2013,8 @@ const getPhotoVideoPlayback = async (photo, { silent = false } = {}) => {
   const hostUin = effectiveHostUin.value
 
   if (!picKey || !topicId) {
-    if (!silent) ElMessage.warning('视频信息不完整，无法预览')
-    return { url: '', cover: resolveVideoCoverSource(photo) }
+    if (silent) return { url: '', cover: resolveVideoCoverSource(photo) }
+    throw new Error('视频记录缺少相册或文件标识，无法查询播放地址')
   }
 
   const cacheKey = photoVideoCacheKey(photo)
@@ -1985,13 +2026,16 @@ const getPhotoVideoPlayback = async (photo, { silent = false } = {}) => {
       url: resolveVideoPlaybackSource(info || {}),
       cover: resolveVideoCoverSource(info || {}, photo)
     }
-    if (playback.url) videoUrlCache.value.set(cacheKey, playback)
-    else if (!silent) ElMessage.warning('无法获取视频播放地址')
+    if (playback.url) {
+      videoUrlCache.value.set(cacheKey, playback)
+    } else if (!silent) {
+      throw new Error('QQ 空间没有返回可用的视频播放地址')
+    }
     return playback
   } catch (error) {
     console.error('[AlbumVideoPreview] 获取视频 URL 失败:', error)
-    if (!silent) ElMessage.error('获取视频信息失败')
-    return { url: '', cover: resolveVideoCoverSource(photo) }
+    if (silent) return { url: '', cover: resolveVideoCoverSource(photo) }
+    throw error
   }
 }
 

@@ -30,8 +30,8 @@
             :icon="videoPlaceholderIcon"
             :title="videoPlaceholderState.title"
             :description="videoPlaceholderState.description"
-            :semantic-role="loadFailureState ? 'alert' : 'status'"
-            :aria-live="loadFailureState ? 'assertive' : 'polite'"
+            :semantic-role="failureStateIsError ? 'alert' : 'status'"
+            :aria-live="failureStateIsError ? 'assertive' : 'polite'"
           >
             <el-button
               v-if="videoPlaceholderState.retryable"
@@ -163,7 +163,13 @@
               <el-icon class="is-loading"><Loading /></el-icon>
               <span>加载中...</span>
             </div>
-            <div v-if="!hasMore && videos.length > 0" class="no-more-tip">已加载全部视频</div>
+            <ContentPartialNotice
+              v-else-if="loadFailureState && videos.length > 0"
+              :state="loadFailureState"
+              title="这里只显示了已经读取的视频"
+              @retry="fetchVideoList(true)"
+            />
+            <div v-else-if="!hasMore && videos.length > 0" class="no-more-tip">已加载全部视频</div>
           </div>
         </div>
       </el-scrollbar>
@@ -314,6 +320,7 @@ import LoadingState from '@renderer/components/LoadingState/index.vue'
 import AppActionButton from '@renderer/components/AppActionButton/index.vue'
 import AppRefreshButton from '@renderer/components/AppRefreshButton/index.vue'
 import ModuleHeader from '@renderer/components/ModuleHeader/index.vue'
+import ContentPartialNotice from '@renderer/components/ContentPartialNotice/index.vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import {
@@ -339,6 +346,11 @@ import {
   isHlsVideoSource,
   saveVideoPlaybackPreference
 } from '@renderer/utils/video-playback.mjs'
+import {
+  describeHlsError,
+  describeMediaElementError,
+  describePlaybackRejection
+} from '@renderer/utils/media-error.mjs'
 import Hls from 'hls.js'
 
 const userStore = useUserStore()
@@ -356,7 +368,9 @@ const videoPlaceholderState = computed(
     createContentLoadState(CONTENT_LOAD_STATUS.EMPTY, {
       label: '视频',
       friendMode: isFriendContext.value,
-      emptyDescription: isFriendContext.value ? '对方暂时没有向你公开的视频。' : '这里还没有视频。'
+      emptyDescription: isFriendContext.value
+        ? '当前账号没有读取到可见视频；可能暂时没有内容，也可能受 QQ 空间可见范围限制。'
+        : '这里还没有视频。'
     })
 )
 const videoPlaceholderIcon = computed(() => {
@@ -364,6 +378,9 @@ const videoPlaceholderIcon = computed(() => {
   if (videoPlaceholderState.value.status === CONTENT_LOAD_STATUS.ERROR) return TriangleAlert
   return Clapperboard
 })
+const failureStateIsError = computed(
+  () => loadFailureState.value?.status === CONTENT_LOAD_STATUS.ERROR
+)
 
 const videos = ref([])
 const userInfo = ref(null) // { diskUsed, diskTotal, dayCount, dayTotal, ... }
@@ -429,7 +446,7 @@ const fetchVideoList = async (isLoadMore = false) => {
     const response = await window.QzoneAPI.getVideoList(params, friendMeta.value)
     if (thisLoadId !== currentLoadId) return
 
-    if (response.code === 0 && response.data) {
+    if (Number(response?.code) === 0 && response?.data) {
       loadFailureState.value = null
       const newVideos = Array.isArray(response.data.Videos) ? response.data.Videos : []
       const previousStart = isLoadMore ? currentStart.value : 0
@@ -469,32 +486,59 @@ const fetchVideoList = async (isLoadMore = false) => {
 
       updateLeftStats()
     } else {
-      if (isLoadMore) {
-        pageGuard.fail(pageKey)
-        hasMore.value = true
-        ElMessage.warning('加载更多视频失败，稍后可继续重试')
-      } else {
-        hasMore.value = false
-        loadFailureState.value = classifyContentLoadFailure(response, {
+      const failureState = classifyContentLoadFailure(
+        response || { message: 'QQ 空间没有返回视频数据' },
+        {
           label: '视频',
           friendMode: isFriendContext.value
+        }
+      )
+      if (isLoadMore) {
+        loadFailureState.value = failureState
+        if (failureState.retryable) pageGuard.fail(pageKey)
+        hasMore.value = failureState.retryable
+        ElMessage({
+          type: failureState.status === CONTENT_LOAD_STATUS.FORBIDDEN ? 'warning' : 'error',
+          message: failureState.description,
+          grouping: true
         })
-        if (videos.value.length > 0) ElMessage.error('视频刷新失败，请稍后重试')
+      } else {
+        hasMore.value = false
+        loadFailureState.value = failureState
+        if (videos.value.length > 0) {
+          ElMessage({
+            type: failureState.status === CONTENT_LOAD_STATUS.FORBIDDEN ? 'warning' : 'error',
+            message: failureState.description,
+            grouping: true
+          })
+        }
       }
     }
   } catch (error) {
     if (thisLoadId === currentLoadId) {
+      const failureState = classifyContentLoadFailure(error, {
+        label: '视频',
+        friendMode: isFriendContext.value
+      })
       if (isLoadMore) {
-        pageGuard.fail(pageKey)
-        hasMore.value = true
-        ElMessage.warning('加载更多视频失败，稍后可继续重试')
+        loadFailureState.value = failureState
+        if (failureState.retryable) pageGuard.fail(pageKey)
+        hasMore.value = failureState.retryable
+        ElMessage({
+          type: failureState.status === CONTENT_LOAD_STATUS.FORBIDDEN ? 'warning' : 'error',
+          message: failureState.description,
+          grouping: true
+        })
       } else {
         hasMore.value = false
-        loadFailureState.value = classifyContentLoadFailure(error, {
-          label: '视频',
-          friendMode: isFriendContext.value
-        })
-        if (videos.value.length > 0) ElMessage.error('视频刷新失败，请稍后重试')
+        loadFailureState.value = failureState
+        if (videos.value.length > 0) {
+          ElMessage({
+            type: failureState.status === CONTENT_LOAD_STATUS.FORBIDDEN ? 'warning' : 'error',
+            message: failureState.description,
+            grouping: true
+          })
+        }
       }
     }
   } finally {
@@ -978,7 +1022,7 @@ const formatDuration = (seconds) => {
 const handleVideoClick = (video) => {
   const url = getVideoDownloadUrl(video)
   if (!url) {
-    ElMessage.error('视频地址无效')
+    ElMessage.error('QQ 空间没有返回这个视频的可用播放地址')
     return
   }
 
@@ -1059,10 +1103,11 @@ const playOpenedVideo = async () => {
   hls?.startLoad?.()
   try {
     await element.play()
-  } catch {
+  } catch (error) {
     videoLoading.value = false
     videoPaused.value = true
-    ElMessage.info('视频尚未准备好，请稍后再试')
+    const description = describePlaybackRejection(error)
+    if (description) videoError.value = description
   }
 }
 
@@ -1109,8 +1154,7 @@ const setupVideoEvents = () => {
   videoPlayerRef.value.onerror = () => {
     if (videoDialogVisible.value) {
       videoLoading.value = false
-      videoError.value = '视频加载失败'
-      ElMessage.error('视频加载失败')
+      videoError.value = describeMediaElementError(videoPlayerRef.value?.error, { type: 'video' })
     }
   }
 }
@@ -1119,25 +1163,13 @@ const setupVideoEvents = () => {
 const handleHLSError = (data) => {
   videoLoading.value = false
 
-  const errorMap = {
-    [Hls.ErrorTypes.NETWORK_ERROR]: { msg: '网络错误，无法加载视频', type: 'warning' },
-    [Hls.ErrorTypes.MEDIA_ERROR]: {
-      msg: '媒体错误，正在尝试恢复...',
-      type: 'warning',
-      recover: true
-    },
-    [Hls.ErrorTypes.MANIFEST_ERROR]: { msg: '视频格式不支持', type: 'error', destroy: true }
-  }
+  videoError.value = describeHlsError(data, Hls.ErrorTypes)
 
-  const error = errorMap[data.type] || { msg: '无法播放视频', type: 'error', destroy: true }
-
-  videoError.value = error.msg
-  error.type === 'warning' ? ElMessage.warning(error.msg) : ElMessage.error(error.msg)
-
-  if (error.recover && hls) {
+  if (data.type === Hls.ErrorTypes.MEDIA_ERROR && hls) {
     hls.recoverMediaError()
-  } else if (error.destroy && hls) {
+  } else if (hls) {
     hls.destroy()
+    hls = null
   }
 }
 

@@ -35,6 +35,11 @@ const invokeSafe = (channel, ...args) => {
   return ipcRenderer.invoke(channel, ...args)
 }
 
+// 读取类接口如果在主进程发生网络、超时或解析异常，必须把真实的安全错误说明
+// 交给界面分类展示；否则 IPC 会只返回 null，界面无法区分空数据与读取失败。
+const callReadable = (channel, payload = {}, meta = {}) =>
+  ipcClient.call(channel, payload, meta, { throwOnResponseError: true })
+
 try {
   const QzoneAPI = {
     // 获取二维码图片
@@ -51,79 +56,75 @@ try {
     getLocalLoginJump: (userInfo) =>
       ipcClient.call(IPC_AUTH.LOCAL_LOGIN, { userInfo }, {}, { throwOnResponseError: true }),
     // 获取个人信息
-    fetchUserInfo: () => ipcClient.call(IPC_USER.ME_INFO),
+    fetchUserInfo: () => callReadable(IPC_USER.ME_INFO),
     // 获取相册列表
-    // 相册首屏加载失败时必须让页面获得真实错误，提供明确的重试入口，不能吞成 null。
-    getPhotoList: (data, meta) =>
-      ipcClient.call(IPC_PHOTO.PHOTO_LIST, data, meta, { throwOnResponseError: true }),
+    getPhotoList: (data, meta) => callReadable(IPC_PHOTO.PHOTO_LIST, data, meta),
     // 获取我的相册中的照片
-    getPhotoByTopicId: (data, meta) => ipcClient.call(IPC_PHOTO.PHOTO_BY_TOPIC_ID, data, meta),
+    getPhotoByTopicId: (data, meta) => callReadable(IPC_PHOTO.PHOTO_BY_TOPIC_ID, data, meta),
     // 获取照片浮层视图列表
-    getPhotoFloatviewList: (data, meta) =>
-      ipcClient.call(IPC_PHOTO.PHOTO_FLOATVIEW_LIST, data, meta),
+    getPhotoFloatviewList: (data, meta) => callReadable(IPC_PHOTO.PHOTO_FLOATVIEW_LIST, data, meta),
     // 获取照片或视频信息
-    getPhotoOrVideoInfo: (data, meta) => ipcClient.call(IPC_PHOTO.PHOTO_OR_VIDEO_INFO, data, meta),
+    getPhotoOrVideoInfo: (data, meta) => callReadable(IPC_PHOTO.PHOTO_OR_VIDEO_INFO, data, meta),
     // 获取视频信息
-    getVideoInfo: (data, meta) => ipcClient.call(IPC_PHOTO.VIDEO_INFO, data, meta),
+    getVideoInfo: (data, meta) => callReadable(IPC_PHOTO.VIDEO_INFO, data, meta),
     // 批量获取视频信息
-    batchGetVideoInfo: (data, meta) => ipcClient.call(IPC_PHOTO.BATCH_VIDEO_INFO, data, meta),
+    batchGetVideoInfo: (data, meta) => callReadable(IPC_PHOTO.BATCH_VIDEO_INFO, data, meta),
     // 删除照片
     deletePhotos: (data, meta) => ipcClient.call(IPC_PHOTO.DELETE_PHOTOS, data, meta),
     // 获取QQ空间动态（说说）
-    getFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FEEDS, data, meta),
+    getFeeds: (data, meta) => callReadable(IPC_PHOTO.GET_FEEDS, data, meta),
     // 删除动态
     deleteFeed: (data, meta) => ipcClient.call(IPC_PHOTO.DELETE_FEED, data, meta),
     // 置顶或取消置顶自己的动态
     setFeedTop: (data, meta) => ipcClient.call(IPC_PHOTO.SET_FEED_TOP, data, meta),
     // 获取视频列表
-    getVideoList: (data, meta) => ipcClient.call(IPC_PHOTO.GET_VIDEO_LIST, data, meta),
+    getVideoList: (data, meta) => callReadable(IPC_PHOTO.GET_VIDEO_LIST, data, meta),
     // 获取相册问题和答案
-    getAlbumQA: (data, meta) => ipcClient.call(IPC_PHOTO.GET_ALBUM_QA, data, meta),
+    getAlbumQA: (data, meta) => callReadable(IPC_PHOTO.GET_ALBUM_QA, data, meta),
     // 获取相册访客信息（总访客 / 今日访客 / 最近访客列表）
-    getAlbumVisitors: (data, meta) => ipcClient.call(IPC_PHOTO.GET_ALBUM_VISITORS, data, meta),
+    getAlbumVisitors: (data, meta) => callReadable(IPC_PHOTO.GET_ALBUM_VISITORS, data, meta),
     // 获取好友照片动态流
-    getFriendPhotos: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FRIEND_PHOTOS, data, meta),
+    getFriendPhotos: (data, meta) => callReadable(IPC_PHOTO.GET_FRIEND_PHOTOS, data, meta),
     // 获取「好友动态」时间线（scope=0 好友 / scope=7 特别关心）
-    getFriendFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FRIEND_FEEDS, data, meta),
+    getFriendFeeds: (data, meta) => callReadable(IPC_PHOTO.GET_FRIEND_FEEDS, data, meta),
     // 获取「我的主页 / 好友主页」时间线
-    getHomeFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_HOME_FEEDS, data, meta),
+    getHomeFeeds: (data, meta) => callReadable(IPC_PHOTO.GET_HOME_FEEDS, data, meta),
     // 拉某条好友动态的评论列表（顶层评论 + 子回复，预渲染 HTML）
-    getFeedComments: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FEED_COMMENTS, data, meta),
-    getFeedLikers: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FEED_LIKERS, data, meta),
-    getShuoshuoComments: (data, meta) =>
-      ipcClient.call(IPC_PHOTO.GET_SHUOSHUO_COMMENTS, data, meta),
+    getFeedComments: (data, meta) => callReadable(IPC_PHOTO.GET_FEED_COMMENTS, data, meta),
+    getFeedLikers: (data, meta) => callReadable(IPC_PHOTO.GET_FEED_LIKERS, data, meta),
+    getShuoshuoComments: (data, meta) => callReadable(IPC_PHOTO.GET_SHUOSHUO_COMMENTS, data, meta),
     // 顶部 5 类动态未读计数（动态 tab 角标）
-    getFeedsCount: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FEEDS_COUNT, data, meta),
+    getFeedsCount: (data, meta) => callReadable(IPC_PHOTO.GET_FEEDS_COUNT, data, meta),
     // 「与我相关」时间线（feeds2_html_pav_all）
-    getAboutMeFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_ABOUT_ME_FEEDS, data, meta),
+    getAboutMeFeeds: (data, meta) => callReadable(IPC_PHOTO.GET_ABOUT_ME_FEEDS, data, meta),
     // 「那年今日」时间线（feeds2_html_today_lastyear）
-    getLastYearFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_LAST_YEAR_FEEDS, data, meta),
+    getLastYearFeeds: (data, meta) => callReadable(IPC_PHOTO.GET_LAST_YEAR_FEEDS, data, meta),
     // 「我的收藏」列表（get_fav_list）
-    getFavList: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FAV_LIST, data, meta),
+    getFavList: (data, meta) => callReadable(IPC_PHOTO.GET_FAV_LIST, data, meta),
     // 获取「留言板」列表
-    getMessageBoard: (data, meta) => ipcClient.call(IPC_PHOTO.GET_MESSAGE_BOARD, data, meta),
+    getMessageBoard: (data, meta) => callReadable(IPC_PHOTO.GET_MESSAGE_BOARD, data, meta),
     // 获取「日志」摘要列表
-    getBlogList: (data, meta) => ipcClient.call(IPC_PHOTO.GET_BLOG_LIST, data, meta),
+    getBlogList: (data, meta) => callReadable(IPC_PHOTO.GET_BLOG_LIST, data, meta),
     // 获取好友亲密度列表
-    getFriendList: (data, meta) => ipcClient.call(IPC_FRIEND.GET_FRIEND_LIST, data, meta),
+    getFriendList: (data, meta) => callReadable(IPC_FRIEND.GET_FRIEND_LIST, data, meta),
     // 获取 QQ 好友及分组
-    getQQFriends: (data, meta) => ipcClient.call(IPC_FRIEND.GET_QQ_FRIENDS, data, meta),
+    getQQFriends: (data, meta) => callReadable(IPC_FRIEND.GET_QQ_FRIENDS, data, meta),
     // 获取当前账号可见的 QQ 群
-    getQQGroups: (data, meta) => ipcClient.call(IPC_FRIEND.GET_QQ_GROUPS, data, meta),
+    getQQGroups: (data, meta) => callReadable(IPC_FRIEND.GET_QQ_GROUPS, data, meta),
     // 获取指定 QQ 群成员
-    getQQGroupMembers: (data, meta) => ipcClient.call(IPC_FRIEND.GET_QQ_GROUP_MEMBERS, data, meta),
+    getQQGroupMembers: (data, meta) => callReadable(IPC_FRIEND.GET_QQ_GROUP_MEMBERS, data, meta),
     // 获取好友个人名片（真实姓名、亲密度、星座等）
-    getPersonalCard: (data, meta) => ipcClient.call(IPC_USER.PERSONAL_CARD, data, meta),
+    getPersonalCard: (data, meta) => callReadable(IPC_USER.PERSONAL_CARD, data, meta),
     // 获取访客在线状态
-    getVisitorStatus: (meta) => ipcClient.call(IPC_USER.VISITOR_STATUS, {}, meta),
+    getVisitorStatus: (meta) => callReadable(IPC_USER.VISITOR_STATUS, {}, meta),
     // 获取访客详细记录
-    getVisitorDetail: (data, meta) => ipcClient.call(IPC_USER.VISITOR_DETAIL, data, meta),
+    getVisitorDetail: (data, meta) => callReadable(IPC_USER.VISITOR_DETAIL, data, meta),
     // 获取完整访客列表（谁看过我 / 我看过谁）
-    getVisitorMore: (data, meta) => ipcClient.call(IPC_USER.VISITOR_MORE, data, meta),
+    getVisitorMore: (data, meta) => callReadable(IPC_USER.VISITOR_MORE, data, meta),
     // 获取说说列表（含评论IP、设备型号）
-    getShuoshuo: (data, meta) => ipcClient.call(IPC_USER.SHUOSHUO, data, meta),
+    getShuoshuo: (data, meta) => callReadable(IPC_USER.SHUOSHUO, data, meta),
     // 获取当前账号的定时说说（只读）
-    getScheduledShuoshuo: (data, meta) => ipcClient.call(IPC_USER.SCHEDULED_SHUOSHUO, data, meta),
+    getScheduledShuoshuo: (data, meta) => callReadable(IPC_USER.SCHEDULED_SHUOSHUO, data, meta),
     // 同步给内置 QQ 空间网页窗口使用，避免打开用户主页时重复登录
     setQzoneAuth: (auth) => ipcRenderer.invoke(IPC_WINDOW.SET_QZONE_AUTH, auth),
 

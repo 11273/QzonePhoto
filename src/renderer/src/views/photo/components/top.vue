@@ -118,6 +118,15 @@
                       <div class="priv-row">
                         <span class="priv-label">答案</span>
                         <span v-if="qaLoading" class="priv-text muted">加载中...</span>
+                        <button
+                          v-else-if="qaError"
+                          type="button"
+                          class="answer-toggle is-error"
+                          :title="qaError"
+                          @click.stop="fetchAnswer(true)"
+                        >
+                          读取失败，重试
+                        </button>
                         <span v-else-if="qaAnswer" class="priv-text answer-wrap">
                           <span
                             v-if="qaAnswerVisible"
@@ -246,7 +255,9 @@
                   :aria-busy="visitorStatus === 'loading'"
                   :aria-label="visitorStateAriaLabel"
                   :title="
-                    visitorStatus === 'error' ? '访客信息获取失败，点击重试' : '正在获取访客信息'
+                    visitorStatus === 'error'
+                      ? `${visitorFailureState?.description || '访客信息获取失败'}，点击重试`
+                      : '正在获取访客信息'
                   "
                   @click.stop="retryVisitors"
                 >
@@ -256,7 +267,7 @@
                   >
                     <Loading />
                   </el-icon>
-                  <span>{{ visitorStatus === 'error' ? '访客 —' : '访客 …' }}</span>
+                  <span>{{ visitorStatus === 'error' ? '访客读取失败' : '访客 …' }}</span>
                   <span v-if="visitorStatus === 'error'" class="visitor-retry">重试</span>
                 </button>
               </span>
@@ -392,6 +403,7 @@ import { useDownloadStore } from '@renderer/store/download.store'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { useUserStore } from '@renderer/store/user.store'
 import { QZONE_UTILS, QZONE_CONFIG } from '@shared/const'
+import { classifyContentLoadFailure } from '@shared/content-load-state'
 
 const props = defineProps({
   dialogMode: {
@@ -435,6 +447,7 @@ const photoSize = inject('photoSize', ref('medium'))
 // 问答状态（在 popover 打开时按需拉取）
 const qaAnswer = ref(null)
 const qaLoading = ref(false)
+const qaError = ref('')
 const qaAnswerVisible = ref(false)
 const privPopoverVisible = ref(false)
 const visitorPopoverVisible = ref(false)
@@ -464,11 +477,15 @@ const handleAlbumPopoverEscape = (event) => {
   }
 }
 
-const fetchAnswer = async () => {
+const fetchAnswer = async (force = false) => {
   if (currentAlbum.value?.priv !== 5) return
   if (isFriendContext.value) {
     qaAnswer.value = ''
     return
+  }
+  if (force) {
+    qaAnswer.value = null
+    qaError.value = ''
   }
   if (qaAnswer.value !== null || qaLoading.value) return
   qaLoading.value = true
@@ -477,9 +494,14 @@ const fetchAnswer = async () => {
       hostUin: effectiveHostUin.value,
       albumId: currentAlbum.value?.id
     })
-    qaAnswer.value = res?.code === 0 ? res.data?.answer || '' : ''
-  } catch {
-    qaAnswer.value = ''
+    if (Number(res?.code) !== 0 || !res?.data) {
+      qaError.value = classifyContentLoadFailure(res, { label: '相册答案' }).description
+      return
+    }
+    qaAnswer.value = res.data.answer || ''
+    qaError.value = ''
+  } catch (error) {
+    qaError.value = classifyContentLoadFailure(error, { label: '相册答案' }).description
   } finally {
     qaLoading.value = false
   }
@@ -492,6 +514,7 @@ watch(
   () => currentAlbum.value?.id,
   () => {
     qaAnswer.value = null
+    qaError.value = ''
     qaAnswerVisible.value = false
     privPopoverVisible.value = false
     visitorPopoverVisible.value = false
@@ -544,6 +567,7 @@ const visitorTotal = ref(0)
 const visitorToday = ref(0)
 const visitorItems = ref([])
 const visitorStatus = ref('idle')
+const visitorFailureState = ref(null)
 let visitorRequestId = 0
 
 const fetchVisitors = async () => {
@@ -557,12 +581,14 @@ const fetchVisitors = async () => {
       { hostUin: effectiveHostUin.value, albumId },
       { skipAuthCheck: true }
     )
+    if (Number(res?.code) !== 0) throw res
     const stat = res?.data?.modvisitcount?.[0]
-    if (!stat) throw new Error('相册访客接口未返回统计数据')
+    if (!stat) throw new Error('QQ 空间返回的相册访客数据不完整')
     if (requestId !== visitorRequestId) return
     visitorTotal.value = Number(stat.totalcount) || 0
     visitorToday.value = Number(stat.todaycount) || 0
     visitorItems.value = res?.data?.items || []
+    visitorFailureState.value = null
     visitorStatus.value = 'success'
   } catch (err) {
     if (requestId !== visitorRequestId) return
@@ -570,6 +596,7 @@ const fetchVisitors = async () => {
     visitorTotal.value = 0
     visitorToday.value = 0
     visitorItems.value = []
+    visitorFailureState.value = classifyContentLoadFailure(err, { label: '访客信息' })
     visitorStatus.value = 'error'
   }
 }
@@ -579,7 +606,9 @@ const retryVisitors = () => {
 }
 
 const visitorStateAriaLabel = computed(() =>
-  visitorStatus.value === 'error' ? '访客信息获取失败，点击重试' : '正在获取访客信息'
+  visitorStatus.value === 'error'
+    ? `${visitorFailureState.value?.description || '访客信息获取失败'}，点击重试`
+    : '正在获取访客信息'
 )
 
 watch(
@@ -589,6 +618,7 @@ watch(
     visitorTotal.value = 0
     visitorToday.value = 0
     visitorItems.value = []
+    visitorFailureState.value = null
     visitorStatus.value = 'idle'
     if (id && !isFriend) {
       fetchVisitors()

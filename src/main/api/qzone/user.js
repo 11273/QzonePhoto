@@ -1,9 +1,44 @@
 import { net } from 'electron'
 import { extractJSONFromCallback, getGTK } from '@main/api/utils/helpers'
 import request from '@main/api/utils/request'
+import { normalizeQzoneReadResponse } from '@shared/qzone-read-response'
 
 // Extract raw QQ number from cookie uin (strip "o" prefix)
 const rawUin = (uin) => String(uin).replace(/^o/, '')
+const isRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value))
+const qzoneCode = (...values) => {
+  const candidates = values
+    .flatMap((value) =>
+      isRecord(value)
+        ? [value.code, value.ret, value.subcode, value.errno, value.errorCode]
+        : [value]
+    )
+    .filter((value) => value !== undefined && value !== null && value !== '')
+  const failed = candidates.find((value) => Number.isFinite(Number(value)) && Number(value) !== 0)
+  if (failed !== undefined) return Number(failed)
+  const successful = candidates.find((value) => Number.isFinite(Number(value)))
+  return successful === undefined ? 0 : Number(successful)
+}
+const qzoneMessage = (...values) =>
+  values
+    .flatMap((value) =>
+      isRecord(value)
+        ? [
+            value.message,
+            value.msg,
+            value.retmsg,
+            value.errmsg,
+            value.err,
+            value.reason,
+            value.detail,
+            value.error_description,
+            value.errorMessage,
+            value.protect_content,
+            value.protectContent
+          ]
+        : []
+    )
+    .find((value) => typeof value === 'string' && value.trim()) || ''
 
 export async function getMeInfo(uin, p_skey) {
   const url = 'https://h5.qzone.qq.com/proxy/domain/vip.qzone.qq.com/fcg-bin/fcg_get_vipinfo_mobile'
@@ -20,7 +55,10 @@ export async function getMeInfo(uin, p_skey) {
       cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '个人资料',
+    isValid: (body) => isRecord(body?.data)
+  })
 }
 
 /**
@@ -62,7 +100,10 @@ export async function getVisitorStatus(uin, p_skey) {
       Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '访客状态',
+    isValid: (body) => isRecord(body?.data) && isRecord(body.data.module_3)
+  })
 }
 
 /**
@@ -88,7 +129,20 @@ export async function getVisitorDetail(uin, p_skey, mask = 2, mod = 2) {
       Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '访客记录',
+    isValid: (body) => {
+      const data = body?.data
+      if (!isRecord(data)) return false
+      return (
+        Array.isArray(data.items) ||
+        Array.isArray(data.modvisitcount) ||
+        Array.isArray(data.calvisitcount) ||
+        Object.prototype.hasOwnProperty.call(data, 'count') ||
+        Object.prototype.hasOwnProperty.call(data, 'todaycount')
+      )
+    }
+  })
 }
 
 /**
@@ -129,7 +183,19 @@ export async function getVisitorMore(uin, p_skey, mask = 3, mod = 8, page = 1) {
       items: []
     }
   }
-  const data = body.data && typeof body.data === 'object' ? body.data : {}
+  const code = qzoneCode(body)
+  const data = isRecord(body.data) ? body.data : null
+  if ((Number.isFinite(code) && code !== 0) || !data) {
+    return {
+      code: Number.isFinite(code) && code !== 0 ? code : -1,
+      message: qzoneMessage(body, data) || 'QQ 空间返回的访客记录数据不完整',
+      page: safePage,
+      totalPages: 1,
+      total: 0,
+      blockedCount: 0,
+      items: []
+    }
+  }
   const items = Array.isArray(data.items)
     ? data.items
     : Array.isArray(data.list)
@@ -151,8 +217,8 @@ export async function getVisitorMore(uin, p_skey, mask = 3, mod = 8, page = 1) {
     ) || 1
   )
   return {
-    code: Number(body.code ?? 0),
-    message: body.message || data.message || '',
+    code: 0,
+    message: qzoneMessage(body, data),
     page: Number(data.page ?? data.curpage ?? data.curPage ?? safePage) || safePage,
     totalPages,
     total: Number(data.count ?? data.total ?? data.totalcount ?? data.totalCount) || 0,
@@ -204,7 +270,23 @@ export async function getShuoshuo(uin, p_skey, targetUin, pos = 0, num = 20) {
     }
   }
   const parsed = extractJSONFromCallback(text)
-  return typeof parsed === 'object' ? parsed : { code: -1, message: '响应异常', raw: parsed }
+  if (!isRecord(parsed)) {
+    return { code: -1, message: 'QQ 空间返回的说说数据不完整' }
+  }
+  const parsedCode = qzoneCode(parsed)
+  const hasListShape =
+    Array.isArray(parsed.msglist) ||
+    Array.isArray(parsed.data?.msglist) ||
+    Object.prototype.hasOwnProperty.call(parsed, 'total') ||
+    Object.prototype.hasOwnProperty.call(parsed, 'usrinfo')
+  if ((Number.isFinite(parsedCode) && parsedCode !== 0) || !hasListShape) {
+    return {
+      ...parsed,
+      code: Number.isFinite(parsedCode) && parsedCode !== 0 ? parsedCode : -1,
+      message: qzoneMessage(parsed, parsed.data) || 'QQ 空间返回的说说数据不完整'
+    }
+  }
+  return parsed
 }
 
 /**
@@ -249,7 +331,25 @@ export async function getScheduledShuoshuo(uin, p_skey, pos = 0, num = 20) {
       msglist: []
     }
   }
-  const result = body.result && typeof body.result === 'object' ? body.result : body
+  const result = isRecord(body.result) ? body.result : body
+  const code = qzoneCode(result, body)
+  const hasScheduleShape =
+    Array.isArray(result.msglist) ||
+    Array.isArray(result.posts) ||
+    Object.prototype.hasOwnProperty.call(result, 'total') ||
+    Object.prototype.hasOwnProperty.call(result, 'total_num') ||
+    Object.prototype.hasOwnProperty.call(result, 'usrinfo')
+  if ((Number.isFinite(code) && code !== 0) || !hasScheduleShape) {
+    return {
+      code: Number.isFinite(code) && code !== 0 ? code : -1,
+      message: qzoneMessage(result, body) || 'QQ 空间返回的定时说说数据不完整',
+      total: 0,
+      pos: safePos,
+      num: safeNum,
+      hasMore: false,
+      msglist: []
+    }
+  }
   const msglist = Array.isArray(result.msglist)
     ? result.msglist
     : Array.isArray(result.posts)
@@ -257,8 +357,8 @@ export async function getScheduledShuoshuo(uin, p_skey, pos = 0, num = 20) {
       : []
   const total = Number(result.total ?? result.total_num ?? result.usrinfo?.msgnum) || 0
   return {
-    code: Number(result.code ?? body.code ?? 0),
-    message: result.message || result.msg || body.message || '',
+    code: 0,
+    message: qzoneMessage(result, body),
     total,
     pos: safePos,
     num: safeNum,

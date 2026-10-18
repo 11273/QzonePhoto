@@ -239,7 +239,10 @@
             </button>
             <div v-if="mediaError" class="mp-error" role="alert">
               <el-icon><WarningFilled /></el-icon>
-              <span>无法加载该媒体</span>
+              <strong>{{
+                current?.type === 'video' ? '暂时无法播放视频' : '暂时无法显示图片'
+              }}</strong>
+              <span>{{ mediaErrorText }}</span>
               <div class="mp-error-actions">
                 <button type="button" class="mp-error-btn primary" @click="retryCurrentMedia">
                   重试
@@ -479,6 +482,12 @@ import {
   isHlsVideoSource,
   saveVideoPlaybackPreference
 } from '@renderer/utils/video-playback.mjs'
+import {
+  describeHlsError,
+  describeMediaElementError,
+  describePlaybackRejection
+} from '@renderer/utils/media-error.mjs'
+import { classifyContentLoadFailure } from '@shared/content-load-state'
 import Hls from 'hls.js'
 
 const privacyStore = usePrivacyStore()
@@ -516,6 +525,7 @@ const emit = defineEmits(['update:visible', 'index-change', 'toggle-select'])
 const currentIndex = ref(0)
 const mediaLoading = ref(false)
 const mediaError = ref(false)
+const mediaErrorText = ref('')
 const videoPaused = ref(true)
 const imageFallbackSrc = ref('')
 const loadingMore = ref(false)
@@ -572,9 +582,14 @@ const playCurrentVideo = async () => {
     await element.play()
     videoPaused.value = false
     return true
-  } catch {
+  } catch (error) {
     mediaLoading.value = false
     videoPaused.value = true
+    const description = describePlaybackRejection(error)
+    if (description) {
+      mediaErrorText.value = description
+      mediaError.value = true
+    }
     return false
   }
 }
@@ -595,6 +610,7 @@ const loadCurrentVideoSource = async (source) => {
   destroyVideoHls()
   mediaLoading.value = true
   mediaError.value = false
+  mediaErrorText.value = ''
   videoPaused.value = true
   videoSourceAttached.value = false
   applyVideoPlaybackPreference(element)
@@ -609,6 +625,7 @@ const loadCurrentVideoSource = async (source) => {
 
     if (!Hls.isSupported()) {
       mediaLoading.value = false
+      mediaErrorText.value = '当前系统不支持这种视频播放格式，可以尝试在浏览器中打开或下载后播放。'
       mediaError.value = true
       return
     }
@@ -624,6 +641,7 @@ const loadCurrentVideoSource = async (source) => {
     videoHls.on(Hls.Events.ERROR, (_event, data) => {
       if (!data.fatal) return
       mediaLoading.value = false
+      mediaErrorText.value = describeHlsError(data, Hls.ErrorTypes)
       mediaError.value = true
       destroyVideoHls()
     })
@@ -811,6 +829,7 @@ const showNextImageCandidate = () => {
   imageFallbackSrc.value = nextSrc
   mediaLoading.value = true
   mediaError.value = false
+  mediaErrorText.value = ''
   return true
 }
 const isQzoneUnavailableImage = (img) => {
@@ -896,6 +915,7 @@ const setIndex = (i) => {
   currentIndex.value = i
   mediaLoading.value = true
   mediaError.value = false
+  mediaErrorText.value = ''
   videoPaused.value = true
   imageFallbackSrc.value = ''
   resetTransform() // 切换 item 时归零缩放/旋转/位移
@@ -904,12 +924,34 @@ const setIndex = (i) => {
   // 若当前项标记 needsResolve（如视频需异步拉真实 URL），调用 resolveItem
   const item = props.items[i]
   if (!item?.details) detailsVisible.value = false
-  if (item && item.needsResolve && typeof props.resolveItem === 'function') {
-    Promise.resolve(props.resolveItem(item, i)).catch((e) => {
-      console.warn('[MediaPreview] resolveItem 失败:', e)
+  if (item && item.needsResolve) {
+    if (typeof props.resolveItem !== 'function') {
+      mediaErrorText.value = '当前视频没有可用的播放地址。'
       mediaError.value = true
       mediaLoading.value = false
-    })
+    } else {
+      Promise.resolve(props.resolveItem(item, i))
+        .then(async (resolvedItem) => {
+          await nextTick()
+          if (currentIndex.value !== i || !props.visible) return
+          const latest = props.items[i]
+          if (!latest?.src && !resolvedItem?.src) {
+            mediaErrorText.value =
+              '当前视频没有返回可用的播放地址，可能已失效或受 QQ 空间权限限制。'
+            mediaError.value = true
+            mediaLoading.value = false
+          }
+        })
+        .catch((error) => {
+          console.warn('[MediaPreview] resolveItem 失败:', error)
+          if (currentIndex.value !== i || !props.visible) return
+          mediaErrorText.value = classifyContentLoadFailure(error, {
+            label: '视频播放地址'
+          }).description
+          mediaError.value = true
+          mediaLoading.value = false
+        })
+    }
   }
   // 临近末尾时静默预加载下一页
   maybePrefetch()
@@ -947,7 +989,7 @@ const onVideoPlaying = () => {
 const onVideoVolumeChange = () => {
   if (videoEl.value) saveVideoPlaybackPreference(videoEl.value)
 }
-const onMediaError = () => {
+const onMediaError = (event) => {
   // 切换或关闭视频时会主动移除 src；这不是播放失败，不能显示错误遮罩。
   if (current.value?.type === 'video' && !videoSourceAttached.value) return
 
@@ -968,22 +1010,36 @@ const onMediaError = () => {
     return
   }
   mediaLoading.value = false
+  mediaErrorText.value = describeMediaElementError(event?.target?.error, {
+    type: current.value?.type || 'media'
+  })
   mediaError.value = true
 }
 
 const retryCurrentMedia = async () => {
   if (!current.value) return
   mediaError.value = false
+  mediaErrorText.value = ''
   mediaLoading.value = true
   imageFallbackSrc.value = ''
   reloadNonce.value += 1
 
   if (current.value.needsResolve && typeof props.resolveItem === 'function') {
     try {
-      await props.resolveItem(current.value, currentIndex.value)
+      const resolvedItem = await props.resolveItem(current.value, currentIndex.value)
+      await nextTick()
+      if (!current.value?.src && !resolvedItem?.src) {
+        mediaLoading.value = false
+        mediaErrorText.value = '当前视频没有返回可用的播放地址，可能已失效或受 QQ 空间权限限制。'
+        mediaError.value = true
+        return
+      }
     } catch (error) {
       console.warn('[MediaPreview] retry resolveItem 失败:', error)
       mediaLoading.value = false
+      mediaErrorText.value = classifyContentLoadFailure(error, {
+        label: '视频播放地址'
+      }).description
       mediaError.value = true
       return
     }
@@ -1119,6 +1175,7 @@ watch(
       detachCurrentVideoSource()
       mediaLoading.value = false
       mediaError.value = false
+      mediaErrorText.value = ''
       videoPaused.value = true
       if (videoEl.value) applyVideoPlaybackPreference(videoEl.value)
     })
@@ -1778,6 +1835,17 @@ onUnmounted(() => {
   color: var(--theme-text-secondary);
   border-radius: 6px;
   font-size: 13px;
+
+  > strong {
+    color: var(--theme-text-primary);
+    font-size: 14px;
+  }
+
+  > span {
+    max-width: min(520px, calc(100% - 48px));
+    line-height: 1.55;
+    text-align: center;
+  }
 
   .el-icon {
     font-size: 28px;

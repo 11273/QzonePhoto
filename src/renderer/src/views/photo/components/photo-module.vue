@@ -77,8 +77,8 @@
             :icon="photoPlaceholderIcon"
             :title="photoPlaceholderState.title"
             :description="photoPlaceholderState.description"
-            :semantic-role="loadFailureState ? 'alert' : 'status'"
-            :aria-live="loadFailureState ? 'assertive' : 'polite'"
+            :semantic-role="failureStateIsError ? 'alert' : 'status'"
+            :aria-live="failureStateIsError ? 'assertive' : 'polite'"
           >
             <el-button
               v-if="photoPlaceholderState.retryable"
@@ -189,6 +189,12 @@
               <el-icon class="loading-icon"><Loading /></el-icon>
               <span>正在加载更多...</span>
             </div>
+            <ContentPartialNotice
+              v-else-if="loadFailureState && feeds.length > 0"
+              :state="loadFailureState"
+              title="好友照片只显示了已经读取的内容"
+              @retry="loadMoreFeeds"
+            />
             <div v-else-if="!hasMore && feeds.length > 0" class="no-more grid-no-more">
               <span>已加载全部好友照片</span>
             </div>
@@ -491,6 +497,13 @@
               <span>正在加载更多动态...</span>
             </div>
 
+            <ContentPartialNotice
+              v-else-if="loadFailureState && feeds.length > 0"
+              :state="loadFailureState"
+              title="照片动态只显示了已经读取的内容"
+              @retry="loadMoreFeeds"
+            />
+
             <!-- 没有更多数据提示 -->
             <div v-else-if="!hasMore && feeds.length > 0" class="no-more">
               <span>已加载全部动态</span>
@@ -737,6 +750,7 @@ import FeedComment from '@renderer/components/FeedComment/index.vue'
 import AppActionButton from '@renderer/components/AppActionButton/index.vue'
 import AppRefreshButton from '@renderer/components/AppRefreshButton/index.vue'
 import ModuleHeader from '@renderer/components/ModuleHeader/index.vue'
+import ContentPartialNotice from '@renderer/components/ContentPartialNotice/index.vue'
 import { getQQAvatarUrl } from '@renderer/utils/formatters'
 import {
   createPaginationGuard,
@@ -766,8 +780,14 @@ import {
   applyVideoPlaybackPreference,
   isHlsVideoSource,
   resolveVideoCoverSource,
+  resolveVideoPlaybackSource,
   saveVideoPlaybackPreference
 } from '@renderer/utils/video-playback.mjs'
+import {
+  describeHlsError,
+  describeMediaElementError,
+  describePlaybackRejection
+} from '@renderer/utils/media-error.mjs'
 import Hls from 'hls.js'
 
 const privacyStore = usePrivacyStore()
@@ -831,7 +851,7 @@ const photoPlaceholderState = computed(
       friendMode: isFriendPhotos.value || isFriendContext.value,
       emptyDescription:
         isFriendPhotos.value || isFriendContext.value
-          ? '对方暂时没有向你公开的照片。'
+          ? '当前账号没有读取到可见照片；可能暂时没有内容，也可能受 QQ 空间可见范围限制。'
           : '这里还没有照片动态。'
     })
 )
@@ -840,6 +860,9 @@ const photoPlaceholderIcon = computed(() => {
   if (photoPlaceholderState.value.status === CONTENT_LOAD_STATUS.ERROR) return TriangleAlert
   return ImageIcon
 })
+const failureStateIsError = computed(
+  () => loadFailureState.value?.status === CONTENT_LOAD_STATUS.ERROR
+)
 
 // 动态数据
 const feeds = ref([])
@@ -1607,6 +1630,8 @@ const deleteFeed = async (feed) => {
 
 const hoverPreviewKey = ref('')
 let hoverPreviewTimer = null
+let hoverPreviewRequestId = 0
+const videoPlaybackCache = new Map()
 const mediaHoverKey = (feed, index) => `${feed?.id || feed?.time || 'feed'}:${index}`
 const isVideoMedia = (media) =>
   media?.type === 'video' ||
@@ -1636,17 +1661,62 @@ const canUseHoverPreview = () =>
   !privacyStore.privacyMode &&
   !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches &&
   !!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches
+const videoPlaybackCacheKey = (media, feed) =>
+  `${media?.ownerUin || feed?.owner?.uin || effectiveHostUin.value}:${
+    media?.albumId || feed?.albumId || ''
+  }:${media?.picKey || media?.lloc || media?.key || media?.id || ''}`
+const resolveFeedVideoPlayback = async (media, feed) => {
+  const directSource = mediaPreviewSource(media)
+  if (directSource) {
+    return { url: directSource, cover: mediaPreviewCover(media) }
+  }
+
+  const hostUin = media?.ownerUin || feed?.owner?.uin || effectiveHostUin.value
+  const topicId = media?.albumId || feed?.albumId
+  const picKey = media?.picKey || media?.lloc || media?.key || media?.id
+  if (!hostUin || !topicId || !picKey) {
+    throw new Error('视频记录缺少相册或文件标识，无法向 QQ 空间查询播放地址')
+  }
+
+  const cacheKey = videoPlaybackCacheKey(media, feed)
+  if (videoPlaybackCache.has(cacheKey)) return videoPlaybackCache.get(cacheKey)
+
+  const info = await window.QzoneAPI.getVideoInfo(
+    { hostUin, topicId, picKey },
+    isFriendContext.value || isFriendPhotos.value ? { skipAuthCheck: true } : friendMeta.value
+  )
+  const playback = {
+    url: resolveVideoPlaybackSource(info || {}),
+    cover: resolveVideoCoverSource(info || {}, media)
+  }
+  if (!playback.url) {
+    throw new Error('QQ 空间没有返回可用的视频播放地址')
+  }
+
+  videoPlaybackCache.set(cacheKey, playback)
+  media.videoUrl = playback.url
+  if (playback.cover) media.cover = playback.cover
+  return playback
+}
 const scheduleMediaHoverPreview = (feed, media, index) => {
   clearHoverPreviewTimer()
-  if (!isVideoMedia(media) || !mediaPreviewSource(media) || !canUseHoverPreview()) return
+  if (!isVideoMedia(media) || !canUseHoverPreview()) return
   const key = mediaHoverKey(feed, index)
-  hoverPreviewTimer = window.setTimeout(() => {
+  const requestId = ++hoverPreviewRequestId
+  hoverPreviewTimer = window.setTimeout(async () => {
     hoverPreviewTimer = null
-    hoverPreviewKey.value = key
+    try {
+      await resolveFeedVideoPlayback(media, feed)
+      if (requestId === hoverPreviewRequestId) hoverPreviewKey.value = key
+    } catch (error) {
+      // 悬停预览失败时保持封面；用户点击后会在预览器内看到完整原因和重试入口。
+      console.debug('[FeedVideoHover] 获取视频播放地址失败:', error)
+    }
   }, 520)
 }
 const stopMediaHoverPreview = (feed, index) => {
   clearHoverPreviewTimer()
+  hoverPreviewRequestId += 1
   if (hoverPreviewKey.value === mediaHoverKey(feed, index)) hoverPreviewKey.value = ''
 }
 
@@ -1692,12 +1762,14 @@ const handlePreviewVisibility = (visible) => {
 const resolvePreviewItem = async (item, idx) => {
   if (item.type !== 'video' || item.src) return item
   const m = item._media
-  const source = mediaPreviewSource(m)
-  if (source) {
-    previewItems.value[idx] = { ...item, src: source, needsResolve: false }
-    return previewItems.value[idx]
+  const playback = await resolveFeedVideoPlayback(m, item._feed)
+  previewItems.value[idx] = {
+    ...item,
+    src: playback.url,
+    thumb: playback.cover || item.thumb,
+    needsResolve: false
   }
-  return item
+  return previewItems.value[idx]
 }
 
 const downloadPreviewItem = async (item) => {
@@ -1780,10 +1852,11 @@ const playOpenedVideo = async () => {
   hls?.startLoad?.()
   try {
     await element.play()
-  } catch {
+  } catch (error) {
     videoLoading.value = false
     videoPaused.value = true
-    ElMessage.info('视频尚未准备好，请稍后再试')
+    const description = describePlaybackRejection(error)
+    if (description) videoError.value = description
   }
 }
 
@@ -1830,8 +1903,7 @@ const setupVideoEvents = () => {
   videoPlayerRef.value.onerror = () => {
     if (videoPreviewVisible.value) {
       videoLoading.value = false
-      videoError.value = '视频加载失败'
-      ElMessage.error('视频加载失败')
+      videoError.value = describeMediaElementError(videoPlayerRef.value?.error, { type: 'video' })
     }
   }
 }
@@ -1840,25 +1912,13 @@ const setupVideoEvents = () => {
 const handleHLSError = (data) => {
   videoLoading.value = false
 
-  const errorMap = {
-    [Hls.ErrorTypes.NETWORK_ERROR]: { msg: '网络错误，无法加载视频', type: 'warning' },
-    [Hls.ErrorTypes.MEDIA_ERROR]: {
-      msg: '媒体错误，正在尝试恢复...',
-      type: 'warning',
-      recover: true
-    },
-    [Hls.ErrorTypes.MANIFEST_ERROR]: { msg: '视频格式不支持', type: 'error', destroy: true }
-  }
+  videoError.value = describeHlsError(data, Hls.ErrorTypes)
 
-  const error = errorMap[data.type] || { msg: '无法播放视频', type: 'error', destroy: true }
-
-  videoError.value = error.msg
-  error.type === 'warning' ? ElMessage.warning(error.msg) : ElMessage.error(error.msg)
-
-  if (error.recover && hls) {
+  if (data.type === Hls.ErrorTypes.MEDIA_ERROR && hls) {
     hls.recoverMediaError()
-  } else if (error.destroy && hls) {
+  } else if (hls) {
     hls.destroy()
+    hls = null
   }
 }
 
@@ -2160,32 +2220,59 @@ const loadFeeds = async (isLoadMore = false) => {
       }
     } else {
       // API 调用失败
-      if (isLoadMore) {
-        pageGuard.fail(pageKey)
-        hasMore.value = true
-        ElMessage.warning(response?.message || '加载更多失败，稍后可继续重试')
-      } else {
-        hasMore.value = false
-        loadFailureState.value = classifyContentLoadFailure(response, {
+      const failureState = classifyContentLoadFailure(
+        response || { message: 'QQ 空间没有返回照片数据' },
+        {
           label: '照片',
           friendMode: isFriendPhotos.value || isFriendContext.value
+        }
+      )
+      if (isLoadMore) {
+        loadFailureState.value = failureState
+        if (failureState.retryable) pageGuard.fail(pageKey)
+        hasMore.value = failureState.retryable
+        ElMessage({
+          type: failureState.status === CONTENT_LOAD_STATUS.FORBIDDEN ? 'warning' : 'error',
+          message: failureState.description,
+          grouping: true
         })
-        if (feeds.value.length > 0) ElMessage.error('照片刷新失败，请稍后重试')
+      } else {
+        hasMore.value = false
+        loadFailureState.value = failureState
+        if (feeds.value.length > 0) {
+          ElMessage({
+            type: failureState.status === CONTENT_LOAD_STATUS.FORBIDDEN ? 'warning' : 'error',
+            message: failureState.description,
+            grouping: true
+          })
+        }
       }
     }
   } catch (error) {
     console.error('加载动态失败:', error)
+    const failureState = classifyContentLoadFailure(error, {
+      label: '照片',
+      friendMode: isFriendPhotos.value || isFriendContext.value
+    })
     if (isLoadMore) {
-      pageGuard.fail(pageKey)
-      hasMore.value = true
-      ElMessage.warning('加载更多失败，稍后可继续重试')
+      loadFailureState.value = failureState
+      if (failureState.retryable) pageGuard.fail(pageKey)
+      hasMore.value = failureState.retryable
+      ElMessage({
+        type: failureState.status === CONTENT_LOAD_STATUS.FORBIDDEN ? 'warning' : 'error',
+        message: failureState.description,
+        grouping: true
+      })
     } else {
       hasMore.value = false
-      loadFailureState.value = classifyContentLoadFailure(error, {
-        label: '照片',
-        friendMode: isFriendPhotos.value || isFriendContext.value
-      })
-      if (feeds.value.length > 0) ElMessage.error('照片刷新失败，请稍后重试')
+      loadFailureState.value = failureState
+      if (feeds.value.length > 0) {
+        ElMessage({
+          type: failureState.status === CONTENT_LOAD_STATUS.FORBIDDEN ? 'warning' : 'error',
+          message: failureState.description,
+          grouping: true
+        })
+      }
     }
   } finally {
     if (thisLoadId === currentLoadId) {
@@ -2400,6 +2487,10 @@ const debouncedSetupObserver = () => {
 const resetFeedsAndLoad = () => {
   // 切换照片来源或好友 host 时，旧分页结果必须作废，避免把上一个人的数据拼进来。
   currentLoadId++
+  hoverPreviewRequestId += 1
+  clearHoverPreviewTimer()
+  hoverPreviewKey.value = ''
+  videoPlaybackCache.clear()
   feeds.value = []
   loadFailureState.value = null
   hasMore.value = true
@@ -2437,8 +2528,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  hoverPreviewRequestId += 1
   clearHoverPreviewTimer()
   hoverPreviewKey.value = ''
+  videoPlaybackCache.clear()
   closeVideoPreview()
   // 清理观察器
   if (observer) {
