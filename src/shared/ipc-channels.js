@@ -303,6 +303,10 @@ export const IPC_APP = {
   SUBMIT_FEEDBACK: 'app:submitFeedback',
   /** 通过主进程读取当前设备收到的反馈回复 */
   FETCH_FEEDBACK_REPLIES: 'app:fetchFeedbackReplies',
+  /** 通过主进程读取当前设备的反馈会话 */
+  FETCH_FEEDBACK_THREADS: 'app:fetchFeedbackThreads',
+  /** 通过主进程向指定反馈会话发送消息 */
+  SUBMIT_FEEDBACK_MESSAGE: 'app:submitFeedbackMessage',
   /** 通过主进程上传脱敏诊断日志 */
   UPLOAD_LOGS: 'app:uploadLogs',
   /** 通过主进程上报健康事件 */

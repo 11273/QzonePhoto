@@ -1,208 +1,296 @@
 <template>
   <el-dialog
     :model-value="visible"
-    width="min(420px, calc(100vw - 32px))"
+    width="min(720px, calc(100vw - 32px))"
     align-center
     append-to-body
     modal-class="feedback-dialog-overlay"
-    class="feedback-dialog feedback-dialog-v2 ds-dialog"
+    class="feedback-dialog feedback-dialog-v3 ds-dialog"
     @update:model-value="emit('update:visible', $event)"
   >
     <template #header>
       <div class="fd-header">
-        <div class="fd-icon">
-          <el-icon><ChatDotRound /></el-icon>
+        <div class="fd-brand">
+          <span class="fd-brand-mark" aria-hidden="true">
+            <el-icon><ChatDotRound /></el-icon>
+          </span>
+          <div>
+            <div class="fd-title">反馈中心</div>
+            <div class="fd-subtitle">每一句都会被认真看见</div>
+          </div>
         </div>
-        <div class="fd-heading">
-          <div class="fd-title">反馈与建议</div>
-          <div class="fd-subtitle">写一句遇到的问题或想法就可以。</div>
+        <div class="fd-tabs" role="tablist" aria-label="反馈中心">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="activeView === 'compose'"
+            :class="{ active: activeView === 'compose' }"
+            @click="activeView = 'compose'"
+          >
+            <el-icon><EditPen /></el-icon>
+            发反馈
+          </button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="activeView === 'inbox'"
+            :aria-label="unreadCount ? `我的反馈，有 ${unreadCount} 条未读回复` : '我的反馈'"
+            :class="{ active: activeView === 'inbox' }"
+            @click="openInbox"
+          >
+            <el-icon><ChatLineRound /></el-icon>
+            我的反馈
+            <span v-if="unreadCount" class="fd-tab-badge" aria-hidden="true"></span>
+          </button>
         </div>
       </div>
     </template>
 
-    <div class="fd-body">
-      <div class="fd-type-list" role="radiogroup" aria-label="反馈类型">
-        <button
-          v-for="(option, optionIndex) in typeOptions"
-          :key="option.value"
-          class="fd-type-btn"
-          :class="{ active: form.type === option.value }"
-          type="button"
-          role="radio"
-          :aria-checked="form.type === option.value"
-          :tabindex="form.type === option.value ? 0 : -1"
-          @click="form.type = option.value"
-          @keydown="handleTypeKeydown($event, optionIndex)"
+    <transition name="fd-view" mode="out-in">
+      <div v-if="activeView === 'compose'" key="compose" class="fd-compose">
+        <div class="fd-compose-lead">
+          <span class="fd-kicker"
+            ><el-icon><MagicStick /></el-icon> 一起把体验变得更好</span
+          >
+          <h3>今天哪里可以再顺手一点？</h3>
+          <p>问题、建议，或只是一个突然冒出来的好点子，都可以直接告诉我们。</p>
+        </div>
+
+        <div class="fd-types" role="radiogroup" aria-label="反馈类型">
+          <button
+            v-for="option in typeOptions"
+            :key="option.value"
+            type="button"
+            role="radio"
+            :aria-checked="form.type === option.value"
+            :class="{ active: form.type === option.value }"
+            @click="form.type = option.value"
+          >
+            <el-icon><component :is="option.icon" /></el-icon>
+            <span>{{ option.label }}</span>
+          </button>
+        </div>
+
+        <label class="fd-input-label" for="feedback-content">
+          <span>写下最重要的一件事</span>
+          <small :class="{ 'is-invalid': contentTooShort }">{{ contentLength }} / 1200</small>
+        </label>
+        <el-input
+          id="feedback-content"
+          v-model.trim="form.content"
+          class="fd-content"
+          :class="{ 'is-invalid': contentTooShort }"
+          type="textarea"
+          :rows="4"
+          maxlength="1200"
+          resize="none"
+          :aria-invalid="contentTooShort ? 'true' : 'false'"
+          aria-describedby="feedback-content-help"
+          placeholder="比如：下载完成后，希望能直接打开所在文件夹……"
+        />
+        <div
+          id="feedback-content-help"
+          class="fd-compose-hint"
+          :class="{ 'is-invalid': contentTooShort }"
+          :role="contentTooShort ? 'alert' : 'status'"
+          aria-live="polite"
         >
-          <el-icon><component :is="option.icon" /></el-icon>
-          <span>{{ option.label }}</span>
-        </button>
+          <span class="fd-requirement">
+            <el-icon v-if="contentTooShort"><WarningFilled /></el-icon>
+            {{ contentRequirement }}
+          </span>
+          <span v-if="smartHint" class="fd-smart-hint">
+            <el-icon><Opportunity /></el-icon>{{ smartHint }}
+          </span>
+        </div>
+
+        <div class="fd-compose-actions">
+          <button class="fd-github-link" type="button" @click="openGitHubIssue">
+            <el-icon><TopRight /></el-icon>
+            需要附图？前往 GitHub
+          </button>
+          <el-button
+            class="fd-submit"
+            type="primary"
+            :loading="submitting"
+            :disabled="!hasEnoughContent"
+            :title="hasEnoughContent ? '发送反馈' : contentRequirement"
+            @click="submitQuickFeedback"
+          >
+            <el-icon v-if="!submitting"><Promotion /></el-icon>
+            发送给我们
+          </el-button>
+        </div>
       </div>
 
-      <button
-        class="fd-reply-fold"
-        type="button"
-        :aria-expanded="repliesExpanded"
-        aria-controls="feedback-replies"
-        @click="repliesExpanded = !repliesExpanded"
-      >
-        <span class="fd-reply-fold-main">
-          <el-icon><ChatDotRound /></el-icon>
-          <span>收到的回复</span>
-          <span v-if="repliesLoading" class="fd-reply-meta">读取中…</span>
-          <span v-else-if="feedbackReplies.length" class="fd-reply-count">
-            {{ feedbackReplies.length }}
-          </span>
-          <span v-else class="fd-reply-meta">暂无回复</span>
-        </span>
-        <el-icon :class="{ expanded: repliesExpanded }"><ArrowDown /></el-icon>
-      </button>
-      <transition name="fd-slide">
-        <div v-if="repliesExpanded" id="feedback-replies" class="fd-replies">
-          <div v-if="repliesLoading" class="fd-reply-empty">正在安全读取本机收到的回复…</div>
-          <template v-else-if="feedbackReplies.length">
+      <div v-else key="inbox" class="fd-inbox">
+        <div class="fd-list-heading">
+          <div>
+            <strong>我的反馈</strong>
+            <span>{{ threads.length ? `${threads.length} 条记录` : '处理结果会显示在这里' }}</span>
+          </div>
+          <button
+            type="button"
+            aria-label="刷新反馈记录"
+            :disabled="threadsLoading"
+            @click="loadFeedbackThreads(true)"
+          >
+            <el-icon :class="{ spinning: threadsLoading }"><Refresh /></el-icon>
+            <span>刷新</span>
+          </button>
+        </div>
+
+        <div class="fd-ticket-list" aria-label="反馈记录">
+          <div v-if="threadsLoading && !threads.length" class="fd-empty">
+            <span class="fd-empty-icon is-loading"
+              ><el-icon><Refresh /></el-icon
+            ></span>
+            <strong>正在读取反馈</strong>
+            <small>马上就好</small>
+          </div>
+          <div v-else-if="threadsError && !threads.length" class="fd-empty is-error">
+            <span class="fd-empty-icon"
+              ><el-icon><WarningFilled /></el-icon
+            ></span>
+            <strong>暂时没能读取</strong>
+            <small>{{ threadsError }}</small>
+            <button type="button" @click="loadFeedbackThreads(true)">再试一次</button>
+          </div>
+          <div v-else-if="!threads.length" class="fd-empty">
+            <span class="fd-empty-icon"
+              ><el-icon><ChatLineRound /></el-icon
+            ></span>
+            <strong>还没有提交过反馈</strong>
+            <small>提交后，处理状态和官方回复都会回到这里</small>
+            <button type="button" @click="activeView = 'compose'">写一条反馈</button>
+          </div>
+
+          <template v-else>
             <article
-              v-for="reply in feedbackReplies"
-              :key="`${reply.feedbackId}-${reply.repliedAt}`"
-              class="fd-reply-item"
+              v-for="thread in threads"
+              :key="thread.feedbackId"
+              class="fd-ticket"
+              :class="{
+                'is-open': selectedFeedbackId === thread.feedbackId,
+                'is-unread': isThreadUnread(thread)
+              }"
             >
-              <div class="fd-reply-title">
-                <span>{{ reply.title || '反馈回复' }}</span>
-                <time v-if="reply.repliedAt">{{ formatReplyTime(reply.repliedAt) }}</time>
-              </div>
-              <p>{{ reply.reply }}</p>
+              <button
+                type="button"
+                class="fd-ticket-summary"
+                :aria-expanded="selectedFeedbackId === thread.feedbackId"
+                @click="toggleThread(thread)"
+              >
+                <span class="fd-ticket-icon" aria-hidden="true">
+                  <el-icon><component :is="typeIconMap[thread.type] || ChatDotRound" /></el-icon>
+                </span>
+                <span class="fd-ticket-copy">
+                  <span class="fd-ticket-title">
+                    <i v-if="isThreadUnread(thread)"></i>
+                    {{ thread.title || '反馈' }}
+                  </span>
+                  <span class="fd-ticket-meta">
+                    {{ typeLabelMap[thread.type] || '反馈' }} ·
+                    {{ formatTime(thread.updatedAt || thread.submittedAt) }}
+                  </span>
+                </span>
+                <span
+                  class="fd-ticket-state"
+                  :class="{ replied: Boolean(latestAdminMessage(thread)) }"
+                >
+                  <el-icon>
+                    <CircleCheck v-if="latestAdminMessage(thread)" />
+                    <ChatDotRound v-else />
+                  </el-icon>
+                  {{ latestAdminMessage(thread) ? '官方已回复' : '已收到' }}
+                </span>
+                <el-icon class="fd-ticket-chevron"><ArrowDown /></el-icon>
+              </button>
+
+              <transition name="fd-slide">
+                <div v-if="selectedFeedbackId === thread.feedbackId" class="fd-ticket-detail">
+                  <ol class="fd-conversation" aria-label="反馈沟通记录">
+                    <li
+                      v-for="(message, messageIndex) in feedbackTimeline(thread)"
+                      :key="message.id ?? `${thread.feedbackId}-${messageIndex}`"
+                      class="fd-message"
+                      :class="{ 'is-official': message.sender === 'admin' }"
+                    >
+                      <span class="fd-message-marker" aria-hidden="true">
+                        <el-icon>
+                          <CircleCheck v-if="message.sender === 'admin'" />
+                          <ChatDotRound v-else />
+                        </el-icon>
+                      </span>
+                      <div class="fd-message-body">
+                        <div class="fd-message-heading">
+                          <strong>{{ feedbackMessageLabel(message, messageIndex) }}</strong>
+                          <time>{{ formatTime(message.createdAt) }}</time>
+                        </div>
+                        <p>{{ message.content }}</p>
+                      </div>
+                    </li>
+                  </ol>
+
+                  <section v-if="!latestAdminMessage(thread)" class="fd-awaiting-reply">
+                    <span class="fd-awaiting-icon"
+                      ><el-icon><ChatDotRound /></el-icon
+                    ></span>
+                    <div>
+                      <strong>反馈已经收到</strong>
+                      <p>需要处理或进一步确认时，我们会在这里更新结果。</p>
+                    </div>
+                  </section>
+
+                  <div v-if="latestAdminMessage(thread)" class="fd-ticket-actions">
+                    <button
+                      type="button"
+                      class="fd-secondary-action"
+                      :aria-expanded="supplementFeedbackId === thread.feedbackId"
+                      @click="toggleSupplement(thread.feedbackId)"
+                    >
+                      <el-icon><EditPen /></el-icon>
+                      {{ supplementFeedbackId === thread.feedbackId ? '取消补充' : '补充信息' }}
+                    </button>
+                  </div>
+
+                  <transition name="fd-slide">
+                    <div v-if="supplementFeedbackId === thread.feedbackId" class="fd-supplement">
+                      <label for="feedback-supplement">补充信息</label>
+                      <p>仅在需要补充现场、结果或复现步骤时填写，内容只对你和管理员可见。</p>
+                      <el-input
+                        id="feedback-supplement"
+                        v-model.trim="replyContent"
+                        type="textarea"
+                        :rows="2"
+                        maxlength="1200"
+                        resize="none"
+                        placeholder="补充新的信息……"
+                        @keydown.meta.enter.prevent="sendFollowup"
+                        @keydown.ctrl.enter.prevent="sendFollowup"
+                      />
+                      <div class="fd-supplement-actions">
+                        <small>Ctrl / ⌘ + Enter 发送</small>
+                        <el-button
+                          type="primary"
+                          size="small"
+                          :loading="replySending"
+                          :disabled="!replyContent.trim()"
+                          @click="sendFollowup"
+                        >
+                          发送补充
+                        </el-button>
+                      </div>
+                    </div>
+                  </transition>
+                </div>
+              </transition>
             </article>
           </template>
-          <div v-else-if="repliesError" class="fd-reply-empty is-error">
-            <span>{{ repliesError }}</span>
-            <button type="button" @click="loadFeedbackReplies">重试</button>
-          </div>
-          <div v-else class="fd-reply-empty">管理员回复后会显示在这里，无需公开设备信息。</div>
         </div>
-      </transition>
-
-      <label class="fd-label" for="feedback-content">反馈内容</label>
-      <el-input
-        id="feedback-content"
-        v-model.trim="form.content"
-        class="fd-content"
-        type="textarea"
-        :rows="6"
-        maxlength="1200"
-        show-word-limit
-        resize="none"
-        placeholder="比如：下载按钮点了没反应；希望照片能按年份筛选；这个页面有点看不懂。"
-      />
-      <div class="fd-hint" :class="{ warning: form.content && !hasEnoughContent }">
-        至少 8 个字，最多 1200 个字。不要填写密码、验证码或登录凭证。
       </div>
-      <label class="fd-log-option">
-        <input v-model="attachLogs" type="checkbox" />
-        <span>
-          <strong>附带诊断日志</strong>
-          <small>会自动隐藏账号、路径、登录凭证和链接</small>
-        </span>
-      </label>
-      <transition name="fd-slide">
-        <div v-if="smartHint" class="fd-smart-hint" role="status" aria-live="polite">
-          {{ smartHint }}
-        </div>
-      </transition>
-
-      <button
-        class="fd-fold"
-        type="button"
-        :aria-expanded="extraExpanded"
-        aria-controls="feedback-extra-fields"
-        @click="extraExpanded = !extraExpanded"
-      >
-        <span>联系方式和附带信息</span>
-        <el-icon :class="{ expanded: extraExpanded }"><ArrowDown /></el-icon>
-      </button>
-
-      <transition name="fd-slide">
-        <div v-if="extraExpanded" id="feedback-extra-fields" class="fd-extra">
-          <label class="fd-label">联系方式，可不填</label>
-          <el-input
-            v-model.trim="form.contact"
-            maxlength="80"
-            placeholder="邮箱 / 昵称 / 其他能联系到你的方式"
-          />
-
-          <dl class="fd-env">
-            <template v-for="item in envItems" :key="item.label">
-              <dt>{{ item.label }}</dt>
-              <dd>{{ item.value }}</dd>
-            </template>
-          </dl>
-          <div v-if="attachLogs && recentErrors.length" class="fd-errors">
-            <div class="fd-errors-title">最近错误</div>
-            <div v-for="item in recentErrors" :key="item.id" class="fd-error-item">
-              {{ item.message }}
-            </div>
-          </div>
-        </div>
-      </transition>
-
-      <div class="fd-manual">
-        <div>
-          <div class="fd-manual-title">需要发截图或详细说明？</div>
-          <div class="fd-manual-desc">可以打开 GitHub 反馈页手动填写，适合复杂问题。</div>
-        </div>
-        <button class="fd-link-btn" type="button" @click="openGitHubIssue">
-          <span>打开反馈页</span>
-          <el-icon><TopRight /></el-icon>
-        </button>
-      </div>
-    </div>
-
-    <template #footer>
-      <div class="fd-footer">
-        <el-button text @click="emit('update:visible', false)">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="submitting"
-          :disabled="!hasEnoughContent"
-          @click="submitQuickFeedback"
-        >
-          提交反馈
-        </el-button>
-      </div>
-    </template>
+    </transition>
   </el-dialog>
-
-  <transition name="feedback-toast">
-    <div v-if="feedbackNotice.visible" class="feedback-toast-card" role="status" aria-live="polite">
-      <div class="feedback-toast-main">
-        <div class="feedback-toast-badge" :class="`is-${feedbackNotice.state}`">
-          <span v-if="feedbackNotice.state === 'pending'" class="feedback-toast-spinner"></span>
-          <el-icon v-else-if="feedbackNotice.state === 'success'"><CircleCheck /></el-icon>
-          <el-icon v-else><WarningFilled /></el-icon>
-        </div>
-        <div class="feedback-toast-copy">
-          <div class="feedback-toast-title">{{ feedbackNotice.title }}</div>
-          <div class="feedback-toast-text">{{ feedbackNotice.message }}</div>
-          <div v-if="feedbackNotice.issue" class="feedback-toast-actions">
-            <button
-              class="feedback-toast-link"
-              type="button"
-              @click="openIssueUrl(feedbackNotice.issueUrl)"
-            >
-              查看 GitHub #{{ feedbackNotice.issue }}
-            </button>
-          </div>
-        </div>
-        <button
-          class="feedback-toast-close"
-          type="button"
-          aria-label="关闭反馈提示"
-          @click="closeFeedbackNotice"
-        >
-          <el-icon><Close /></el-icon>
-        </button>
-      </div>
-    </div>
-  </transition>
 </template>
 
 <script setup>
@@ -210,17 +298,31 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   ArrowDown,
+  Brush,
   ChatDotRound,
+  ChatLineRound,
   CircleCheck,
-  Close,
   EditPen,
   Help,
   MagicStick,
-  Star,
-  WarningFilled,
-  TopRight
+  MoreFilled,
+  Opportunity,
+  Promotion,
+  Refresh,
+  TopRight,
+  WarningFilled
 } from '@element-plus/icons-vue'
 import { IPC_SHELL } from '@shared/ipc-channels'
+import {
+  buildFeedbackEnvironment,
+  feedbackSubmitErrorMessage,
+  resolveFeedbackSubmissionAttempt
+} from './feedback-payload'
+import {
+  countUnreadFeedbackThreads,
+  isFeedbackThreadUnread,
+  markFeedbackThreadSeen
+} from './feedback-read-state'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -230,74 +332,97 @@ const props = defineProps({
   apiBaseUrl: { type: String, default: '' }
 })
 
-const emit = defineEmits(['update:visible'])
-
+const emit = defineEmits(['update:visible', 'unread-count'])
 const typeOptions = [
-  { label: '问题', value: 'bug', icon: Help },
-  { label: '建议', value: 'feature', icon: MagicStick },
-  { label: '不好用', value: 'ux', icon: Star },
-  { label: '其他', value: 'other', icon: EditPen }
+  { label: '遇到问题', value: 'bug', icon: Help },
+  { label: '功能建议', value: 'feature', icon: MagicStick },
+  { label: '体验改进', value: 'ux', icon: Brush },
+  { label: '其他想法', value: 'other', icon: MoreFilled }
 ]
-
 const typeLabelMap = Object.fromEntries(typeOptions.map((item) => [item.value, item.label]))
-const platformNameMap = {
-  darwin: 'macOS',
-  win32: 'Windows',
-  linux: 'Linux'
-}
+const typeIconMap = Object.fromEntries(typeOptions.map((item) => [item.value, item.icon]))
+const platformNameMap = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }
+const MIN_FEEDBACK_CONTENT_LENGTH = 8
 
-const form = reactive({
-  type: 'bug',
-  content: '',
-  contact: ''
-})
-
+const form = reactive({ type: 'bug', content: '' })
+const activeView = ref('compose')
 const submitting = ref(false)
-const attachLogs = ref(false)
-const extraExpanded = ref(false)
 const recentErrors = ref([])
-const feedbackReplies = ref([])
-const repliesLoading = ref(false)
-const repliesExpanded = ref(false)
-const repliesError = ref('')
+const threads = ref([])
+const threadsLoading = ref(false)
+const threadsError = ref('')
+const selectedFeedbackId = ref(0)
+const supplementFeedbackId = ref(0)
+const replyContent = ref('')
+const replySending = ref(false)
 let errorSeq = 0
-let feedbackNoticeTimer = 0
-let repliesRequestId = 0
-
-const feedbackNotice = reactive({
-  visible: false,
-  state: 'pending',
-  title: '',
-  message: '',
-  issue: '',
-  issueUrl: ''
-})
+let submissionAttempt = null
+let followupAttempt = null
 
 const runtime = computed(() => props.runtimeInfo || {})
 const systemText = computed(() =>
   [
     platformNameMap[runtime.value.platform] || runtime.value.platform || 'unknown',
-    runtime.value.arch || ''
+    runtime.value.arch
   ]
     .filter(Boolean)
     .join(' / ')
 )
+const contentLength = computed(() => form.content.trim().length)
+const hasEnoughContent = computed(() => contentLength.value >= MIN_FEEDBACK_CONTENT_LENGTH)
+const contentTooShort = computed(
+  () => contentLength.value > 0 && contentLength.value < MIN_FEEDBACK_CONTENT_LENGTH
+)
+const contentRequirement = computed(() => {
+  if (contentTooShort.value) {
+    return `还差 ${MIN_FEEDBACK_CONTENT_LENGTH - contentLength.value} 个字才能发送`
+  }
+  if (!contentLength.value) return `填写至少 ${MIN_FEEDBACK_CONTENT_LENGTH} 个字后即可发送`
+  return '内容已完整，请勿填写密码、验证码或登录凭证'
+})
+const selectedThread = computed(() =>
+  threads.value.find((thread) => thread.feedbackId === selectedFeedbackId.value)
+)
+const unreadCount = ref(0)
+const latestAdminMessage = (thread) =>
+  [...(Array.isArray(thread?.messages) ? thread.messages : [])]
+    .reverse()
+    .find((message) => message?.sender === 'admin')
+const feedbackTimeline = (thread) => {
+  const messages = Array.isArray(thread?.messages) ? thread.messages : []
+  if (messages.some((message) => message?.sender === 'user')) return messages
 
-const envItems = computed(() => [
-  { key: 'appVersion', label: '版本', value: props.appVersion || 'unknown' },
-  { key: 'system', label: '系统', value: systemText.value || 'unknown' },
-  { key: 'installMode', label: '安装', value: runtime.value.isPackaged ? '安装包' : '开发模式' },
-  { key: 'page', label: '页面', value: window.location.hash || 'unknown' }
-])
-
-const contentTitle = computed(() => {
-  const content = form.content.trim().replace(/\s+/g, ' ')
-  return content ? content.slice(0, 28) : '用户反馈'
+  const fallbackContent = String(thread?.title || '').trim()
+  if (!fallbackContent) return messages
+  return [
+    {
+      id: `feedback-${thread.feedbackId}`,
+      sender: 'user',
+      kind: 'initial',
+      content: fallbackContent,
+      createdAt: thread.submittedAt
+    },
+    ...messages
+  ]
+}
+const feedbackMessageLabel = (message, messageIndex) => {
+  if (message?.sender === 'admin') return '官方回复'
+  return message?.kind === 'initial' || messageIndex === 0 ? '我的反馈' : '我的补充'
+}
+const smartHint = computed(() => {
+  const content = form.content.trim()
+  if (content.length < 8 || content.length >= 24) return ''
+  const hasFailure = /失败|报错|异常|打不开|没反应|没有反应|不能|无法|崩溃|闪退/.test(content)
+  const hasScene = /页面|首页|登录|相册|照片|视频|下载|上传|动态|好友|群|亲密度|收藏|日志/.test(
+    content
+  )
+  if (hasFailure && !hasScene) {
+    return '再补一句发生在哪个页面，会更容易定位。'
+  }
+  return ''
 })
 
-const hasEnoughContent = computed(() => form.content.trim().length >= 8)
-
-const formatReplyTime = (value) => {
+const formatTime = (value) => {
   const date = new Date(value)
   if (!Number.isFinite(date.getTime())) return ''
   return new Intl.DateTimeFormat('zh-CN', {
@@ -307,270 +432,162 @@ const formatReplyTime = (value) => {
     minute: '2-digit'
   }).format(date)
 }
+const isThreadUnread = (thread) => isFeedbackThreadUnread(thread)
+const updateUnreadCount = () => {
+  unreadCount.value = countUnreadFeedbackThreads(threads.value)
+  emit('unread-count', unreadCount.value)
+}
 
-const loadFeedbackReplies = async () => {
-  if (!window.QzoneAPI?.app?.fetchFeedbackReplies || repliesLoading.value) return
-  const requestId = ++repliesRequestId
-  repliesLoading.value = true
-  repliesError.value = ''
+const loadFeedbackThreads = async (force = false) => {
+  if (!window.QzoneAPI?.app?.fetchFeedbackThreads || (threadsLoading.value && !force)) return
+  threadsLoading.value = true
+  threadsError.value = ''
   try {
-    const result = await window.QzoneAPI.app.fetchFeedbackReplies()
-    if (requestId !== repliesRequestId) return
-    feedbackReplies.value = Array.isArray(result?.replies) ? result.replies : []
-    if (feedbackReplies.value.length) repliesExpanded.value = true
+    const result = await window.QzoneAPI.app.fetchFeedbackThreads()
+    threads.value = Array.isArray(result?.threads) ? result.threads : []
+    if (selectedFeedbackId.value && !selectedThread.value) selectedFeedbackId.value = 0
+    if (activeView.value === 'inbox' && selectedThread.value) {
+      markFeedbackThreadSeen(selectedThread.value)
+    }
+    updateUnreadCount()
   } catch (error) {
-    if (requestId !== repliesRequestId) return
-    repliesError.value = error?.message || '回复暂时无法读取'
+    threadsError.value = error?.message || '暂时无法读取反馈记录'
   } finally {
-    if (requestId === repliesRequestId) repliesLoading.value = false
+    threadsLoading.value = false
   }
 }
 
-const smartHint = computed(() => {
-  const content = form.content.trim()
-  if (!content || content.length < 8) return ''
-  if (content.length >= 24) return ''
-  if (/失败|报错|异常|打不开|没反应|不能|无法|崩溃|闪退/.test(content)) {
-    return '可以再补一句：你点了哪个按钮，或者当时停在哪个页面。'
+const selectThread = (thread) => {
+  if (selectedFeedbackId.value !== thread.feedbackId) {
+    supplementFeedbackId.value = 0
+    replyContent.value = ''
   }
-  if (form.type === 'feature') {
-    return '可以简单写一下你希望它出现在哪里、解决什么麻烦。'
-  }
-  return '如果愿意，可以补充一下发生位置，这样更容易定位。'
-})
-
-const buildFeedbackEnv = () => {
-  const env = Object.fromEntries(envItems.value.map((item) => [item.key, item.value]))
-  if (!attachLogs.value) return env
-  return {
-    ...env,
-    recentErrors: recentErrors.value.map(({ time, type, message, source }) => ({
-      time,
-      type,
-      message,
-      source
-    }))
-  }
+  selectedFeedbackId.value = thread.feedbackId
+  markFeedbackThreadSeen(thread)
+  updateUnreadCount()
 }
-
-const buildLogExtraLines = () =>
-  recentErrors.value.map((item) =>
-    [item.time, item.type, item.message, item.source].filter(Boolean).join(' | ')
-  )
-
-const buildFeedbackText = () => {
-  const lines = [
-    `### ${typeLabelMap[form.type] || '反馈'}：${contentTitle.value}`,
-    '',
-    form.content || '未填写内容',
-    ''
-  ]
-  if (form.contact) {
-    lines.push('### 联系方式', '', form.contact, '')
-  }
-  lines.push('### 附带信息', '')
-  envItems.value.forEach((item) => {
-    lines.push(`- ${item.label}：${item.value}`)
-  })
-  if (attachLogs.value && recentErrors.value.length) {
-    lines.push('', '### 最近错误', '')
-    recentErrors.value.forEach((item) => {
-      lines.push(`- ${item.message}`)
-    })
-  }
-  return lines.join('\n')
-}
-
-const handleTypeKeydown = (event, currentIndex) => {
-  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+const toggleThread = (thread) => {
+  if (selectedFeedbackId.value === thread.feedbackId) {
+    selectedFeedbackId.value = 0
+    supplementFeedbackId.value = 0
+    replyContent.value = ''
     return
   }
-  event.preventDefault()
-  let nextIndex = currentIndex
-  if (event.key === 'Home') nextIndex = 0
-  else if (event.key === 'End') nextIndex = typeOptions.length - 1
-  else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-    nextIndex = (currentIndex - 1 + typeOptions.length) % typeOptions.length
-  } else {
-    nextIndex = (currentIndex + 1) % typeOptions.length
-  }
-  form.type = typeOptions[nextIndex].value
-  event.currentTarget.parentElement?.querySelectorAll('[role="radio"]')?.[nextIndex]?.focus()
+  selectThread(thread)
 }
-
-const openIssueUrl = async (issueUrl = '') => {
-  if (!issueUrl) return
-  await window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, issueUrl)
-}
-
-const clearFeedbackNoticeTimer = () => {
-  if (feedbackNoticeTimer) {
-    window.clearTimeout(feedbackNoticeTimer)
-    feedbackNoticeTimer = 0
+const toggleSupplement = (feedbackId) => {
+  supplementFeedbackId.value = supplementFeedbackId.value === feedbackId ? 0 : feedbackId
+  if (!supplementFeedbackId.value) {
+    replyContent.value = ''
+    followupAttempt = null
   }
 }
-
-const scheduleFeedbackNoticeClose = (duration = 0) => {
-  clearFeedbackNoticeTimer()
-  if (!duration) return
-  feedbackNoticeTimer = window.setTimeout(() => {
-    closeFeedbackNotice()
-  }, duration)
+const openInbox = async () => {
+  activeView.value = 'inbox'
+  await loadFeedbackThreads()
+  const target = threads.value.find(isThreadUnread) || threads.value[0]
+  if (target && !selectedFeedbackId.value) selectThread(target)
 }
 
-const updateFeedbackNotice = ({
-  state,
-  title,
-  message,
-  issue = '',
-  issueUrl = '',
-  duration = 0
-}) => {
-  feedbackNotice.visible = true
-  feedbackNotice.state = state
-  feedbackNotice.title = title
-  feedbackNotice.message = message
-  feedbackNotice.issue = issue
-  feedbackNotice.issueUrl = issueUrl
-  scheduleFeedbackNoticeClose(duration)
-}
-
-const closeFeedbackNotice = () => {
-  clearFeedbackNoticeTimer()
-  feedbackNotice.visible = false
-}
-
-const showFeedbackPendingNotice = () => {
-  updateFeedbackNotice({
-    state: 'pending',
-    title: '已接收反馈',
-    message: '正在处理，请稍候。'
+const buildEnv = (logId = '') =>
+  buildFeedbackEnvironment({
+    appVersion: props.appVersion,
+    system: systemText.value,
+    installMode: runtime.value.isPackaged ? '安装包' : '开发模式',
+    page: window.location.hash,
+    recentErrors: recentErrors.value,
+    logId
   })
-}
-
-const showFeedbackResultNotice = (result) => {
-  if (result.issue) {
-    updateFeedbackNotice({
-      state: 'success',
-      title: '提交成功',
-      message: `已创建 GitHub Issue #${result.issue}`,
-      issue: String(result.issue),
-      issueUrl: result.issueUrl || '',
-      duration: 12000
-    })
-    return
-  }
-
-  updateFeedbackNotice({
-    state: 'success',
-    title: '提交成功',
-    message: '反馈已记录。',
-    duration: 8000
-  })
-}
-
-const showFeedbackErrorNotice = (message) => {
-  updateFeedbackNotice({
-    state: 'error',
-    title: '提交失败',
-    message,
-    duration: 12000
-  })
-}
-
-const openGitHubIssue = async () => {
-  const homepage = (props.appHomepage || 'https://github.com/11273/QzonePhoto').replace(/\/$/, '')
-  const version = props.appVersion && props.appVersion !== 'unknown' ? `[${props.appVersion}]` : ''
-  const system =
-    systemText.value && systemText.value !== 'unknown'
-      ? `[${systemText.value.split('/')[0].trim()}]`
-      : ''
-  const title =
-    `[${typeLabelMap[form.type] || '反馈'}]${version}${system} ${contentTitle.value}`.trim()
-  const url = `${homepage}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(buildFeedbackText())}`
-  await window.api.invoke(IPC_SHELL.OPEN_EXTERNAL, url)
-}
 
 const submitQuickFeedback = async () => {
-  if (!hasEnoughContent.value) {
-    ElMessage.warning('至少写 8 个字再提交')
-    return
-  }
-
+  if (!hasEnoughContent.value) return
   if (!window.QzoneAPI?.app?.submitFeedback) {
-    ElMessage.error('当前版本未配置快捷提交，请使用 GitHub 反馈页')
+    ElMessage.error('当前版本未配置反馈服务')
     return
   }
-
   submitting.value = true
-  let logId = ''
-  if (attachLogs.value && window.QzoneAPI?.app?.uploadLogs) {
-    try {
-      const logResult = await window.QzoneAPI.app.uploadLogs({
-        page: window.location.hash || '#/feedback',
-        reason: 'manual_feedback',
-        extraLines: buildLogExtraLines()
-      })
-      logId = logResult?.logId || ''
-      reportFeedbackEvent('diagnostic_log_uploaded', { status: logId ? 'success' : 'empty' })
-    } catch (error) {
-      console.warn('[FeedbackDialog] diagnostic log upload failed:', error)
-      reportFeedbackEvent('diagnostic_log_upload_failed', {
-        errorCode: error?.name || 'log_upload_failed'
-      })
-    }
-  }
-  const payload = {
-    type: form.type,
-    title: contentTitle.value,
-    content: form.content,
-    contact: form.contact,
-    env: {
-      ...buildFeedbackEnv(),
-      logId: logId || undefined
-    },
-    createdAt: new Date().toISOString()
-  }
-
-  form.content = ''
-  form.contact = ''
-  attachLogs.value = false
-  extraExpanded.value = false
-  emit('update:visible', false)
-  showFeedbackPendingNotice()
-
   try {
-    const result = await window.QzoneAPI.app.submitFeedback(payload)
-    if (!result.ok) throw new Error(result.message)
-    reportFeedbackEvent('feedback_submitted', { status: result.delivery || 'unknown' })
-    showFeedbackResultNotice(result)
-  } catch (error) {
-    console.error('[FeedbackDialog] submit failed:', error)
-    reportFeedbackEvent('feedback_submit_failed', {
-      errorCode: error?.name || 'submit_failed'
+    submissionAttempt = resolveFeedbackSubmissionAttempt(submissionAttempt, {
+      type: form.type,
+      content: form.content
     })
-    const message =
-      error?.name === 'AbortError' || error instanceof TypeError
-        ? '本次未完成提交，请稍后重试或使用 GitHub 反馈页'
-        : error?.message || '本次未完成提交，请稍后重试或使用 GitHub 反馈页'
-    showFeedbackErrorNotice(message)
+    let logId = ''
+    if (window.QzoneAPI?.app?.uploadLogs) {
+      try {
+        const logResult = await window.QzoneAPI.app.uploadLogs({
+          page: window.location.hash || '#/index',
+          reason: 'manual_feedback',
+          extraLines: recentErrors.value.map((item) => item.message)
+        })
+        logId = logResult?.logId || ''
+      } catch (error) {
+        console.warn('[FeedbackDialog] diagnostic log upload failed:', error)
+      }
+    }
+    const result = await window.QzoneAPI.app.submitFeedback({
+      type: form.type,
+      title: form.content.trim().replace(/\s+/g, ' ').slice(0, 28),
+      content: form.content,
+      env: buildEnv(logId),
+      eventId: submissionAttempt.eventId,
+      createdAt: submissionAttempt.createdAt
+    })
+    if (!result?.ok) throw new Error(result?.message || '提交失败')
+    form.content = ''
+    submissionAttempt = null
+    ElMessage.success('反馈已收到，你可以在“我的反馈”中查看回复')
+    await loadFeedbackThreads(true)
+    activeView.value = 'inbox'
+    const target =
+      threads.value.find((thread) => thread.feedbackId === Number(result.feedbackId)) ||
+      threads.value[0]
+    if (target) selectThread(target)
+  } catch (error) {
+    ElMessage.error(feedbackSubmitErrorMessage(error))
   } finally {
     submitting.value = false
   }
 }
 
-const reportFeedbackEvent = (event, properties = {}) => {
-  if (!window.QzoneAPI?.app?.reportHealth) return
-  const success = event === 'feedback_submitted' || event === 'diagnostic_log_uploaded'
-  window.QzoneAPI.app
-    .reportHealth({
-      event,
-      page: window.location.hash || '#/feedback',
-      success,
-      errorCode: properties.errorCode,
-      properties
+const sendFollowup = async () => {
+  const content = replyContent.value.trim()
+  if (!selectedThread.value || !content || replySending.value) return
+  replySending.value = true
+  try {
+    followupAttempt = resolveFeedbackSubmissionAttempt(followupAttempt, {
+      type: `followup:${selectedThread.value.feedbackId}`,
+      content
     })
-    .catch(() => {})
+    const result = await window.QzoneAPI.app.submitFeedbackMessage(
+      selectedThread.value.feedbackId,
+      {
+        content,
+        eventId: followupAttempt.eventId,
+        createdAt: followupAttempt.createdAt
+      }
+    )
+    if (!result?.message) throw new Error('消息发送失败')
+    selectedThread.value.messages.push(result.message)
+    selectedThread.value.updatedAt = result.message.createdAt
+    replyContent.value = ''
+    followupAttempt = null
+    supplementFeedbackId.value = 0
+    ElMessage.success('补充信息已发送')
+  } catch (error) {
+    ElMessage.error(error?.message || '消息发送失败，请稍后重试')
+  } finally {
+    replySending.value = false
+  }
+}
+
+const openGitHubIssue = async () => {
+  const homepage = (props.appHomepage || 'https://github.com/11273/QzonePhoto').replace(/\/$/, '')
+  const title = `[反馈][${props.appVersion || 'unknown'}] ${form.content.trim().slice(0, 28) || '用户反馈'}`
+  const body = `${form.content || '请描述问题'}\n\n版本：${props.appVersion || 'unknown'}\n系统：${systemText.value}`
+  await window.api.invoke(
+    IPC_SHELL.OPEN_EXTERNAL,
+    `${homepage}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`
+  )
 }
 
 const normalizeError = (type, message, source = '') => ({
@@ -582,715 +599,969 @@ const normalizeError = (type, message, source = '') => ({
   source: String(source || '').slice(0, 80),
   time: new Date().toISOString()
 })
-
-const resetFeedbackForm = () => {
-  form.type = 'bug'
-  form.content = ''
-  form.contact = ''
-  extraExpanded.value = false
+const captureError = (type, message, source) => {
+  recentErrors.value = [normalizeError(type, message, source), ...recentErrors.value].slice(0, 5)
 }
+const handleWindowError = (event) =>
+  captureError('error', event.message || event.error?.message, event.filename)
+const handleUnhandledRejection = (event) =>
+  captureError('unhandledrejection', event.reason?.message || event.reason)
 
 watch(
   () => props.visible,
   (visible) => {
-    if (visible) {
-      resetFeedbackForm()
-      repliesExpanded.value = false
-      loadFeedbackReplies()
-    }
+    if (!visible) return
+    activeView.value = 'compose'
+    loadFeedbackThreads().then(() => {
+      if (!props.visible || !unreadCount.value) return
+      const unreadThread = threads.value.find(isThreadUnread)
+      if (!unreadThread) return
+      activeView.value = 'inbox'
+      selectThread(unreadThread)
+    })
   }
 )
-
-const pushRecentError = (item) => {
-  recentErrors.value = [item, ...recentErrors.value].slice(0, 5)
-}
-
-const handleWindowError = (event) => {
-  pushRecentError(normalizeError('error', event.message || event.error?.message, event.filename))
-}
-
-const handleUnhandledRejection = (event) => {
-  const reason = event.reason
-  pushRecentError(normalizeError('unhandledrejection', reason?.message || reason))
-}
 
 onMounted(() => {
   window.addEventListener('error', handleWindowError)
   window.addEventListener('unhandledrejection', handleUnhandledRejection)
 })
-
 onUnmounted(() => {
-  repliesRequestId += 1
   window.removeEventListener('error', handleWindowError)
   window.removeEventListener('unhandledrejection', handleUnhandledRejection)
-  clearFeedbackNoticeTimer()
 })
 </script>
 
 <style scoped lang="scss">
 :deep(.feedback-dialog) {
   --el-dialog-padding-primary: 0;
-  width: min(420px, calc(100vw - 32px));
-  max-height: calc(100vh - 72px);
+  --fd-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
   overflow: hidden;
-  background: var(--theme-surface-overlay);
-  border: 1px solid var(--theme-border);
-  box-shadow: var(--theme-shadow-lg);
-  backdrop-filter: none;
+  background:
+    linear-gradient(145deg, var(--theme-material-highlight), transparent 36%),
+    var(--theme-surface-overlay);
+  border: 1px solid var(--theme-material-border);
+  border-radius: var(--theme-radius-xl);
+  box-shadow:
+    var(--theme-shadow-lg),
+    inset 0 1px 0 var(--theme-material-highlight);
+  transform-origin: 50% 44%;
+  animation: fd-dialog-in 260ms var(--fd-ease-out) both;
 }
-
 :global(.feedback-dialog-overlay) {
   background: var(--theme-backdrop);
-  backdrop-filter: none;
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  backdrop-filter: blur(10px) saturate(120%);
 }
-
 :deep(.feedback-dialog .el-dialog__header) {
-  padding: 18px 18px 12px;
-  margin-right: 0;
+  padding: 16px 18px;
+  margin: 0;
+  border-bottom: 1px solid var(--ds-border-faint);
 }
-
+:deep(.feedback-dialog .el-dialog__headerbtn) {
+  top: 13px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    transform 100ms ease-out;
+}
+:deep(.feedback-dialog .el-dialog__headerbtn:hover) {
+  background: var(--theme-surface-hover);
+}
+:deep(.feedback-dialog .el-dialog__headerbtn:active) {
+  transform: scale(0.94);
+}
 :deep(.feedback-dialog .el-dialog__body) {
   padding: 0;
 }
-
-:deep(.feedback-dialog .el-dialog__footer) {
-  padding: 12px 18px 16px;
-  border-top: 1px solid var(--ds-border-faint);
-}
-
 .fd-header {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-right: 42px;
+}
+.fd-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
   gap: 11px;
 }
-
-.fd-icon {
-  width: 34px;
-  height: 34px;
+.fd-brand-mark {
+  position: relative;
   display: grid;
+  width: 38px;
+  height: 38px;
   place-items: center;
-  flex: 0 0 auto;
+  flex: 0 0 38px;
   color: var(--theme-text-inverse);
-  background: linear-gradient(135deg, var(--theme-brand-hover), var(--theme-brand));
-  border-radius: var(--theme-radius-lg);
-  box-shadow: var(--theme-shadow-brand);
+  font-size: 19px;
+  background: linear-gradient(145deg, var(--theme-brand-hover), var(--theme-brand));
+  border: 1px solid var(--theme-brand-border);
+  border-radius: 12px;
+  box-shadow:
+    var(--theme-shadow-brand),
+    inset 0 1px 0 var(--theme-material-highlight);
 }
-
-.fd-heading {
-  min-width: 0;
+.fd-brand-mark::after {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 5px;
+  height: 5px;
+  content: '';
+  background: var(--theme-warning);
+  border: 2px solid var(--theme-brand);
+  border-radius: 50%;
 }
-
 .fd-title {
   color: var(--ds-text-primary);
-  font-size: 16px;
-  font-weight: 750;
-  line-height: 1.25;
+  font-size: 17px;
+  font-weight: 720;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
 }
-
 .fd-subtitle {
-  margin-top: 3px;
+  margin-top: 4px;
   color: var(--ds-text-tertiary);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.35;
 }
-
-.fd-body {
-  max-height: calc(100vh - 184px);
-  overflow: auto;
-  padding: 2px 18px 0;
+.fd-tabs {
+  display: flex;
+  padding: 3px;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border);
+  border-radius: 11px;
+  box-shadow: inset 0 1px 0 var(--theme-material-highlight);
 }
-
-.fd-type-list {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.fd-type-btn {
+.fd-tabs button {
+  position: relative;
   display: inline-flex;
+  min-width: 92px;
+  height: 32px;
   align-items: center;
   justify-content: center;
-  min-width: 0;
-  height: 32px;
-  gap: 4px;
-  padding: 0 8px;
+  gap: 6px;
+  padding: 0 11px;
   color: var(--ds-text-secondary);
   font-size: 12px;
-  font-weight: 700;
-  background: var(--theme-surface-soft);
-  border: 1px solid var(--ds-border-faint);
-  border-radius: 10px;
+  font-weight: 600;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
   cursor: pointer;
-  transition: var(--ds-transition-all);
+  transition:
+    color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease,
+    transform 100ms ease-out;
 }
-
-.fd-type-btn .el-icon {
+.fd-tabs button .el-icon {
   font-size: 14px;
 }
-
-.fd-type-btn:hover {
+.fd-tabs button:hover:not(.active) {
   color: var(--ds-text-primary);
   background: var(--theme-surface-hover);
-  border-color: var(--ds-border-light);
 }
-
-.fd-type-btn.active {
-  color: var(--qz-active-text);
+.fd-tabs button.active {
+  color: var(--ds-text-primary);
+  background: var(--theme-surface-raised);
+  box-shadow: var(--theme-shadow-sm);
+}
+.fd-tabs button:active {
+  transform: scale(0.97);
+}
+.fd-tab-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  background: var(--theme-danger);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--theme-surface-soft);
+  pointer-events: none;
+}
+.fd-tabs button.active .fd-tab-badge {
+  box-shadow: 0 0 0 2px var(--theme-surface-raised);
+}
+.fd-compose {
+  position: relative;
+  max-height: calc(100dvh - 126px);
+  padding: 18px 20px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.fd-compose::before {
+  position: absolute;
+  top: -1px;
+  right: 34px;
+  width: 180px;
+  height: 86px;
+  pointer-events: none;
+  content: '';
+  background: radial-gradient(ellipse at top, var(--theme-brand-soft), transparent 70%);
+  opacity: 0.5;
+}
+.fd-compose-lead {
+  position: relative;
+  margin-bottom: 16px;
+}
+.fd-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 7px;
+  color: var(--theme-brand-text);
+  font-size: 11px;
+  font-weight: 650;
+}
+.fd-compose-lead h3 {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: 22px;
+  font-weight: 730;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+.fd-compose-lead p {
+  margin: 6px 0 0;
+  color: var(--ds-text-tertiary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.fd-types {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 15px;
+}
+.fd-types button {
+  display: inline-flex;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--ds-text-secondary);
+  font-size: 12px;
+  font-weight: 620;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-border);
+  border-radius: 11px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--theme-material-highlight);
+  transition:
+    color 180ms ease,
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 120ms ease-out;
+}
+.fd-types button .el-icon {
+  color: var(--ds-text-tertiary);
+  font-size: 15px;
+  transition:
+    color 180ms ease,
+    transform 180ms var(--fd-ease-out);
+}
+.fd-types button:hover {
+  color: var(--ds-text-primary);
+  background: var(--theme-surface-hover);
+  border-color: var(--theme-border-strong);
+  transform: translateY(-1px);
+}
+.fd-types button.active {
+  color: var(--theme-brand-text);
+  background: linear-gradient(145deg, var(--theme-brand-soft-hover), var(--theme-brand-soft));
+  border-color: var(--theme-brand-border);
+  box-shadow:
+    inset 0 1px 0 var(--theme-material-highlight),
+    var(--theme-shadow-sm);
+}
+.fd-types button.active .el-icon {
+  color: var(--theme-brand);
+  transform: scale(1.08);
+}
+.fd-types button:active {
+  transform: scale(0.98);
+}
+.fd-input-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 2px 7px;
+  color: var(--ds-text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+.fd-input-label small {
+  color: var(--ds-text-quaternary);
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.fd-input-label small.is-invalid {
+  color: var(--theme-danger-text);
+  font-weight: 650;
+}
+.fd-content :deep(textarea) {
+  min-height: 112px;
+  padding: 13px 14px;
+  color: var(--ds-text-primary);
+  line-height: 1.6;
+  background:
+    linear-gradient(145deg, var(--theme-material-highlight), transparent 38%),
+    var(--theme-surface-soft);
+  border-radius: 13px;
+  box-shadow: inset 0 0 0 1px var(--theme-border);
+  transition:
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+.fd-content :deep(textarea:hover) {
+  background: var(--theme-surface-hover);
+  box-shadow: inset 0 0 0 1px var(--theme-border-strong);
+}
+.fd-content :deep(textarea:focus) {
+  background: var(--theme-surface-raised);
+  box-shadow:
+    inset 0 0 0 1px var(--theme-brand-accent),
+    0 0 0 3px var(--theme-focus-ring);
+}
+.fd-content.is-invalid :deep(textarea) {
+  background: var(--theme-danger-soft);
+  box-shadow:
+    inset 0 0 0 1px var(--theme-danger-border),
+    0 0 0 3px color-mix(in srgb, var(--theme-danger) 12%, transparent);
+}
+.fd-content.is-invalid :deep(textarea:focus) {
+  box-shadow:
+    inset 0 0 0 1px var(--theme-danger),
+    0 0 0 3px color-mix(in srgb, var(--theme-danger) 16%, transparent);
+}
+.fd-compose-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 21px;
+  padding: 7px 2px 0;
+  color: var(--ds-text-tertiary);
+  font-size: 11px;
+}
+.fd-requirement {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+.fd-compose-hint.is-invalid .fd-requirement {
+  color: var(--theme-danger-text);
+  font-weight: 650;
+}
+.fd-smart-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--theme-warning);
+  font-weight: 600;
+}
+.fd-github-link,
+.fd-list-heading button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ds-text-tertiary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    transform 100ms ease-out;
+}
+.fd-github-link:active,
+.fd-list-heading button:active {
+  transform: scale(0.95);
+}
+.fd-compose-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+.fd-github-link {
+  height: 34px;
+  padding: 0 8px;
+  font-size: 12px;
+  border-radius: 9px;
+}
+.fd-github-link:hover {
+  color: var(--theme-brand);
+  background: var(--theme-brand-soft);
+}
+.fd-submit {
+  min-width: 126px;
+  height: 38px;
+  border-radius: 10px;
+  box-shadow: var(--theme-shadow-brand);
+  transition:
+    transform 100ms ease-out,
+    filter 180ms ease;
+}
+.fd-submit:not(.is-disabled):hover {
+  filter: brightness(1.04);
+}
+.fd-submit:not(.is-disabled):active {
+  transform: scale(0.97);
+}
+.fd-inbox {
+  max-height: min(560px, calc(100dvh - 132px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--theme-surface-overlay);
+}
+.fd-list-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56px;
+  padding: 8px 18px;
+  background: color-mix(in srgb, var(--theme-surface-overlay) 90%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 1px 0 var(--ds-border-faint);
+}
+.fd-list-heading > div {
+  display: grid;
+  gap: 3px;
+}
+.fd-list-heading strong {
+  color: var(--ds-text-primary);
+  font-size: 13px;
+  font-weight: 680;
+}
+.fd-list-heading > div > span {
+  color: var(--ds-text-tertiary);
+  font-size: 10px;
+}
+.fd-list-heading button {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  font-size: 11px;
+  border-radius: 8px;
+}
+.fd-list-heading button:hover:not(:disabled) {
+  color: var(--ds-text-primary);
+  background: var(--theme-surface-hover);
+}
+.fd-list-heading button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.fd-ticket-list {
+  display: grid;
+  gap: 10px;
+  padding: 14px 18px 18px;
+}
+.fd-ticket {
+  overflow: hidden;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--ds-border-faint);
+  border-radius: 13px;
+  box-shadow: inset 0 1px 0 var(--theme-material-highlight);
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+.fd-ticket:hover {
+  border-color: var(--theme-border-strong);
+}
+.fd-ticket.is-open {
+  background: var(--theme-surface-raised);
+  border-color: var(--theme-brand-border);
+  box-shadow:
+    inset 3px 0 0 var(--theme-brand),
+    var(--theme-shadow-sm);
+}
+.fd-ticket-summary {
+  display: flex;
+  width: 100%;
+  min-height: 58px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms var(--fd-ease-out);
+}
+.fd-ticket-summary:hover {
+  background: var(--theme-surface-hover);
+}
+.fd-ticket-summary:active {
+  transform: scale(0.985);
+}
+.fd-ticket-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  flex: 0 0 34px;
+  color: var(--ds-text-tertiary);
+  background: var(--theme-surface-raised);
+  border: 1px solid var(--ds-border-faint);
+  border-radius: 10px;
+}
+.fd-ticket.is-open .fd-ticket-icon {
+  color: var(--theme-brand);
   background: var(--theme-brand-soft);
   border-color: var(--theme-brand-border);
 }
-
-.fd-reply-fold {
+.fd-ticket-copy {
+  min-width: 0;
+  flex: 1;
+}
+.fd-ticket-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  min-height: 34px;
-  margin: -2px 0 12px;
-  padding: 0 10px;
-  color: var(--ds-text-secondary);
-  font-size: 12px;
-  font-weight: 700;
-  background: var(--theme-surface-soft);
-  border: 1px solid var(--ds-border-faint);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: var(--ds-transition-all);
-}
-
-.fd-reply-fold:hover {
-  color: var(--ds-text-primary);
-  background: var(--theme-surface-hover);
-  border-color: var(--ds-border-light);
-}
-
-.fd-reply-fold-main {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  gap: 6px;
-}
-
-.fd-reply-fold > .el-icon {
-  transition: transform var(--ds-dur-base) var(--ds-ease-soft);
-}
-
-.fd-reply-fold > .el-icon.expanded {
-  transform: rotate(180deg);
-}
-
-.fd-reply-meta {
-  color: var(--ds-text-quaternary);
-  font-weight: 500;
-}
-
-.fd-reply-count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  color: var(--qz-active-text);
-  font-size: 10px;
-  background: var(--theme-brand-soft);
-  border-radius: var(--theme-radius-pill);
-}
-
-.fd-replies {
-  display: grid;
-  max-height: 180px;
   gap: 7px;
-  margin: -5px 0 12px;
-  padding: 8px;
-  overflow: auto;
-  background: var(--theme-surface-soft);
-  border: 1px solid var(--ds-border-faint);
-  border-radius: 10px;
-}
-
-.fd-reply-item {
-  padding: 9px 10px;
-  background: var(--theme-surface-raised);
-  border: 1px solid var(--ds-border-faint);
-  border-radius: 9px;
-}
-
-.fd-reply-title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  min-width: 0;
-  gap: 10px;
   color: var(--ds-text-primary);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.fd-reply-title span {
+  font-size: 13px;
+  font-weight: 650;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.fd-reply-title time {
+.fd-ticket-title i {
+  width: 7px;
+  height: 7px;
   flex: 0 0 auto;
-  color: var(--ds-text-quaternary);
+  background: var(--theme-danger);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--theme-danger-soft);
+}
+.fd-ticket-meta {
+  display: block;
+  margin-top: 4px;
+  color: var(--ds-text-tertiary);
   font-size: 10px;
-  font-weight: 500;
 }
-
-.fd-reply-item p {
-  margin: 5px 0 0;
-  color: var(--ds-text-secondary);
-  font-size: 11px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.fd-reply-empty {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 34px;
-  gap: 8px;
-  padding: 0 2px;
-  color: var(--ds-text-quaternary);
-  font-size: 11px;
-}
-
-.fd-reply-empty.is-error {
-  color: var(--theme-warning-text);
-}
-
-.fd-reply-empty button {
-  flex: 0 0 auto;
-  padding: 3px 8px;
-  color: var(--theme-info-text);
-  font: inherit;
-  background: transparent;
-  border: 1px solid var(--theme-info-border);
-  border-radius: var(--theme-radius-pill);
-  cursor: pointer;
-}
-
-:deep(.fd-content .el-textarea__inner),
-:deep(.el-input__wrapper) {
-  color: var(--ds-text-primary);
-  background: var(--theme-surface-soft);
-  border-radius: 12px;
-  box-shadow: 0 0 0 1px var(--ds-border-light) inset;
-  transition:
-    box-shadow var(--ds-dur-fast) var(--ds-ease-soft),
-    background var(--ds-dur-fast) var(--ds-ease-soft);
-}
-
-:deep(.fd-content .el-textarea__inner:hover),
-:deep(.el-input__wrapper:hover) {
-  background: var(--theme-surface-hover);
-}
-
-:deep(.fd-content .el-textarea__inner:focus),
-:deep(.el-input__wrapper.is-focus) {
-  background: var(--theme-surface-hover);
-  box-shadow:
-    0 0 0 1px var(--theme-brand-accent) inset,
-    0 0 0 3px var(--theme-focus-ring);
-}
-
-:deep(.fd-content .el-textarea__inner) {
-  line-height: 1.55;
-}
-
-.fd-hint {
-  margin: 7px 0 10px;
-  color: var(--ds-text-quaternary);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.fd-hint.warning {
-  color: var(--ds-accent-yellow);
-}
-
-.fd-log-option {
-  display: flex;
-  gap: 9px;
-  align-items: flex-start;
-  margin: 0 0 10px;
-  padding: 9px 10px;
-  color: var(--ds-text-secondary);
-  font-size: 12px;
-  line-height: 1.35;
-  background: var(--theme-surface-soft);
-  border: 1px solid var(--ds-border-faint);
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.fd-log-option input {
-  width: 14px;
-  height: 14px;
-  margin: 1px 0 0;
-  accent-color: var(--theme-brand);
-}
-
-.fd-log-option strong,
-.fd-log-option small {
-  display: block;
-}
-
-.fd-log-option small {
-  margin-top: 2px;
-  color: var(--ds-text-quaternary);
-  font-size: 11px;
-}
-
-.fd-smart-hint {
-  margin: -2px 0 8px;
-  padding: 7px 9px;
-  color: var(--theme-info-text);
-  font-size: 11px;
-  line-height: 1.45;
-  background: var(--theme-info-soft);
-  border: 1px solid var(--theme-info-border);
-  border-radius: 10px;
-}
-
-.fd-fold {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  height: 34px;
-  padding: 0 2px;
-  color: var(--ds-text-secondary);
-  font-size: 12px;
-  font-weight: 700;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-}
-
-.fd-fold .el-icon {
-  transition: transform var(--ds-dur-base) var(--ds-ease-soft);
-}
-
-.fd-fold .el-icon.expanded {
-  transform: rotate(180deg);
-}
-
-.fd-extra {
-  display: grid;
-  gap: 9px;
-  padding: 9px 0 12px;
-}
-
-.fd-label {
-  display: block;
-  margin: 0 0 6px;
-  color: var(--ds-text-tertiary);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.fd-env {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 5px 9px;
-  margin: 0;
-  padding: 9px 10px;
-  font-size: 12px;
-  background: var(--theme-surface-soft);
-  border: 1px solid var(--ds-border-faint);
-  border-radius: 10px;
-}
-
-.fd-env dt {
-  color: var(--ds-text-quaternary);
-}
-
-.fd-env dd {
-  min-width: 0;
-  margin: 0;
-  color: var(--ds-text-secondary);
-  word-break: break-all;
-}
-
-.fd-errors {
-  display: grid;
-  gap: 5px;
-  padding: 9px 10px;
-  font-size: 11px;
-  background: var(--theme-warning-soft);
-  border: 1px solid var(--theme-warning-border);
-  border-radius: 10px;
-}
-
-.fd-errors-title {
-  color: var(--ds-accent-yellow);
-  font-weight: 750;
-}
-
-.fd-error-item {
-  color: var(--ds-text-tertiary);
-  line-height: 1.45;
-  word-break: break-all;
-}
-
-.fd-manual {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 8px;
-  padding: 11px 12px;
-  background: var(--theme-info-soft);
-  border: 1px solid var(--theme-info-border);
-  border-radius: 13px;
-}
-
-.fd-manual-title {
-  color: var(--ds-text-primary);
-  font-size: 12px;
-  font-weight: 750;
-}
-
-.fd-manual-desc {
-  margin-top: 3px;
-  color: var(--ds-text-tertiary);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.fd-link-btn {
+.fd-ticket-state {
   display: inline-flex;
+  height: 25px;
   align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  height: 30px;
   gap: 4px;
-  padding: 0 10px;
+  flex: 0 0 auto;
+  padding: 0 8px;
   color: var(--theme-info-text);
-  font-size: 12px;
-  font-weight: 750;
+  font-size: 10px;
   background: var(--theme-info-soft);
   border: 1px solid var(--theme-info-border);
   border-radius: var(--theme-radius-pill);
-  cursor: pointer;
-  transition: var(--ds-transition-all);
 }
-
-.fd-link-btn:hover {
-  color: var(--theme-text-inverse);
-  background: color-mix(in srgb, var(--theme-info-soft) 75%, var(--theme-surface-hover));
-}
-
-:deep(.feedback-dialog-v2) .fd-header {
-  justify-content: flex-start !important;
-}
-
-:deep(.feedback-dialog-v2) .fd-heading {
-  flex: 1 1 auto !important;
-}
-
-:deep(.feedback-dialog-v2) .fd-type-list {
-  display: grid !important;
-}
-
-:deep(.feedback-dialog-v2) .fd-type-btn {
-  border: 1px solid var(--ds-border-faint) !important;
-  background: var(--theme-surface-soft) !important;
-  border-radius: 10px !important;
-}
-
-:deep(.feedback-dialog-v2) .fd-type-btn.active {
-  color: var(--qz-active-text) !important;
-  background: var(--theme-brand-soft) !important;
-  border-color: var(--theme-brand-border) !important;
-}
-
-:deep(.feedback-dialog-v2) .fd-manual {
-  display: flex !important;
-}
-
-.fd-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  width: 100%;
-}
-
-.fd-slide-enter-active,
-.fd-slide-leave-active {
-  transition: all var(--ds-dur-base) var(--ds-ease-soft);
-}
-
-.fd-slide-enter-from,
-.fd-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-
-.feedback-toast-card {
-  position: fixed;
-  top: 56px;
-  right: 18px;
-  z-index: var(--theme-z-toast);
-  width: min(320px, calc(100vw - 24px));
-  padding: 14px;
-  border: 1px solid var(--theme-material-border);
-  border-radius: var(--theme-radius-xl);
-  background:
-    linear-gradient(145deg, var(--theme-material-highlight), transparent 38%),
-    var(--theme-material-regular);
-  box-shadow:
-    inset 0 1px 0 var(--theme-material-highlight),
-    var(--theme-shadow-lg);
-  -webkit-backdrop-filter: blur(var(--theme-material-blur))
-    saturate(var(--theme-material-saturation));
-  backdrop-filter: blur(var(--theme-material-blur)) saturate(var(--theme-material-saturation));
-}
-
-.feedback-toast-main {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.feedback-toast-badge {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 32px;
-  border-radius: 11px;
-  border: 1px solid transparent;
-  font-size: 16px;
-}
-
-.feedback-toast-badge.is-pending {
-  color: var(--theme-info-text);
-  background: var(--theme-info-soft);
-  border-color: var(--theme-info-border);
-}
-
-.feedback-toast-badge.is-success {
+.fd-ticket-state.replied {
   color: var(--theme-success-text);
   background: var(--theme-success-soft);
   border-color: var(--theme-success-border);
 }
-
-.feedback-toast-badge.is-error {
-  color: var(--theme-warning-text);
-  background: var(--theme-warning-soft);
-  border-color: var(--theme-warning-border);
+.fd-ticket-chevron {
+  flex: 0 0 auto;
+  color: var(--ds-text-tertiary);
+  transition: transform 180ms var(--fd-ease-out);
 }
-
-.feedback-toast-spinner {
-  width: 15px;
-  height: 15px;
-  border: 2px solid var(--theme-info-border);
-  border-top-color: var(--theme-info-text);
-  border-radius: 50%;
-  animation: feedback-spin 0.88s linear infinite;
+.fd-ticket.is-open .fd-ticket-chevron {
+  transform: rotate(180deg);
 }
-
-.feedback-toast-copy {
-  flex: 1 1 auto;
-  min-width: 0;
+.fd-ticket-detail {
+  display: grid;
+  gap: 10px;
+  padding: 12px 12px 12px 56px;
+  border-top: 1px solid var(--ds-border-faint);
 }
-
-.feedback-toast-title {
-  color: var(--theme-text-primary);
+.fd-conversation {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fd-message {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.fd-message:not(:last-child)::after {
+  position: absolute;
+  top: 29px;
+  bottom: -10px;
+  left: 13px;
+  width: 1px;
+  background: var(--ds-border-faint);
+  content: '';
+}
+.fd-message-marker {
+  z-index: 1;
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  flex: 0 0 27px;
+  color: var(--theme-brand-text);
   font-size: 13px;
-  font-weight: 700;
-  line-height: 1.25;
+  background: var(--theme-brand-soft);
+  border: 1px solid var(--theme-brand-border);
+  border-radius: 50%;
 }
-
-.feedback-toast-text {
-  margin-top: 5px;
-  color: var(--theme-text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
+.fd-message.is-official .fd-message-marker {
+  color: var(--theme-success-text);
+  background: var(--theme-success-soft);
+  border-color: var(--theme-success-border);
 }
-
-.feedback-toast-actions {
-  margin-top: 10px;
+.fd-message-body {
+  min-width: 0;
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--ds-border-faint);
+  border-radius: 10px;
 }
-
-.feedback-toast-link {
-  display: inline-flex;
+.fd-message.is-official .fd-message-body {
+  background: linear-gradient(145deg, var(--theme-success-soft), var(--theme-surface-soft));
+  border-color: var(--theme-success-border);
+}
+.fd-message-heading {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  height: 28px;
-  padding: 0 11px;
-  border: 1px solid var(--theme-info-border);
-  border-radius: var(--theme-radius-pill);
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--ds-text-tertiary);
+  font-size: 10px;
+}
+.fd-message-heading strong {
+  color: var(--ds-text-secondary);
+  font-size: 10px;
+  font-weight: 680;
+}
+.fd-message.is-official .fd-message-heading strong {
+  color: var(--theme-success-text);
+}
+.fd-message-body > p,
+.fd-awaiting-reply p {
+  margin: 6px 0 0;
+  color: var(--ds-text-primary);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.fd-awaiting-reply {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 11px;
   background: var(--theme-info-soft);
+  border: 1px solid var(--theme-info-border);
+  border-radius: 10px;
+}
+.fd-awaiting-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  flex: 0 0 30px;
   color: var(--theme-info-text);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: var(--ds-transition-all);
+  background: var(--theme-surface-raised);
+  border: 1px solid var(--theme-info-border);
+  border-radius: 9px;
 }
-
-.feedback-toast-link:hover {
-  background: color-mix(in srgb, var(--theme-info-soft) 75%, var(--theme-surface-hover));
-  color: var(--theme-text-inverse);
+.fd-awaiting-reply strong {
+  color: var(--ds-text-secondary);
+  font-size: 11px;
 }
-
-.feedback-toast-close {
-  width: 28px;
-  height: 28px;
+.fd-awaiting-reply p {
+  margin-top: 3px;
+  color: var(--ds-text-tertiary);
+  font-size: 10px;
+}
+.fd-ticket-actions {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+.fd-secondary-action {
   display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  color: var(--ds-text-secondary);
+  font-size: 10px;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--ds-border-faint);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.fd-secondary-action:hover {
+  color: var(--theme-brand-text);
+  background: var(--theme-brand-soft);
+  border-color: var(--theme-brand-border);
+}
+.fd-supplement {
+  padding: 11px;
+  background: var(--theme-surface-soft);
+  border: 1px solid var(--theme-brand-border);
+  border-radius: 11px;
+}
+.fd-supplement > label {
+  color: var(--ds-text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+.fd-supplement > p {
+  margin: 3px 0 8px;
+  color: var(--ds-text-tertiary);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.fd-supplement :deep(textarea) {
+  padding: 9px 10px;
+  background: var(--theme-surface-raised);
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--theme-border);
+}
+.fd-supplement :deep(textarea:focus) {
+  box-shadow:
+    inset 0 0 0 1px var(--theme-brand-accent),
+    0 0 0 3px var(--theme-focus-ring);
+}
+.fd-supplement-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+.fd-supplement-actions small {
+  color: var(--ds-text-tertiary);
+  font-size: 9px;
+}
+.fd-empty {
+  display: flex;
+  min-height: 120px;
   align-items: center;
   justify-content: center;
-  flex: 0 0 28px;
-  color: var(--theme-text-muted);
-  background: transparent;
-  border: 0;
-  border-radius: 9px;
+  flex-direction: column;
+  gap: 5px;
+  padding: 24px;
+  color: var(--ds-text-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+.fd-empty-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  margin-bottom: 5px;
+  color: var(--theme-brand);
+  font-size: 19px;
+  background: var(--theme-brand-soft);
+  border: 1px solid var(--theme-brand-border);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 var(--theme-material-highlight);
+}
+.fd-empty-icon.is-loading .el-icon {
+  animation: fd-spin 0.8s linear infinite;
+}
+.fd-empty strong {
+  color: var(--ds-text-secondary);
+  font-size: 12px;
+}
+.fd-empty small {
+  color: var(--ds-text-tertiary);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.fd-empty button {
+  height: 30px;
+  margin-top: 7px;
+  padding: 0 10px;
+  color: var(--theme-brand-text);
+  font-size: 11px;
+  background: var(--theme-brand-soft);
+  border: 1px solid var(--theme-brand-border);
+  border-radius: 8px;
   cursor: pointer;
-  transition: var(--ds-transition-all);
 }
-
-.feedback-toast-close:hover {
-  color: var(--theme-text-primary);
-  background: var(--theme-surface-hover);
+.fd-empty.is-error {
+  color: var(--theme-danger);
 }
-
-.feedback-toast-enter-active,
-.feedback-toast-leave-active {
-  transition: all 0.22s var(--ds-ease-soft);
+.fd-empty.is-error .fd-empty-icon {
+  color: var(--theme-danger-text);
+  background: var(--theme-danger-soft);
+  border-color: var(--theme-danger-border);
 }
-
-.feedback-toast-enter-from,
-.feedback-toast-leave-to {
+.fd-compose,
+.fd-inbox,
+.fd-content :deep(textarea),
+.fd-supplement :deep(textarea) {
+  scrollbar-width: none;
+}
+.fd-compose::-webkit-scrollbar,
+.fd-inbox::-webkit-scrollbar,
+.fd-content :deep(textarea::-webkit-scrollbar),
+.fd-supplement :deep(textarea::-webkit-scrollbar) {
+  display: none;
+}
+.fd-tabs button:focus-visible,
+.fd-types button:focus-visible,
+.fd-github-link:focus-visible,
+.fd-list-heading button:focus-visible,
+.fd-ticket-summary:focus-visible,
+.fd-secondary-action:focus-visible,
+.fd-empty button:focus-visible {
+  outline: 2px solid var(--theme-focus);
+  outline-offset: 2px;
+}
+.spinning {
+  animation: fd-spin 0.8s linear infinite;
+}
+.fd-view-enter-active,
+.fd-view-leave-active {
+  transition:
+    opacity 170ms ease,
+    transform 210ms var(--fd-ease-out);
+}
+.fd-view-enter-from {
   opacity: 0;
-  transform: translateY(-10px) scale(0.98);
+  transform: translateX(8px) scale(0.992);
 }
-
-@keyframes feedback-spin {
+.fd-view-leave-to {
+  opacity: 0;
+  transform: translateX(-6px) scale(0.995);
+}
+.fd-slide-enter-active,
+.fd-slide-leave-active {
+  transition:
+    opacity 150ms ease,
+    transform 180ms var(--fd-ease-out);
+}
+.fd-slide-enter-from,
+.fd-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-5px) scale(0.99);
+}
+@keyframes fd-dialog-in {
   from {
-    transform: rotate(0deg);
+    opacity: 0;
+    transform: translateY(8px) scale(0.975);
   }
-
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes fd-spin {
   to {
     transform: rotate(360deg);
   }
 }
-
-@media (max-width: 520px) {
-  .fd-type-list {
+@media (max-width: 680px) {
+  .fd-header {
+    align-items: stretch;
+    padding-right: 38px;
+  }
+  .fd-subtitle {
+    display: none;
+  }
+  .fd-tabs button {
+    min-width: 72px;
+    padding: 0 8px;
+  }
+  .fd-compose-lead p {
+    max-width: 90%;
+  }
+  .fd-types {
     grid-template-columns: repeat(2, 1fr);
   }
-
-  .fd-manual {
+  .fd-ticket-list {
+    padding: 12px;
+  }
+  .fd-ticket-detail {
+    padding: 0 10px 10px;
+  }
+  .fd-ticket-state {
+    padding: 0 6px;
+  }
+  .fd-ticket-state .el-icon {
+    display: none;
+  }
+  .fd-compose-hint {
     align-items: flex-start;
     flex-direction: column;
+    gap: 2px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :deep(.feedback-dialog),
+  .fd-empty-icon.is-loading .el-icon,
+  .spinning {
+    animation: none;
+  }
+  .fd-view-enter-active,
+  .fd-view-leave-active,
+  .fd-slide-enter-active,
+  .fd-slide-leave-active,
+  .fd-tabs button,
+  .fd-types button,
+  .fd-ticket,
+  .fd-ticket-summary,
+  .fd-submit {
+    transition-duration: 1ms;
+  }
+  .fd-view-enter-from,
+  .fd-view-leave-to,
+  .fd-slide-enter-from,
+  .fd-slide-leave-to {
+    transform: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :deep(.feedback-dialog),
+  .fd-list-heading {
+    background: var(--theme-surface-overlay);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more) {
+  :deep(.feedback-dialog),
+  .fd-types button,
+  .fd-content :deep(textarea),
+  .fd-ticket,
+  .fd-message-body,
+  .fd-supplement {
+    border-color: var(--theme-border-strong);
   }
 }
 </style>

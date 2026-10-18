@@ -22,8 +22,18 @@
 
       <div v-if="!isMac && apiBaseUrl" class="title-side-actions">
         <el-tooltip :content="feedbackTooltip" placement="bottom">
-          <button class="title-feedback-btn no-drag" type="button" @click="openFeedback">
+          <button
+            class="title-feedback-btn no-drag"
+            type="button"
+            :aria-label="feedbackTooltip"
+            @click="openFeedback"
+          >
             <span class="feedback-text">反馈</span>
+            <span
+              v-if="feedbackUnreadCount"
+              class="feedback-unread-badge"
+              aria-hidden="true"
+            ></span>
           </button>
         </el-tooltip>
       </div>
@@ -196,13 +206,18 @@
             class="global-feedback-btn no-drag"
             size="small"
             text
-            aria-label="打开反馈"
+            :aria-label="feedbackTooltip"
             @click="openFeedback"
           >
             <el-icon class="feedback-icon">
               <ChatDotRound />
             </el-icon>
             <span class="privacy-text">反馈</span>
+            <span
+              v-if="feedbackUnreadCount"
+              class="feedback-unread-badge"
+              aria-hidden="true"
+            ></span>
           </el-button>
         </el-tooltip>
 
@@ -318,6 +333,7 @@
       :app-homepage="appHomepage"
       :runtime-info="runtimeInfo"
       :api-base-url="apiBaseUrl"
+      @unread-count="feedbackUnreadCount = $event"
     />
 
     <NoticeCenter
@@ -349,6 +365,7 @@ import { APP_DESCRIPTION, APP_HOMEPAGE, APP_WEBSITE } from '@shared/const'
 import { Bell } from '@lucide/vue'
 import UpdateDialog from '@renderer/components/UpdateManager/UpdateDialog.vue'
 import FeedbackDialog from '@renderer/components/FeedbackDialog/index.vue'
+import { countUnreadFeedbackThreads } from '@renderer/components/FeedbackDialog/feedback-read-state'
 import NoticeCenter from '@renderer/components/NoticeCenter/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { useUserStore } from '@renderer/store/user.store'
@@ -423,11 +440,13 @@ const dialogState = ref('idle')
 const updateInfo = ref({})
 const errorInfo = ref({})
 const feedbackVisible = ref(false)
+const feedbackUnreadCount = ref(0)
 const noticeVisible = ref(false)
 const notices = ref([])
 const activeNotice = ref(null)
 const noticeReadVersion = ref(0)
 let appNoticeChecked = false
+let feedbackUnreadTimer = null
 const silentChecking = ref(false)
 const pendingNoticeAutoOpen = ref(false)
 const pendingUpdateDialogOpen = ref(false)
@@ -517,6 +536,7 @@ const versionStatusDetail = computed(() => {
 })
 
 const feedbackTooltip = computed(() => {
+  if (feedbackUnreadCount.value) return `有 ${feedbackUnreadCount.value} 条反馈收到新回复`
   return apiBaseUrl.value ? '快捷反馈问题或建议' : '打开 GitHub 反馈页'
 })
 
@@ -722,6 +742,16 @@ const openFeedback = async () => {
     return
   }
   feedbackVisible.value = true
+}
+
+const refreshFeedbackUnread = async () => {
+  if (!apiBaseUrl.value || !window.QzoneAPI?.app?.fetchFeedbackThreads) return
+  try {
+    const result = await window.QzoneAPI.app.fetchFeedbackThreads()
+    feedbackUnreadCount.value = countUnreadFeedbackThreads(result?.threads || [])
+  } catch {
+    // 未读提示是辅助信息，网络失败时保持当前状态，不干扰标题栏和反馈入口。
+  }
 }
 
 const getNoticeStorageKey = (notice) =>
@@ -1161,6 +1191,8 @@ onMounted(async () => {
   // 获取应用信息
   await Promise.all([loadAppInfo(), loadApiConfig()])
   fetchAppNotice()
+  refreshFeedbackUnread()
+  feedbackUnreadTimer = window.setInterval(refreshFeedbackUnread, 5 * 60 * 1000)
   scheduleActionDensity()
   clearInitialTitlebarFocus()
   // 获取初始窗口状态
@@ -1171,6 +1203,9 @@ onMounted(async () => {
   }
   // 监听窗口状态变化
   removeListeners.push(window.api.on(IPC_WINDOW.MAXIMIZED, handleWindowMaximized))
+  const handleWindowFocus = () => refreshFeedbackUnread()
+  window.addEventListener('focus', handleWindowFocus)
+  removeListeners.push(() => window.removeEventListener('focus', handleWindowFocus))
   resizeObserver = new ResizeObserver(() => scheduleActionDensity())
   if (titleBarRef.value) resizeObserver.observe(titleBarRef.value)
   // 监听更新相关事件
@@ -1196,6 +1231,10 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (feedbackUnreadTimer) {
+    window.clearInterval(feedbackUnreadTimer)
+    feedbackUnreadTimer = null
+  }
   clearVersionCheckFeedback()
   clearUpdateCheckUiTimer()
   if (densityFrame) cancelAnimationFrame(densityFrame)
@@ -1355,6 +1394,7 @@ watch([dialogVisible, noticeVisible], () => {
 }
 
 .title-feedback-btn {
+  position: relative;
   appearance: none;
   border: 1px solid transparent;
   height: 24px;
@@ -1384,6 +1424,18 @@ watch([dialogVisible, noticeVisible], () => {
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0;
+}
+
+.feedback-unread-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  background: var(--theme-danger);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--theme-surface-overlay);
+  pointer-events: none;
 }
 
 .app-logo {
@@ -1566,6 +1618,10 @@ watch([dialogVisible, noticeVisible], () => {
   justify-content: center;
   gap: 6px;
   line-height: 1;
+
+  &.global-feedback-btn {
+    position: relative;
+  }
 
   &:deep(.el-icon) {
     width: 14px;

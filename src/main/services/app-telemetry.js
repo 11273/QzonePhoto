@@ -72,6 +72,79 @@ export async function fetchFeedbackReplies() {
   }
 }
 
+export async function fetchFeedbackThreads() {
+  const config = await getAppApiConfig()
+  const baseUrls = getBaseUrls(config)
+  if (!baseUrls.length) return { threads: [] }
+
+  const token = await ensureFeedbackReplyToken()
+  const response = await requestWithFallback(baseUrls, '/api/feedback/threads', {
+    method: 'get',
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  const data = response?.data || {}
+  if (response.status === 404) {
+    const legacy = await fetchFeedbackReplies()
+    return {
+      threads: (legacy.replies || []).map((reply) => ({
+        feedbackId: reply.feedbackId,
+        type: reply.type,
+        title: reply.title,
+        state: 'replied',
+        submittedAt: reply.submittedAt,
+        updatedAt: reply.repliedAt || reply.submittedAt,
+        messages: [
+          {
+            // The legacy endpoint has no stable message id. Keep it neutral so it
+            // cannot accidentally mark future conversation replies as already read.
+            id: 0,
+            sender: 'admin',
+            kind: 'reply',
+            content: reply.reply,
+            createdAt: reply.repliedAt
+          }
+        ]
+      }))
+    }
+  }
+  if (response.status === 429) throw new Error('查询太频繁了，请稍后再试')
+  if (response.status >= 500) throw new Error('反馈消息暂时无法读取，请稍后再试')
+  if (response.status >= 400 || data?.ok === false) {
+    throw new Error(data?.message || '反馈消息读取失败')
+  }
+  return {
+    threads: Array.isArray(data.data?.threads) ? data.data.threads : []
+  }
+}
+
+export async function submitFeedbackMessage(feedbackId, payload = {}) {
+  const safeFeedbackId = Number(feedbackId)
+  if (!Number.isInteger(safeFeedbackId) || safeFeedbackId <= 0) {
+    throw new Error('反馈编号无效')
+  }
+  const config = await getAppApiConfig()
+  const baseUrls = getBaseUrls(config)
+  if (!baseUrls.length) throw new Error('快捷反馈服务未配置')
+
+  const token = await ensureFeedbackReplyToken()
+  const response = await requestWithFallback(baseUrls, `/api/feedback/${safeFeedbackId}/messages`, {
+    method: 'post',
+    headers: { Authorization: `Bearer ${token}` },
+    data: {
+      content: String(payload.content || ''),
+      eventId: String(payload.eventId || ''),
+      createdAt: payload.createdAt || new Date().toISOString()
+    }
+  })
+  const data = response?.data || {}
+  if (response.status === 429) throw new Error('发送太频繁了，请稍后再试')
+  if (response.status >= 500) throw new Error('消息暂时无法发送，请稍后再试')
+  if (response.status >= 400 || data?.ok === false) {
+    throw new Error(data?.message || '消息发送失败')
+  }
+  return data.data || {}
+}
+
 export async function uploadDiagnosticLogs(options = {}) {
   const config = await getAppApiConfig()
   const baseUrls = getBaseUrls(config)
@@ -245,7 +318,8 @@ function parseFeedbackResponse(response) {
     message: data.message || '反馈已提交',
     issue: data.data?.issue,
     issueUrl: data.data?.issueUrl,
-    delivery: data.data?.delivery
+    delivery: data.data?.delivery,
+    feedbackId: data.data?.feedbackId
   }
 }
 

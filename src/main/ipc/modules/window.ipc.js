@@ -9,6 +9,8 @@ import {
   reportHealthEvent,
   submitFeedback,
   fetchFeedbackReplies,
+  fetchFeedbackThreads,
+  submitFeedbackMessage,
   uploadDiagnosticLogs
 } from '@main/services/app-telemetry'
 
@@ -149,6 +151,17 @@ export function registerWindowControl() {
 
   ipcMain.handle(IPC_APP.FETCH_FEEDBACK_REPLIES, async () => {
     return withIpcData(async () => await fetchFeedbackReplies())
+  })
+
+  ipcMain.handle(IPC_APP.FETCH_FEEDBACK_THREADS, async () => {
+    return withIpcData(async () => await fetchFeedbackThreads())
+  })
+
+  ipcMain.handle(IPC_APP.SUBMIT_FEEDBACK_MESSAGE, async (event, context = {}) => {
+    return withIpcData(async () => {
+      const payload = context?.payload || context || {}
+      return await submitFeedbackMessage(payload.feedbackId, payload)
+    })
   })
 
   ipcMain.handle(IPC_APP.UPLOAD_LOGS, async (event, context = {}) => {
