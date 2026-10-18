@@ -2,6 +2,7 @@ import { extractJSONFromCallback, getGTK, parseObjectLiteral } from '@main/api/u
 import request from '@main/api/utils/request'
 import { parseSetCookie } from '@main/utils'
 import { buildPhotoDeleteCodelist, normalizeAlbumPrivacy } from '@shared/photo-delete'
+import { buildQzoneBlogListParams } from '@shared/qzone-blog-query'
 
 // Extract raw QQ number from cookie uin (strip "o" prefix)
 const rawUin = (uin) => String(uin).replace(/^o/, '')
@@ -1092,28 +1093,13 @@ export async function get_blog_list(uin, p_skey, hostUin, opts = {}) {
   const num = Math.min(50, Math.max(1, Number(opts.num) || 15))
   const targetUin = rawUin(hostUin || uin)
   const url = 'https://user.qzone.qq.com/proxy/domain/b.qzone.qq.com/cgi-bin/blognew/get_abs'
-  const params = {
+  const params = buildQzoneBlogListParams({
+    viewerUin: rawUin(uin),
     hostUin: targetUin,
-    uin: rawUin(uin),
-    blogType: 0,
-    cateName: '',
-    cateHex: '',
-    statYear: '',
-    // 官网当前日志列表使用完整摘要模式，包含分类、评论数与更完整的摘要字段。
-    reqInfo: 7,
     pos,
     num,
-    sortType: 0,
-    absType: 1,
-    startTime: '',
-    endTime: '',
-    source: 0,
-    ref: 'qzone',
-    verbose: 1,
-    callback: '_Callback',
-    rand: Math.random(),
-    g_tk: getGTK(p_skey)
-  }
+    gTk: getGTK(p_skey)
+  })
   const response = await request.get(url, {
     params,
     telemetry: false,

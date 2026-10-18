@@ -679,6 +679,7 @@ import {
   finishDownloadBatch,
   openDownloadBatchOptions
 } from '@renderer/utils/downloadBatch'
+import { classifyContentLoadFailure } from '@shared/content-load-state'
 
 const userStore = useUserStore()
 const privacyStore = usePrivacyStore()
@@ -3178,7 +3179,10 @@ const notifyLoadErrorOnce = (source, message) => {
 }
 
 const handleLoadFailure = (source, message, pageKey = '') => {
-  const safeMessage = message || '响应异常'
+  const safeMessage = classifyContentLoadFailure(message || '响应异常', {
+    label: source.label,
+    friendMode: isFriendContext.value
+  }).description
   loadError.value = safeMessage
   notifyLoadErrorOnce(source, safeMessage)
   if (isPermanentLoadError(safeMessage)) {
