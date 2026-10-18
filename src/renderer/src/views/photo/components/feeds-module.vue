@@ -217,7 +217,8 @@
               class="fc-card"
               :class="{
                 'is-compact-card':
-                  (feed.media?.length || 0) <= 1 && (feed.contentText?.length || 0) < 180
+                  (feed.media?.length || 0) <= 1 && (feed.contentText?.length || 0) < 180,
+                'is-top-feed': feed.isTop
               }"
             >
               <header class="fc-header">
@@ -253,6 +254,10 @@
                     <span v-if="feed.yearLabel" class="fc-year-chip">
                       {{ feed.yearLabel }}
                     </span>
+                    <span v-if="feed.isTop" class="fc-top-chip">
+                      <Pin :size="10" />
+                      已置顶
+                    </span>
                     <span class="fc-time" :title="formatTime(feed.abstime)">
                       {{ feed.feedstime || formatTime(feed.abstime) }}
                     </span>
@@ -281,6 +286,44 @@
                     <Download :size="13" />
                     {{ isFeedDownloading(feed.tid) ? '加入中' : feed.media.length }}
                   </button>
+                  <el-dropdown
+                    v-if="canManageFeed(feed)"
+                    trigger="click"
+                    placement="bottom-end"
+                    popper-class="feed-actions-popper fm-feed-actions-popper"
+                    @command="handleFeedCommand($event, feed)"
+                    @click.stop
+                  >
+                    <button
+                      type="button"
+                      class="fc-more-btn"
+                      :disabled="isFeedMutating(feed)"
+                      :aria-label="isFeedMutating(feed) ? '正在处理动态' : '更多动态操作'"
+                      :title="isFeedMutating(feed) ? '正在处理…' : '更多操作'"
+                      @click.stop
+                    >
+                      <el-icon v-if="isFeedMutating(feed)" class="is-loading"><Loading /></el-icon>
+                      <MoreHorizontal v-else :size="15" />
+                    </button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="toggle-top" :disabled="isFeedMutating(feed)">
+                          <PinOff v-if="feed.isTop" :size="14" />
+                          <Pin v-else :size="14" />
+                          <span>{{ feed.isTop ? '取消置顶' : '置顶动态' }}</span>
+                        </el-dropdown-item>
+                        <el-dropdown-item
+                          command="delete"
+                          :disabled="isFeedMutating(feed)"
+                          class="feed-delete-menu-item"
+                          divided
+                        >
+                          <Trash2 :size="14" />
+                          <span>删除这条动态</span>
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
                 </div>
               </header>
 
@@ -606,7 +649,7 @@
 
 <script setup>
 import { ref, reactive, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading, Hide, Picture, VideoPlay } from '@element-plus/icons-vue'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
@@ -636,7 +679,11 @@ import {
   Newspaper,
   ExternalLink,
   Play,
-  ClipboardCopy
+  ClipboardCopy,
+  MoreHorizontal,
+  Pin,
+  PinOff,
+  Trash2
 } from '@lucide/vue'
 import FeedComment from '@renderer/components/FeedComment/index.vue'
 import RichText from '@renderer/components/RichText/index.vue'
@@ -680,6 +727,7 @@ import {
   openDownloadBatchOptions
 } from '@renderer/utils/downloadBatch'
 import { classifyContentLoadFailure } from '@shared/content-load-state'
+import { feedMutationErrorText, feedMutationResult } from '@renderer/utils/feed-mutations.mjs'
 
 const userStore = useUserStore()
 const privacyStore = usePrivacyStore()
@@ -958,6 +1006,122 @@ const thumbRetryIndexes = reactive({})
 const downloadingAll = ref(false)
 const downloadingFeedIds = ref(new Set())
 const copyingFeedIds = ref(new Set())
+const mutatingFeedIds = ref(new Set())
+const feedMutationKey = (feed) => String(feed?.feedKey || feed?.tid || '')
+const isFeedMutating = (feed) => mutatingFeedIds.value.has(feedMutationKey(feed))
+const setFeedMutating = (feed, value) => {
+  const key = feedMutationKey(feed)
+  const next = new Set(mutatingFeedIds.value)
+  if (value) next.add(key)
+  else next.delete(key)
+  mutatingFeedIds.value = next
+}
+const canManageFeed = (feed) =>
+  !isFriendContext.value &&
+  activeSource.value?.kind === 'html' &&
+  normalizeQzoneUin(feed?.uin) === selfUin.value &&
+  !!feedMutationKey(feed)
+
+const toggleFeedTop = async (feed) => {
+  if (!canManageFeed(feed) || isFeedMutating(feed)) return
+  const removing = !!feed.isTop
+  try {
+    await ElMessageBox.confirm(
+      removing
+        ? '取消后，这条动态将恢复到原来的时间顺序。确定取消置顶吗？'
+        : '置顶后，这条动态会优先显示在你的 QQ 空间主页。确定置顶吗？',
+      removing ? '取消置顶' : '置顶动态',
+      {
+        confirmButtonText: removing ? '确定取消' : '确定置顶',
+        cancelButtonText: '返回',
+        type: 'warning',
+        distinguishCancelAndClose: true
+      }
+    )
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') console.error('[FeedsModule] 置顶确认失败', error)
+    return
+  }
+
+  setFeedMutating(feed, true)
+  try {
+    const response = await window.QzoneAPI.setFeedTop({
+      hostUin: selfUin.value,
+      key: feed.topDataId || feed.feedKey,
+      action: removing ? 'cancel' : 'set',
+      needChange: ![0, 1].includes(Number(feed.appid)) ? 1 : 0
+    })
+    const result = feedMutationResult(response)
+    if (!result.success) throw new Error(feedMutationErrorText('置顶', result))
+
+    if (!removing) feeds.value.forEach((item) => (item.isTop = false))
+    feed.isTop = !removing
+    if (!removing) {
+      feeds.value = [feed, ...feeds.value.filter((item) => item !== feed)]
+      scrollbarRef.value?.setScrollTop?.(0)
+    }
+    ElMessage.success(removing ? '已取消置顶' : '置顶成功')
+  } catch (error) {
+    console.error('[FeedsModule] 动态置顶操作失败', error)
+    ElMessage.error(error?.message || feedMutationErrorText('置顶'))
+  } finally {
+    setFeedMutating(feed, false)
+  }
+}
+
+const deleteOwnFeed = async (feed) => {
+  if (!canManageFeed(feed) || isFeedMutating(feed)) return
+  const feedAppid = Number(feed.appid)
+  const confirmText = [2, 202, 311].includes(feedAppid)
+    ? '删除后，原文及其评论也会一并删除，且无法恢复。确定删除吗？'
+    : feedAppid === 4
+      ? '这只会删除主页里的动态记录，相册中的原照片不会被删除。确定删除吗？'
+      : '删除后，这条主页动态将无法恢复。确定删除吗？'
+  try {
+    await ElMessageBox.confirm(confirmText, '删除动态', {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '返回',
+      type: 'warning',
+      distinguishCancelAndClose: true
+    })
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') console.error('[FeedsModule] 删除确认失败', error)
+    return
+  }
+
+  setFeedMutating(feed, true)
+  try {
+    const response = await window.QzoneAPI.deleteFeed({
+      hostUin: selfUin.value,
+      skey: feed.feedKey,
+      time: feed.abstime,
+      typeid: feed.typeid || 0,
+      flag: feed.flag || 0,
+      appid: feed.appid || 4,
+      topicId: feed.topicId || '',
+      scope: feed.scope || 0,
+      platformId: feed.platformId || ''
+    })
+    const result = feedMutationResult(response, { allowAlreadyDeleted: true })
+    if (!result.success) throw new Error(feedMutationErrorText('删除', result))
+
+    feeds.value = feeds.value.filter((item) => item !== feed)
+    delete commentsByTid[commentKey(feed)]
+    delete likersByKey[likeKey(feed)]
+    pushStats()
+    ElMessage.success('动态已删除')
+  } catch (error) {
+    console.error('[FeedsModule] 删除动态失败', error)
+    ElMessage.error(error?.message || feedMutationErrorText('删除'))
+  } finally {
+    setFeedMutating(feed, false)
+  }
+}
+
+const handleFeedCommand = (command, feed) => {
+  if (command === 'toggle-top') return toggleFeedTop(feed)
+  if (command === 'delete') return deleteOwnFeed(feed)
+}
 const likesExpandedByTid = reactive({})
 const likesShownByTid = reactive({})
 const likersByKey = reactive({})
@@ -1836,6 +2000,20 @@ const normalize = (raw) => {
 
   const feedMeta = doc.querySelector('i[name="feed_data"]')
   const topicId = feedMeta?.getAttribute('data-topicid') || ''
+  const feedKey =
+    raw.key ||
+    feedMeta?.getAttribute('data-fkey') ||
+    doc.querySelector('.f-item[data-key]')?.getAttribute('data-key') ||
+    ''
+  const topMarker = doc.querySelector('.f-single-top')
+  const topDataId =
+    raw.dataid ||
+    raw.dataId ||
+    feedMeta?.getAttribute('data-dataid') ||
+    doc.querySelector('.f-item[data-dataid]')?.getAttribute('data-dataid') ||
+    topMarker?.getAttribute('data-dataid') ||
+    ''
+  const isTop = Number(raw.istop ?? raw.isTop ?? topMarker?.getAttribute('data-istop') ?? 0) === 1
 
   // 非说说（appid != 311）的评论 li 通常已经在 feeds3 html 里，提前解出来
   const inlineComments = parseCommentsHtml(raw.html || '')
@@ -1849,8 +2027,11 @@ const normalize = (raw) => {
   const feedYear = Number(raw.abstime) ? new Date(Number(raw.abstime) * 1000).getFullYear() : 0
 
   return {
-    tid: raw.key || `${raw.uin}-${raw.abstime}`,
+    tid: feedKey || `${raw.uin}-${raw.abstime}`,
+    feedKey,
     topicId,
+    topDataId,
+    isTop,
     inlineComments,
     uin: String(raw.uin || parsedUin || ''),
     name: raw.nickname || userLink?.textContent?.trim() || '',
@@ -1860,6 +2041,9 @@ const normalize = (raw) => {
     feedstime: raw.feedstime || '',
     appid,
     typeid,
+    scope: Number(raw.scope) || 0,
+    flag: Number(raw.flag) || 0,
+    platformId: feedMeta?.getAttribute('data-platformid') || '',
     appType,
     yearLabel: activeSource.value?.key === 'lastYear' && feedYear ? `${feedYear} 的今天` : '',
     actionText: actionMeta?.text || '',
@@ -4248,6 +4432,18 @@ defineExpose({ refresh: handleRefresh })
   background: var(--theme-surface-soft);
   border: 1px solid var(--theme-border-subtle);
 }
+.fc-top-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--qz-active-text);
+  background: var(--theme-brand-soft);
+  border: 1px solid var(--theme-brand-border);
+  border-radius: 999px;
+}
 .fc-time {
   white-space: nowrap;
 }
@@ -4256,6 +4452,40 @@ defineExpose({ refresh: handleRefresh })
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+.fc-more-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--theme-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background-color 0.15s,
+    border-color 0.15s;
+
+  &:hover:not(:disabled),
+  &:focus-visible {
+    color: var(--theme-text-primary);
+    background: var(--theme-surface-hover);
+    border-color: var(--theme-border-subtle);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-focus);
+    outline-offset: 1px;
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: wait;
+  }
 }
 
 .fc-action {
@@ -4870,6 +5100,28 @@ defineExpose({ refresh: handleRefresh })
   &:focus-visible {
     outline: 2px solid var(--theme-focus);
     outline-offset: 2px;
+  }
+}
+</style>
+
+<style lang="scss">
+.fm-feed-actions-popper {
+  min-width: 150px;
+
+  .el-dropdown-menu__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .feed-delete-menu-item {
+    color: var(--theme-danger-text);
+
+    &:hover,
+    &:focus {
+      color: var(--theme-danger);
+      background: var(--theme-danger-soft);
+    }
   }
 }
 </style>

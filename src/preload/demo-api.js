@@ -279,6 +279,8 @@ export const createDemoQzoneAPI = (realApi) => ({
   getFeeds: async () => ({ code: 0, data: { feeds: photoFeeds } }),
   getFriendPhotos: async () => ({ code: 0, data: { photos: [], hasmore: false } }),
   getHomeFeeds: async () => ({ code: 0, hasMore: false, pager: { start: feeds.length }, feeds }),
+  deleteFeed: async () => ({ code: 0, message: 'success' }),
+  setFeedTop: async () => ({ code: 0, message: 'success' }),
   getFriendFeeds: async () => ({ code: 0, hasMore: false, feeds }),
   getAboutMeFeeds: async () => ({ code: 0, hasMore: false, feeds }),
   getLastYearFeeds: async () => ({ code: 0, hasMore: false, feeds }),

@@ -6,6 +6,7 @@ import {
   feeds2_html_picfeed_qqtab,
   feeds_home_html,
   feeds_delete_cgi,
+  cgi_settopfeed,
   cgi_video_get_data,
   cgi_get_albuminfo_v2,
   cgi_get_visitor_simple,
@@ -238,8 +239,12 @@ export class QzonePhotoService {
   }
 
   // 删除动态
-  async deleteFeed({ hostUin, skey, time, typeid, flag }, { uin, p_skey }) {
-    return await feeds_delete_cgi(uin, p_skey, hostUin, skey, time, typeid, flag)
+  async deleteFeed(payload, { uin, p_skey }) {
+    return await feeds_delete_cgi(uin, p_skey, payload)
+  }
+
+  async setFeedTop({ hostUin, key, action, needChange }, { uin, p_skey }) {
+    return await cgi_settopfeed(uin, p_skey, hostUin, key, action, needChange)
   }
 
   // 获取视频列表

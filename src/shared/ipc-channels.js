@@ -30,6 +30,8 @@ export const IPC_PHOTO = {
   GET_FEEDS: 'photo:getFeeds',
   /** 删除动态 */
   DELETE_FEED: 'photo:deleteFeed',
+  /** 置顶或取消置顶自己的动态 */
+  SET_FEED_TOP: 'photo:setFeedTop',
   /** 获取视频列表 */
   GET_VIDEO_LIST: 'photo:getVideoList',
   /** 获取相册问题和答案 */

@@ -730,43 +730,108 @@ export async function feeds_home_html(uin, p_skey, hostUin, pager = {}) {
  * 删除动态
  * @param uin qq
  * @param p_skey 登录后有
- * @param hostUin 主人QQ
- * @param skey 动态的skey
- * @param time 动态的时间戳
- * @param typeid 动态类型ID
- * @param flag 标志位，默认0
+ * @param payload 官网动态标识（hostUin、skey、time、appid、typeid、topicId 等）
  * @returns
  */
-export async function feeds_delete_cgi(uin, p_skey, hostUin, skey, time, typeid = 0, flag = 0) {
-  const url = 'https://user.qzone.qq.com/proxy/domain/w.qzone.qq.com/cgi-bin/feeds/feeds_delete_cgi'
+export async function feeds_delete_cgi(
+  uin,
+  p_skey,
+  { hostUin, skey, time, typeid = 0, flag = 0, appid, topicId = '', scope = 0, platformId = '' }
+) {
+  const loginUin = rawUin(uin)
+  const targetUin = rawUin(hostUin)
+  if (!loginUin || targetUin !== loginUin) {
+    throw new Error('只能删除当前账号自己的动态')
+  }
+
+  // 旧的照片动态页没有 appid/topicId，继续走已验证过的兼容接口；
+  // 「我的主页」使用官网 feedsopr.js 当前使用的 rtcode 参数，兼容说说、日志和分享。
+  const useLegacyEndpoint = appid === undefined && !topicId
+  const feedAppid = Number(appid ?? 4) || 4
+  const actionUrls = {
+    2: 'https://user.qzone.qq.com/proxy/domain/b.qzone.qq.com/cgi-bin/blognew/del_blog',
+    202: 'https://sns.qzone.qq.com/cgi-bin/qzshare/cgi_qzsharedelete',
+    311: 'https://user.qzone.qq.com/proxy/domain/taotao.qzone.qq.com/cgi-bin/emotion_cgi_delete_v6'
+  }
+  const url = useLegacyEndpoint
+    ? 'https://user.qzone.qq.com/proxy/domain/w.qzone.qq.com/cgi-bin/feeds/feeds_delete_cgi'
+    : actionUrls[feedAppid] ||
+      'https://user.qzone.qq.com/proxy/domain/w.qzone.qq.com/cgi-bin/feeds/feeds_delete_cgi_rtcode'
 
   const params = {
     g_tk: getGTK(p_skey)
   }
 
-  // 构造表单数据
-  const formData = new URLSearchParams({
-    // qzreferrer: `https://user.qzone.qq.com/${hostUin}`,
-    appid: 4,
-    type: typeid,
-    key: skey,
-    flag: flag,
-    time: time,
-    uin: rawUin(uin),
-    hostUin: hostUin,
-    plat: 'qzone',
-    source: 'qzone',
-    inCharset: 'UTF-8',
-    outCharset: 'UTF-8'
-  })
-  console.log(formData.toString())
+  const formData = useLegacyEndpoint
+    ? new URLSearchParams({
+        appid: 4,
+        type: typeid,
+        key: skey,
+        flag,
+        time,
+        uin: loginUin,
+        hostUin: targetUin,
+        plat: 'qzone',
+        source: 'qzone',
+        inCharset: 'UTF-8',
+        outCharset: 'UTF-8'
+      })
+    : new URLSearchParams({
+        uin: loginUin,
+        topicId,
+        feedsType: typeid,
+        feedsFlag: Number(scope) === 1 || Number(scope) === 100 ? 1 : flag,
+        feedsKey: skey,
+        feedsAppid: feedAppid,
+        feedsTime: time,
+        fupdate: 1,
+        ref: 'feeds',
+        ...(feedAppid === 202 && platformId ? { ugcPlatform: platformId } : {})
+      })
   const response = await request.post(url, formData.toString(), {
     params,
     headers: {
       Cookie: `uin=${uin};p_skey=${p_skey}`,
-      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      Referer: `https://user.qzone.qq.com/${targetUin}/main`
     }
   })
+
+  return response.data
+}
+
+/**
+ * 置顶或取消置顶自己的动态。
+ *
+ * 官网 v8/ic/topfeed.js 使用 cgi_settopfeed，只提交动态 dataid/key、set/cancel
+ * 和 need_change。未开通相应空间权限时服务端会返回非 0 code，由界面原样提示。
+ */
+export async function cgi_settopfeed(uin, p_skey, hostUin, key, action = 'set', needChange = 1) {
+  const loginUin = rawUin(uin)
+  const targetUin = rawUin(hostUin)
+  if (!loginUin || targetUin !== loginUin) {
+    throw new Error('只能置顶当前账号自己的动态')
+  }
+  if (!key || !['set', 'cancel'].includes(action)) {
+    throw new Error('缺少有效的动态置顶参数')
+  }
+
+  const response = await request.post(
+    'https://user.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/cgi_settopfeed',
+    new URLSearchParams({
+      key,
+      act: action,
+      need_change: Number(needChange) ? 1 : 0
+    }).toString(),
+    {
+      params: { g_tk: getGTK(p_skey) },
+      headers: {
+        Cookie: `uin=${uin};p_skey=${p_skey}`,
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        Referer: `https://user.qzone.qq.com/${targetUin}/main`
+      }
+    }
+  )
 
   return response.data
 }

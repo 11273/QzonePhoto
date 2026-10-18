@@ -34,6 +34,9 @@ export function createPhotoHandlers(service) {
     [IPC_PHOTO.DELETE_FEED]: async (_, { payload, headers }) => {
       return photoService.deleteFeed(payload, headers)
     },
+    [IPC_PHOTO.SET_FEED_TOP]: async (_, { payload, headers }) => {
+      return photoService.setFeedTop(payload, headers)
+    },
     [IPC_PHOTO.GET_VIDEO_LIST]: async (_, { payload, headers }) => {
       return photoService.getVideoList(payload, headers)
     },

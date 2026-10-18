@@ -73,6 +73,8 @@ try {
     getFeeds: (data, meta) => ipcClient.call(IPC_PHOTO.GET_FEEDS, data, meta),
     // 删除动态
     deleteFeed: (data, meta) => ipcClient.call(IPC_PHOTO.DELETE_FEED, data, meta),
+    // 置顶或取消置顶自己的动态
+    setFeedTop: (data, meta) => ipcClient.call(IPC_PHOTO.SET_FEED_TOP, data, meta),
     // 获取视频列表
     getVideoList: (data, meta) => ipcClient.call(IPC_PHOTO.GET_VIDEO_LIST, data, meta),
     // 获取相册问题和答案
