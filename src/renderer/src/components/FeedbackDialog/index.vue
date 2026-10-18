@@ -633,7 +633,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped lang="scss">
-:deep(.feedback-dialog) {
+:global(.feedback-dialog) {
   --el-dialog-padding-primary: 0;
   --fd-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   width: min(720px, calc(100vw - 32px));
@@ -655,12 +655,12 @@ onUnmounted(() => {
   -webkit-backdrop-filter: blur(10px) saturate(120%);
   backdrop-filter: blur(10px) saturate(120%);
 }
-:deep(.feedback-dialog .el-dialog__header) {
+:global(.feedback-dialog .el-dialog__header) {
   padding: 16px 18px;
   margin: 0;
   border-bottom: 1px solid var(--ds-border-faint);
 }
-:deep(.feedback-dialog .el-dialog__headerbtn) {
+:global(.feedback-dialog .el-dialog__headerbtn) {
   top: 13px;
   right: 14px;
   width: 36px;
@@ -671,13 +671,13 @@ onUnmounted(() => {
     background 160ms ease,
     transform 100ms ease-out;
 }
-:deep(.feedback-dialog .el-dialog__headerbtn:hover) {
+:global(.feedback-dialog .el-dialog__headerbtn:hover) {
   background: var(--theme-surface-hover);
 }
-:deep(.feedback-dialog .el-dialog__headerbtn:active) {
+:global(.feedback-dialog .el-dialog__headerbtn:active) {
   transform: scale(0.94);
 }
-:deep(.feedback-dialog .el-dialog__body) {
+:global(.feedback-dialog .el-dialog__body) {
   padding: 0;
 }
 .fd-header {
@@ -1523,7 +1523,7 @@ onUnmounted(() => {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  :deep(.feedback-dialog),
+  :global(.feedback-dialog),
   .fd-empty-icon.is-loading .el-icon,
   .spinning {
     animation: none;
@@ -1547,7 +1547,7 @@ onUnmounted(() => {
   }
 }
 @media (prefers-reduced-transparency: reduce) {
-  :deep(.feedback-dialog),
+  :global(.feedback-dialog),
   .fd-list-heading {
     background: var(--theme-surface-overlay);
     -webkit-backdrop-filter: none;
@@ -1555,7 +1555,7 @@ onUnmounted(() => {
   }
 }
 @media (prefers-contrast: more) {
-  :deep(.feedback-dialog),
+  :global(.feedback-dialog),
   .fd-types button,
   .fd-content :deep(textarea),
   .fd-ticket,
