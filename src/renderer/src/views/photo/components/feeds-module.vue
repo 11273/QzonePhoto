@@ -741,6 +741,7 @@ import {
 } from '@renderer/utils/downloadBatch'
 import { CONTENT_LOAD_STATUS, classifyContentLoadFailure } from '@shared/content-load-state'
 import { feedMutationErrorText, feedMutationResult } from '@renderer/utils/feed-mutations.mjs'
+import { loadLastYearFeedRange } from '@shared/last-year-feed-state'
 
 const userStore = useUserStore()
 const privacyStore = usePrivacyStore()
@@ -854,19 +855,17 @@ const sources = computed(() =>
         count: PAGE_SIZE,
         mode: 1
       }),
-      load: async (p) => {
-        let year = p.year || new Date().getFullYear() - 1
+      load: (p) => {
+        const firstYear = p.year || new Date().getFullYear() - 1
         const mode = p.mode || 1
         const count = p.count || PAGE_SIZE
-        while (year >= LAST_YEAR_MIN) {
-          const res = await window.QzoneAPI.getLastYearFeeds({ year, count, mode })
-          if (!res || Number(res.code) !== 0) return res
-          if (res?.feeds?.length || year === LAST_YEAR_MIN) {
-            return { ...res, pager: { year, count, mode } }
-          }
-          year -= 1
-        }
-        return { code: 0, feeds: [], hasMore: false, pager: { year, count, mode } }
+        return loadLastYearFeedRange({
+          fetchYear: (params) => window.QzoneAPI.getLastYearFeeds(params),
+          firstYear,
+          minYear: LAST_YEAR_MIN,
+          count,
+          mode
+        })
       }
     },
     {
@@ -973,12 +972,15 @@ const emptyStateTitle = computed(() =>
       ? `还没有${activeFavoriteFilter.value.label}收藏`
       : activeSource.value.emptyTitle
 )
+const emptyDescriptionOverride = ref('')
 const emptyStateDesc = computed(() =>
   loadFailureState.value
     ? loadFailureState.value.description
-    : activeKey.value === 'fav' && favoriteType.value !== 0
-      ? '可以切换其他分类，或回到「全部」查看收藏'
-      : activeSource.value.emptyDesc
+    : emptyDescriptionOverride.value
+      ? emptyDescriptionOverride.value
+      : activeKey.value === 'fav' && favoriteType.value !== 0
+        ? '可以切换其他分类，或回到「全部」查看收藏'
+        : activeSource.value.emptyDesc
 )
 
 const feeds = ref([])
@@ -3386,6 +3388,7 @@ const resetFeedRuntime = (source) => {
   pager.value = source.initialPager()
   hasMore.value = true
   loadFailureState.value = null
+  emptyDescriptionOverride.value = ''
   loadRetryAfter.value = 0
   notifiedLoadErrors.clear()
   pageGuard.reset()
@@ -3460,6 +3463,7 @@ const loadPage = async ({ reset = false } = {}) => {
       return handleLoadFailure(source, res || { message: 'QQ 空间响应异常' }, pageKey)
     }
     loadFailureState.value = null
+    emptyDescriptionOverride.value = String(res.emptyDescription || '')
     loadRetryAfter.value = 0
     pageGuard.succeed()
     if (source.kind === 'shuoshuo') {

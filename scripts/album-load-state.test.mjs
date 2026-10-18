@@ -5,6 +5,8 @@ import {
   ALBUM_LOAD_STATUS,
   classifyAlbumLoadFailure,
   createAlbumLoadState,
+  createAlbumVisibilityGapDescription,
+  isOfficialEmptyAlbumCategoryPage,
   resolveAlbumResponseState
 } from '../src/shared/album-load-state.js'
 
@@ -94,4 +96,30 @@ test('默认占位仍提示选择相册', () => {
   const state = createAlbumLoadState()
   assert.equal(state.status, ALBUM_LOAD_STATUS.IDLE)
   assert.equal(state.title, '选择一个相册')
+})
+
+test('服务端统计大于可见列表时不误报网络或数据损坏', () => {
+  const description = createAlbumVisibilityGapDescription({
+    reported: 48,
+    visible: 47,
+    context: '“最爱”分类'
+  })
+
+  assert.match(description, /多 1 个/)
+  assert.match(description, /隐藏、删除、未向当前账号开放/)
+  assert.doesNotMatch(description, /网络|损坏|加载失败/)
+})
+
+test('单分类接口的官方空尾页与残缺响应保持区分', () => {
+  assert.equal(
+    isOfficialEmptyAlbumCategoryPage({
+      albumList: null,
+      albumsInUser: 0,
+      totalInPage: 0,
+      totalInClass: 0
+    }),
+    true
+  )
+  assert.equal(isOfficialEmptyAlbumCategoryPage({ albumList: null, totalInPage: 3 }), false)
+  assert.equal(isOfficialEmptyAlbumCategoryPage({}), false)
 })

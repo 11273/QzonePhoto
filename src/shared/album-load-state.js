@@ -90,6 +90,26 @@ export const createAlbumLoadState = (status = ALBUM_LOAD_STATUS.IDLE, options = 
   }
 }
 
+export const createAlbumVisibilityGapDescription = ({
+  reported,
+  visible,
+  context = '相册列表'
+} = {}) => {
+  const missing = Math.max(1, Number(reported || 0) - Number(visible || 0))
+  return `${context}报告的数量比当前可见列表多 ${missing} 个；QQ 空间没有返回这些相册，它们可能已隐藏、删除、未向当前账号开放，或统计尚未更新。`
+}
+
+export const isOfficialEmptyAlbumCategoryPage = (data) =>
+  Boolean(
+    data &&
+    Object.prototype.hasOwnProperty.call(data, 'albumList') &&
+    Object.prototype.hasOwnProperty.call(data, 'totalInPage') &&
+    Object.prototype.hasOwnProperty.call(data, 'albumsInUser') &&
+    data.albumList == null &&
+    Number(data.totalInPage || 0) === 0 &&
+    Number(data.albumsInUser || 0) === 0
+  )
+
 export const classifyAlbumLoadFailure = (failure, { friendMode = false } = {}) => {
   const state = classifyContentLoadFailure(failure, { label: '相册', friendMode })
   return {

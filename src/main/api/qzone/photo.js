@@ -3,7 +3,10 @@ import request from '@main/api/utils/request'
 import { parseSetCookie } from '@main/utils'
 import { buildPhotoDeleteCodelist, normalizeAlbumPrivacy } from '@shared/photo-delete'
 import { buildQzoneBlogListParams } from '@shared/qzone-blog-query'
-import { normalizeQzoneReadResponse } from '@shared/qzone-read-response'
+import {
+  isValidQzoneAlbumListResponse,
+  normalizeQzoneReadResponse
+} from '@shared/qzone-read-response'
 
 // Extract raw QQ number from cookie uin (strip "o" prefix)
 const rawUin = (uin) => String(uin).replace(/^o/, '')
@@ -206,7 +209,11 @@ export async function fcg_list_album_v3(
       Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '相册列表',
+    // mode=4（单分类分页）使用扁平 albumList，不再返回两种首屏列表字段。
+    isValid: isValidQzoneAlbumListResponse
+  })
 }
 
 /**
@@ -301,7 +308,10 @@ export async function cgi_floatview_photo_list_v2(
       Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '照片详情',
+    isValid: (body) => isRecord(body?.data) && Array.isArray(body.data.photos)
+  })
 }
 
 /**
@@ -1053,7 +1063,10 @@ export async function cgi_get_albuminfo_v2(uin, p_skey, hostUin, albumId) {
       Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '相册信息',
+    isValid: (body) => isRecord(body?.data)
+  })
 }
 
 /**

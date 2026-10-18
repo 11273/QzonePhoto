@@ -180,6 +180,22 @@ export const classifyContentLoadFailure = (failure, options = {}) => {
   }
 
   if (
+    /需要(?:先)?(?:回答|输入).*(?:问题|答案|密码)|回答问题后(?:方可|才能|可)查看|请输入(?:相册)?(?:访问)?密码|相册(?:设置了|需要)(?:访问问题|问题验证|密码|访问验证)|密码相册/i.test(
+      message
+    )
+  ) {
+    return {
+      ...createContentLoadState(CONTENT_LOAD_STATUS.ERROR, {
+        ...options,
+        reason: CONTENT_LOAD_REASON.ACCESS_VERIFICATION,
+        retryable: true
+      }),
+      title: '相册需要访问验证',
+      description: '该相册设置了访问问题或密码，请完成验证后再读取内容。'
+    }
+  }
+
+  if (
     /非好友(?:仅可|只可|只能|仅允许|只允许)(?:查看|访问)(?:最近|近)?一年(?:内)?的?(?:内容|照片|动态)?/.test(
       message
     )
@@ -247,7 +263,7 @@ export const classifyContentLoadFailure = (failure, options = {}) => {
   if (
     code === '403' ||
     /(?:status|HTTP)\s*(?:code\s*)?403\b/i.test(message) ||
-    /没有权限|无权限|无权|权限不足|访问受限|权限访问|空间权限|主人设置|禁止访问|拒绝访问|保密|仅可查看|仅好友可见|好友可见|指定人可见|回答问题可见|permission|forbidden|not authorized|access denied/i.test(
+    /没有权限|无权限|无权|权限不足|访问受限|权限访问|空间权限|主人设置|禁止访问|拒绝访问|保密|仅可查看|仅好友可见|好友可见|指定人可见|回答问题可见|还不是.*好友|不是对方好友|非好友不可见|permission|forbidden|not authorized|access denied/i.test(
       message
     )
   ) {

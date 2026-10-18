@@ -79,7 +79,10 @@ export async function getPersonalCard(uin, p_skey, targetUin) {
       Cookie: `uin=${uin};p_skey=${p_skey}`
     }
   })
-  return response.data
+  return normalizeQzoneReadResponse(response.data, {
+    label: '好友资料',
+    isValid: (body) => Boolean(String(body?.uin || '').trim())
+  })
 }
 
 /**

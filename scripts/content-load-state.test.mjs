@@ -63,6 +63,23 @@ test('相册答案错误、HTTP 404 和网关超时会给出对应原因', () =>
   assert.equal(timeout.reason, CONTENT_LOAD_REASON.TIMEOUT)
 })
 
+test('需要相册验证和非好友不可见会说明下一步，而不是伪装成空内容', () => {
+  const verification = classifyContentLoadFailure(
+    { code: 0, message: '主人设置了访问问题，需要回答问题后才能查看' },
+    { label: '照片', friendMode: true }
+  )
+  const relationship = classifyContentLoadFailure(
+    { code: 403, message: '您还不是对方好友，无法查看该内容' },
+    { label: '动态', friendMode: true }
+  )
+
+  assert.equal(verification.reason, CONTENT_LOAD_REASON.ACCESS_VERIFICATION)
+  assert.match(verification.description, /完成验证/)
+  assert.equal(verification.retryable, true)
+  assert.equal(relationship.reason, CONTENT_LOAD_REASON.FORBIDDEN)
+  assert.match(relationship.description, /可见范围/)
+})
+
 test('应用错误码优先于成功 HTTP 状态，失败 HTTP 状态优先于传输代号', () => {
   const auth = classifyContentLoadFailure({ code: -3000, response: { status: 200 } })
   const timeout = classifyContentLoadFailure({

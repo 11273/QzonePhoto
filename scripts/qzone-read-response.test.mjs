@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { normalizeQzoneReadResponse } from '../src/shared/qzone-read-response.js'
+import {
+  getQzoneReadFailure,
+  isValidQzoneAlbumListResponse,
+  normalizeQzoneReadResponse,
+  readQzoneResponseMessage
+} from '../src/shared/qzone-read-response.js'
 
 test('读取接口保留官方业务错误和嵌套原因', () => {
   const response = normalizeQzoneReadResponse(
@@ -61,4 +66,41 @@ test('规范化函数可以兼容接口字段别名', () => {
 
   assert.equal(response.code, 0)
   assert.equal(response.data.Videos.length, 1)
+})
+
+test('顶层成功文案不会遮住嵌套的官方访问限制', () => {
+  const payload = {
+    code: 0,
+    message: 'success',
+    data: { protect_content: '非好友仅可查看最近一年的内容' }
+  }
+
+  assert.equal(readQzoneResponseMessage(payload, payload.data), '非好友仅可查看最近一年的内容')
+})
+
+test('IPC 成功但业务失败时仍能提取错误码和官方原因', () => {
+  const failure = getQzoneReadFailure({
+    code: 0,
+    subcode: -3002,
+    message: 'success',
+    result: { errmsg: '需要安全验证' }
+  })
+
+  assert.equal(failure.code, -3002)
+  assert.equal(failure.message, '需要安全验证')
+  assert.equal(getQzoneReadFailure({ code: 0, data: { items: [] } }), null)
+})
+
+test('相册列表兼容分类首屏、平铺首屏、单分类分页和真实空空间', () => {
+  assert.equal(
+    isValidQzoneAlbumListResponse({ data: { albumListModeClass: [], albumsInUser: 3 } }),
+    true
+  )
+  assert.equal(
+    isValidQzoneAlbumListResponse({ data: { albumListModeSort: [], albumsInUser: 3 } }),
+    true
+  )
+  assert.equal(isValidQzoneAlbumListResponse({ data: { albumList: [], totalInClass: 0 } }), true)
+  assert.equal(isValidQzoneAlbumListResponse({ data: { albumsInUser: 0 } }), true)
+  assert.equal(isValidQzoneAlbumListResponse({ data: { albumsInUser: 48 } }), false)
 })

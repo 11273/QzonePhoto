@@ -1,5 +1,6 @@
 import { getLocalUserInfo } from '@shared/utils/auth'
 import { ipcRenderer } from 'electron'
+import { getQzoneReadFailure } from '@shared/qzone-read-response'
 import {
   AuthExpiredError,
   performAuthCheck,
@@ -80,6 +81,13 @@ export const ipcClient = {
         }
         // 抛出认证过期错误
         throw new AuthExpiredError(authCheckResult.message, data)
+      }
+
+      if (throwOnResponseError) {
+        const businessFailure = getQzoneReadFailure(data)
+        if (businessFailure) {
+          throw new IpcError(businessFailure.message, businessFailure.code, businessFailure.detail)
+        }
       }
 
       return data

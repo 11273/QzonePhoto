@@ -1328,6 +1328,8 @@ import {
   ALBUM_LOAD_STATUS,
   classifyAlbumLoadFailure,
   createAlbumLoadState,
+  createAlbumVisibilityGapDescription,
+  isOfficialEmptyAlbumCategoryPage,
   resolveAlbumResponseState
 } from '@shared/album-load-state'
 import { formatBytes } from '@renderer/utils/formatters'
@@ -1545,6 +1547,15 @@ const markAlbumPartialFailure = (failure) => {
   if (albumPartialWarning.value) return
   const state = classifyAlbumLoadFailure(failure, { friendMode: isFriendMode.value })
   albumPartialWarning.value = `部分相册未能继续读取：${state.description}`
+}
+
+const markAlbumVisibilityGap = ({ reported, visible, context = '相册列表' }) => {
+  if (albumPartialWarning.value) return
+  albumPartialWarning.value = createAlbumVisibilityGapDescription({
+    reported,
+    visible,
+    context
+  })
 }
 
 // 相册问答缓存
@@ -2553,11 +2564,23 @@ const fetchPhotoData = async () => {
             // 提取相册列表
             const newAlbums = categoryRes.data.albumList
             if (!Array.isArray(newAlbums)) {
+              if (isOfficialEmptyAlbumCategoryPage(categoryRes.data)) {
+                markAlbumVisibilityGap({
+                  reported: totalInClass,
+                  visible: category.albumList.length,
+                  context: `“${categoryName}”分类`
+                })
+                break
+              }
               markAlbumPartialFailure(new Error('QQ 空间返回的相册分页数据不完整'))
               break
             }
             if (newAlbums.length === 0) {
-              markAlbumPartialFailure(new Error('QQ 空间返回的相册分页数据不完整'))
+              markAlbumVisibilityGap({
+                reported: totalInClass,
+                visible: category.albumList.length,
+                context: `“${categoryName}”分类`
+              })
               break
             }
 
@@ -2724,6 +2747,11 @@ const fetchPhotoData = async () => {
     console.log(`[Left] 所有相册加载完成，总计 ${totalAlbums} 个相册`)
     const reportedAlbumTotal = Number(total.value)
     if (totalAlbums === 0 && Number.isFinite(reportedAlbumTotal) && reportedAlbumTotal > 0) {
+      if (isFriendMode.value) {
+        updateAlbumLoadState(createAlbumLoadState(ALBUM_LOAD_STATUS.EMPTY, { friendMode: true }))
+        albumPartialWarning.value = ''
+        return
+      }
       updateAlbumLoadState(
         classifyAlbumLoadFailure(new Error('QQ 空间返回的相册列表数据不完整'), {
           friendMode: isFriendMode.value
@@ -2731,6 +2759,13 @@ const fetchPhotoData = async () => {
       )
       albumPartialWarning.value = ''
       return
+    }
+    if (
+      totalAlbums > 0 &&
+      Number.isFinite(reportedAlbumTotal) &&
+      reportedAlbumTotal > totalAlbums
+    ) {
+      markAlbumVisibilityGap({ reported: reportedAlbumTotal, visible: totalAlbums })
     }
     updateAlbumLoadState(
       createAlbumLoadState(totalAlbums > 0 ? ALBUM_LOAD_STATUS.READY : ALBUM_LOAD_STATUS.EMPTY, {
