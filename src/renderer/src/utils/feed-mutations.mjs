@@ -5,7 +5,16 @@ const finiteNumber = (value) => {
 }
 
 export const feedMutationResult = (response, { allowAlreadyDeleted = false } = {}) => {
-  const payload = response?.data && typeof response.data === 'object' ? response.data : response
+  const responseHasResult =
+    response &&
+    typeof response === 'object' &&
+    ['code', 'ret', 'result'].some((key) => response[key] !== undefined)
+  // QQ 空间的变更接口会返回 { code: 0, data: {} }。这里的 data 是业务数据，
+  // 不是 HTTP/IPC 包装层；必须优先读取顶层 code，否则会把已成功的操作误报为失败。
+  const payload =
+    !responseHasResult && response?.data && typeof response.data === 'object'
+      ? response.data
+      : response
   const code = finiteNumber(payload?.code ?? payload?.ret)
   const result = finiteNumber(payload?.result)
   const success =

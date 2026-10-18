@@ -12,6 +12,22 @@ test('feedMutationResult accepts QQ Space success variants', () => {
   assert.equal(feedMutationResult({ data: { ret: 0 } }).success, true)
 })
 
+test('feedMutationResult keeps the official top-level code when data is an empty object', () => {
+  const officialDeleteResponse = {
+    functionName: 'frameElement.callback',
+    code: 0,
+    subcode: 0,
+    message: '',
+    data: {}
+  }
+
+  assert.deepEqual(feedMutationResult(officialDeleteResponse), {
+    success: true,
+    code: 0,
+    message: ''
+  })
+})
+
 test('feedMutationResult only treats already-deleted as delete success', () => {
   assert.equal(feedMutationResult({ code: -4404 }).success, false)
   assert.equal(feedMutationResult({ code: -4404 }, { allowAlreadyDeleted: true }).success, true)
