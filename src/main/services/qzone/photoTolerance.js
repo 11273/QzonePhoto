@@ -34,6 +34,24 @@ const getPayloadSnippet = (payload) => {
 // 只挑几个明显的登录拦截关键字短路掉，避免在 captcha 上浪费调用。
 const classifyPhotoPayload = (payload) => {
   if (payload && typeof payload === 'object') {
+    const data = payload.data && typeof payload.data === 'object' ? payload.data : null
+    const protectionMessage =
+      typeof data?.protect_content === 'string' ? data.protect_content.trim() : ''
+    const totalInAlbum = toNonNegativeNumber(data?.totalInAlbum)
+
+    // QQ 空间会对“相册本身公开、但照片因好友关系/时间范围不可见”的请求返回
+    // code=0 + totalInAlbum>0 + photoList=null，并通过 protect_content 说明原因。
+    // 这不是坏 JSON，更不应二分成几十次请求后把每张照片标成损坏。
+    if (
+      payload.code === 0 &&
+      data &&
+      protectionMessage &&
+      !Array.isArray(data.photoList) &&
+      totalInAlbum > 0
+    ) {
+      return { kind: 'content-restricted', message: protectionMessage }
+    }
+
     if (payload.code === 0 && payload.data) return { kind: 'success' }
     if (payload.code === -10805) return { kind: 'permission-denied' }
     if (typeof payload.code === 'number') {
@@ -87,7 +105,13 @@ const normalizeDataBlock = ({ pageStart, pageNum, ...overrides }) => {
     nextPageStart,
     requestedCount,
     skippedCount,
-    loadedCount
+    loadedCount,
+    protectContent:
+      typeof overrides.protectContent === 'string'
+        ? overrides.protectContent
+        : typeof overrides.protect_content === 'string'
+          ? overrides.protect_content
+          : ''
   }
 }
 
@@ -168,6 +192,21 @@ export const fetchPhotosTolerantly = async (requestPage, pageStart, pageNum) => 
         pageNum,
         raw: payload,
         overrides: { hasMore: false }
+      })
+
+    case 'content-restricted':
+      return buildResponse({
+        code: 403,
+        message: cls.message,
+        pageStart,
+        pageNum,
+        raw: payload,
+        overrides: {
+          photoList: [],
+          hasMore: false,
+          nextPageStart: pageStart,
+          protectContent: cls.message
+        }
       })
 
     case 'api-error':

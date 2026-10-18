@@ -20,6 +20,18 @@ test('好友模块无权限时只说明当前内容不可见', () => {
   assert.doesNotMatch(state.description, /接口|响应|code/i)
 })
 
+test('QQ 空间最近一年限制会给出准确原因', () => {
+  const state = classifyContentLoadFailure(
+    { code: 403, message: '非好友仅可查看最近一年的内容' },
+    { label: '这个相册', friendMode: true }
+  )
+
+  assert.equal(state.status, CONTENT_LOAD_STATUS.FORBIDDEN)
+  assert.match(state.description, /非好友查看最近一年的内容/)
+  assert.match(state.description, /暂无当前账号可见的照片/)
+  assert.equal(state.retryable, false)
+})
+
 test('临时故障可以重试且不暴露原始错误', () => {
   const state = classifyContentLoadFailure(new Error('network timeout'), { label: '照片' })
 

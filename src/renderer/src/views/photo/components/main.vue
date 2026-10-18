@@ -223,8 +223,14 @@
           <div v-else-if="!hasMore && (photoList.length > 0 || total > 0)" class="no-more">
             <span>
               已加载 {{ photoList.length }} / {{ total || photoList.length }} 张照片
-              <template v-if="total && photoList.length < total">
-                （其中 {{ total - photoList.length }} 张已跳过或不可读取）
+              <template v-if="photoRestrictionMessage && total && photoList.length < total">
+                （其余照片受 QQ 空间访问限制）
+              </template>
+              <template v-else-if="skippedPhotoCount > 0">
+                （其中 {{ skippedPhotoCount }} 张数据异常已跳过）
+              </template>
+              <template v-else-if="total && photoList.length < total">
+                （其余照片当前不可读取）
               </template>
             </span>
           </div>
@@ -435,6 +441,8 @@ const albumStateIcon = computed(() => {
   return Picture
 })
 const photoLoadState = ref(null)
+const photoRestrictionMessage = ref('')
+const skippedPhotoCount = ref(0)
 const photoLoadStateIcon = computed(() =>
   photoLoadState.value?.status === CONTENT_LOAD_STATUS.FORBIDDEN ? ShieldX : TriangleAlert
 )
@@ -715,6 +723,9 @@ const fetchPhotosByTopicId = async (topicId, pageStart = 0, pageNum = 100) => {
       const requestedCount = Number.isFinite(responseData.requestedCount)
         ? responseData.requestedCount
         : pageNum
+      const restrictionMessage = String(
+        responseData.protectContent || responseData.protect_content || ''
+      ).trim()
 
       return {
         success: true,
@@ -724,6 +735,7 @@ const fetchPhotosByTopicId = async (topicId, pageStart = 0, pageNum = 100) => {
         nextPageStart,
         skippedCount,
         requestedCount,
+        restrictionMessage,
         message: response.message || ''
       }
     }
@@ -886,6 +898,8 @@ const loadMorePhotos = async () => {
     const result = await fetchPhotosByTopicId(currentAlbum.value.id, pageStart, requestedPageSize)
 
     if (result.success) {
+      if (result.restrictionMessage) photoRestrictionMessage.value = result.restrictionMessage
+      skippedPhotoCount.value += result.skippedCount
       if (pageGuard.isStalled(pageStart, result.nextPageStart) && result.hasMore) {
         console.warn('加载更多照片游标未推进，停止继续加载', {
           albumId: currentAlbum.value.id,
@@ -918,7 +932,7 @@ const loadMorePhotos = async () => {
       pageGuard.succeed()
     } else {
       console.error('加载失败:', result.error)
-      if (result.code === -10805) {
+      if (result.code === -10805 || result.code === 403) {
         hasMore.value = false
       } else {
         pageGuard.fail(pageKey)
@@ -1032,6 +1046,8 @@ watch(currentAlbum, async (newAlbum) => {
   loading.value = true
   photoList.value = []
   photoLoadState.value = null
+  photoRestrictionMessage.value = ''
+  skippedPhotoCount.value = 0
   selectedPhotos.value.clear()
   hasMore.value = true
   currentPageStart.value = 0
@@ -1055,6 +1071,8 @@ watch(currentAlbum, async (newAlbum) => {
 
     if (result.success) {
       photoLoadState.value = null
+      photoRestrictionMessage.value = result.restrictionMessage
+      skippedPhotoCount.value = result.skippedCount
       photoList.value = result.photos
       total.value = result.total
       syncCurrentAlbumTotal(total.value)
@@ -1072,6 +1090,8 @@ watch(currentAlbum, async (newAlbum) => {
           const retry = await fetchPhotosByTopicId(newAlbum.id, 0, pageSize.value)
           if (retry.success) {
             photoLoadState.value = null
+            photoRestrictionMessage.value = retry.restrictionMessage
+            skippedPhotoCount.value = retry.skippedCount
             photoList.value = retry.photos
             total.value = retry.total
             syncCurrentAlbumTotal(total.value)
@@ -1376,6 +1396,8 @@ const refreshCurrentAlbum = async () => {
   loading.value = true
   photoList.value = []
   photoLoadState.value = null
+  photoRestrictionMessage.value = ''
+  skippedPhotoCount.value = 0
   selectedPhotos.value.clear()
   hasMore.value = true
   currentPageStart.value = 0
@@ -1387,6 +1409,8 @@ const refreshCurrentAlbum = async () => {
 
     if (result.success) {
       photoLoadState.value = null
+      photoRestrictionMessage.value = result.restrictionMessage
+      skippedPhotoCount.value = result.skippedCount
       photoList.value = result.photos
       total.value = result.total
       // currentAlbum 与左侧相册列表共享同一个响应式对象。同步服务端最新总数，

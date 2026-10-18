@@ -65,9 +65,16 @@ export const classifyContentLoadFailure = (failure, options = {}) => {
   const code = readCode(failure)
   const message = readMessage(failure)
 
+  if (/非好友仅可查看最近一年的内容/.test(message)) {
+    return {
+      ...createContentLoadState(CONTENT_LOAD_STATUS.FORBIDDEN, options),
+      description: 'QQ 空间只允许非好友查看最近一年的内容，这个相册中暂无当前账号可见的照片。'
+    }
+  }
+
   if (
     code === '403' ||
-    /没有权限|无权限|无权|访问受限|权限访问|空间权限|主人设置|禁止访问|保密|permission|forbidden/i.test(
+    /没有权限|无权限|无权|访问受限|权限访问|空间权限|主人设置|禁止访问|保密|仅可查看|permission|forbidden/i.test(
       message
     )
   ) {
