@@ -806,7 +806,8 @@ const taskStats = ref({
   error: 0,
   paused: 0,
   cancelled: 0,
-  active: 0
+  active: 0,
+  currentSpeed: 0
 })
 
 // 加载状态
@@ -956,7 +957,8 @@ const loadStats = async () => {
       error: 0,
       paused: 0,
       cancelled: 0,
-      active: 0
+      active: 0,
+      currentSpeed: 0
     }
   } catch (error) {
     console.error('加载统计失败:', error)
@@ -1225,11 +1227,13 @@ const overallProgressColor = computed(() => {
   if (globalTotalTasks.value > 0 && completedTasks.value === globalTotalTasks.value) {
     return 'var(--theme-success)'
   }
-  if ((taskStats.value.downloading || 0) > 0) return 'var(--theme-info)'
+  // Keep in-progress batches blue between short, consecutively queued files.
+  if ((taskStats.value.downloading || 0) + (taskStats.value.waiting || 0) > 0) {
+    return 'var(--theme-info)'
+  }
   if ((taskStats.value.error || 0) > 0 || (taskStats.value.paused || 0) > 0) {
     return 'var(--theme-warning)'
   }
-  if (completedTasks.value > 0) return 'var(--theme-success)'
   return 'var(--theme-brand-accent)'
 })
 
@@ -1351,7 +1355,10 @@ const getContactBackupIcon = (category) => {
 }
 
 const getCurrentSpeed = () => {
-  const totalSpeed = activeDownloadTasks.value.reduce((sum, task) => sum + (task.speed || 0), 0)
+  // Finished small files still contribute to recent total throughput.
+  const totalSpeed =
+    taskStats.value.currentSpeed ??
+    activeDownloadTasks.value.reduce((sum, task) => sum + (task.speed || 0), 0)
   return formatSpeed(totalSpeed)
 }
 
@@ -1507,7 +1514,8 @@ const clearAllTasks = async () => {
       error: 0,
       paused: 0,
       cancelled: 0,
-      active: 0
+      active: 0,
+      currentSpeed: 0
     }
     totalTasks.value = 0
     totalPages.value = 0

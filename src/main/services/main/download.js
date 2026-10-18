@@ -37,6 +37,7 @@ import {
   contactBackupTimestamp
 } from '@shared/contact-backup'
 import { DOWNLOAD_TASK_SORT, sortDownloadTasks } from '@shared/download-task-sort'
+import { RollingDownloadThroughput } from '@shared/download-throughput.mjs'
 // 直接定义必要的默认配置，避免使用外部常量系统
 const DEFAULT_CONCURRENCY = 3
 const DEFAULT_PAGE_SIZE = 50
@@ -76,6 +77,7 @@ export class DownloadService {
     this.activeTasks = new Map() // 只存储正在下载、等待、暂停的任务
     this.downloadingTasks = new Set() // 正在下载的任务ID
     this.cancelTokens = new Map() // 取消令牌
+    this.downloadThroughput = new RollingDownloadThroughput()
 
     // 更新触发器
     this.updateTrigger = null
@@ -160,6 +162,7 @@ export class DownloadService {
     this.activeTasks.clear()
     this.downloadingTasks.clear()
     this.cancelTokens.clear()
+    this.downloadThroughput.reset()
   }
 
   // 获取当前用户ID
@@ -1121,7 +1124,8 @@ export class DownloadService {
         error: 0,
         paused: 0,
         cancelled: 0,
-        active: 0
+        active: 0,
+        currentSpeed: this.downloadThroughput.getBytesPerSecond()
       }
 
       tasks.forEach((task) => {
@@ -1160,7 +1164,8 @@ export class DownloadService {
         error: 0,
         paused: 0,
         cancelled: 0,
-        active: 0
+        active: 0,
+        currentSpeed: 0
       }
     }
   }
@@ -1490,6 +1495,7 @@ export class DownloadService {
       response.data.on('data', (chunk) => {
         task.downloaded += chunk.length
         const now = Date.now()
+        this.downloadThroughput.record(chunk.length, now)
 
         // 计算速度
         if (now - lastTime >= 500) {
