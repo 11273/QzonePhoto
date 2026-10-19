@@ -682,6 +682,7 @@ import HoverVideoPreview from '@renderer/components/HoverVideoPreview/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { useFriendStore } from '@renderer/store/friend.store'
 import { formatTaskCount, formatTaskName } from '@renderer/utils/formatters'
+import { didDownloadTaskCountsChange } from '@shared/download-batch-stats.mjs'
 import { APP_NAME } from '@shared/const'
 import { DOWNLOAD_TASK_SORT, normalizeDownloadTaskSort } from '@shared/download-task-sort'
 
@@ -806,7 +807,8 @@ const taskStats = ref({
   error: 0,
   paused: 0,
   cancelled: 0,
-  active: 0
+  active: 0,
+  currentSpeed: 0
 })
 
 // 加载状态
@@ -956,7 +958,8 @@ const loadStats = async () => {
       error: 0,
       paused: 0,
       cancelled: 0,
-      active: 0
+      active: 0,
+      currentSpeed: 0
     }
   } catch (error) {
     console.error('加载统计失败:', error)
@@ -973,7 +976,8 @@ const loadBatches = async () => {
 }
 
 const scheduleBatchReload = () => {
-  if (batchReloadTimer) clearTimeout(batchReloadTimer)
+  // Coalesce frequent task completions without postponing refresh indefinitely.
+  if (batchReloadTimer) return
   batchReloadTimer = setTimeout(() => {
     batchReloadTimer = null
     loadBatches()
@@ -1002,8 +1006,10 @@ const handleStatsUpdate = (...args) => {
   // 通过ipc-client传递时，数据在第一个参数中
   const stats = args[0]
   // console.debug('[DownloadManager] 收到统计信息更新:', stats)
-  taskStats.value = stats || taskStats.value
-  scheduleBatchReload()
+  if (!stats) return
+  const taskCountsChanged = didDownloadTaskCountsChange(taskStats.value, stats)
+  taskStats.value = stats
+  if (taskCountsChanged) scheduleBatchReload()
 }
 
 // 处理活跃任务更新
@@ -1129,6 +1135,8 @@ watch(visible, async (newVisible) => {
   } else {
     stopTaskVideoPreview()
     clearDownloadSettingsPopover()
+    if (batchReloadTimer) clearTimeout(batchReloadTimer)
+    batchReloadTimer = null
     await window.QzoneAPI.download.setManagerOpen(false)
     cleanupEventListeners()
   }
@@ -1187,7 +1195,10 @@ const canStartAll = computed(
 const canPauseAll = computed(
   () => (taskStats.value.downloading || 0) + (taskStats.value.waiting || 0) > 0
 )
-const hasRunningDownloads = computed(() => (taskStats.value.downloading || 0) > 0)
+// Keep the speed card visible while queued downloads are between files.
+const hasRunningDownloads = computed(
+  () => (taskStats.value.downloading || 0) + (taskStats.value.waiting || 0) > 0
+)
 const DOWNLOAD_STATUS_OPTIONS = [
   { value: 'downloading', label: '下载中' },
   { value: 'completed', label: '已完成' },
@@ -1225,11 +1236,13 @@ const overallProgressColor = computed(() => {
   if (globalTotalTasks.value > 0 && completedTasks.value === globalTotalTasks.value) {
     return 'var(--theme-success)'
   }
-  if ((taskStats.value.downloading || 0) > 0) return 'var(--theme-info)'
+  // Keep in-progress batches blue between short, consecutively queued files.
+  if ((taskStats.value.downloading || 0) + (taskStats.value.waiting || 0) > 0) {
+    return 'var(--theme-info)'
+  }
   if ((taskStats.value.error || 0) > 0 || (taskStats.value.paused || 0) > 0) {
     return 'var(--theme-warning)'
   }
-  if (completedTasks.value > 0) return 'var(--theme-success)'
   return 'var(--theme-brand-accent)'
 })
 
@@ -1351,7 +1364,10 @@ const getContactBackupIcon = (category) => {
 }
 
 const getCurrentSpeed = () => {
-  const totalSpeed = activeDownloadTasks.value.reduce((sum, task) => sum + (task.speed || 0), 0)
+  // Finished small files still contribute to recent total throughput.
+  const totalSpeed =
+    taskStats.value.currentSpeed ??
+    activeDownloadTasks.value.reduce((sum, task) => sum + (task.speed || 0), 0)
   return formatSpeed(totalSpeed)
 }
 
@@ -1507,7 +1523,8 @@ const clearAllTasks = async () => {
       error: 0,
       paused: 0,
       cancelled: 0,
-      active: 0
+      active: 0,
+      currentSpeed: 0
     }
     totalTasks.value = 0
     totalPages.value = 0
