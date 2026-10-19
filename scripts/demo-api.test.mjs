@@ -3,6 +3,18 @@ import test from 'node:test'
 
 import { createDemoQzoneAPI } from '../src/preload/demo-api.js'
 
+test('demo download pages use the same response, sorting and filtering contract as IPC', async () => {
+  const api = createDemoQzoneAPI({})
+  const page = await api.download.getTasks({ page: 1, pageSize: 2 })
+  assert.equal(page.tasks.length, 2)
+  assert.equal(page.pagination.total, 6)
+  assert.ok(page.tasks.every((task) => task.status === 'downloading'))
+  const completed = await api.download.getTasks({ status: 'completed' })
+  assert.equal(completed.pagination.total, 3)
+  assert.ok(completed.tasks.every((task) => task.status === 'completed'))
+  assert.deepEqual(await api.download.requestTasksPage({ page: 1, pageSize: 2 }), page)
+})
+
 test('demo visitor APIs stay local and return renderer-compatible data', async () => {
   let realCalls = 0
   const api = createDemoQzoneAPI({

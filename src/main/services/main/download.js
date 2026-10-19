@@ -78,6 +78,7 @@ export class DownloadService {
     this.downloadingTasks = new Set() // 正在下载的任务ID
     this.cancelTokens = new Map() // 取消令牌
     this.downloadThroughput = new RollingDownloadThroughput()
+    this.taskThroughputs = new Map()
 
     // 更新触发器
     this.updateTrigger = null
@@ -163,6 +164,7 @@ export class DownloadService {
     this.downloadingTasks.clear()
     this.cancelTokens.clear()
     this.downloadThroughput.reset()
+    this.taskThroughputs.clear()
   }
 
   // 获取当前用户ID
@@ -1055,12 +1057,13 @@ export class DownloadService {
     page = 1,
     pageSize = this.pageSize,
     status = null,
-    sort = DOWNLOAD_TASK_SORT.CREATED_DESC
+    sort = DOWNLOAD_TASK_SORT.STATUS_PRIORITY
   ) {
     try {
       const offset = (page - 1) * pageSize
 
-      let tasks = [...this.db.data.tasks] // 创建副本避免修改原数据
+      // Live progress is newer than the periodically persisted task snapshot.
+      let tasks = this.db.data.tasks.map((task) => this.activeTasks.get(task.id) || task)
 
       // 状态筛选
       if (status && status !== 'all') {
@@ -1071,6 +1074,7 @@ export class DownloadService {
 
       const totalCount = tasks.length
       const paginatedTasks = tasks.slice(offset, offset + pageSize)
+      paginatedTasks.forEach((task) => this.refreshTaskSpeed(task))
 
       // 调试信息：显示分页任务的状态分布
       if (is.dev && paginatedTasks.length > 0) {
@@ -1109,7 +1113,16 @@ export class DownloadService {
 
   // 获取活跃任务（用于推送）
   getActiveTasks() {
-    return Array.from(this.activeTasks.values())
+    return Array.from(this.activeTasks.values(), (task) => {
+      this.refreshTaskSpeed(task)
+      return task
+    })
+  }
+
+  refreshTaskSpeed(task) {
+    if (task.status === TASK_STATUS.DOWNLOADING && this.taskThroughputs?.has(task.id)) {
+      task.speed = this.taskThroughputs.get(task.id).getBytesPerSecond()
+    }
   }
 
   // 获取任务统计信息
@@ -1152,6 +1165,10 @@ export class DownloadService {
       })
 
       stats.active = stats.waiting + stats.downloading + stats.paused
+      if (stats.waiting + stats.downloading === 0) {
+        this.downloadThroughput.reset()
+        stats.currentSpeed = 0
+      }
 
       return stats
     } catch (error) {
@@ -1212,7 +1229,12 @@ export class DownloadService {
 
     // 从内存中获取等待中的任务
     const waitingTasks = Array.from(this.activeTasks.values())
-      .filter((task) => task.status === TASK_STATUS.WAITING && task.type !== 'contact-backup')
+      .filter(
+        (task) =>
+          task.status === TASK_STATUS.WAITING &&
+          task.type !== 'contact-backup' &&
+          !this.downloadingTasks.has(task.id)
+      )
       .sort((a, b) => {
         // 按优先级和创建时间排序
         if (a.priority !== b.priority) return a.priority - b.priority
@@ -1261,6 +1283,10 @@ export class DownloadService {
     this.downloadingTasks.add(task.id)
     task.status = TASK_STATUS.DOWNLOADING
     task.speed = 0
+    this.taskThroughputs.set(task.id, new RollingDownloadThroughput())
+    // Install cancellation before the first await, including directory/file checks.
+    const cancelToken = axios.CancelToken.source()
+    this.cancelTokens.set(task.id, cancelToken)
 
     // 更新数据库和触发推送
     await this.updateTaskInDB(task)
@@ -1268,6 +1294,7 @@ export class DownloadService {
 
     try {
       await fs.promises.mkdir(task.directory, { recursive: true })
+      cancelToken.token.throwIfRequested()
       let filePath = path.join(task.directory, task.filename)
 
       // 检查文件是否已存在
@@ -1276,6 +1303,7 @@ export class DownloadService {
         .then(() => true)
         .catch(() => false)
       if (fileExists) {
+        cancelToken.token.throwIfRequested()
         const replaceExisting = this.getReplaceExistingSetting()
         if (!replaceExisting) {
           const existingMedia = await readMediaFileSignature(filePath).catch(() => null)
@@ -1317,18 +1345,16 @@ export class DownloadService {
         }
       }
 
-      const cancelToken = axios.CancelToken.source()
-      this.cancelTokens.set(task.id, cancelToken)
-
       const responseMeta = await this.downloadTaskWithFallback(task, filePath, cancelToken)
 
-      if (task.status !== TASK_STATUS.CANCELLED) {
+      if (task.status === TASK_STATUS.DOWNLOADING) {
         filePath = await this.correctDownloadedMediaExtension(task, filePath, responseMeta.media)
         const downloadedSize = await fs.promises.stat(filePath).then((stat) => stat.size)
         task.total = downloadedSize
         task.downloaded = downloadedSize
         await this.applyTaskMediaMetadata(filePath, task)
         await this.applyTaskFileTime(filePath, task)
+        cancelToken.token.throwIfRequested()
         task.status = TASK_STATUS.COMPLETED
         task.progress = 100
         task.speed = 0
@@ -1337,7 +1363,12 @@ export class DownloadService {
         this.activeTasks.delete(task.id)
       }
     } catch (error) {
-      if (axios.isCancel(error)) {
+      if (
+        cancelToken.token.reason &&
+        [TASK_STATUS.PAUSED, TASK_STATUS.WAITING].includes(task.status)
+      ) {
+        // The cancelled stream must not turn a user-initiated pause into "cancelled".
+      } else if (axios.isCancel(error)) {
         task.status = TASK_STATUS.CANCELLED
       } else {
         task.status = TASK_STATUS.ERROR
@@ -1347,13 +1378,15 @@ export class DownloadService {
     } finally {
       this.downloadingTasks.delete(task.id)
       this.cancelTokens.delete(task.id)
+      this.taskThroughputs.delete(task.id)
 
       // 更新数据库
       await this.updateTaskInDB(task)
       this.triggerUpdate([task.id])
 
       // 继续处理队列
-      setTimeout(() => this.processQueue(), 100)
+      // Refill each free slot on the next event-loop turn, not in delayed batches.
+      setImmediate(() => this.processQueue())
     }
   }
 
@@ -1385,6 +1418,7 @@ export class DownloadService {
       task.downloaded = 0
       task.progress = 0
       task.speed = 0
+      this.taskThroughputs.get(task.id)?.reset()
 
       try {
         const responseMeta = await this.downloadFile(task, filePath, cancelToken)
@@ -1447,8 +1481,6 @@ export class DownloadService {
   // 下载文件 - 保持原有逻辑
   async downloadFile(task, filePath, cancelToken) {
     let writer = null
-    let lastTime = Date.now()
-    let lastBytes = 0
     let lastProgressUpdate = Date.now()
 
     try {
@@ -1488,48 +1520,24 @@ export class DownloadService {
       writer = fs.createWriteStream(filePath)
 
       const totalBytes = parseInt(response.headers['content-length'], 10) || 0
-      if (totalBytes > 0) {
-        task.total = totalBytes
-      }
+      // API estimates may describe a different quality. Only use this response's
+      // length for progress, otherwise display an indeterminate transfer.
+      task.total = Math.max(0, totalBytes)
 
       response.data.on('data', (chunk) => {
         task.downloaded += chunk.length
         const now = Date.now()
         this.downloadThroughput.record(chunk.length, now)
-
-        // 计算速度
-        if (now - lastTime >= 500) {
-          const timeDiff = (now - lastTime) / 1000
-          const bytesDiff = task.downloaded - lastBytes
-          task.speed = Math.round(bytesDiff / timeDiff)
-          lastTime = now
-          lastBytes = task.downloaded
-
-          // 调试信息：显示速度计算
-          // if (is.dev && task.speed > 0) {
-          //   console.debug(
-          //     `[DownloadService] 任务 ${task.name} 速度: ${task.speed} B/s (${Math.round(task.speed / 1024)} KB/s)`
-          //   )
-          // }
-
-          // 速度更新时立即推送
-          this.triggerUpdate([task.id])
-        }
+        this.taskThroughputs.get(task.id)?.record(chunk.length, now)
+        this.refreshTaskSpeed(task)
 
         // 更新进度
-        if (task.total > 0 && now - lastProgressUpdate >= 200) {
-          const newProgress = Math.round((task.downloaded / task.total) * 100)
-          if (newProgress !== task.progress) {
-            task.progress = newProgress
-            lastProgressUpdate = now
-
-            // 定期更新数据库（减少频率）
-            if (newProgress % 5 === 0) {
-              this.updateTaskInDB(task)
-            }
-
-            this.triggerUpdate([task.id])
-          }
+        if (now - lastProgressUpdate >= 100) {
+          // Only a verified, saved file is 100%; unknown lengths stay indeterminate.
+          task.progress =
+            task.total > 0 ? Math.min(99, Math.floor((task.downloaded / task.total) * 100)) : 0
+          lastProgressUpdate = now
+          this.triggerUpdate([task.id])
         }
       })
 
@@ -1685,7 +1693,10 @@ export class DownloadService {
     // 从数据库获取所有暂停的任务
     const pausedTasks = this.db.data.tasks.filter((task) => task.status === TASK_STATUS.PAUSED)
 
-    for (const task of pausedTasks) {
+    for (const savedTask of pausedTasks) {
+      // Reuse the in-flight object while its cancelled stream is settling; a DB
+      // clone could otherwise overwrite a quick resume with the old paused state.
+      const task = this.activeTasks.get(savedTask.id) || savedTask
       // 检查是否为"假暂停"的已完成任务（在替换模式下不应该重新下载）
       if (task.progress === 100 && task.downloaded > 0) {
         const filePath = path.join(task.directory, task.filename)
@@ -1801,8 +1812,8 @@ export class DownloadService {
       }
     }
 
-    this.downloadingTasks.clear()
-    this.cancelTokens.clear()
+    // In-flight streams release their own slots in finally. Keeping the slot until
+    // cancellation settles prevents an immediate resume from starting a duplicate.
     await this.saveDatabase()
     this.triggerUpdate(changedTaskIds)
   }
@@ -1826,6 +1837,7 @@ export class DownloadService {
     this.downloadingTasks.clear()
     this.cancelTokens.clear()
     this.downloadThroughput.reset()
+    this.taskThroughputs.clear()
 
     // 触发事件推送，传递所有被删除的任务ID
     this.triggerUpdate(allIds.map((id) => ({ id, deleted: true })))

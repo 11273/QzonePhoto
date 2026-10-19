@@ -1,6 +1,6 @@
 // Aggregate throughput across the entire batch, including short completed files.
 export class RollingDownloadThroughput {
-  constructor(windowMs = 2000) {
+  constructor(windowMs = 4000) {
     this.windowMs = windowMs
     this.reset()
   }
@@ -9,10 +9,13 @@ export class RollingDownloadThroughput {
     this.samples = []
     this.bytesInWindow = 0
     this.firstByteAt = null
+    this.lastSampleAt = null
+    this.sampledSpeed = 0
   }
 
   record(bytes, now = Date.now()) {
     if (!Number.isFinite(bytes) || bytes <= 0) return
+    this.prune(now)
     if (this.firstByteAt === null) this.firstByteAt = now
     // Aggregate by 250 ms buckets so large media transfers cannot allocate
     // a new sample for every incoming network chunk.
@@ -34,9 +37,19 @@ export class RollingDownloadThroughput {
 
   getBytesPerSecond(now = Date.now()) {
     this.prune(now)
-    if (this.samples.length === 0) return 0
-    // Smooth across task boundaries without inflating the first few milliseconds.
-    const observedMs = Math.min(this.windowMs, Math.max(500, now - this.firstByteAt))
-    return Math.round((this.bytesInWindow * 1000) / observedMs)
+    if (this.samples.length === 0) {
+      this.lastSampleAt = null
+      this.sampledSpeed = 0
+      return 0
+    }
+    // Publish at most once a second, regardless of how often IPC reads statistics.
+    // A four-second window absorbs chunk/image bursts without inventing traffic.
+    if (this.lastSampleAt !== null && now - this.lastSampleAt < 1000) {
+      return this.sampledSpeed
+    }
+    const observedMs = Math.min(this.windowMs, Math.max(1000, now - this.firstByteAt))
+    this.sampledSpeed = Math.round((this.bytesInWindow * 1000) / observedMs)
+    this.lastSampleAt = now
+    return this.sampledSpeed
   }
 }

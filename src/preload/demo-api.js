@@ -1,3 +1,5 @@
+import { sortDownloadTasks } from '../shared/download-task-sort.js'
+
 const DEMO_ORIGIN = 'http://127.0.0.1:4173'
 const asset = (name) => `${DEMO_ORIGIN}/assets/demo/${name}.png`
 const noop = async () => ({ code: 0 })
@@ -208,6 +210,22 @@ const downloadTasks = photos.slice(0, 6).map((photo, index) => ({
   error: ''
 }))
 
+const getDemoDownloadPage = async ({ page = 1, pageSize = 10, status = null, sort } = {}) => {
+  const tasks = sortDownloadTasks(
+    downloadTasks.filter((task) => !status || status === 'all' || task.status === status),
+    sort
+  )
+  return {
+    tasks: tasks.slice((page - 1) * pageSize, page * pageSize),
+    pagination: {
+      page,
+      pageSize,
+      total: tasks.length,
+      totalPages: Math.ceil(tasks.length / pageSize)
+    }
+  }
+}
+
 const uploadTasks = photos.slice(6, 12).map((photo, index) => ({
   id: `demo-upload-${index + 1}`,
   filename: photo.name,
@@ -385,7 +403,7 @@ export const createDemoQzoneAPI = (realApi) => ({
     }),
     failContactBackup: noop,
     openContactBackupOverview: async () => ({ success: true }),
-    getTasks: async () => downloadTasks,
+    getTasks: getDemoDownloadPage,
     getActiveTasks: async () => downloadTasks.filter((task) => task.status === 'downloading'),
     getBatches: async () => [],
     finishBatch: async () => null,
@@ -406,10 +424,7 @@ export const createDemoQzoneAPI = (realApi) => ({
     setTimePreference: async (preference) => (preference === 'upload' ? 'upload' : 'shoot'),
     setCurrentUser: noop,
     setManagerOpen: noop,
-    requestTasksPage: async () => ({
-      tasks: downloadTasks,
-      pagination: { page: 1, pageSize: 10, total: 6, totalPages: 1 }
-    }),
+    requestTasksPage: getDemoDownloadPage,
     onStatsUpdate: listen,
     onActiveTasksUpdate: listen,
     onTaskChanges: listen,

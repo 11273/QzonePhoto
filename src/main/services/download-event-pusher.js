@@ -70,6 +70,9 @@ export class DownloadEventPusher {
 
       // 如果距离上次执行时间超过delay，立即执行
       if (currentTime - lastExecTime >= delay) {
+        if (timeoutId) clearTimeout(timeoutId)
+        timeoutId = null
+        this.throttlers.delete(key)
         lastExecTime = currentTime
         func.apply(this, args)
         return
@@ -193,7 +196,7 @@ export class DownloadEventPusher {
   // 标记任务已变化
   markTasksChanged(taskIds) {
     if (Array.isArray(taskIds)) {
-      taskIds.forEach((id) => this.changedTaskIds.add(id))
+      taskIds.forEach((task) => this.changedTaskIds.add(typeof task === 'object' ? task.id : task))
     } else if (taskIds) {
       this.changedTaskIds.add(taskIds)
     }
@@ -230,6 +233,7 @@ export class DownloadEventPusher {
     if (!this.isActive) return
 
     this.isActive = false
+    this.clearThrottlers()
     if (this.pushTimer) {
       clearTimeout(this.pushTimer)
       this.pushTimer = null
@@ -345,7 +349,9 @@ export class DownloadEventPusher {
           const tasksData = batch
             .map((taskId) => {
               // 尝试从活跃任务中获取，如果没有则从数据库获取
-              const task = this.downloadService.activeTasks?.get(taskId)
+              const task =
+                this.downloadService.activeTasks?.get(taskId) ||
+                this.downloadService.getTaskFromDB(taskId)
               return task || { id: taskId, deleted: true } // 标记已删除的任务
             })
             .filter(Boolean)
@@ -431,24 +437,13 @@ export class DownloadEventPusher {
 
         // 只有在下载管理器打开时才推送详细信息
         if (this.downloadManagerOpen) {
-          // 推送统计信息
-          const stats = this.downloadService.getTaskStats()
-          mainWindow.webContents.send(IPC_DOWNLOAD.STATS_UPDATE, stats)
-
-          // 推送活跃任务
-          const activeTasks = this.downloadService.getActiveTasks()
-          const tasksToSend = this.prioritizeAndLimitTasks(activeTasks)
-          mainWindow.webContents.send(IPC_DOWNLOAD.ACTIVE_TASKS_UPDATE, tasksToSend)
+          this._pushStatsUpdate(mainWindow)
+          this._pushActiveTasksUpdate(mainWindow)
 
           // 如果有变化的任务，也推送
           if (this.changedTaskIds.size > 0) {
             this._pushChangedTasks(mainWindow)
           }
-
-          // 更新快照
-          this.lastStatsSnapshot = this.generateStatsSnapshot(stats)
-          this.lastActiveTasksSnapshot = this.generateActiveTasksSnapshot(activeTasks)
-          this.hasActiveDownloads = stats.downloading > 0
 
           // 优化日志输出频率
           this.pushCount++
@@ -512,6 +507,11 @@ export class DownloadEventPusher {
   // 设置下载管理器打开状态
   setDownloadManagerOpen(isOpen) {
     this.downloadManagerOpen = isOpen
+    if (isOpen) {
+      // A newly opened view needs an initial snapshot, even when nothing changed.
+      this.lastStatsSnapshot = null
+      this.lastActiveTasksSnapshot = null
+    }
     // if (is.dev) console.debug(`[DownloadEventPusher] 下载管理器状态: ${isOpen ? '打开' : '关闭'}`)
 
     // 无论打开还是关闭，都立即推送一次活跃任务数量

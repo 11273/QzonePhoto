@@ -161,8 +161,16 @@
         </div>
 
         <div v-if="hasAnyTasks" class="actions-right">
-          <AppActionButton v-if="canStartAll" variant="primary" ui-size="compact" @click="startAll">
-            全部开始
+          <AppActionButton
+            v-if="canStartAll"
+            variant="primary"
+            ui-size="compact"
+            :title="
+              taskStats.paused ? '暂停的文件会重新下载，已完成文件不受影响' : '开始队列中的任务'
+            "
+            @click="startAll"
+          >
+            {{ taskStats.paused ? '继续全部' : '全部开始' }}
           </AppActionButton>
           <AppActionButton v-if="canPauseAll" ui-size="compact" @click="pauseAll">
             暂停全部
@@ -202,7 +210,7 @@
           data-material-light="subtle"
           role="status"
           aria-live="polite"
-          :aria-label="`下载总体进度 ${overallProgress}%，已完成 ${completedTasks} 个，共 ${globalTotalTasks} 个任务`"
+          :aria-label="`下载成功比例 ${overallProgress}%，${managerSummary}`"
         >
           <div class="progress-top">
             <div class="progress-circle">
@@ -219,7 +227,7 @@
           </div>
           <div class="progress-bottom">
             <el-tooltip
-              :content="`已完成 ${completedTasks} 个，共 ${globalTotalTasks} 个任务`"
+              :content="`成功 ${completedTasks} 个，共 ${globalTotalTasks} 个任务`"
               placement="top"
               :disabled="globalTotalTasks < 10000"
             >
@@ -227,7 +235,7 @@
                 {{ formatTaskCount(completedTasks) }}/{{ formatTaskCount(globalTotalTasks) }}
               </span>
             </el-tooltip>
-            <span class="progress-label">完成</span>
+            <span class="progress-label">成功</span>
           </div>
         </div>
 
@@ -236,7 +244,7 @@
           <h5>下载速度</h5>
           <div class="speed-info">
             <div class="current-speed">{{ getCurrentSpeed() }}</div>
-            <div class="speed-label">当前总速度</div>
+            <div class="speed-label">近 4 秒平均 · 每秒更新</div>
           </div>
         </div>
 
@@ -244,13 +252,21 @@
         <div class="status-card">
           <h5>任务状态</h5>
           <div class="status-list">
-            <div v-for="item in visibleStatusItems" :key="item.value" class="status-item">
+            <button
+              v-for="item in visibleStatusItems"
+              :key="item.value"
+              type="button"
+              class="status-item"
+              :aria-pressed="statusFilter === item.value"
+              :title="`查看${item.label}任务`"
+              @click="statusFilter = item.value"
+            >
               <span class="status-dot" :class="item.value"></span>
               <span class="status-info">
                 <span class="status-name">{{ item.label }}</span>
                 <span class="status-count">{{ item.count }}</span>
               </span>
-            </div>
+            </button>
           </div>
         </div>
       </div>
@@ -315,9 +331,9 @@
               class="task-sort-select"
               aria-label="任务排序方式"
             >
+              <el-option label="下载优先" :value="DOWNLOAD_TASK_SORT.STATUS_PRIORITY" />
               <el-option label="最新创建" :value="DOWNLOAD_TASK_SORT.CREATED_DESC" />
               <el-option label="最早创建" :value="DOWNLOAD_TASK_SORT.CREATED_ASC" />
-              <el-option label="状态优先" :value="DOWNLOAD_TASK_SORT.STATUS_PRIORITY" />
             </el-select>
             <div class="pagination-info">
               {{ filteredTotalTasks === 0 ? 0 : (currentPage - 1) * pageSize + 1 }} -
@@ -329,10 +345,11 @@
 
         <!-- 进度条式任务布局 -->
         <div v-if="stableTasks.length > 0" class="task-detail-list progress-bar-layout">
-          <el-scrollbar height="100%">
+          <el-scrollbar ref="taskScrollbarRef" height="100%">
             <div
               v-for="task in stableTasks"
-              :key="task._renderKey"
+              :key="task.id"
+              :data-task-id="task.id"
               class="progress-task optimized-task"
             >
               <div class="task-container">
@@ -438,7 +455,7 @@
                           v-else-if="task.status === 'paused' && task.type !== 'contact-backup'"
                           size="small"
                           text
-                          title="继续下载"
+                          title="继续下载（当前文件会重新下载）"
                           aria-label="继续下载"
                           @click="resumeTask(task)"
                         >
@@ -542,7 +559,7 @@
                       class="progress-percent"
                       :style="{ color: getTaskProgressColor(task.status) }"
                     >
-                      {{ task.stableProgress }}%
+                      {{ isIndeterminateTask(task) ? '—' : `${task.stableProgress}%` }}
                     </div>
 
                     <!-- 进度条 -->
@@ -551,6 +568,7 @@
                         :percentage="task.stableProgress"
                         :stroke-width="4"
                         :show-text="false"
+                        :indeterminate="isIndeterminateTask(task)"
                         :status="task.status === 'error' ? 'exception' : undefined"
                         :color="getTaskProgressColor(task.status)"
                       />
@@ -572,11 +590,11 @@
                             formatFileSize(task.total)
                           }}</span
                         >
-                        <span v-if="task.speed > 0" class="speed-info">{{
-                          formatSpeed(task.speed)
+                        <span class="speed-info">{{
+                          task.status === 'downloading' ? formatSpeed(task.speed) : ''
                         }}</span>
-                        <span v-if="task.status === 'downloading'" class="eta-info">{{
-                          getEstimatedTime(task)
+                        <span class="eta-info">{{
+                          task.status === 'downloading' ? getEstimatedTime(task) : ''
                         }}</span>
                         <span
                           v-if="task.batch_label"
@@ -591,6 +609,9 @@
                       </template>
                     </div>
                   </div>
+                  <p v-if="task.status === 'error'" class="task-failure-hint">
+                    {{ getDownloadFailureHint(task.error) }}
+                  </p>
                 </div>
               </div>
             </div>
@@ -682,9 +703,14 @@ import HoverVideoPreview from '@renderer/components/HoverVideoPreview/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { useFriendStore } from '@renderer/store/friend.store'
 import { formatTaskCount, formatTaskName } from '@renderer/utils/formatters'
-import { didDownloadTaskCountsChange } from '@shared/download-batch-stats.mjs'
+import {
+  didDownloadTaskCountsChange,
+  getDownloadCompletionProgress,
+  getDownloadManagerSummary
+} from '@shared/download-batch-stats.mjs'
 import { APP_NAME } from '@shared/const'
 import { DOWNLOAD_TASK_SORT, normalizeDownloadTaskSort } from '@shared/download-task-sort'
+import { getDownloadFailureHint } from '@shared/download-failure.mjs'
 
 const privacyStore = usePrivacyStore()
 const friendStore = useFriendStore()
@@ -783,8 +809,14 @@ const totalPages = ref(0)
 
 // 筛选相关
 const statusFilter = ref('all')
+// The previous version persisted its "newest first" default, hiding long-running
+// files under hundreds of newer tasks. Migrate once; subsequent choices are kept.
+const oldSortOrder = localStorage.getItem('download-task-sort')
 const sortOrder = ref(
-  normalizeDownloadTaskSort(localStorage.getItem('download-task-sort') || undefined)
+  normalizeDownloadTaskSort(
+    localStorage.getItem('download-task-sort-v2') ||
+      (oldSortOrder !== DOWNLOAD_TASK_SORT.CREATED_DESC ? oldSortOrder : undefined)
+  )
 )
 
 // 下载路径和设置
@@ -797,6 +829,7 @@ const downloadTimePreference = ref('shoot')
 
 // 任务数据
 const currentPageTasks = ref([]) // 当前页的任务
+const taskScrollbarRef = ref(null)
 const activeDownloadTasks = ref([])
 const recentBatches = ref([])
 const taskStats = ref({
@@ -817,6 +850,10 @@ const loadError = ref('')
 const clearingTasks = ref(false)
 const retryingContactBackupIds = ref(new Set())
 let batchReloadTimer = null
+let pageReloadTimer = null
+let pageRequestId = 0
+let pageRequestPending = false
+const pendingPageUpdates = new Map()
 
 // 初始化下载路径
 const initDownloadPath = async () => {
@@ -918,32 +955,72 @@ const handleConcurrencyChange = async (newConcurrency) => {
 }
 
 // 加载任务列表（分页）
-const loadTasksPage = async () => {
-  if (loading.value) return
-
-  loading.value = true
-  loadError.value = ''
+const loadTasksPage = async ({ silent = false } = {}) => {
+  const requestId = ++pageRequestId
+  pageRequestPending = true
+  pendingPageUpdates.clear()
+  if (!silent) {
+    loading.value = true
+    loadError.value = ''
+  }
   try {
-    const result = await window.QzoneAPI.download.requestTasksPage({
+    // Consume the correlated response only, not the uncorrelated page broadcast.
+    const result = await window.QzoneAPI.download.getTasks({
       page: currentPage.value,
       pageSize: pageSize.value,
       status: statusFilter.value === 'all' ? null : statusFilter.value,
       sort: sortOrder.value
     })
 
+    if (requestId !== pageRequestId || !visible.value) return
     if (result && result.tasks) {
-      currentPageTasks.value = result.tasks
+      loadError.value = ''
       if (result.pagination) {
         totalTasks.value = result.pagination.total
         totalPages.value = result.pagination.totalPages
+        const lastPage = Math.max(1, result.pagination.totalPages)
+        if (currentPage.value > lastPage) {
+          currentPage.value = lastPage
+          return
+        }
+      }
+      currentPageTasks.value = result.tasks
+        .map((task) => pendingPageUpdates.get(task.id) || task)
+        .filter((task) => !task.deleted)
+      if (!silent) {
+        await nextTick()
+        if (requestId === pageRequestId) taskScrollbarRef.value?.setScrollTop(0)
       }
     }
   } catch (error) {
+    if (requestId !== pageRequestId || !visible.value) return
     console.error('加载任务失败:', error)
-    loadError.value = '下载任务加载失败，请检查网络后重试。'
+    loadError.value = '本地下载记录读取失败，请重试。'
   } finally {
-    loading.value = false
+    if (requestId === pageRequestId) {
+      loading.value = false
+      pageRequestPending = false
+      pendingPageUpdates.clear()
+    }
   }
+}
+
+const schedulePageReload = () => {
+  if (pageReloadTimer || !visible.value) return
+  // Coalesce short-file completions; don't repeatedly remove/recreate visible rows.
+  pageReloadTimer = setTimeout(() => {
+    pageReloadTimer = null
+    loadTasksPage({ silent: true })
+  }, 1000)
+}
+
+const cancelPageReload = () => {
+  if (pageReloadTimer) clearTimeout(pageReloadTimer)
+  pageReloadTimer = null
+  pageRequestId++ // Ignore responses belonging to a closed dialog / previous query.
+  pageRequestPending = false
+  pendingPageUpdates.clear()
+  loading.value = false
 }
 
 // 加载统计信息
@@ -991,8 +1068,7 @@ const setupEventListeners = () => {
   downloadListenerCleanups.push(
     window.QzoneAPI.download.onStatsUpdate(handleStatsUpdate),
     window.QzoneAPI.download.onActiveTasksUpdate(handleActiveTasksUpdate),
-    window.QzoneAPI.download.onTaskChanges(handleTaskChanges),
-    window.QzoneAPI.download.onTasksPage(handleTasksPage)
+    window.QzoneAPI.download.onTaskChanges(handleTaskChanges)
   )
 }
 
@@ -1008,6 +1084,13 @@ const handleStatsUpdate = (...args) => {
   // console.debug('[DownloadManager] 收到统计信息更新:', stats)
   if (!stats) return
   const taskCountsChanged = didDownloadTaskCountsChange(taskStats.value, stats)
+  if (
+    stats.total !== taskStats.value.total ||
+    (taskCountsChanged &&
+      (sortOrder.value === DOWNLOAD_TASK_SORT.STATUS_PRIORITY || statusFilter.value !== 'all'))
+  ) {
+    schedulePageReload()
+  }
   taskStats.value = stats
   if (taskCountsChanged) scheduleBatchReload()
 }
@@ -1022,107 +1105,40 @@ const handleActiveTasksUpdate = (...args) => {
 
   activeDownloadTasks.value = activeTasks.filter((task) => task.status === 'downloading')
 
-  // 调试信息：显示下载中任务的速度
-  const downloadingTasks = activeTasks.filter((task) => task.status === 'downloading')
-  if (downloadingTasks.length > 0) {
-    // console.debug(
-    //   '[DownloadManager] 下载中任务速度:',
-    //   downloadingTasks.map((task) => ({
-    //     name: task.name,
-    //     speed: task.speed,
-    //     progress: task.progress
-    //   }))
-    // )
-  }
+  updateVisibleTasks(activeTasks)
+}
 
-  // 更新当前页面中的活跃任务 - 只更新变化的字段
-  let orderMayHaveChanged = false
-  activeTasks.forEach((activeTask) => {
-    const index = currentPageTasks.value.findIndex((task) => task.id === activeTask.id)
-    if (index !== -1) {
+const updateVisibleTasks = (changedTasks) => {
+  changedTasks.forEach((changedTask) => {
+    const index = currentPageTasks.value.findIndex((task) => task.id === changedTask.id)
+    if (pageRequestPending) pendingPageUpdates.set(changedTask.id, changedTask)
+    if (changedTask.deleted) {
+      if (index !== -1) currentPageTasks.value.splice(index, 1)
+      schedulePageReload()
+    } else if (index !== -1) {
       const currentTask = currentPageTasks.value[index]
       if (
-        sortOrder.value === DOWNLOAD_TASK_SORT.STATUS_PRIORITY &&
-        currentTask.status !== activeTask.status
+        currentTask.status !== changedTask.status &&
+        (sortOrder.value === DOWNLOAD_TASK_SORT.STATUS_PRIORITY || statusFilter.value !== 'all')
       ) {
-        orderMayHaveChanged = true
+        schedulePageReload()
       }
-      // 只更新可能变化的字段，避免触发图片重新加载
-      const updatedTask = {
-        ...currentTask,
-        status: activeTask.status,
-        progress: activeTask.progress,
-        downloaded: activeTask.downloaded,
-        total: activeTask.total,
-        speed: activeTask.speed,
-        error: activeTask.error,
-        backup_detail: activeTask.backup_detail,
-        output_path: activeTask.output_path,
-        update_time: activeTask.update_time
-      }
-      currentPageTasks.value.splice(index, 1, updatedTask)
+      Object.assign(currentTask, changedTask)
     }
   })
-
-  if (orderMayHaveChanged) loadTasksPage()
 }
 
-// 处理任务变化
-const handleTaskChanges = (...args) => {
-  // 通过ipc-client传递时，数据在第一个参数中
-  const changedTasks = args[0]
-  // console.debug('[DownloadManager] 收到任务变化:', changedTasks?.length || 0, '个任务')
-  if (!Array.isArray(changedTasks)) return
-
-  let needReload = false
-
-  changedTasks.forEach((changedTask) => {
-    if (changedTask.deleted) {
-      const index = currentPageTasks.value.findIndex((task) => task.id === changedTask.id)
-      if (index !== -1) {
-        currentPageTasks.value.splice(index, 1)
-        needReload = true
-      }
-    } else {
-      const index = currentPageTasks.value.findIndex((task) => task.id === changedTask.id)
-      if (index !== -1) {
-        if (
-          sortOrder.value === DOWNLOAD_TASK_SORT.STATUS_PRIORITY &&
-          currentPageTasks.value[index].status !== changedTask.status
-        ) {
-          needReload = true
-        }
-        currentPageTasks.value.splice(index, 1, { ...changedTask })
-      } else {
-        needReload = true // 新任务可能需要重新加载分页
-      }
-    }
-  })
-
-  // 如果有删除或新增任务，重新加载当前页
-  if (needReload) {
-    loadTasksPage()
-  }
-}
-
-// 处理分页任务列表推送
-const handleTasksPage = (...args) => {
-  // 通过ipc-client传递时，数据在第一个参数中
-  const pageData = args[0]
-  // console.debug('[DownloadManager] 收到分页数据:', pageData)
-  if (pageData && pageData.tasks) {
-    currentPageTasks.value = pageData.tasks
-    if (pageData.pagination) {
-      totalTasks.value = pageData.pagination.total
-      totalPages.value = pageData.pagination.totalPages
-    }
-  }
+// Off-page progress alone must not reload the current page.
+const handleTaskChanges = (changedTasks) => {
+  if (Array.isArray(changedTasks)) updateVisibleTasks(changedTasks)
 }
 
 // 监听对话框打开
 watch(visible, async (newVisible) => {
   if (newVisible) {
+    setupEventListeners()
     await window.QzoneAPI.download.setManagerOpen(true)
+    if (!visible.value) return
     initDownloadPath()
     initConcurrency()
     initReplaceExistingSetting()
@@ -1131,12 +1147,12 @@ watch(visible, async (newVisible) => {
     loadStats()
     loadTasksPage()
     loadBatches()
-    setupEventListeners()
   } else {
     stopTaskVideoPreview()
     clearDownloadSettingsPopover()
     if (batchReloadTimer) clearTimeout(batchReloadTimer)
     batchReloadTimer = null
+    cancelPageReload()
     await window.QzoneAPI.download.setManagerOpen(false)
     cleanupEventListeners()
   }
@@ -1144,11 +1160,13 @@ watch(visible, async (newVisible) => {
 
 // 翻页时直接加载；筛选、分页大小或排序变化时先回到第一页。
 watch(currentPage, () => {
+  cancelPageReload()
   loadTasksPage()
 })
 
 watch([pageSize, statusFilter, sortOrder], () => {
-  localStorage.setItem('download-task-sort', sortOrder.value)
+  localStorage.setItem('download-task-sort-v2', sortOrder.value)
+  cancelPageReload()
   if (currentPage.value !== 1) {
     currentPage.value = 1
     return
@@ -1159,7 +1177,9 @@ watch([pageSize, statusFilter, sortOrder], () => {
 // 组件挂载时初始化
 onMounted(async () => {
   if (visible.value) {
+    setupEventListeners()
     await window.QzoneAPI.download.setManagerOpen(true)
+    if (!visible.value) return
     initDownloadPath()
     initConcurrency()
     initReplaceExistingSetting()
@@ -1168,7 +1188,6 @@ onMounted(async () => {
     loadStats()
     loadTasksPage()
     loadBatches()
-    setupEventListeners()
   }
 })
 
@@ -1176,6 +1195,7 @@ onMounted(async () => {
 onUnmounted(async () => {
   stopTaskVideoPreview()
   if (batchReloadTimer) clearTimeout(batchReloadTimer)
+  cancelPageReload()
   await window.QzoneAPI.download.setManagerOpen(false)
   cleanupEventListeners()
 })
@@ -1186,11 +1206,8 @@ const globalTotalTasks = computed(() => taskStats.value.total || totalTasks.valu
 const hasAnyTasks = computed(() => globalTotalTasks.value > 0)
 const canStartAll = computed(
   () =>
-    (taskStats.value.waiting || 0) +
-      (taskStats.value.paused || 0) +
-      (taskStats.value.error || 0) +
-      (taskStats.value.cancelled || 0) >
-    0
+    (taskStats.value.paused || 0) > 0 ||
+    ((taskStats.value.waiting || 0) > 0 && !(taskStats.value.downloading || 0))
 )
 const canPauseAll = computed(
   () => (taskStats.value.downloading || 0) + (taskStats.value.waiting || 0) > 0
@@ -1220,18 +1237,10 @@ const compactDownloadPath = computed(() => {
   if (parts.length <= 2) return normalized
   return `…/${parts.slice(-2).join('/')}`
 })
-const managerSummary = computed(() => {
-  if (globalTotalTasks.value === 0) return ''
-  const activeCount = (taskStats.value.downloading || 0) + (taskStats.value.waiting || 0)
-  if (activeCount > 0)
-    return `${activeCount} 个进行中 · ${completedTasks.value}/${globalTotalTasks.value} 已完成`
-  return `${completedTasks.value}/${globalTotalTasks.value} 已完成`
-})
-const overallProgress = computed(() => {
-  const total = taskStats.value.total || 0
-  if (total === 0) return 0
-  return Math.round((completedTasks.value / total) * 100)
-})
+const managerSummary = computed(() =>
+  getDownloadManagerSummary({ ...taskStats.value, total: globalTotalTasks.value })
+)
+const overallProgress = computed(() => getDownloadCompletionProgress(taskStats.value))
 const overallProgressColor = computed(() => {
   if (globalTotalTasks.value > 0 && completedTasks.value === globalTotalTasks.value) {
     return 'var(--theme-success)'
@@ -1255,12 +1264,13 @@ const filteredTotalTasks = computed(() => totalTasks.value)
 const stableTasks = computed(() => {
   return currentPageTasks.value.map((task) => ({
     ...task,
-    // 添加稳定的key用于渲染优化 - 进度每10%变化一次key，减少渲染频率
-    _renderKey: `${task.id}_${task.status}_${Math.floor(task.progress / 10) * 10}`,
-    // 稳定的进度显示 - 避免小数位变化导致重新渲染
-    stableProgress: Math.round(task.progress)
+    stableProgress:
+      task.status === 'completed' ? 100 : Math.min(99, Math.max(0, Math.floor(task.progress || 0)))
   }))
 })
+
+const isIndeterminateTask = (task) =>
+  task.status === 'downloading' && !task.total && task.type !== 'contact-backup'
 
 // 工具函数
 const formatFileSize = (bytes) => {
@@ -1272,8 +1282,9 @@ const formatFileSize = (bytes) => {
 }
 
 const formatSpeed = (bytesPerSecond) => {
-  if (!bytesPerSecond || bytesPerSecond === 0) return '0 B/s'
-  return formatFileSize(bytesPerSecond) + '/s'
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return '0 KB/s'
+  const unit = bytesPerSecond >= 1024 ** 2 ? 1024 ** 2 : 1024
+  return `${(bytesPerSecond / unit).toFixed(1)} ${unit === 1024 ? 'KB' : 'MB'}/s`
 }
 
 const formatSmartTime = (date) => {
@@ -1372,12 +1383,14 @@ const getCurrentSpeed = () => {
 }
 
 const getEstimatedTime = (task) => {
-  if (!task.speed || task.speed === 0) return '未知'
-  const remaining = task.total - task.downloaded
-  const seconds = Math.round(remaining / task.speed)
-  if (seconds < 60) return `${seconds}秒`
-  if (seconds < 3600) return `${Math.round(seconds / 60)}分钟`
-  return `${Math.round(seconds / 3600)}小时`
+  if (!task.total) return task.downloaded > 0 ? '大小未知' : '等待数据'
+  const remaining = Math.max(0, task.total - task.downloaded)
+  if (!remaining) return '保存中'
+  if (!task.speed) return '等待数据'
+  const seconds = Math.ceil(remaining / task.speed)
+  if (seconds < 60) return `约 ${seconds} 秒`
+  if (seconds < 3600) return `约 ${Math.ceil(seconds / 60)} 分钟`
+  return `约 ${Math.ceil(seconds / 3600)} 小时`
 }
 
 // 任务操作方法
@@ -1410,6 +1423,8 @@ const resumeTask = async (task) => {
       currentPageTasks.value.splice(index, 1, {
         ...task,
         status: 'waiting',
+        progress: 0,
+        downloaded: 0,
         speed: 0
       })
     }
@@ -1615,10 +1630,10 @@ const startAll = async () => {
   try {
     await window.QzoneAPI.download.resumeAll()
 
-    // 立即更新本地任务状态 - 不重置进度，保持断点续传
+    // The backend restarts paused files; do not briefly display stale progress.
     currentPageTasks.value = currentPageTasks.value.map((task) => {
       if (task.status === 'paused') {
-        return { ...task, status: 'waiting', speed: 0 }
+        return { ...task, status: 'waiting', speed: 0, progress: 0, downloaded: 0 }
       }
       return task
     })
@@ -2694,8 +2709,7 @@ const handleTimePreferenceChange = async (preference) => {
 
                   .progress-bar-container {
                     flex: 1;
-                    min-width: 120px;
-                    max-width: 200px;
+                    min-width: 56px;
 
                     // Element Plus Progress 样式重写
                     :deep(.el-progress) {
@@ -2764,6 +2778,99 @@ const handleTimePreferenceChange = async (preference) => {
 .batch-summary-list {
   display: grid;
   gap: 6px;
+}
+
+/* Keep numeric updates from resizing progress bars or shifting adjacent controls. */
+.download-manager-dialog {
+  .status-card .status-item {
+    width: 100%;
+    padding: 2px;
+    border: 0;
+    border-radius: var(--theme-radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover,
+    &[aria-pressed='true'] {
+      background: var(--theme-surface-hover);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--theme-focus);
+      outline-offset: 2px;
+    }
+  }
+
+  .task-failure-hint {
+    margin: 6px 0 0;
+    color: var(--theme-danger-text);
+    font-size: 11px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  .progress-percentage,
+  .progress-numbers,
+  .current-speed,
+  .status-count,
+  .pagination-info,
+  .task-bottom-row {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .layout-columns .right-column .task-detail-list.progress-bar-layout .progress-task {
+    transition:
+      background-color 0.2s ease,
+      border-color 0.2s ease;
+
+    .task-thumbnail {
+      flex: 0 0 40px;
+    }
+
+    .task-top-row {
+      min-height: 24px;
+    }
+
+    .task-bottom-row {
+      .progress-percent {
+        width: 4ch;
+      }
+
+      .task-details {
+        overflow: hidden;
+        max-width: 65%;
+
+        .size-info {
+          width: 19ch;
+          flex: 0 0 19ch;
+          text-align: right;
+        }
+
+        .speed-info {
+          width: 10ch;
+          flex: 0 0 10ch;
+          text-align: right;
+        }
+
+        .eta-info {
+          width: 9ch;
+          flex: 0 0 9ch;
+          text-align: right;
+        }
+      }
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .download-manager-dialog :deep(.el-progress-bar__inner),
+  .download-manager-dialog .progress-task {
+    transition: none;
+    animation: none;
+  }
 }
 
 .batch-summary-item {

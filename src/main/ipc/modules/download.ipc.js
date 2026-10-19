@@ -70,44 +70,44 @@ export function createDownloadHandlers(service) {
 
     // 暂停任务
     [IPC_DOWNLOAD.PAUSE_TASK]: async (event, context) => {
-      downloadService.pauseTask(context.payload)
+      await downloadService.pauseTask(context.payload)
       return { success: true }
     },
 
     // 继续任务
     [IPC_DOWNLOAD.RESUME_TASK]: async (event, context) => {
-      downloadService.resumeTask(context.payload)
+      await downloadService.resumeTask(context.payload)
       return { success: true }
     },
 
     // 重试任务
     [IPC_DOWNLOAD.RETRY_TASK]: async (event, context) => {
-      downloadService.retryTask(context.payload)
+      await downloadService.retryTask(context.payload)
       return { success: true }
     },
 
     // 删除任务
     [IPC_DOWNLOAD.DELETE_TASK]: async (event, context) => {
       const { taskId, deleteFile = false } = context.payload
-      downloadService.deleteTask(taskId, deleteFile)
+      await downloadService.deleteTask(taskId, deleteFile)
       return { success: true }
     },
 
     // 取消所有任务
     [IPC_DOWNLOAD.CANCEL_ALL]: async () => {
-      downloadService.cancelAll()
+      await downloadService.cancelAll()
       return { success: true }
     },
 
     // 恢复所有任务
     [IPC_DOWNLOAD.RESUME_ALL]: async () => {
-      downloadService.resumeAll()
+      await downloadService.resumeAll()
       return { success: true }
     },
 
     // 清空任务列表
     [IPC_DOWNLOAD.CLEAR_TASKS]: async () => {
-      downloadService.clearTasks()
+      await downloadService.clearTasks()
       return { success: true }
     },
 

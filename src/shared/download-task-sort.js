@@ -16,7 +16,7 @@ const STATUS_PRIORITY = Object.freeze({
 })
 
 export function normalizeDownloadTaskSort(sort) {
-  return VALID_SORTS.has(sort) ? sort : DOWNLOAD_TASK_SORT.CREATED_DESC
+  return VALID_SORTS.has(sort) ? sort : DOWNLOAD_TASK_SORT.STATUS_PRIORITY
 }
 
 function taskTime(value) {
@@ -33,7 +33,7 @@ function compareNewestFirst(left, right) {
   return String(right?.id || '').localeCompare(String(left?.id || ''))
 }
 
-export function sortDownloadTasks(tasks, sort = DOWNLOAD_TASK_SORT.CREATED_DESC) {
+export function sortDownloadTasks(tasks, sort = DOWNLOAD_TASK_SORT.STATUS_PRIORITY) {
   const normalizedSort = normalizeDownloadTaskSort(sort)
   const sortedTasks = Array.isArray(tasks) ? [...tasks] : []
 
@@ -49,6 +49,7 @@ export function sortDownloadTasks(tasks, sort = DOWNLOAD_TASK_SORT.CREATED_DESC)
       if (leftPriority !== rightPriority) return leftPriority - rightPriority
 
       if (left?.status === 'downloading' || left?.status === 'waiting') {
+        // Stable sort preserves insertion order for a batch created in one millisecond.
         return taskTime(left?.create_time) - taskTime(right?.create_time)
       }
     }

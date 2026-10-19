@@ -8,14 +8,14 @@ test('short files count towards batch speed after each task finishes', () => {
   const meter = new RollingDownloadThroughput()
   meter.record(6000, 1000)
   meter.record(4000, 1250)
-  assert.equal(meter.getBytesPerSecond(1250), 20000)
+  assert.equal(meter.getBytesPerSecond(1250), 10000)
   assert.equal(meter.getBytesPerSecond(2000), 10000)
   assert.equal(meter.getBytesPerSecond(3000), 5000)
-  assert.equal(meter.getBytesPerSecond(3300), 0)
+  assert.equal(meter.getBytesPerSecond(5300), 0)
 })
 
 test('old bytes expire, invalid values are ignored, and speed resets', () => {
-  const meter = new RollingDownloadThroughput()
+  const meter = new RollingDownloadThroughput(2000)
   meter.record(1000, 1000)
   meter.record(3000, 3000)
   meter.record(0, 3000)
@@ -31,6 +31,21 @@ test('dense streams reuse time buckets instead of storing every chunk', () => {
   for (let i = 0; i < 10000; i += 1) meter.record(128, 1000 + (i % 200))
   assert.equal(meter.samples.length, 1)
   assert.ok(meter.getBytesPerSecond(1200) > 0)
+})
+
+test('speed is sampled once per second and remains steady across chunk/image bursts', () => {
+  const meter = new RollingDownloadThroughput()
+  const speeds = []
+  for (let time = 1000; time <= 12000; time += 50) {
+    if (time % 250 === 0) meter.record(16000, time)
+    const speed = meter.getBytesPerSecond(time)
+    speeds.push(speed)
+    if (time % 1000 !== 0) assert.equal(speed, speeds.at(-2))
+    if (time >= 5000) assert.ok(speed >= 64000 && speed <= 68000, String(speed))
+  }
+  assert.equal(meter.getBytesPerSecond(16100), 0, 'a stalled stream must not retain stale speed')
+  meter.record(2000, 17000)
+  assert.equal(meter.getBytesPerSecond(17000), 2000, 'a new burst must not include idle time')
 })
 
 test('backend samples received bytes and publishes live speed for the UI', async () => {
@@ -111,4 +126,19 @@ test('waiting downloads keep the progress layout stable and closing cancels refr
   assert.ok(watcher)
   assert.match(watcher, /if \(batchReloadTimer\) clearTimeout\(batchReloadTimer\)/)
   assert.match(watcher, /batchReloadTimer = null/)
+})
+
+test('download rows keep their identity and pages use correlated, bounded background refreshes', async () => {
+  const ui = await readFile(
+    new URL('../src/renderer/src/components/DownloadManager/index.vue', import.meta.url),
+    'utf8'
+  )
+  assert.match(ui, /:key="task\.id"/)
+  assert.doesNotMatch(ui, /_renderKey/)
+  assert.match(ui, /window\.QzoneAPI\.download\.getTasks\(/)
+  assert.doesNotMatch(ui, /onTasksPage\(handleTasksPage\)/)
+  assert.match(ui, /requestId !== pageRequestId \|\| !visible\.value/)
+  assert.match(ui, /if \(pageReloadTimer \|\| !visible\.value\) return/)
+  assert.match(ui, /loadTasksPage\(\{ silent: true \}\)/)
+  assert.match(ui, /Object\.assign\(currentTask, changedTask\)/)
 })
