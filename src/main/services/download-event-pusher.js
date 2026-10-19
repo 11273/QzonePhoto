@@ -404,7 +404,7 @@ export class DownloadEventPusher {
 
   // 生成统计信息快照
   generateStatsSnapshot(stats) {
-    return `${stats.total}:${stats.waiting}:${stats.downloading}:${stats.completed}:${stats.error}:${stats.paused}:${stats.cancelled}`
+    return `${stats.total}:${stats.waiting}:${stats.downloading}:${stats.completed}:${stats.error}:${stats.paused}:${stats.cancelled}:${stats.currentSpeed || 0}`
   }
 
   // 生成活跃任务快照
