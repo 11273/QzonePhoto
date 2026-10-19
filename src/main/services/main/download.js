@@ -38,6 +38,7 @@ import {
 } from '@shared/contact-backup'
 import { DOWNLOAD_TASK_SORT, sortDownloadTasks } from '@shared/download-task-sort'
 import { RollingDownloadThroughput } from '@shared/download-throughput.mjs'
+import { registerLocalMedia } from '@main/utils/local-media-registry'
 // 直接定义必要的默认配置，避免使用外部常量系统
 const DEFAULT_CONCURRENCY = 3
 const DEFAULT_PAGE_SIZE = 50
@@ -434,7 +435,7 @@ export class DownloadService {
       update_time: now,
       complete_time: null,
       error: null,
-      thumbnail_url: options.thumbnailUrl || options.url,
+      thumbnail_url: options.thumbnailUrl || (options.type === 'video' ? '' : options.url),
       album_id: options.albumId,
       album_name: options.albumName,
       source_key: options.sourceKey || '',
@@ -1109,6 +1110,22 @@ export class DownloadService {
         pagination: { page: 1, pageSize, total: 0, totalPages: 0 }
       }
     }
+  }
+
+  // Resolve from the current account's task record, never a renderer-supplied path.
+  async getTaskPreview(taskId) {
+    const task = this.getTaskFromDB(taskId)
+    if (!task || task.status !== TASK_STATUS.COMPLETED || !['image', 'video'].includes(task.type)) {
+      return null
+    }
+    if (!task.directory || !task.filename || path.basename(task.filename) !== task.filename) {
+      return null
+    }
+    const filePath = path.join(task.directory, task.filename)
+    const media = await readMediaFileSignature(filePath).catch(() => null)
+    if (!isExpectedMediaKind(task.type, media)) return null
+    const token = registerLocalMedia(filePath)
+    return token ? { src: `qzone-local://local/${token}` } : null
   }
 
   // 获取活跃任务（用于推送）

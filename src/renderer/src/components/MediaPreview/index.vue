@@ -19,6 +19,12 @@
         @pointerdown="wakeChrome"
         @focusin="wakeChrome"
       >
+        <ElFocusTrap
+          :trapped="visible"
+          :focus-trap-el="previewMaskRef"
+          focus-start-el="container"
+          @focus-after-released.prevent
+        />
         <!-- 顶部加载进度条：不打断浏览，同时使用品牌色保持一致。 -->
         <div
           v-if="prefetching || loadingMore"
@@ -464,6 +470,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { ElFocusTrap } from 'element-plus/es/components/focus-trap/index'
 import {
   ArrowLeft,
   ArrowRight,
@@ -495,6 +502,8 @@ const privacyMode = computed(() => !!privacyStore.privacyMode)
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
+  // Live lists may remove the original thumbnail while this viewer is open.
+  fallbackFocus: { type: Function, default: null },
   items: {
     type: Array,
     default: () => []
@@ -812,9 +821,11 @@ const imageSourceCandidates = computed(() => {
 const imageDisplaySrc = computed(
   () => imageFallbackSrc.value || imageSourceCandidates.value[0] || ''
 )
-const currentActionSrc = computed(() =>
-  current.value?.type === 'image' ? imageDisplaySrc.value : current.value?.src || ''
-)
+const currentActionSrc = computed(() => {
+  const source = current.value?.type === 'image' ? imageDisplaySrc.value : current.value?.src || ''
+  // Local preview tokens are neither shareable links nor browser navigation targets.
+  return /^https?:\/\//i.test(source) ? source : ''
+})
 const canDownloadCurrent = computed(
   () => !!current.value && typeof props.downloadItem === 'function'
 )
@@ -1214,7 +1225,11 @@ watch(
       }
       detachCurrentVideoSource()
       videoPaused.value = true
-      nextTick(() => previousActiveElement?.focus?.())
+      nextTick(() => {
+        if (props.visible) return
+        if (previousActiveElement?.isConnected) previousActiveElement.focus?.()
+        else props.fallbackFocus?.()
+      })
     }
   },
   { immediate: true }

@@ -24,7 +24,8 @@ const boundaries = {
 const bundled = await build({
   stdin: {
     contents: `export { DownloadService } from '@main/services/main/download';
-      export { DownloadEventPusher } from '@main/services/download-event-pusher'`,
+      export { DownloadEventPusher } from '@main/services/download-event-pusher';
+      export { resolveLocalMedia } from '@main/utils/local-media-registry'`,
     resolveDir: projectRoot
   },
   bundle: true,
@@ -59,7 +60,7 @@ compileFunction(bundled.outputFiles[0].text, ['require', 'module', 'exports'])(
   module,
   module.exports
 )
-const { DownloadService, DownloadEventPusher } = module.exports
+const { DownloadService, DownloadEventPusher, resolveLocalMedia } = module.exports
 
 const createService = async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'qzone-download-runtime-'))
@@ -241,6 +242,52 @@ test('a finished short file refills its slot on the next event-loop turn, withou
   await service.executeDownload(task)
   await new Promise(setImmediate)
   assert.ok(refilledAt >= completedAt && refilledAt - completedAt < 80)
+})
+
+test('video tasks without a cover never use the full video as their thumbnail', async (t) => {
+  const service = await createService(t)
+  const options = { url: 'https://example.invalid/movie.mp4', filename: 'movie.mp4', type: 'video' }
+  assert.equal(service.createTask(options).thumbnail_url, '')
+  assert.equal(
+    service.createTask({ ...options, thumbnailUrl: 'https://example.invalid/cover.jpg' })
+      .thumbnail_url,
+    'https://example.invalid/cover.jpg'
+  )
+  assert.equal(service.createTask({ ...options, type: 'image' }).thumbnail_url, options.url)
+})
+
+test('completed image/video preview uses task-owned short-lived tokens and rejects incomplete or invalid files', async (t) => {
+  const service = await createService(t)
+  const image = makeTask(service, 'local-image', 'https://expired.invalid/photo.jpg')
+  image.status = 'completed'
+  const imagePath = path.join(image.directory, image.filename)
+  await fs.writeFile(imagePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]))
+  service.db.data.tasks[0] = { ...image }
+  const preview = await service.getTaskPreview(image.id)
+  assert.match(preview.src, /^qzone-local:\/\/local\/[a-f0-9-]+$/)
+  assert.equal(preview.src.includes(service.downloadPath), false)
+  assert.equal(resolveLocalMedia(new URL(preview.src).pathname.slice(1)), imagePath)
+  assert.equal(await service.getTaskPreview('missing'), null)
+  service.db.data.tasks[0].status = 'downloading'
+  assert.equal(await service.getTaskPreview(image.id), null)
+  service.db.data.tasks[0].status = 'completed'
+  service.db.data.tasks[0].filename = '../escape.jpg'
+  assert.equal(await service.getTaskPreview(image.id), null)
+  service.db.data.tasks[0].filename = image.filename
+  await fs.writeFile(imagePath, '<html>not an image</html>')
+  assert.equal(await service.getTaskPreview(image.id), null)
+  await fs.unlink(imagePath)
+  assert.equal(await service.getTaskPreview(image.id), null)
+  const video = makeTask(service, 'local-video', 'https://expired.invalid/movie.mp4', 'video')
+  video.status = 'completed'
+  await fs.writeFile(
+    path.join(video.directory, video.filename),
+    Buffer.from('000000186674797069736f6d0000020069736f6d69736f32', 'hex')
+  )
+  service.db.data.tasks[1] = { ...video }
+  assert.match((await service.getTaskPreview(video.id)).src, /^qzone-local:/)
+  service.db.data.tasks[1].type = 'contact-backup'
+  assert.equal(await service.getTaskPreview(video.id), null)
 })
 
 test('unknown content length remains indeterminate until the saved file is verified', async (t) => {

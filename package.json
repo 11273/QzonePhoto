@@ -23,6 +23,7 @@
     "build:linux": "npm run build && electron-builder --linux",
     "audit:r2": "node scripts/audit-r2-release.mjs",
     "test:release": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/*.test.mjs",
+    "test:download-ui": "node scripts/download-manager-layout.mjs",
     "release": "release-it",
     "release:beta": "release-it --preRelease=beta"
   },

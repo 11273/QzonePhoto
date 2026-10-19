@@ -50,6 +50,10 @@ export function createDownloadHandlers(service) {
       return downloadService.getTasks(page, pageSize, status, sort)
     },
 
+    [IPC_DOWNLOAD.GET_TASK_PREVIEW]: async (event, context) => {
+      return downloadService.getTaskPreview(context?.payload?.taskId)
+    },
+
     // 获取活跃任务
     [IPC_DOWNLOAD.GET_ACTIVE_TASKS]: async () => {
       return downloadService.getActiveTasks()

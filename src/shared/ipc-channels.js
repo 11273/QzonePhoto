@@ -107,6 +107,8 @@ export const IPC_DOWNLOAD = {
   FAIL_CONTACT_BACKUP: 'download:failContactBackup',
   /** 获取任务列表（分页） */
   GET_TASKS: 'download:getTasks',
+  /** 按已完成的任务签发本地媒体预览，不接受任意文件路径 */
+  GET_TASK_PREVIEW: 'download:getTaskPreview',
   /** 获取活跃任务 */
   GET_ACTIVE_TASKS: 'download:getActiveTasks',
   /** 获取任务统计 */

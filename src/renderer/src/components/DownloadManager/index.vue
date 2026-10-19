@@ -3,7 +3,7 @@
     v-model="visible"
     :show-close="false"
     :close-on-click-modal="false"
-    :close-on-press-escape="true"
+    :close-on-press-escape="!taskPreviewVisible && !failureDetailsId"
     :append-to-body="true"
     :lock-scroll="false"
     :modal-append-to-body="false"
@@ -16,6 +16,7 @@
   >
     <template #header="{ close }">
       <AppDialogHeader
+        ref="managerHeaderRef"
         title="下载管理"
         :subtitle="managerSummary"
         close-label="关闭下载管理"
@@ -53,6 +54,7 @@
               placement="bottom-start"
               trigger="click"
               :width="520"
+              :popper-options="boundedPopperOptions"
               popper-class="download-settings-popover"
               @after-enter="focusDownloadSettings"
               @after-leave="restoreDownloadSettingsFocus"
@@ -61,7 +63,7 @@
                 <AppActionButton
                   ref="downloadSettingsTriggerRef"
                   ui-size="compact"
-                  title="调整后续下载任务设置"
+                  title="调整下载与保存设置"
                 >
                   <template #icon
                     ><el-icon><Setting /></el-icon
@@ -78,7 +80,7 @@
               >
                 <header class="settings-panel-heading">
                   <strong>下载设置</strong>
-                  <span>仅影响后续创建的任务</span>
+                  <span>下载与文件保存偏好</span>
                 </header>
                 <div class="settings-panel-grid">
                   <div class="settings-panel-item">
@@ -114,7 +116,7 @@
                   </div>
 
                   <el-tooltip
-                    content="将文案、发布者、QQ 号、发布时间和相册信息保存在下载的图片与视频中。"
+                    content="新建任务会将文案、发布者、QQ 号、发布时间和相册信息保存在下载的图片与视频中。"
                     placement="bottom"
                   >
                     <div class="settings-panel-item">
@@ -134,7 +136,7 @@
                   </el-tooltip>
 
                   <el-tooltip
-                    content="用于下载文件名、本地文件时间和 JPEG EXIF 日期。"
+                    content="用于新任务的文件名、本地文件时间和 JPEG EXIF 日期。"
                     placement="bottom"
                   >
                     <div class="settings-panel-item">
@@ -162,7 +164,7 @@
 
         <div v-if="hasAnyTasks" class="actions-right">
           <AppActionButton
-            v-if="canStartAll"
+            :disabled="!canStartAll"
             variant="primary"
             ui-size="compact"
             :title="
@@ -172,7 +174,7 @@
           >
             {{ taskStats.paused ? '继续全部' : '全部开始' }}
           </AppActionButton>
-          <AppActionButton v-if="canPauseAll" ui-size="compact" @click="pauseAll">
+          <AppActionButton :disabled="!canPauseAll" ui-size="compact" @click="pauseAll">
             暂停全部
           </AppActionButton>
           <el-popconfirm
@@ -203,7 +205,7 @@
     <!-- 分栏布局 -->
     <div v-if="hasAnyTasks" class="layout-columns">
       <!-- 左侧进度和统计 - 优化布局 -->
-      <div class="left-column optimized-layout" :class="{ 'is-settled': !hasRunningDownloads }">
+      <div class="left-column optimized-layout">
         <!-- 总体进度区域 -->
         <div
           class="progress-card"
@@ -240,11 +242,11 @@
         </div>
 
         <!-- 下载速度区域 -->
-        <div v-if="hasRunningDownloads" class="speed-card">
+        <div class="speed-card">
           <h5>下载速度</h5>
           <div class="speed-info">
             <div class="current-speed">{{ getCurrentSpeed() }}</div>
-            <div class="speed-label">近 4 秒平均 · 每秒更新</div>
+            <div class="speed-label">{{ speedDescription }}</div>
           </div>
         </div>
 
@@ -253,10 +255,11 @@
           <h5>任务状态</h5>
           <div class="status-list">
             <button
-              v-for="item in visibleStatusItems"
+              v-for="item in statusItems"
               :key="item.value"
               type="button"
               class="status-item"
+              :class="{ 'is-zero': item.count === 0 }"
               :aria-pressed="statusFilter === item.value"
               :title="`查看${item.label}任务`"
               @click="statusFilter = item.value"
@@ -286,6 +289,7 @@
               trigger="click"
               :width="300"
               popper-class="batch-summary-popover"
+              :popper-options="boundedPopperOptions"
             >
               <template #reference>
                 <button class="batch-summary-trigger" type="button" aria-label="查看最近下载批次">
@@ -350,14 +354,24 @@
               v-for="task in stableTasks"
               :key="task.id"
               :data-task-id="task.id"
+              :data-task-status="task.status"
               class="progress-task optimized-task"
             >
               <div class="task-container">
                 <!-- 左侧：缩略图 -->
-                <div
+                <button
+                  type="button"
                   class="task-thumbnail"
-                  @mouseenter="scheduleTaskVideoPreview(task)"
-                  @mouseleave="stopTaskVideoPreview(task)"
+                  :disabled="!canPreviewTask(task)"
+                  :aria-label="
+                    task.type === 'contact-backup'
+                      ? task.backup_title || '联系人备份'
+                      : privacyStore.privacyMode
+                        ? '媒体预览已隐藏'
+                        : `放大查看${task.type === 'video' ? '视频' : '图片'}：${formatTaskName(task.name)}`
+                  "
+                  :title="canPreviewTask(task) ? '点击放大查看' : undefined"
+                  @click="openTaskPreview(task)"
                 >
                   <div
                     v-if="privacyStore.privacyMode && task.type !== 'contact-backup'"
@@ -375,7 +389,7 @@
                   <el-image
                     v-else
                     :key="`img_${task.id}`"
-                    :src="task.thumbnail_url"
+                    :src="taskThumbnailSource(task)"
                     fit="cover"
                     class="thumbnail-image"
                     loading="eager"
@@ -392,20 +406,11 @@
                       </div>
                     </template>
                   </el-image>
-                  <HoverVideoPreview
-                    v-if="task.type === 'video'"
-                    :active="hoverPreviewTaskId === task.id"
-                    :src="task.url || ''"
-                    :poster="task.thumbnail_url || ''"
-                  />
                   <!-- 文件类型标识 -->
-                  <div
-                    v-if="task.type === 'video' && hoverPreviewTaskId !== task.id"
-                    class="type-badge"
-                  >
+                  <div v-if="task.type === 'video'" class="type-badge" aria-hidden="true">
                     <el-icon><VideoPlay /></el-icon>
                   </div>
-                </div>
+                </button>
 
                 <!-- 右侧：任务信息和进度 -->
                 <div class="task-content">
@@ -430,8 +435,46 @@
 
                     <div class="task-right">
                       <div class="task-meta">
-                        <span class="task-time">{{ formatSmartTime(task.create_time) }}</span>
-                        <span class="task-status" :class="task.status">{{
+                        <span class="task-time" :title="formatSmartTime(task.create_time)">{{
+                          formatSmartTime(task.create_time)
+                        }}</span>
+                        <el-popover
+                          v-if="task.status === 'error'"
+                          placement="top-end"
+                          trigger="click"
+                          :width="300"
+                          :popper-options="boundedPopperOptions"
+                          :persistent="false"
+                          :visible="failureDetailsId === task.id"
+                          popper-class="download-failure-popover"
+                          @update:visible="(open) => (failureDetailsId = open ? task.id : '')"
+                        >
+                          <template #reference>
+                            <button
+                              type="button"
+                              class="task-status error task-error-trigger"
+                              aria-label="查看失败原因"
+                            >
+                              {{ getTaskStatusText(task.status, task.type) }}
+                              <el-icon><InfoFilled /></el-icon>
+                            </button>
+                          </template>
+                          <div class="download-failure-detail" role="status">
+                            <strong
+                              >未能完成{{
+                                task.type === 'contact-backup' ? '备份' : '下载'
+                              }}</strong
+                            >
+                            <p>
+                              {{
+                                task.type === 'contact-backup'
+                                  ? task.backup_detail || '请稍后重试备份。'
+                                  : getDownloadFailureHint(task.error)
+                              }}
+                            </p>
+                          </div>
+                        </el-popover>
+                        <span v-else class="task-status" :class="task.status">{{
                           getTaskStatusText(task.status, task.type)
                         }}</span>
                       </div>
@@ -587,7 +630,9 @@
                       <template v-else>
                         <span class="size-info"
                           >{{ formatFileSize(task.downloaded) }}/{{
-                            formatFileSize(task.total)
+                            task.total || task.status === 'completed'
+                              ? formatFileSize(task.total)
+                              : '未知'
                           }}</span
                         >
                         <span class="speed-info">{{
@@ -609,9 +654,6 @@
                       </template>
                     </div>
                   </div>
-                  <p v-if="task.status === 'error'" class="task-failure-hint">
-                    {{ getDownloadFailureHint(task.error) }}
-                  </p>
                 </div>
               </div>
             </div>
@@ -668,6 +710,13 @@
         </AppActionButton>
       </EmptyState>
     </div>
+    <MediaPreview
+      v-model:visible="taskPreviewVisible"
+      :items="taskPreviewItems"
+      :initial-index="taskPreviewIndex"
+      :resolve-item="resolveTaskPreview"
+      :fallback-focus="restoreManagerFocus"
+    />
   </el-dialog>
 </template>
 
@@ -682,7 +731,8 @@ import {
   Delete,
   Setting,
   Loading,
-  Hide
+  Hide,
+  InfoFilled
 } from '@element-plus/icons-vue'
 import {
   Image as LucideImage,
@@ -699,7 +749,7 @@ import EmptyState from '@renderer/components/EmptyState/index.vue'
 import AppActionButton from '@renderer/components/AppActionButton/index.vue'
 import AppDialogHeader from '@renderer/components/AppDialogHeader/index.vue'
 import AppNumberStepper from '@renderer/components/AppNumberStepper/index.vue'
-import HoverVideoPreview from '@renderer/components/HoverVideoPreview/index.vue'
+import MediaPreview from '@renderer/components/MediaPreview/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { useFriendStore } from '@renderer/store/friend.store'
 import { formatTaskCount, formatTaskName } from '@renderer/utils/formatters'
@@ -727,40 +777,74 @@ const visible = computed({
 })
 
 const downloadSettingsVisible = ref(false)
+const boundedPopperOptions = {
+  modifiers: [{ name: 'preventOverflow', options: { altAxis: true, padding: 12 } }]
+}
+const managerHeaderRef = ref(null)
 const downloadSettingsTriggerRef = ref(null)
 const downloadSettingsPanelRef = ref(null)
 const shouldRestoreDownloadSettingsFocus = ref(false)
-const hoverPreviewTaskId = ref('')
-let hoverPreviewTimer = null
-
-const clearTaskVideoPreviewTimer = () => {
-  if (!hoverPreviewTimer) return
-  window.clearTimeout(hoverPreviewTimer)
-  hoverPreviewTimer = null
-}
-
-const scheduleTaskVideoPreview = (task) => {
-  clearTaskVideoPreviewTimer()
+const taskPreviewVisible = ref(false)
+const taskPreviewItems = ref([])
+const taskPreviewIndex = ref(0)
+const failureDetailsId = ref('')
+const taskThumbnailSource = (task) => {
+  const source = task.thumbnail_url || ''
+  // Legacy tasks may store the video itself as the thumbnail. Never fetch a
+  // movie as an <img>: this can consume the whole file before the user plays it.
   if (
-    task?.type !== 'video' ||
-    !task?.url ||
-    privacyStore.privacyMode ||
-    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ||
-    !window.matchMedia?.('(hover: hover) and (pointer: fine)').matches
-  ) {
-    return
+    task.type === 'video' &&
+    (source === task.url || /\.(?:mp4|m4v|mov|webm|avi|m3u8)(?:$|[?#])/i.test(source))
+  )
+    return ''
+  return source
+}
+const canPreviewTask = (task) =>
+  !privacyStore.privacyMode &&
+  ['image', 'video'].includes(task.type) &&
+  !!(task.url || (task.type === 'image' && task.thumbnail_url) || task.status === 'completed')
+
+const openTaskPreview = (task) => {
+  if (!canPreviewTask(task)) return
+  // Snapshot the page: live queue reordering must not change the media being viewed.
+  taskPreviewItems.value = currentPageTasks.value.filter(canPreviewTask).map((item) => ({
+    id: item.id,
+    type: item.type,
+    title: formatTaskName(item.name),
+    src:
+      item.status === 'completed'
+        ? item.type === 'image'
+          ? taskThumbnailSource(item)
+          : ''
+        : item.url || (item.type === 'image' ? item.thumbnail_url : ''),
+    _source: item.url || (item.type === 'image' ? item.thumbnail_url : ''),
+    thumb: taskThumbnailSource(item),
+    needsResolve: item.status === 'completed'
+  }))
+  taskPreviewIndex.value = taskPreviewItems.value.findIndex((item) => item.id === task.id)
+  taskPreviewVisible.value = true
+}
+
+const resolveTaskPreview = async (item) => {
+  // Completed media remains viewable offline and after its signed source URL expires.
+  try {
+    const preview = await window.QzoneAPI.download.getTaskPreview?.(item.id)
+    if (!taskPreviewVisible.value || !taskPreviewItems.value.includes(item)) return
+    item.src = preview?.src || item._source
+  } catch {
+    // A removed/moved local file must not prevent trying the original source.
+    item.src = item._source
   }
-
-  hoverPreviewTimer = window.setTimeout(() => {
-    hoverPreviewTimer = null
-    hoverPreviewTaskId.value = task.id
-  }, 520)
+  item.needsResolve = false
+  return item
 }
 
-const stopTaskVideoPreview = (task = null) => {
-  clearTaskVideoPreviewTimer()
-  if (!task || hoverPreviewTaskId.value === task.id) hoverPreviewTaskId.value = ''
-}
+watch(
+  () => privacyStore.privacyMode,
+  (enabled) => {
+    if (enabled) taskPreviewVisible.value = false
+  }
+)
 
 const focusableSelector =
   'input:not([disabled]), button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -771,6 +855,10 @@ const focusComponentRoot = (component) => {
     ? root
     : root?.querySelector?.(focusableSelector)
   focusTarget?.focus?.()
+}
+
+const restoreManagerFocus = () => {
+  if (visible.value) focusComponentRoot(managerHeaderRef.value)
 }
 
 const focusDownloadSettings = async () => {
@@ -829,6 +917,17 @@ const downloadTimePreference = ref('shoot')
 
 // 任务数据
 const currentPageTasks = ref([]) // 当前页的任务
+watch(
+  () => currentPageTasks.value.map((task) => `${task.id}:${task.status}`).join(','),
+  () => {
+    if (
+      !currentPageTasks.value.some(
+        (task) => task.id === failureDetailsId.value && task.status === 'error'
+      )
+    )
+      failureDetailsId.value = ''
+  }
+)
 const taskScrollbarRef = ref(null)
 const activeDownloadTasks = ref([])
 const recentBatches = ref([])
@@ -853,6 +952,7 @@ let batchReloadTimer = null
 let pageReloadTimer = null
 let pageRequestId = 0
 let pageRequestPending = false
+let pageReloadRequested = false
 const pendingPageUpdates = new Map()
 
 // 初始化下载路径
@@ -990,6 +1090,12 @@ const loadTasksPage = async ({ silent = false } = {}) => {
       if (!silent) {
         await nextTick()
         if (requestId === pageRequestId) taskScrollbarRef.value?.setScrollTop(0)
+        const list = taskScrollbarRef.value?.$el
+        const body = list?.closest('.el-dialog__body')
+        if (body?.scrollTop > 0 && window.matchMedia('(max-height: 540px)').matches) {
+          const heading = list.closest('.right-column')
+          body.scrollTop += heading.getBoundingClientRect().top - body.getBoundingClientRect().top
+        }
       }
     }
   } catch (error) {
@@ -1001,17 +1107,21 @@ const loadTasksPage = async ({ silent = false } = {}) => {
       loading.value = false
       pageRequestPending = false
       pendingPageUpdates.clear()
+      if (pageReloadRequested) schedulePageReload()
     }
   }
 }
 
 const schedulePageReload = () => {
-  if (pageReloadTimer || !visible.value) return
-  // Coalesce short-file completions; don't repeatedly remove/recreate visible rows.
+  if (!visible.value) return
+  pageReloadRequested = true
+  if (pageReloadTimer || pageRequestPending) return
+  // Keep new active tasks timely without overlapping requests or remounting rows.
   pageReloadTimer = setTimeout(() => {
     pageReloadTimer = null
+    pageReloadRequested = false
     loadTasksPage({ silent: true })
-  }, 1000)
+  }, 150)
 }
 
 const cancelPageReload = () => {
@@ -1019,6 +1129,7 @@ const cancelPageReload = () => {
   pageReloadTimer = null
   pageRequestId++ // Ignore responses belonging to a closed dialog / previous query.
   pageRequestPending = false
+  pageReloadRequested = false
   pendingPageUpdates.clear()
   loading.value = false
 }
@@ -1103,7 +1214,15 @@ const handleActiveTasksUpdate = (...args) => {
 
   if (!Array.isArray(activeTasks)) return
 
-  activeDownloadTasks.value = activeTasks.filter((task) => task.status === 'downloading')
+  const previousIds = new Set(activeDownloadTasks.value.map((task) => task.id))
+  const downloading = activeTasks.filter((task) => task.status === 'downloading')
+  if (
+    sortOrder.value === DOWNLOAD_TASK_SORT.STATUS_PRIORITY &&
+    (previousIds.size !== downloading.length ||
+      downloading.some((task) => !previousIds.has(task.id)))
+  )
+    schedulePageReload()
+  activeDownloadTasks.value = downloading
 
   updateVisibleTasks(activeTasks)
 }
@@ -1148,13 +1267,14 @@ watch(visible, async (newVisible) => {
     loadTasksPage()
     loadBatches()
   } else {
-    stopTaskVideoPreview()
+    taskPreviewVisible.value = false
+    failureDetailsId.value = ''
     clearDownloadSettingsPopover()
     if (batchReloadTimer) clearTimeout(batchReloadTimer)
     batchReloadTimer = null
     cancelPageReload()
-    await window.QzoneAPI.download.setManagerOpen(false)
     cleanupEventListeners()
+    await window.QzoneAPI.download.setManagerOpen(false)
   }
 })
 
@@ -1193,11 +1313,11 @@ onMounted(async () => {
 
 // 组件销毁时清理
 onUnmounted(async () => {
-  stopTaskVideoPreview()
+  taskPreviewVisible.value = false
   if (batchReloadTimer) clearTimeout(batchReloadTimer)
   cancelPageReload()
-  await window.QzoneAPI.download.setManagerOpen(false)
   cleanupEventListeners()
+  await window.QzoneAPI.download.setManagerOpen(false)
 })
 
 // 计算属性
@@ -1224,12 +1344,17 @@ const DOWNLOAD_STATUS_OPTIONS = [
   { value: 'error', label: '出错' },
   { value: 'cancelled', label: '已取消' }
 ]
-const visibleStatusItems = computed(() =>
+const statusItems = computed(() =>
   DOWNLOAD_STATUS_OPTIONS.map((option) => ({
     ...option,
     count: Number(taskStats.value[option.value] || 0)
-  })).filter((option) => option.count > 0)
+  }))
 )
+const speedDescription = computed(() => {
+  if (hasRunningDownloads.value) return ''
+  if (taskStats.value.paused > 0) return '已暂停 · 继续后恢复下载'
+  return '当前没有正在下载的任务'
+})
 const compactDownloadPath = computed(() => {
   if (!downloadPath.value) return '正在获取…'
   const normalized = downloadPath.value.replace(/\\/g, '/')
@@ -1249,10 +1374,11 @@ const overallProgressColor = computed(() => {
   if ((taskStats.value.downloading || 0) + (taskStats.value.waiting || 0) > 0) {
     return 'var(--theme-info)'
   }
-  if ((taskStats.value.error || 0) > 0 || (taskStats.value.paused || 0) > 0) {
+  if ((taskStats.value.error || 0) > 0) return 'var(--theme-danger)'
+  if ((taskStats.value.paused || 0) > 0) {
     return 'var(--theme-warning)'
   }
-  return 'var(--theme-brand-accent)'
+  return 'var(--theme-text-muted)'
 })
 
 // 当前页任务列表（用于模板）
@@ -1274,10 +1400,10 @@ const isIndeterminateTask = (task) =>
 
 // 工具函数
 const formatFileSize = (bytes) => {
-  if (!bytes || bytes === 0) return '0 B'
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
@@ -1721,6 +1847,7 @@ const handleTimePreferenceChange = async (preference) => {
 }
 
 .batch-summary-popover.el-popper {
+  max-width: calc(100vw - 24px);
   padding: 8px;
   border-color: var(--theme-border);
   background: var(--theme-surface-overlay);
@@ -1728,15 +1855,60 @@ const handleTimePreferenceChange = async (preference) => {
 }
 
 .download-settings-popover.el-popper {
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
   padding: 12px;
   border-color: var(--theme-border);
   background: var(--theme-surface-overlay);
   box-shadow: var(--theme-shadow-lg);
 }
 
+.download-failure-popover.el-popper {
+  max-width: calc(100vw - 24px);
+  border-color: var(--theme-danger-border);
+  color: var(--theme-text-primary);
+  background: var(--theme-surface-overlay);
+}
+
+.download-failure-detail {
+  max-height: min(240px, 50vh);
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.6;
+
+  strong {
+    color: var(--theme-danger-text);
+  }
+  p {
+    margin: 6px 0 0;
+    overflow-wrap: anywhere;
+  }
+}
+
 .download-settings-panel {
   display: grid;
   gap: 10px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+@media (max-width: 600px) {
+  .download-settings-popover .settings-panel-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-height: 540px) {
+  .download-manager-dialog.el-dialog .el-dialog__body {
+    // At high zoom, keep one reachable content scroll instead of clipping controls.
+    overflow-y: auto !important;
+    scrollbar-width: thin;
+  }
+
+  .download-manager-dialog.el-dialog .el-dialog__body > .layout-columns {
+    flex: 0 0 auto !important;
+  }
 }
 
 .settings-panel-heading {
@@ -2126,17 +2298,6 @@ const handleTimePreferenceChange = async (preference) => {
     gap: 8px;
 
     &.optimized-layout {
-      &.is-settled {
-        .progress-card {
-          flex: 0 0 154px;
-        }
-
-        .status-card {
-          min-height: 88px;
-          flex: 0 0 auto;
-        }
-      }
-
       .progress-card {
         display: flex;
         flex-direction: column;
@@ -2221,7 +2382,8 @@ const handleTimePreferenceChange = async (preference) => {
           .speed-label {
             font-size: 10px;
             color: var(--theme-text-muted);
-            line-height: 1;
+            min-height: 28px;
+            line-height: 1.4;
           }
         }
       }
@@ -2505,12 +2667,23 @@ const handleTimePreferenceChange = async (preference) => {
               gap: 8px;
 
               .task-thumbnail {
-                width: 40px;
-                height: 40px;
+                width: 44px;
+                height: 44px;
+                padding: 0;
+                border: 0;
                 border-radius: 4px;
                 overflow: hidden;
                 position: relative;
                 background: var(--theme-surface-hover);
+                cursor: zoom-in;
+
+                &:disabled {
+                  cursor: default;
+                }
+                &:focus-visible {
+                  outline: 2px solid var(--theme-focus);
+                  outline-offset: 2px;
+                }
 
                 .privacy-overlay {
                   position: absolute;
@@ -2613,7 +2786,7 @@ const handleTimePreferenceChange = async (preference) => {
                     max-width: 300px; // 设置最大宽度，防止过度占用空间
 
                     .task-name {
-                      color: var(--theme-text-inverse);
+                      color: var(--theme-text-primary);
                       font-size: 12px;
                       font-weight: 500;
                       white-space: nowrap;
@@ -2652,18 +2825,21 @@ const handleTimePreferenceChange = async (preference) => {
                         padding: 1px 3px;
                         border-radius: 2px;
                         flex-shrink: 0;
+                        min-width: 5em;
+                        box-sizing: border-box;
+                        text-align: center;
 
                         &.downloading {
                           background: var(--theme-info-soft);
-                          color: var(--theme-info);
+                          color: var(--theme-info-text);
                         }
                         &.completed {
                           background: var(--theme-success-soft);
-                          color: var(--theme-success);
+                          color: var(--theme-success-text);
                         }
                         &.paused {
                           background: var(--theme-warning-soft);
-                          color: var(--theme-warning);
+                          color: var(--theme-warning-text);
                         }
                         &.waiting {
                           background: var(--theme-surface-active);
@@ -2671,7 +2847,7 @@ const handleTimePreferenceChange = async (preference) => {
                         }
                         &.error {
                           background: var(--theme-danger-soft);
-                          color: var(--theme-danger);
+                          color: var(--theme-danger-text);
                         }
                         &.cancelled {
                           background: var(--theme-surface-active);
@@ -2684,11 +2860,15 @@ const handleTimePreferenceChange = async (preference) => {
                       display: flex;
                       gap: 2px;
                       flex-shrink: 0;
+                      min-width: 28px;
+                      height: 28px;
+                      align-items: center;
 
                       :deep(.el-button) {
                         padding: 2px 4px;
                         font-size: 12px;
-                        min-height: auto;
+                        min-width: 28px;
+                        min-height: 28px;
                       }
                     }
                   }
@@ -2704,7 +2884,11 @@ const handleTimePreferenceChange = async (preference) => {
                     color: var(--theme-info);
                     font-weight: 600;
                     text-align: right;
-                    flex-shrink: 0;
+                    flex: 0 0 auto;
+                    // In proportional fonts, % is wider than the zero measured by ch.
+                    min-width: 5ch;
+                    white-space: nowrap;
+                    overflow-wrap: normal;
                   }
 
                   .progress-bar-container {
@@ -2747,7 +2931,7 @@ const handleTimePreferenceChange = async (preference) => {
                     }
 
                     .eta-info {
-                      color: var(--theme-warning);
+                      color: var(--theme-text-muted);
                       white-space: nowrap;
                     }
 
@@ -2778,6 +2962,8 @@ const handleTimePreferenceChange = async (preference) => {
 .batch-summary-list {
   display: grid;
   gap: 6px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
 }
 
 /* Keep numeric updates from resizing progress bars or shifting adjacent controls. */
@@ -2802,14 +2988,30 @@ const handleTimePreferenceChange = async (preference) => {
       outline: 2px solid var(--theme-focus);
       outline-offset: 2px;
     }
+
+    &.is-zero .status-dot {
+      background: var(--theme-text-disabled);
+    }
   }
 
-  .task-failure-hint {
-    margin: 6px 0 0;
-    color: var(--theme-danger-text);
-    font-size: 11px;
-    line-height: 1.5;
-    overflow-wrap: anywhere;
+  .task-error-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border: 0;
+    font: inherit;
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 2px solid var(--theme-focus);
+      outline-offset: 2px;
+    }
+  }
+
+  .progress-card :deep(.el-progress-circle__path) {
+    // Element Plus hardcodes a 600ms inline transition; counts/colors must agree.
+    transition: none !important;
   }
 
   .progress-percentage,
@@ -2826,47 +3028,55 @@ const handleTimePreferenceChange = async (preference) => {
       background-color 0.2s ease,
       border-color 0.2s ease;
 
+    :deep(.el-progress-bar__inner) {
+      transition: none;
+    }
+
     .task-thumbnail {
-      flex: 0 0 40px;
+      flex: 0 0 44px;
     }
 
     .task-top-row {
-      min-height: 24px;
+      min-height: 28px;
     }
 
     .task-bottom-row {
-      .progress-percent {
-        width: 4ch;
-      }
-
       .task-details {
         overflow: hidden;
+        // Secondary labels must not change the track length from one row to another.
+        flex-basis: 65%;
         max-width: 65%;
 
         .size-info {
-          width: 19ch;
-          flex: 0 0 19ch;
+          min-width: 22ch;
+          flex: 0 0 auto;
           text-align: right;
         }
 
         .speed-info {
-          width: 10ch;
-          flex: 0 0 10ch;
+          min-width: 12ch;
+          flex: 0 0 auto;
           text-align: right;
         }
 
         .eta-info {
-          width: 9ch;
-          flex: 0 0 9ch;
+          min-width: 9ch;
+          flex: 0 0 auto;
           text-align: right;
         }
+      }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      &[data-task-status='downloading'] :deep(.el-progress-bar__inner) {
+        transition: width 140ms linear;
       }
     }
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .download-manager-dialog :deep(.el-progress-bar__inner),
+  .download-manager-dialog .progress-task :deep(.el-progress-bar__inner),
   .download-manager-dialog .progress-task {
     transition: none;
     animation: none;
@@ -2996,6 +3206,54 @@ const handleTimePreferenceChange = async (preference) => {
 
   .layout-columns .left-column.optimized-layout .status-card {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 800px) {
+  .download-manager-dialog
+    .layout-columns
+    .right-column
+    .task-detail-list.progress-bar-layout
+    .progress-task {
+    .task-bottom-row {
+      flex-wrap: wrap;
+      row-gap: 4px;
+
+      .task-details {
+        flex-basis: 100%;
+        max-width: 100%;
+      }
+    }
+  }
+}
+
+@media (max-height: 540px) {
+  .download-manager-dialog .layout-columns {
+    grid-template-rows: auto auto;
+
+    .right-column {
+      overflow: visible;
+
+      .task-detail-list {
+        flex: 0 0 auto;
+        height: auto;
+      }
+    }
+  }
+}
+
+@media (max-width: 600px) {
+  .download-manager-dialog
+    .layout-columns
+    .right-column
+    .task-detail-list.progress-bar-layout
+    .progress-task {
+    .task-time,
+    .task-bottom-row .task-details .eta-info,
+    .task-bottom-row .task-details .batch-task-info,
+    .task-bottom-row .task-details .fallback-info {
+      display: none;
+    }
   }
 }
 

@@ -146,6 +146,7 @@ try {
       finishContactBackup: (data) => ipcClient.call(IPC_DOWNLOAD.FINISH_CONTACT_BACKUP, data),
       failContactBackup: (data) => ipcClient.call(IPC_DOWNLOAD.FAIL_CONTACT_BACKUP, data),
       getTasks: (params = {}) => ipcClient.call(IPC_DOWNLOAD.GET_TASKS, params),
+      getTaskPreview: (taskId) => ipcClient.call(IPC_DOWNLOAD.GET_TASK_PREVIEW, { taskId }),
       getActiveTasks: () => ipcClient.call(IPC_DOWNLOAD.GET_ACTIVE_TASKS),
       getStats: () => ipcClient.call(IPC_DOWNLOAD.GET_STATS),
       getBatches: (limit = 30) => ipcClient.call(IPC_DOWNLOAD.GET_BATCHES, { limit }),
