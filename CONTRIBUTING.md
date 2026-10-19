@@ -19,17 +19,41 @@ pnpm dev
 
 ```bash
 pnpm lint
+pnpm test:release
 pnpm build
 ```
+
+请只勾选实际执行并通过的检查；无法验证的系统或场景请在 PR 中说明。仅修改文档时，可说明原因后省略不相关的本地检查，GitHub 必需检查仍需通过。
 
 ## Pull Request 要求
 
 - 一个 PR 只解决一个明确问题，避免夹带无关重构或格式化。
-- 使用 PR 模板说明变更目的、验证方式，以及 UI 变化的截图或录屏。
+- 使用 PR 模板说明原来的问题、复现步骤、修改后的行为、实际验证结果，以及 UI 变化的截图或录屏。
 - 修改下载、上传、登录、更新、文件路径、Electron IPC 或隐私数据处理时，请解释失败路径和安全影响。
 - 所有自动检查必须通过；维护者会结合人工审核和 AI 审核意见决定是否合并。
 - 合并采用 squash merge；合并后源分支会自动删除。
+- 版本号、CHANGELOG、tag 和正式发布由维护者通过 `release-it` 统一处理，除非 PR 目标明确包含这些变更。
 
-## 提交建议
+## PR 标题与提交
 
-建议使用简洁的前缀：`feat:`、`fix:`、`docs:`、`refactor:`、`chore:` 或 `test:`。
+PR 标题会用作最终 Squash 提交的标题，须采用 `类型(可选范围): 简短说明`，中文、英文说明均可，例如：
+
+```text
+fix(download): 修复小文件下载速度显示为零
+feat(photo): 支持按日期筛选照片
+docs: 补充 macOS 首次打开说明
+```
+
+常用类型为 `feat`、`fix`、`docs`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`；完整类型与 `.release-it.json` 保持一致。破坏性变更可以使用 `feat(api)!: 说明`。
+
+GitHub 的 `PR title` 检查会验证标题，修改标题后会自动重新检查。PR 内可以保留正常的修复和补充提交，不要求为了合并反复整理提交历史。
+
+## 审查与合并
+
+1. 外部首次贡献者可能需要维护者先点击 **Approve workflows to run**，允许 CI 运行；这与批准代码是两个步骤。
+2. 等待 `Check`、`Windows install`、`Dependency review`、`PR title` 全部通过。`Check` 包含 lint、回归测试和构建。
+3. 处理审查意见：有效的问题修复后说明对应提交；不采纳的建议说明理由，再解决讨论。AI 意见由维护者判断，不要求机械接受所有建议。
+4. 确认最新提交已经审查。CodeRabbit 若暂停或未覆盖最新提交，可评论 `@coderabbitai review` 补充增量审查；需要重新审查整个 PR 时使用 `@coderabbitai full review`。审核额度不足时，以维护者对最新代码的人工审查和实际验证为准，并注明覆盖范围。
+5. 维护者在 **Files changed → Submit review → Approve** 留下正式批准，随后使用 **Squash and merge** 合并。建议在批准评论中简要说明验证范围；新代码提交会撤销旧批准，需要重新审查。
+
+合并后的发布由维护者另行安排，合并 PR 不代表已经发版。

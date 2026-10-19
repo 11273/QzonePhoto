@@ -1,9 +1,14 @@
+language: zh-CN
+tone_instructions: 请使用简体中文，优先报告有具体触发条件的正确性、兼容性、安全和回归问题；说明实际影响，避免无关重构和纯风格建议。
 reviews:
+  profile: chill
+  request_changes_workflow: false
+  collapse_walkthrough: true
   auto_review:
     enabled: true
     drafts: false
     auto_incremental_review: true
-    auto_pause_after_reviewed_commits: 2
+    auto_pause_after_reviewed_commits: 5
     ignore_title_keywords:
       - WIP
-      - "[skip review]"
+      - '[skip review]'
