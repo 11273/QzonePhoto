@@ -145,6 +145,8 @@ export const IPC_DOWNLOAD = {
   GET_CONCURRENCY: 'download:getConcurrency',
   /** 设置并发数 */
   SET_CONCURRENCY: 'download:setConcurrency',
+  GET_CONCURRENCY_SETTINGS: 'download:getConcurrencySettings',
+  SET_AUTOMATIC_CONCURRENCY: 'download:setAutomaticConcurrency',
   /** 获取文件替换设置 */
   GET_REPLACE_EXISTING: 'download:getReplaceExisting',
   /** 设置文件替换选项 */

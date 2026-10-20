@@ -86,18 +86,23 @@
                   <div class="settings-panel-item">
                     <div class="settings-panel-copy">
                       <label for="download-concurrency">并发任务</label>
-                      <span>同时下载 1–10 个</span>
+                      <span>{{
+                        automaticConcurrency ? '兼顾速度与稳定性' : '按指定数量下载'
+                      }}</span>
                     </div>
-                    <AppNumberStepper
+                    <select
                       id="download-concurrency"
-                      v-model="tempConcurrency"
-                      :min="1"
-                      :max="10"
-                      size="small"
+                      :value="automaticConcurrency ? 'auto' : concurrency"
+                      :disabled="savingConcurrency"
                       aria-label="并发任务"
-                      class="settings-number-input"
-                      @change="handleConcurrencyChange"
-                    />
+                      class="settings-concurrency-select"
+                      @change="handleConcurrencyChange($event.target.value)"
+                    >
+                      <option v-if="supportsAutomaticConcurrency" value="auto">自动（推荐）</option>
+                      <option v-for="count in 10" :key="count" :value="count">
+                        {{ count }} 个
+                      </option>
+                    </select>
                   </div>
 
                   <div class="settings-panel-item">
@@ -748,7 +753,6 @@ import Pagination from '@renderer/components/Pagination/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import AppActionButton from '@renderer/components/AppActionButton/index.vue'
 import AppDialogHeader from '@renderer/components/AppDialogHeader/index.vue'
-import AppNumberStepper from '@renderer/components/AppNumberStepper/index.vue'
 import MediaPreview from '@renderer/components/MediaPreview/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { useFriendStore } from '@renderer/store/friend.store'
@@ -910,7 +914,9 @@ const sortOrder = ref(
 // 下载路径和设置
 const downloadPath = ref('')
 const concurrency = ref(3)
-const tempConcurrency = ref(3)
+const automaticConcurrency = ref(false)
+const savingConcurrency = ref(false)
+const supportsAutomaticConcurrency = Boolean(window.QzoneAPI.download.getConcurrencySettings)
 const replaceExisting = ref(false)
 const writeFeedDescription = ref(true)
 const downloadTimePreference = ref('shoot')
@@ -977,9 +983,14 @@ const initDownloadPath = async () => {
 // 初始化并发数
 const initConcurrency = async () => {
   try {
+    if (supportsAutomaticConcurrency) {
+      const settings = await window.QzoneAPI.download.getConcurrencySettings()
+      concurrency.value = settings.concurrency
+      automaticConcurrency.value = settings.automatic
+      return
+    }
     const currentConcurrency = await window.QzoneAPI.download.getConcurrency()
     concurrency.value = currentConcurrency || 3
-    tempConcurrency.value = currentConcurrency || 3
   } catch (error) {
     console.error('获取并发数失败:', error)
   }
@@ -1041,16 +1052,24 @@ const initTimePreference = async () => {
 
 // 处理并发数变化
 const handleConcurrencyChange = async (newConcurrency) => {
+  savingConcurrency.value = true
   try {
-    const updatedConcurrency = await window.QzoneAPI.download.setConcurrency(newConcurrency)
+    if (newConcurrency === 'auto') {
+      await window.QzoneAPI.download.setAutomaticConcurrency(true)
+      automaticConcurrency.value = true
+      ElMessage.success('已开启自动并发')
+      return
+    }
+    const updatedConcurrency = await window.QzoneAPI.download.setConcurrency(Number(newConcurrency))
     concurrency.value = updatedConcurrency
-    tempConcurrency.value = updatedConcurrency
+    automaticConcurrency.value = false
     ElMessage.success(`并发数已设置为 ${updatedConcurrency}`)
   } catch (error) {
     console.error('设置并发数失败:', error)
     ElMessage.error('设置并发数失败')
-    tempConcurrency.value = concurrency.value
-    initConcurrency()
+    await initConcurrency()
+  } finally {
+    savingConcurrency.value = false
   }
 }
 
@@ -1958,9 +1977,28 @@ const handleTimePreferenceChange = async (preference) => {
   font-weight: 600;
 }
 
-.settings-number-input {
-  width: 84px;
-  flex: 0 0 84px;
+.settings-concurrency-select {
+  width: 128px;
+  flex: 0 0 128px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--theme-border-subtle);
+  border-radius: var(--theme-radius-sm);
+  color: var(--theme-text-primary);
+  background: var(--theme-surface-soft);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--theme-info);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.6;
+  }
 }
 
 .settings-time-select {

@@ -20,6 +20,9 @@ const noop = async () => {}
 const listeners = new Set()
 const statsListeners = new Set()
 const activeListeners = new Set()
+let fixtureConcurrency = 3
+let fixtureAutomaticConcurrency = true
+let rejectConcurrencyChange = false
 const imageSource = new URL('./download-preview.svg', import.meta.url).href
 const videoSource = new URLSearchParams(location.search).get('videoSource') || ''
 const localImageSource = new URLSearchParams(location.search).get('localImageSource') || imageSource
@@ -116,6 +119,20 @@ window.QzoneAPI = {
       })),
     getDefaultPath: async () => '/isolated-layout-test',
     getConcurrency: async () => 3,
+    getConcurrencySettings: async () => ({
+      concurrency: fixtureConcurrency,
+      automatic: fixtureAutomaticConcurrency
+    }),
+    setConcurrency: async (value) => {
+      if (rejectConcurrencyChange) throw new Error('isolated settings failure')
+      fixtureConcurrency = value
+      fixtureAutomaticConcurrency = false
+      return value
+    },
+    setAutomaticConcurrency: async (value) => {
+      fixtureAutomaticConcurrency = value
+      return { concurrency: fixtureConcurrency, automatic: value }
+    },
     getReplaceExistingSetting: async () => false,
     getWriteFeedDescriptionSetting: async () => true,
     getTimePreference: async () => 'shoot',
@@ -692,6 +709,26 @@ window.exerciseDownloadSettingsViewport = async () => {
   )
   ensure(panel.scrollWidth <= panel.clientWidth + 1, 'settings fields overflow horizontally')
   ensure(document.documentElement.scrollWidth <= innerWidth + 1, 'settings widen the document')
+  const select = panel.querySelector('#download-concurrency')
+  ensure(select.value === 'auto', 'untouched concurrency must default to automatic')
+  const changeConcurrency = async (value) => {
+    select.value = value
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await nextTick()
+    await waitFor(() => !select.disabled, 'concurrency settings never finished saving')
+  }
+  await changeConcurrency('2')
+  ensure(!fixtureAutomaticConcurrency && fixtureConcurrency === 2, 'manual selection was not saved')
+  rejectConcurrencyChange = true
+  await changeConcurrency('5')
+  rejectConcurrencyChange = false
+  ensure(select.value === '2', 'failed preference change was not rolled back')
+  await changeConcurrency('auto')
+  ensure(
+    fixtureAutomaticConcurrency && select.value === 'auto',
+    'automatic selection was not saved'
+  )
+  select.focus()
   return true
 }
 

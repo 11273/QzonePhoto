@@ -39,6 +39,13 @@ import {
 import { DOWNLOAD_TASK_SORT, sortDownloadTasks } from '@shared/download-task-sort'
 import { RollingDownloadThroughput } from '@shared/download-throughput.mjs'
 import { registerLocalMedia } from '@main/utils/local-media-registry'
+import {
+  AdaptiveDownloadConcurrency,
+  AUTO_DOWNLOAD_INITIAL,
+  AUTO_DOWNLOAD_MAX,
+  isTransientDownloadError,
+  normalizeDownloadConcurrency
+} from '@shared/download-concurrency.mjs'
 // 直接定义必要的默认配置，避免使用外部常量系统
 const DEFAULT_CONCURRENCY = 3
 const DEFAULT_PAGE_SIZE = 50
@@ -80,6 +87,9 @@ export class DownloadService {
     this.cancelTokens = new Map() // 取消令牌
     this.downloadThroughput = new RollingDownloadThroughput()
     this.taskThroughputs = new Map()
+    this.concurrencyPolicy = new AdaptiveDownloadConcurrency()
+    this.transientRetries = new Map()
+    this.queueWakeTimer = null
 
     // 更新触发器
     this.updateTrigger = null
@@ -166,6 +176,7 @@ export class DownloadService {
     this.cancelTokens.clear()
     this.downloadThroughput.reset()
     this.taskThroughputs.clear()
+    this.resetConcurrencyPolicy()
   }
 
   // 获取当前用户ID
@@ -268,10 +279,11 @@ export class DownloadService {
 
   // 加载设置
   loadSettings() {
+    this.concurrency = DEFAULT_CONCURRENCY
     try {
       const savedConcurrency = this.getSetting('concurrency')
-      if (savedConcurrency) {
-        this.concurrency = Math.max(1, Math.min(10, parseInt(savedConcurrency)))
+      if (savedConcurrency !== null) {
+        this.concurrency = normalizeDownloadConcurrency(savedConcurrency)
       }
     } catch (error) {
       logger.error('加载设置失败:', error)
@@ -352,12 +364,48 @@ export class DownloadService {
   }
 
   async setConcurrency(newConcurrency) {
-    const validConcurrency = Math.max(1, Math.min(10, parseInt(newConcurrency)))
+    const validConcurrency = normalizeDownloadConcurrency(newConcurrency)
     this.concurrency = validConcurrency
+    await this.setSetting('concurrencyMode', 'manual')
     await this.setSetting('concurrency', validConcurrency)
     // if (is.dev) console.debug(`[DownloadService] 并发数已设置为 ${validConcurrency}`)
     this.processQueue()
     return validConcurrency
+  }
+
+  isAutomaticConcurrency() {
+    const mode = this.getSetting('concurrencyMode')
+    if (mode === 'auto' || mode === 'manual') return mode === 'auto'
+    // Existing explicit choices are manual; untouched installations get auto.
+    return this.getSetting('concurrency') === null
+  }
+
+  getConcurrencySettings() {
+    return { automatic: this.isAutomaticConcurrency(), concurrency: this.concurrency }
+  }
+
+  async setAutomaticConcurrency(enabled) {
+    if (typeof enabled !== 'boolean') throw new TypeError('自动并发设置必须是布尔值')
+    if (enabled && !this.isAutomaticConcurrency()) {
+      const policy = this.getConcurrencyPolicy()
+      policy.limit = AUTO_DOWNLOAD_INITIAL
+      policy.successes = 0
+      policy.epoch++
+    }
+    await this.setSetting('concurrencyMode', enabled ? 'auto' : 'manual')
+    this.processQueue()
+    return this.getConcurrencySettings()
+  }
+
+  getConcurrencyPolicy() {
+    return (this.concurrencyPolicy ||= new AdaptiveDownloadConcurrency())
+  }
+
+  resetConcurrencyPolicy() {
+    clearTimeout(this.queueWakeTimer)
+    this.queueWakeTimer = null
+    this.concurrencyPolicy = new AdaptiveDownloadConcurrency()
+    this.transientRetries?.clear()
   }
 
   // 获取/设置文件替换选项
@@ -1241,8 +1289,21 @@ export class DownloadService {
 
   // 处理下载队列 - 优化版本
   async processQueue() {
-    const availableSlots = this.concurrency - this.downloadingTasks.size
+    const policy = this.getConcurrencyPolicy()
+    const automatic = this.isAutomaticConcurrency()
+    const maximum = automatic ? AUTO_DOWNLOAD_MAX : this.concurrency
+    const availableSlots = maximum - this.downloadingTasks.size
     if (availableSlots <= 0) return
+    const delay = policy.blockedUntil - Date.now()
+    if (delay > 0) {
+      if (!this.queueWakeTimer) {
+        this.queueWakeTimer = setTimeout(() => {
+          this.queueWakeTimer = null
+          this.processQueue()
+        }, delay)
+      }
+      return
+    }
 
     // 从内存中获取等待中的任务
     const waitingTasks = Array.from(this.activeTasks.values())
@@ -1257,14 +1318,18 @@ export class DownloadService {
         if (a.priority !== b.priority) return a.priority - b.priority
         return a.create_time - b.create_time
       })
-      .slice(0, availableSlots)
 
     // 如果内存中的等待任务不够，从数据库加载更多
     if (
-      waitingTasks.length < availableSlots &&
+      (waitingTasks.length < availableSlots ||
+        (automatic && !waitingTasks.some((task) => task.type === 'image'))) &&
       this.activeTasks.size < this.maxActiveTasksInMemory
     ) {
       try {
+        const preferImages =
+          automatic &&
+          waitingTasks.some((task) => task.type === 'video') &&
+          !waitingTasks.some((task) => task.type === 'image')
         const additionalTasks = this.db.data.tasks
           .filter(
             (task) =>
@@ -1273,10 +1338,14 @@ export class DownloadService {
               !this.activeTasks.has(task.id)
           )
           .sort((a, b) => {
+            // Only prefetch eligible image slots when memory is video-heavy.
+            if (preferImages && (a.type === 'image') !== (b.type === 'image')) {
+              return a.type === 'image' ? -1 : 1
+            }
             if (a.priority !== b.priority) return a.priority - b.priority
             return a.create_time - b.create_time
           })
-          .slice(0, availableSlots - waitingTasks.length)
+          .slice(0, Math.min(availableSlots, this.maxActiveTasksInMemory - this.activeTasks.size))
 
         // 添加到内存
         additionalTasks.forEach((task) => {
@@ -1289,14 +1358,35 @@ export class DownloadService {
     }
 
     // 执行下载
+    const hasImages = waitingTasks.some((task) => task.type === 'image')
+    let videos = [...this.downloadingTasks].filter(
+      (id) => this.activeTasks.get(id)?.type === 'video'
+    ).length
     for (const task of waitingTasks) {
-      if (this.downloadingTasks.size >= this.concurrency) break
+      const limit = automatic
+        ? Math.min(
+            AUTO_DOWNLOAD_MAX,
+            Math.max(
+              policy.limit,
+              hasImages && videos > 0 && policy.limit >= AUTO_DOWNLOAD_INITIAL
+                ? videos + AUTO_DOWNLOAD_INITIAL
+                : 0
+            )
+          )
+        : this.concurrency
+      if (this.downloadingTasks.size >= limit) break
+      if (automatic && task.type === 'video' && videos >= Math.min(policy.limit, 3)) continue
       this.executeDownload(task)
+      if (task.type === 'video') videos++
+    }
+    if (this.downloadingTasks.size === 0 && waitingTasks.length === 0) {
+      this.resetConcurrencyPolicy()
     }
   }
 
   // 执行下载 - 优化版本
   async executeDownload(task) {
+    this.transientRetries ||= new Map()
     this.downloadingTasks.add(task.id)
     task.status = TASK_STATUS.DOWNLOADING
     task.speed = 0
@@ -1349,6 +1439,7 @@ export class DownloadService {
 
             // 完成的任务从内存中移除
             this.activeTasks.delete(task.id)
+            this.transientRetries.delete(task.id)
             await this.updateTaskInDB(task)
             this.triggerUpdate([task.id])
             return
@@ -1378,6 +1469,7 @@ export class DownloadService {
 
         // 完成的任务从内存中移除（节省内存）
         this.activeTasks.delete(task.id)
+        this.transientRetries.delete(task.id)
       }
     } catch (error) {
       if (
@@ -1387,11 +1479,24 @@ export class DownloadService {
         // The cancelled stream must not turn a user-initiated pause into "cancelled".
       } else if (axios.isCancel(error)) {
         task.status = TASK_STATUS.CANCELLED
+      } else if (
+        task.type === 'image' &&
+        isTransientDownloadError(error) &&
+        (this.transientRetries.get(task.id) || 0) < 2
+      ) {
+        this.transientRetries.set(task.id, (this.transientRetries.get(task.id) || 0) + 1)
+        task.status = TASK_STATUS.WAITING
+        task.error = null
+        task.downloaded = 0
+        task.progress = 0
       } else {
         task.status = TASK_STATUS.ERROR
         task.error = error.message
       }
       task.speed = 0
+      if ([TASK_STATUS.ERROR, TASK_STATUS.CANCELLED].includes(task.status)) {
+        this.transientRetries.delete(task.id)
+      }
     } finally {
       this.downloadingTasks.delete(task.id)
       this.cancelTokens.delete(task.id)
@@ -1415,7 +1520,9 @@ export class DownloadService {
       candidateCount: candidates.length,
       httpStatus: status,
       networkError:
-        Boolean(error?.request && !error?.response) || error?.code === 'INVALID_MEDIA_CONTENT',
+        (isTransientDownloadError(error) && !error?.response) ||
+        Boolean(error?.request && !error?.response) ||
+        error?.code === 'INVALID_MEDIA_CONTENT',
       cancelled: axios.isCancel(error)
     })
   }
@@ -1438,6 +1545,9 @@ export class DownloadService {
       this.taskThroughputs.get(task.id)?.reset()
 
       try {
+        const policy = this.getConcurrencyPolicy()
+        const epoch = policy.epoch
+        const startedAt = Date.now()
         const responseMeta = await this.downloadFile(task, filePath, cancelToken)
         const media = await readMediaFileSignature(filePath, responseMeta.contentType)
         if (!isExpectedMediaKind(task.type, media)) {
@@ -1454,6 +1564,12 @@ export class DownloadService {
         if (index > 0 && !task.download_fallback_reason) {
           task.download_fallback_reason = '原图不可用，已自动使用可下载版本'
         }
+        policy.observeSuccess({
+          type: task.type,
+          bytes: task.downloaded,
+          elapsedMs: Date.now() - startedAt,
+          epoch
+        })
         return { ...responseMeta, media }
       } catch (error) {
         if (!this.shouldTryDownloadFallback(error, task, index, candidates)) throw error
@@ -1464,8 +1580,11 @@ export class DownloadService {
         task.download_fallback_reason = status
           ? `${sourceLabel}不可用（HTTP ${status}），已自动切换`
           : `${sourceLabel}连接失败，已自动切换`
+        if (isTransientDownloadError(error)) task.download_candidate_index = index + 1
         await this.updateTaskInDB(task)
         this.triggerUpdate([task.id])
+        // A fallback must observe the same backoff as the rest of the queue.
+        if (isTransientDownloadError(error)) throw error
       }
     }
   }
@@ -1497,6 +1616,8 @@ export class DownloadService {
 
   // 下载文件 - 保持原有逻辑
   async downloadFile(task, filePath, cancelToken) {
+    const policy = this.getConcurrencyPolicy()
+    let response = null
     let writer = null
     let lastProgressUpdate = Date.now()
 
@@ -1518,11 +1639,13 @@ export class DownloadService {
         // ignore: 服务未就绪或缺少 key 时不附加 cookie
       }
 
-      const response = await axios({
+      response = await axios({
         method: 'get',
         url: task.url,
         responseType: 'stream',
         cancelToken: cancelToken.token,
+        // Axios' socket/response timeout, not a total-duration cap for large videos.
+        ...(task.type === 'image' && { timeout: this.imageRequestTimeout || 30000 }),
         headers
       })
 
@@ -1567,6 +1690,9 @@ export class DownloadService {
       })
       return { contentType }
     } catch (error) {
+      policy.observeFailure(error)
+      response?.data?.destroy()
+      error?.response?.data?.destroy?.()
       writer?.destroy()
       await fs.promises.unlink(filePath).catch(() => {})
       throw error
@@ -1800,6 +1926,7 @@ export class DownloadService {
       this.activeTasks.delete(taskId)
       this.downloadingTasks.delete(taskId)
       this.cancelTokens.delete(taskId)
+      this.transientRetries?.delete(taskId)
 
       // 从数据库中删除
       const index = this.db.data.tasks.findIndex((t) => t.id === taskId)
@@ -1814,6 +1941,8 @@ export class DownloadService {
 
   // 批量操作
   async cancelAll() {
+    clearTimeout(this.queueWakeTimer)
+    this.queueWakeTimer = null
     const changedTaskIds = []
 
     for (const [taskId, task] of this.activeTasks) {
@@ -1855,6 +1984,7 @@ export class DownloadService {
     this.cancelTokens.clear()
     this.downloadThroughput.reset()
     this.taskThroughputs.clear()
+    this.resetConcurrencyPolicy()
 
     // 触发事件推送，传递所有被删除的任务ID
     this.triggerUpdate(allIds.map((id) => ({ id, deleted: true })))
@@ -2094,6 +2224,7 @@ export class DownloadService {
   // 清理资源
   async destroy() {
     await this.cancelAll()
+    this.resetConcurrencyPolicy()
     this.updateTrigger = null
 
     // 确保所有数据已保存

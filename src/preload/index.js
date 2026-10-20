@@ -174,6 +174,9 @@ try {
       // 设置管理
       getConcurrency: () => ipcClient.call(IPC_DOWNLOAD.GET_CONCURRENCY),
       setConcurrency: (concurrency) => ipcClient.call(IPC_DOWNLOAD.SET_CONCURRENCY, concurrency),
+      getConcurrencySettings: () => ipcClient.call(IPC_DOWNLOAD.GET_CONCURRENCY_SETTINGS),
+      setAutomaticConcurrency: (enabled) =>
+        ipcClient.call(IPC_DOWNLOAD.SET_AUTOMATIC_CONCURRENCY, enabled),
       getReplaceExistingSetting: () => ipcClient.call(IPC_DOWNLOAD.GET_REPLACE_EXISTING),
       setReplaceExistingSetting: (replaceExisting) =>
         ipcClient.call(IPC_DOWNLOAD.SET_REPLACE_EXISTING, replaceExisting),

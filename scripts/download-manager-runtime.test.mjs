@@ -65,7 +65,7 @@ const { DownloadService, DownloadEventPusher, resolveLocalMedia } = module.expor
 const createService = async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'qzone-download-runtime-'))
   const service = Object.assign(Object.create(DownloadService.prototype), {
-    db: { data: { tasks: [], settings: {}, batches: [] }, write: async () => {} },
+    db: { data: { tasks: [], settings: { concurrency: 4 }, batches: [] }, write: async () => {} },
     dbInitialized: true,
     downloadPath: directory,
     activeTasks: new Map(),
@@ -82,6 +82,7 @@ const createService = async (t) => {
     for (const token of service.cancelTokens.values()) token.cancel('test cleanup')
     await delay(150)
     clearTimeout(service._writeTimeout)
+    clearTimeout(service.queueWakeTimer)
     await fs.rm(directory, { recursive: true, force: true })
   })
   return service
@@ -148,7 +149,11 @@ const startServer = async (t) => {
         return
       }
       const nextOffset = Math.min(offset + 4096, video.length)
-      res.write(video.subarray(offset, nextOffset))
+      const chunk = video.subarray(offset, nextOffset)
+      if (nextOffset === video.length) {
+        clearInterval(timer)
+        res.end(chunk)
+      } else res.write(chunk)
       offset = nextOffset
     }, 40)
     res.on('close', () => {
@@ -163,6 +168,284 @@ const startServer = async (t) => {
   })
   return { url: `http://127.0.0.1:${server.address().port}`, peakVideos: () => peakVideos }
 }
+
+const serveDownloadScenario = async (t, handler) => {
+  const server = http.createServer(handler)
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => {
+    server.closeAllConnections()
+    server.close()
+  })
+  return `http://127.0.0.1:${server.address().port}`
+}
+
+const imageSample = Buffer.from([0xff, 0xd8, 0xff, 0xd9])
+const sendImageSample = (res) =>
+  res
+    .writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': imageSample.length })
+    .end(imageSample)
+
+test('real HTTP benchmark: automatic multi-image downloads outperform fixed three without exceeding six', async (t) => {
+  const payload = await fs.readFile(
+    new URL('../website/assets/screenshots/download.png', import.meta.url)
+  )
+  let requests = 0
+  let active = 0
+  let peak = 0
+  const url = await serveDownloadScenario(t, (_req, res) => {
+    requests++
+    peak = Math.max(peak, ++active)
+    res.on('close', () => active--)
+    setTimeout(
+      () =>
+        res
+          .writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': payload.length })
+          .end(payload),
+      65
+    )
+  })
+  const run = async (automatic) => {
+    const service = await createService(t)
+    service.concurrency = 3
+    service.db.data.settings = { concurrency: 3, concurrencyMode: automatic ? 'auto' : 'manual' }
+    for (let i = 0; i < 90; i++) {
+      const task = makeTask(service, `${automatic ? 'auto' : 'fixed'}-${i}`, url)
+      task.filename = `${task.id}.png`
+    }
+    requests = 0
+    peak = 0
+    const started = performance.now()
+    service.processQueue()
+    await waitUntil(() => service.getTaskStats().completed === 90, 'benchmark did not finish')
+    const elapsed = performance.now() - started
+    assert.equal(requests, 90, 'each image must use exactly one request')
+    assert.equal(service.getTaskStats().error, 0)
+    assert.ok(peak <= (automatic ? 6 : 3))
+    if (automatic) assert.equal(peak, 6, 'healthy images should actually reach six slots')
+    for (const task of service.db.data.tasks) {
+      assert.deepEqual(await fs.readFile(path.join(task.directory, task.filename)), payload)
+    }
+    return elapsed
+  }
+  const fixed = await run(false)
+  const automatic = await run(true)
+  t.diagnostic(
+    `90 real HTTP image downloads: fixed 3 = ${Math.round(fixed)}ms; automatic = ${Math.round(automatic)}ms`
+  )
+  assert.ok(
+    automatic < fixed * 0.85,
+    'automatic mode should materially reduce latency-bound batch time'
+  )
+})
+
+test('existing manual concurrency remains manual, settings persist, and invalid input cannot stall the queue', async (t) => {
+  const service = await createService(t)
+  service.db.data.settings = { concurrency: 2 }
+  service.loadSettings()
+  assert.deepEqual(service.getConcurrencySettings(), { automatic: false, concurrency: 2 })
+  await assert.rejects(service.setConcurrency('invalid'), TypeError)
+  assert.equal(service.concurrency, 2)
+  await service.setAutomaticConcurrency(true)
+  assert.equal(service.isAutomaticConcurrency(), true)
+  await service.setConcurrency(1)
+  service.loadSettings()
+  assert.deepEqual(service.getConcurrencySettings(), { automatic: false, concurrency: 1 })
+  service.db.data.settings = {}
+  service.loadSettings()
+  assert.deepEqual(service.getConcurrencySettings(), { automatic: true, concurrency: 3 })
+})
+
+test('large video-heavy queues prefetch eligible images without exceeding the memory cap', async (t) => {
+  const service = await createService(t)
+  service.db.data.settings = { concurrencyMode: 'auto' }
+  service.maxActiveTasksInMemory = 8
+  for (let i = 0; i < 40; i++) {
+    makeTask(service, `memory-${i}`, 'http://127.0.0.1/unused', i < 30 ? 'video' : 'image')
+  }
+  for (const id of [...service.activeTasks.keys()].slice(3)) service.activeTasks.delete(id)
+  service.executeDownload = (task) => {
+    service.downloadingTasks.add(task.id)
+    task.status = 'downloading'
+  }
+  await service.processQueue()
+  assert.ok(service.activeTasks.size <= 8)
+  const running = [...service.activeTasks.values()].filter((task) => task.status === 'downloading')
+  assert.equal(running.filter((task) => task.type === 'image').length, 3)
+  assert.equal(running.filter((task) => task.type === 'video').length, 3)
+})
+
+test('lowering manual concurrency during an automatic batch does not cancel or duplicate transfers', async (t) => {
+  const service = await createService(t)
+  service.db.data.settings = { concurrencyMode: 'auto' }
+  const counts = new Map()
+  let enforceManualLimit = false
+  const violations = []
+  const executeDownload = service.executeDownload
+  service.executeDownload = function (task) {
+    // Observe admission, not HTTP arrival: requests admitted before the setting
+    // changed can reach the server afterwards and must finish without cancelling.
+    if (enforceManualLimit && this.downloadingTasks.size >= 1) {
+      violations.push(this.downloadingTasks.size + 1)
+    }
+    return executeDownload.call(this, task)
+  }
+  const url = await serveDownloadScenario(t, (req, res) => {
+    counts.set(req.url, (counts.get(req.url) || 0) + 1)
+    setTimeout(() => sendImageSample(res), 60)
+  })
+  for (let i = 0; i < 60; i++) makeTask(service, `change-${i}`, `${url}/${i}`)
+  service.processQueue()
+  await waitUntil(
+    () => service.getConcurrencyPolicy().limit >= 5,
+    'automatic concurrency never ramped'
+  )
+  await service.setConcurrency(1)
+  // Already-started transfers may finish naturally. Only new ones are limited.
+  enforceManualLimit = true
+  await waitUntil(() => service.getTaskStats().completed === 60, 'manual limit stalled the batch')
+  assert.deepEqual(violations, [])
+  assert.ok([...counts.values()].every((count) => count === 1))
+  assert.equal(service.isAutomaticConcurrency(), false)
+})
+
+test('real mixed queue: long videos leave image slots, and video-only downloads stay capped at three', async (t) => {
+  const service = await createService(t)
+  service.db.data.settings = { concurrencyMode: 'auto' }
+  const { url, peakVideos } = await startServer(t)
+  for (let i = 0; i < 5; i++) makeTask(service, `mixed-video-${i}`, `${url}/video`, 'video')
+  for (let i = 0; i < 18; i++) makeTask(service, `mixed-image-${i}`, `${url}/image`)
+  service.processQueue()
+  await waitUntil(
+    () => service.getTaskStats().completed >= 18,
+    'images are blocked behind the videos'
+  )
+  assert.ok(
+    service.db.data.tasks
+      .filter((task) => task.type === 'image')
+      .every((task) => task.status === 'completed')
+  )
+  assert.ok(service.getTaskStats().downloading > 0)
+  assert.ok(peakVideos() <= 3)
+  await waitUntil(() => service.getTaskStats().completed === 23, 'mixed queue did not finish')
+  assert.ok(peakVideos() <= 3)
+})
+
+test('real 429: the queue honors Retry-After, reduces pressure, and retries the affected image once', async (t) => {
+  const service = await createService(t)
+  service.db.data.settings = { concurrencyMode: 'auto' }
+  const starts = []
+  const counts = new Map()
+  let limitedAt = 0
+  const url = await serveDownloadScenario(t, (req, res) => {
+    starts.push(Date.now())
+    counts.set(req.url, (counts.get(req.url) || 0) + 1)
+    if (req.url === '/0' && counts.get(req.url) === 1) {
+      limitedAt = Date.now()
+      res.writeHead(429, { 'Retry-After': '1' }).end()
+    } else setTimeout(() => sendImageSample(res), 25)
+  })
+  for (let i = 0; i < 9; i++) makeTask(service, `rate-${i}`, `${url}/${i}`)
+  service.processQueue()
+  await waitUntil(
+    () => service.getTaskStats().completed === 9,
+    'rate-limited queue did not recover'
+  )
+  assert.equal(counts.get('/0'), 2)
+  assert.equal(starts.length, 10)
+  assert.ok(
+    starts.slice(3).every((time) => time >= limitedAt + 950),
+    'new requests bypassed backoff'
+  )
+  assert.equal(service.getTaskStats().error, 0)
+})
+
+test('persistent 503 is bounded to two retries; 403 and 404 are never blindly retried', async (t) => {
+  const service = await createService(t)
+  const counts = new Map()
+  const url = await serveDownloadScenario(t, (req, res) => {
+    counts.set(req.url, (counts.get(req.url) || 0) + 1)
+    res.writeHead(Number(req.url.slice(1))).end()
+  })
+  for (const status of [503, 403, 404]) makeTask(service, `status-${status}`, `${url}/${status}`)
+  service.processQueue()
+  await waitUntil(() => service.getTaskStats().error === 3, 'permanent errors did not settle')
+  assert.equal(counts.get('/503'), 3)
+  assert.equal(counts.get('/403'), 1)
+  assert.equal(counts.get('/404'), 1)
+  assert.equal(service.getTaskStats().waiting, 0)
+})
+
+test('real disconnect: partial files are discarded and fallback waits for backoff before saving intact bytes', async (t) => {
+  const service = await createService(t)
+  let failedAt = 0
+  let recoveredAt = 0
+  const url = await serveDownloadScenario(t, (req, res) => {
+    if (req.url === '/reset') {
+      failedAt = Date.now()
+      res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': 5000 })
+      res.write(imageSample)
+      setTimeout(() => res.destroy(), 15)
+    } else {
+      recoveredAt = Date.now()
+      sendImageSample(res)
+    }
+  })
+  const task = makeTask(service, 'disconnect', `${url}/reset`)
+  task.download_candidates = [{ url: `${url}/reset` }, { url: `${url}/good` }]
+  service.processQueue()
+  await waitUntil(() => task.status === 'completed', 'disconnected image did not recover')
+  assert.ok(recoveredAt >= failedAt + 950)
+  assert.equal(task.download_candidate_index, 1)
+  assert.deepEqual(await fs.readFile(path.join(task.directory, task.filename)), imageSample)
+})
+
+test('a response that never starts times out and recovers, while an active long stream is not cut off', async (t) => {
+  const service = await createService(t)
+  service.imageRequestTimeout = 120
+  let calls = 0
+  const payload = Buffer.concat([imageSample, Buffer.alloc(4096)])
+  const url = await serveDownloadScenario(t, (_req, res) => {
+    if (++calls === 1) return
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': payload.length })
+    let offset = 0
+    const timer = setInterval(() => {
+      if (offset >= payload.length) {
+        clearInterval(timer)
+        res.end()
+      } else {
+        res.write(payload.subarray(offset, offset + 512))
+        offset += 512
+      }
+    }, 30)
+    res.on('close', () => clearInterval(timer))
+  })
+  const task = makeTask(service, 'timeout', url)
+  service.processQueue()
+  await waitUntil(() => task.status === 'completed', 'timed-out request did not recover')
+  assert.equal(calls, 2)
+  assert.deepEqual(await fs.readFile(path.join(task.directory, task.filename)), payload)
+})
+
+test('pausing or clearing during backoff cannot restart a task behind the user’s back', async (t) => {
+  for (const operation of ['pause', 'clear']) {
+    const service = await createService(t)
+    let calls = 0
+    const url = await serveDownloadScenario(t, (_req, res) => {
+      calls++
+      res.writeHead(429, { 'Retry-After': '1' }).end()
+    })
+    const task = makeTask(service, `stop-${operation}`, url)
+    service.processQueue()
+    await waitUntil(() => service.transientRetries?.get(task.id) === 1, 'retry was not scheduled')
+    if (operation === 'pause') await service.pauseTask(task.id)
+    else await service.clearTasks()
+    await delay(1200)
+    assert.equal(calls, 1)
+    assert.equal(service.downloadingTasks.size, 0)
+    if (operation === 'pause') assert.equal(task.status, 'paused')
+    else assert.equal(service.db.data.tasks.length, 0)
+  }
+})
 
 test('real stream: a long video remains first while three slots cycle short images; progress is monotonic', async (t) => {
   const service = await createService(t)

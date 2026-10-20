@@ -3,6 +3,27 @@ import test from 'node:test'
 
 import { createDemoQzoneAPI } from '../src/preload/demo-api.js'
 
+test('demo automatic/manual download settings remain local and never call the real client', async () => {
+  const forbidden = () => assert.fail('demo settings must not modify real download preferences')
+  const api = createDemoQzoneAPI({
+    download: {
+      getConcurrencySettings: forbidden,
+      setConcurrency: forbidden,
+      setAutomaticConcurrency: forbidden
+    }
+  })
+  assert.deepEqual(await api.download.getConcurrencySettings(), { concurrency: 3, automatic: true })
+  assert.equal(await api.download.setConcurrency(2), 2)
+  assert.deepEqual(await api.download.getConcurrencySettings(), {
+    concurrency: 2,
+    automatic: false
+  })
+  assert.deepEqual(await api.download.setAutomaticConcurrency(true), {
+    concurrency: 2,
+    automatic: true
+  })
+})
+
 test('demo download pages use the same response, sorting and filtering contract as IPC', async () => {
   const api = createDemoQzoneAPI({})
   const page = await api.download.getTasks({ page: 1, pageSize: 2 })

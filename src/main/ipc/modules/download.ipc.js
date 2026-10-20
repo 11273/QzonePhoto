@@ -150,6 +150,14 @@ export function createDownloadHandlers(service) {
       return downloadService.setConcurrency(context.payload)
     },
 
+    [IPC_DOWNLOAD.GET_CONCURRENCY_SETTINGS]: async () => {
+      return downloadService.getConcurrencySettings()
+    },
+
+    [IPC_DOWNLOAD.SET_AUTOMATIC_CONCURRENCY]: async (event, context) => {
+      return downloadService.setAutomaticConcurrency(context.payload)
+    },
+
     // 获取文件替换设置
     [IPC_DOWNLOAD.GET_REPLACE_EXISTING]: async () => {
       return downloadService.getReplaceExistingSetting()

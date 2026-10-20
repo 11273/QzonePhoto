@@ -1,4 +1,23 @@
 import { sortDownloadTasks } from '../shared/download-task-sort.js'
+import { normalizeDownloadConcurrency } from '../shared/download-concurrency.mjs'
+
+const createDemoConcurrencySettings = () => {
+  let concurrency = 3
+  let automatic = true
+  return {
+    getConcurrency: async () => concurrency,
+    getConcurrencySettings: async () => ({ concurrency, automatic }),
+    setAutomaticConcurrency: async (enabled) => {
+      automatic = Boolean(enabled)
+      return { concurrency, automatic }
+    },
+    setConcurrency: async (value) => {
+      concurrency = normalizeDownloadConcurrency(value)
+      automatic = false
+      return concurrency
+    }
+  }
+}
 
 const DEMO_ORIGIN = 'http://127.0.0.1:4173'
 const asset = (name) => `${DEMO_ORIGIN}/assets/demo/${name}.png`
@@ -418,7 +437,7 @@ export const createDemoQzoneAPI = (realApi) => ({
       active: 2
     }),
     getDefaultPath: async () => '/Users/demo/Pictures/企鹅相册',
-    getConcurrency: async () => 3,
+    ...createDemoConcurrencySettings(),
     getReplaceExistingSetting: async () => false,
     getTimePreference: async () => 'shoot',
     setTimePreference: async (preference) => (preference === 'upload' ? 'upload' : 'shoot'),
