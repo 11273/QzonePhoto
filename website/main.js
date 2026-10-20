@@ -339,6 +339,21 @@
   }
 
   function setupFaqTracking() {
+    const openLinkedFaq = () => {
+      let id
+      try {
+        id = decodeURIComponent(location.hash.slice(1))
+      } catch {
+        return
+      }
+      if (!id) return
+      const item = document.getElementById(id)?.closest('details[data-faq]')
+      if (!item) return
+      item.open = true
+      requestAnimationFrame(() => item.scrollIntoView({ block: 'start' }))
+    }
+    openLinkedFaq()
+    window.addEventListener('hashchange', openLinkedFaq)
     document.querySelectorAll('details[data-faq]').forEach((item) => {
       item.addEventListener('toggle', () => {
         if (!item.open) return

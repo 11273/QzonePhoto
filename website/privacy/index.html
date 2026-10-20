@@ -143,22 +143,52 @@
           </p>
         </details>
         <details id="macos-first-open" data-faq="macos-warning">
-          <summary>Mac 第一次打不开怎么办？</summary>
+          <summary>Mac 怎么安装、更新？第一次打不开怎么办？</summary>
           <div class="faq-answer">
             <p>
               当前开源版本尚未完成 Apple 开发者签名与公证。请只在确认来自 qzonephoto.getgit.one
-              后，按下面方式打开：
+              或本项目 GitHub Release、且信任此来源后，按下面方式打开：
             </p>
             <ol class="help-steps">
-              <li>打开下载的 DMG，把“企鹅相册”拖进“应用程序”。</li>
               <li>
-                在“应用程序”中按住 Control 点按（或右键点按）“企鹅相册”，选择“打开”，再确认“打开”。
+                <strong>选对版本。</strong>在“ → 关于本机”查看芯片：Apple 芯片选 arm64，Intel 选
+                x64。
               </li>
               <li>
-                如果仍被系统拦截，前往“系统设置 → 隐私与安全性”，在安全性提示中选择“仍要打开”。
+                <strong>拖入应用程序。</strong>先退出正在运行的旧版，打开下载的
+                DMG，把“企鹅相册”拖到“应用程序”；更新时选择替换。完成后可推出磁盘映像，不要直接在
+                DMG 内运行。
+              </li>
+              <li>
+                <strong>先尝试启动一次。</strong
+                >在“应用程序”中双击“企鹅相册”。如果提示无法验证开发者或 Apple
+                无法检查恶意软件，先关闭提示。
+              </li>
+              <li>
+                <strong>按需确认打开。</strong>进入“系统设置 →
+                隐私与安全性”，向下找到“企鹅相册”的拦截提示，选择“仍要打开”，按系统提示确认。之后从“应用程序”正常启动。
               </li>
             </ol>
-            <p>首次安装或替换应用后通常只需操作一次，不需要在终端输入命令。</p>
+            <p>
+              macOS 15 及以上不能再通过右键放行；较早系统可以尝试按住 Control
+              点按（或右键点按）应用并选择“打开”。授权后通常可以直接双击，替换版本后可能需要重新确认。不需要在终端输入命令。
+            </p>
+            <p>
+              <strong>没有“仍要打开”？</strong
+              >请先尝试启动一次，再查看安全性设置；如果电脑由公司或学校管理，请联系管理员。
+            </p>
+            <p>
+              <strong>提示“已损坏”或“将损坏电脑”？</strong
+              >请停止打开，从官方来源重新下载安装包并反馈。不要关闭系统安全保护，也不要忽略恶意软件警告。
+            </p>
+            <p>
+              <a
+                href="https://support.apple.com/zh-cn/102445"
+                target="_blank"
+                rel="noopener noreferrer"
+                >查看 Apple 官方安全说明</a
+              >
+            </p>
           </div>
         </details>
         <details data-faq="logs">
@@ -246,7 +276,7 @@
                 "name": "Mac 第一次打不开怎么办？",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "请确认安装包来自 qzonephoto.getgit.one。把应用拖进应用程序后，按住 Control 点按或右键点按应用，选择打开并再次确认。如果仍被系统拦截，前往系统设置的隐私与安全性，在安全性提示中选择仍要打开。首次安装或替换应用后通常只需操作一次，不需要在终端输入命令。"
+                  "text": "确认安装包来自官网或项目 GitHub Release 后，退出旧版并把应用拖进应用程序，更新时选择替换。首次双击被拦截时，进入系统设置的隐私与安全性，向下找到本应用并选择仍要打开。macOS 15 及以上不能用右键放行；较早系统可尝试 Control 点按打开。不需要终端命令。若提示已损坏或将损坏电脑，请停止打开、重新下载并反馈。"
                 }
               }
             ]
@@ -255,6 +285,6 @@
       }
     </script>
     <script src="../download-core.js?v=20260725-motion" defer></script>
-    <script src="../main.js?v=20261008-release-safety" defer></script>
+    <script src="../main.js?v=20261020-install-help" defer></script>
   </body>
 </html>

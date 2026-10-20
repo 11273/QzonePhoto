@@ -49,6 +49,17 @@ test('macOS first-open guidance is present at every user-facing release entry', 
     assert.match(content, /Control/, `${name} must explain Control/right-click opening`)
     assert.match(content, /隐私与安全性/, `${name} must explain the system setting fallback`)
     assert.match(content, /仍要打开/, `${name} must name the macOS action`)
+    assert.match(
+      content,
+      /macOS 15/,
+      `${name} must distinguish modern Gatekeeper from older right-click instructions`
+    )
+    assert.match(
+      content,
+      /已损坏/,
+      `${name} must not conflate damage warnings with first-open approval`
+    )
+    assert.match(content, /替换/, `${name} must explain manual upgrades`)
   }
 
   const combined = [readme, home, help, llms, releaseNotesBuilder].join('\n')

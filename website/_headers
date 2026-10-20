@@ -1,5 +1,5 @@
 /*
-  Content-Security-Policy: default-src 'self'; connect-src 'self' https://qzone.getgit.one https://dl.qzonephoto.getgit.one https://cloudflareinsights.com; img-src 'self' data: https://qzonephoto.getgit.one; script-src 'self' https://static.cloudflareinsights.com 'sha256-9Z3s9Ge6x5eC7IkS2RISIA/0qPQWUGzRsCmam0ZZucs=' 'sha256-Ode4kKgPRq6AC31jhwBjugeXabqB/hfWu+v37E7km1Q=' 'sha256-gnB0XWBdwWtIVSCY5edR2m9FXN/yymHcgX5IkjvVbcc='; style-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https://qzone.getgit.one https://dl.qzonephoto.getgit.one https://cloudflareinsights.com; img-src 'self' data: https://qzonephoto.getgit.one; script-src 'self' https://static.cloudflareinsights.com 'sha256-9Z3s9Ge6x5eC7IkS2RISIA/0qPQWUGzRsCmam0ZZucs=' 'sha256-K6XLyWIpUfaPoe1s1JIqPMqTCzChT9F+OXgrn5FW2IM=' 'sha256-gnB0XWBdwWtIVSCY5edR2m9FXN/yymHcgX5IkjvVbcc='; style-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
   Referrer-Policy: strict-origin-when-cross-origin
