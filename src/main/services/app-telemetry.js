@@ -6,6 +6,7 @@ import axios from 'axios'
 import { app } from 'electron'
 import { getAppApiConfig } from '@main/config/app-api'
 import logger from '@main/core/logger'
+import { readDiagnosticLogTail } from '../utils/bounded-log.mjs'
 import {
   classifyTelemetryError,
   sanitizeDiagnosticLog,
@@ -433,7 +434,7 @@ async function readLocalDiagnosticLog(options = {}) {
   const extraLines = Array.isArray(options.extraLines) ? options.extraLines : []
   let content = ''
   try {
-    content = await fs.readFile(logPath, 'utf8')
+    content = await readDiagnosticLogTail(logPath)
   } catch (error) {
     logger.debug(`[Telemetry] 本地日志读取失败: ${error?.message || error}`)
   }

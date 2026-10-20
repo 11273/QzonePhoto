@@ -1,6 +1,6 @@
-import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
+import { createBoundedLogWriter } from '../utils/bounded-log.mjs'
 
 /*
 TODO
@@ -12,6 +12,7 @@ TODO
 const SENSITIVE_KEYS = ['password', 'token', 'creditCard']
 const REDACTED_TEXT = '​**​*REDACTED​**​*'
 const DEV_LOG_PATH = path.join(app.getPath('userData'), 'qzone-helper-dev.log')
+const logWriter = createBoundedLogWriter(DEV_LOG_PATH)
 let consoleOutputUnavailable = false
 
 // Electron 从终端/IDE 分离时，stdout 或 stderr 可能已经关闭。若仍向 console 写入，
@@ -158,7 +159,8 @@ class Logger {
       logParts.push('\n错误堆栈:', data.error.stack || data.error.message || String(data.error))
     }
 
-    const fullLogMessage = logParts.join(' ')
+    const fullLogMessage = logWriter.append(logParts.join(' '))
+    if (fullLogMessage === null) return
 
     // 根据日志级别使用不同的 console 方法。控制台不可写时仍继续写本地日志。
     if (!consoleOutputUnavailable) {
@@ -179,11 +181,6 @@ class Logger {
       } catch (error) {
         if (error?.code === 'EPIPE') consoleOutputUnavailable = true
       }
-    }
-    try {
-      fs.appendFileSync(DEV_LOG_PATH, fullLogMessage + '\n')
-    } catch {
-      // ignore
     }
   }
 
