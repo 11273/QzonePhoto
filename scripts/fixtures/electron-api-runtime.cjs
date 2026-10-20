@@ -1,10 +1,15 @@
 // Isolated actual Electron regression: synthetic credentials and loopback only.
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
 const http = require('node:http')
 const path = require('node:path')
 const { app, BrowserWindow, ipcMain, net, session } = require('electron')
 
-const dir = process.argv[2]
+// Chromium flags remain in argv on some platforms. Never infer the fixture or
+// profile directory from a positional argument (e.g. after --no-sandbox).
+const dir = process.env.QZONE_API_RUNTIME_DIR
+assert.ok(dir && path.isAbsolute(dir), 'QZONE_API_RUNTIME_DIR must be an absolute directory')
+assert.ok(fs.statSync(dir).isDirectory(), 'QZONE_API_RUNTIME_DIR must be a directory')
 app.setPath('userData', path.join(dir, 'profile'))
 app.disableHardwareAcceleration()
 app

@@ -70,38 +70,44 @@ test(
         }
       ]
     })
-    const env = { ...process.env }
+    const env = { ...process.env, QZONE_API_RUNTIME_DIR: dir }
     delete env.ELECTRON_RUN_AS_NODE
     // GitHub's Linux runners have no desktop. Run the same Electron assertions
     // under their installed Xvfb rather than silently skipping the bridge test.
     const headlessLinux = process.platform === 'linux' && !env.DISPLAY
-    const args = [
-      // Only the isolated loopback test may bypass Linux CI's unavailable user
-      // namespaces. This does not change any production window/sandbox settings.
-      ...(headlessLinux ? ['--no-sandbox'] : []),
-      path.join(root, 'scripts/fixtures/electron-api-runtime.cjs'),
-      dir
-    ]
-    const child = spawn(
-      headlessLinux ? 'xvfb-run' : electron,
-      headlessLinux ? ['--auto-servernum', electron, ...args] : args,
-      { env }
-    )
-    t.after(() => {
-      if (child.exitCode === null) child.kill()
-    })
-    let output = ''
-    child.stdout.on('data', (chunk) => {
-      output += chunk
-    })
-    child.stderr.on('data', (chunk) => {
-      output += chunk
-    })
-    const [code] = await new Promise((resolve, reject) => {
-      child.once('error', reject)
-      child.once('exit', (...args) => resolve(args))
-    })
-    assert.equal(code, 0, output)
-    assert.match(output, /ELECTRON_API_RUNTIME_OK/)
+    // Exercise the flagged CI invocation on macOS/Windows as well. Otherwise a
+    // positional-argv bug can pass locally but block every Linux release.
+    const launches = process.platform === 'linux' ? [['--no-sandbox']] : [[], ['--no-sandbox']]
+    for (const flags of launches) {
+      await t.test(
+        flags.length ? 'Chromium flags before the fixture' : 'unflagged fixture',
+        async () => {
+          // Only the isolated loopback test may bypass Linux CI's unavailable user
+          // namespaces. This does not change production window/sandbox settings.
+          const args = [...flags, path.join(root, 'scripts/fixtures/electron-api-runtime.cjs')]
+          const child = spawn(
+            headlessLinux ? 'xvfb-run' : electron,
+            headlessLinux ? ['--auto-servernum', electron, ...args] : args,
+            { env }
+          )
+          t.after(() => {
+            if (child.exitCode === null) child.kill()
+          })
+          let output = ''
+          child.stdout.on('data', (chunk) => {
+            output += chunk
+          })
+          child.stderr.on('data', (chunk) => {
+            output += chunk
+          })
+          const [code] = await new Promise((resolve, reject) => {
+            child.once('error', reject)
+            child.once('exit', (...args) => resolve(args))
+          })
+          assert.equal(code, 0, output)
+          assert.match(output, /ELECTRON_API_RUNTIME_OK/)
+        }
+      )
+    }
   }
 )
