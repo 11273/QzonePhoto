@@ -11,11 +11,19 @@ export const loadLastYearFeedRange = async ({
   while (year >= minYear) {
     let response
     try {
-      response = await fetchYear({ year, count, mode })
+      response = await fetchYear(
+        { year, count, mode },
+        { background: year === minYear && confirmedEmptyYears > 0 }
+      )
     } catch (error) {
       // 个别账号在接口支持的最早年份只返回空响应。只有此前年份都已明确
       // 成功且为空时，才能保留这些已确认结果；其他失败继续抛出真实原因。
-      if (year === minYear && confirmedEmptyYears > 0) {
+      if (
+        year === minYear &&
+        confirmedEmptyYears > 0 &&
+        Number(error?.code ?? -1) === -1 &&
+        /(?:那年今日)?数据不完整|空响应/.test(error?.message || '')
+      ) {
         return {
           code: 0,
           feeds: [],

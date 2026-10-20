@@ -5,20 +5,59 @@ import { loadLastYearFeedRange } from '../src/shared/last-year-feed-state.js'
 
 test('最早年份空响应只保留此前逐年确认过的空结果', async () => {
   const requested = []
+  const backgroundChecks = []
   const result = await loadLastYearFeedRange({
     firstYear: 2012,
     minYear: 2010,
-    fetchYear: async ({ year }) => {
+    fetchYear: async ({ year }, meta) => {
       requested.push(year)
+      backgroundChecks.push(meta.background)
       if (year === 2010) throw new Error('QQ 空间返回的数据不完整')
       return { code: 0, feeds: [], hasMore: false }
     }
   })
 
   assert.deepEqual(requested, [2012, 2011, 2010])
+  assert.deepEqual(backgroundChecks, [false, false, true])
   assert.equal(result.code, 0)
   assert.match(result.emptyDescription, /已检查 2012–2011 年/)
   assert.match(result.emptyDescription, /2010 年的数据未能继续读取/)
+})
+
+test('最早年份的网络、权限和登录错误不会被吞为已确认的空结果', async () => {
+  for (const error of [
+    Object.assign(new Error('网络连接异常'), { code: 'ETIMEDOUT' }),
+    Object.assign(new Error('登录已过期'), { code: -3000 }),
+    Object.assign(new Error('无权访问'), { code: 403 }),
+    Object.assign(new Error('未知错误'), { code: -1 })
+  ]) {
+    await assert.rejects(
+      loadLastYearFeedRange({
+        firstYear: 2011,
+        minYear: 2010,
+        fetchYear: async ({ year }) => {
+          if (year === 2010) throw error
+          return { code: 0, feeds: [], hasMore: false }
+        }
+      }),
+      (reason) => reason === error
+    )
+  }
+})
+
+test('只检查最早一年时仍保留失败，不凭空推断没有内容', async () => {
+  let background
+  await assert.rejects(
+    loadLastYearFeedRange({
+      firstYear: 2010,
+      minYear: 2010,
+      fetchYear: async (_, meta) => {
+        background = meta.background
+        throw Object.assign(new Error('QQ 空间返回的那年今日数据不完整'), { code: -1 })
+      }
+    })
+  )
+  assert.equal(background, false)
 })
 
 test('中间年份失败仍保留真实错误，不伪装成空内容', async () => {

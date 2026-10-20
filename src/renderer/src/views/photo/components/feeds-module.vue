@@ -860,7 +860,7 @@ const sources = computed(() =>
         const mode = p.mode || 1
         const count = p.count || PAGE_SIZE
         return loadLastYearFeedRange({
-          fetchYear: (params) => window.QzoneAPI.getLastYearFeeds(params),
+          fetchYear: (params, meta) => window.QzoneAPI.getLastYearFeeds(params, meta),
           firstYear,
           minYear: LAST_YEAR_MIN,
           count,
