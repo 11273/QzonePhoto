@@ -55,7 +55,8 @@ test('读取策略会继续检查 IPC 数据体中的 QQ 空间业务错误', as
     new URL('../src/preload/lib/ipc-client.js', import.meta.url),
     'utf8'
   )
-  assert.match(ipcClientSource, /getQzoneReadFailure\(data\)/)
+  assert.match(ipcClientSource, /responseCheck = getQzoneReadFailure/)
+  assert.match(ipcClientSource, /responseCheck\(data\)/)
   assert.match(ipcClientSource, /businessFailure\.message/)
   assert.match(ipcClientSource, /businessFailure\.code/)
 })

@@ -256,6 +256,9 @@ export async function getShuoshuo(uin, p_skey, targetUin, pos = 0, num = 20) {
   const requestUrl = new URL(url)
   Object.entries(params).forEach(([key, value]) => requestUrl.searchParams.set(key, value))
   const response = await net.fetch(requestUrl.toString(), {
+    // Authentication belongs to the currently selected account. Otherwise Chromium
+    // replaces this explicit Cookie header with stale default-session cookies.
+    credentials: 'omit',
     headers: {
       Cookie: `uin=${uin}; p_uin=${uin}; p_skey=${p_skey}`,
       Referer: `https://user.qzone.qq.com/${hostUin}`,

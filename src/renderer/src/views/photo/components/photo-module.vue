@@ -2015,7 +2015,7 @@ const handleAlbumClick = (feed) => {
 
 // 加载动态数据
 // 用说说API增强feeds数据（设备型号、评论IP等）
-const enrichFeedsWithShuoshuo = async () => {
+const enrichFeedsWithShuoshuo = async (loadId) => {
   try {
     const hostUin = effectiveHostUin.value
     const res = await window.QzoneAPI.getShuoshuo(
@@ -2024,8 +2024,10 @@ const enrichFeedsWithShuoshuo = async () => {
         pos: 0,
         num: 20
       },
-      { skipAuthCheck: true }
+      { skipAuthCheck: true, background: true }
     )
+
+    if (loadId !== currentLoadId || hostUin !== effectiveHostUin.value) return
 
     if (res?.msglist) {
       // 用时间戳匹配feeds和说说
@@ -2214,7 +2216,7 @@ const loadFeeds = async (isLoadMore = false) => {
       if (transformedFeeds.length > 0) {
         cacheFeedDescriptions(effectiveHostUin.value, feeds.value)
         // 异步加载说说数据来增强feeds（设备信息、浏览量等）
-        enrichFeedsWithShuoshuo()
+        enrichFeedsWithShuoshuo(thisLoadId)
       } else if (!isLoadMore) {
         feeds.value = []
       }

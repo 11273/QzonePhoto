@@ -18,6 +18,17 @@ class IpcError extends Error {
   }
 }
 
+// contextBridge strips custom fields from Error instances. Reject with a plain
+// record so renderer callers retain message/code/detail for error classification.
+// Only copy the public error contract, never the IPC request or its credentials.
+const toBridgeError = (error) => ({
+  name: error?.name || 'IpcError',
+  message: error?.message || '请求处理失败',
+  ...(error?.code !== undefined ? { code: error.code } : {}),
+  ...(error?.detail !== undefined ? { detail: error.detail } : {}),
+  ...(error?.originalData !== undefined ? { originalData: error.originalData } : {})
+})
+
 // 日志工具：根据环境决定是否输出
 const logger = {
   debug: (...args) => {
@@ -41,13 +52,18 @@ const logger = {
 export const ipcClient = {
   // `throwOnResponseError` 只在调用方明确需要时启用，避免改变既有接口
   // 对“返回空数据即可”的兼容语义。相册首屏属于必须可恢复的场景，应该拿到真实错误。
-  call: async (channel, payload = {}, meta = {}, { throwOnResponseError = false } = {}) => {
+  call: async (
+    channel,
+    payload = {},
+    meta = {},
+    { throwOnResponseError = false, responseCheck = getQzoneReadFailure, background = false } = {}
+  ) => {
     try {
+      const isAppRequest = channel.startsWith('app:')
       // 自动携带认证令牌
       const context = {
-        headers: {
-          ...getLocalUserInfo()
-        },
+        // Our private service uses its own installation/reply token, not Qzone cookies.
+        headers: isAppRequest ? {} : { ...getLocalUserInfo() },
         meta: {
           timestamp: Date.now(),
           ...meta
@@ -67,10 +83,11 @@ export const ipcClient = {
         throw new IpcError(message || '请求处理失败', code || 'IPC_ERROR', detail)
       }
 
-      logger.debug(`[IPC] ${channel} 调用成功`, '\n请求参数:', context, '\n返回数据:', res)
-
       // 检查认证状态（支持通过 meta.skipAuthCheck 跳过）
-      const authCheckResult = performAuthCheck(data, meta)
+      const authCheckResult = performAuthCheck(data, {
+        ...meta,
+        skipAuthCheck: isAppRequest || meta.skipAuthCheck
+      })
       if (authCheckResult.expired) {
         // 使用防抖机制，避免同时多个请求触发多次登出
         if (!getLoggingOutStatus()) {
@@ -84,16 +101,24 @@ export const ipcClient = {
       }
 
       if (throwOnResponseError) {
-        const businessFailure = getQzoneReadFailure(data)
+        const businessFailure = responseCheck(data)
         if (businessFailure) {
           throw new IpcError(businessFailure.message, businessFailure.code, businessFailure.detail)
         }
       }
 
+      // Never dump authentication context or full responses into the console.
+      if (!background) logger.debug(`[IPC] ${channel} 调用成功`)
       return data
     } catch (error) {
-      logger.error(`[IPC] ${channel} 调用失败:`, error)
-      throw error // 保留原始错误堆栈
+      // Passive checks still reject so callers preserve stale state and back off.
+      // Only an explicitly initiated action should surface an error to the UI.
+      if (!background) {
+        logger.error(
+          `[IPC] ${channel} 调用失败 [${error?.code ?? 'IPC_ERROR'}]: ${error?.message || '请求处理失败'}`
+        )
+      }
+      throw toBridgeError(error)
     }
   },
 
