@@ -2,7 +2,7 @@ const TECHNICAL_CONTENT =
   /\b(?:r2|ci|github actions?|workflow|token|sha-?512|checksum)\b|发布校验|更新链路|构建|工作流|签名|令牌/i
 
 const TECHNICAL_SECTION =
-  /(?:continuous integration|ci 配置|code refactoring|代码重构|build|构建|发布|工作流|安全|security)/i
+  /(?:continuous integration|ci 配置|code refactoring|代码重构|build|构建|发布|工作流|安全|security|文档|documentation|测试|tests|代码格式|styles|dependencies|依赖|chore|完整变更|安装|首次打开)/i
 
 const RELEASE_SECTION_LABELS = [
   [/features?|新功能/i, '新功能'],
@@ -82,8 +82,13 @@ function cleanReleaseNote(raw) {
 }
 
 function getReleaseSectionLabel(raw) {
-  const clean = cleanReleaseNote(raw).replace(/^#+\s*/, '')
-  if (TECHNICAL_SECTION.test(clean) || /^(?:🎉\s*)?release\b|^\[?\d+\.\d+\.\d+\]?/i.test(clean)) {
+  const clean = cleanReleaseNote(raw)
+    .replace(/^#+\s*/, '')
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+  if (
+    TECHNICAL_SECTION.test(clean) ||
+    /^(?:企鹅相册\s+v?\d|release\b)|^\[?\d+\.\d+\.\d+\]?/i.test(clean)
+  ) {
     return ''
   }
 
@@ -92,7 +97,9 @@ function getReleaseSectionLabel(raw) {
 }
 
 function cleanReleaseNoteItem(raw) {
-  const text = cleanReleaseNote(raw)
+  const clean = cleanReleaseNote(String(raw).replace(/^[-*+]\s+/, ''))
+  if (/^(?:ci|build|release|logging|pr|deps|test):/i.test(clean)) return ''
+  const text = clean
     .replace(/^[-*+]\s+/, '')
     .replace(/^[^:：]{1,32}[:：]\s*/, '')
     .trim()
@@ -109,7 +116,9 @@ export function normalizeReleaseNotes(releaseNotes) {
   let skipSection = false
   let previousWasBlank = true
 
-  for (const rawLine of String(releaseNotes || '').split(/\r?\n/)) {
+  // 新版发行页折叠安装帮助和开发记录；历史版的 macOS 章节也会由标题规则过滤。
+  const source = String(releaseNotes || '').replace(/<details\b[^>]*>[\s\S]*?<\/details>/gi, '')
+  for (const rawLine of source.split(/\r?\n/)) {
     const line = rawLine.trim()
     if (!line) {
       if (!previousWasBlank && lines.length) lines.push('')
@@ -119,13 +128,20 @@ export function normalizeReleaseNotes(releaseNotes) {
 
     if (/^#{1,6}\s+/.test(line)) {
       const label = getReleaseSectionLabel(line)
-      skipSection = !label
-      if (!skipSection) lines.push(`### ${label}`)
+      const isVersionHeading =
+        /^#+\s*(?:🎉\s*)?(?:release\b|企鹅相册\s+v?\d|\[?\d+\.\d+\.\d+)/i.test(line)
+      skipSection = !label && !isVersionHeading
+      if (label) lines.push(`### ${label}`)
       previousWasBlank = false
       continue
     }
 
-    if (skipSection || /^[-–—]{3,}$/.test(line) || /!\[[^\]]*\]\([^)]*\)/.test(line)) {
+    if (
+      skipSection ||
+      /^<[^>]+>/.test(line) ||
+      /^[-–—]{3,}$/.test(line) ||
+      /!\[[^\]]*\]\([^)]*\)/.test(line)
+    ) {
       continue
     }
 
@@ -142,6 +158,11 @@ export function normalizeReleaseNotes(releaseNotes) {
   }
 
   return lines
+    .filter((line, index) => {
+      if (!line.startsWith('### ')) return true
+      const next = lines.slice(index + 1).find((entry) => entry.trim())
+      return next && !next.startsWith('### ')
+    })
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
@@ -150,11 +171,21 @@ export function normalizeReleaseNotes(releaseNotes) {
 export function buildReleaseNotesPresentation(releaseNotes) {
   const content = normalizeReleaseNotes(releaseNotes)
   const itemCount = content.split('\n').filter((line) => /^-\s+/.test(line)).length
+  const sections = []
+  for (const line of content.split('\n')) {
+    if (line.startsWith('### ')) {
+      sections.push({ title: line.slice(4), items: [] })
+    } else if (line.trim()) {
+      if (!sections.length) sections.push({ title: '更新内容', items: [] })
+      sections.at(-1).items.push(line.replace(/^-\s+/, ''))
+    }
+  }
 
   return {
     hasNotes: Boolean(content),
     content,
-    itemCount
+    itemCount,
+    sections: sections.filter((section) => section.items.length)
   }
 }
 

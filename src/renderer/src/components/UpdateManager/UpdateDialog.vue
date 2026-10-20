@@ -5,6 +5,7 @@
         <section
           ref="dialogRef"
           class="update-container"
+          :class="{ 'is-release': updateState === 'available' }"
           role="dialog"
           aria-modal="true"
           aria-labelledby="update-dialog-title"
@@ -23,17 +24,7 @@
                 <path d="M20 12a8 8 0 1 1-2.34-5.66" />
                 <path d="M20 4v5h-5" />
               </svg>
-              <svg
-                v-else-if="updateState === 'available'"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <path d="m7 10 5 5 5-5" />
-                <path d="M12 15V3" />
-              </svg>
+              <Sparkles v-else-if="updateState === 'available'" :stroke-width="1.6" />
               <svg
                 v-else-if="updateState === 'downloading'"
                 viewBox="0 0 24 24"
@@ -61,8 +52,22 @@
             </div>
 
             <div class="header-copy">
+              <p v-if="updateState === 'available'" class="update-eyebrow">一点新变化，等你体验</p>
               <h2 id="update-dialog-title" class="update-title">{{ getTitle() }}</h2>
-              <p v-if="versionLabel" class="update-version">{{ versionLabel }}</p>
+              <p v-if="versionLabel" class="update-version">
+                <template
+                  v-if="
+                    updateInfo.currentVersion &&
+                    updateInfo.version &&
+                    updateInfo.currentVersion !== updateInfo.version
+                  "
+                >
+                  <span class="previous-version">{{ updateInfo.currentVersion }}</span>
+                  <ArrowRight :size="14" aria-hidden="true" />
+                  <span class="target-version">{{ updateInfo.version }}</span>
+                </template>
+                <span v-else>{{ versionLabel }}</span>
+              </p>
               <p id="update-dialog-subtitle" class="update-subtitle">{{ getSubtitle() }}</p>
             </div>
 
@@ -85,68 +90,97 @@
             aria-live="polite"
             :aria-busy="updateState === 'checking' || updateState === 'downloading'"
           >
-            <div v-if="updateState === 'checking'" class="status-copy">
-              <span class="status-spinner" aria-hidden="true"></span>
-              <p>正在确认是否有新版本</p>
-            </div>
-
-            <div v-else-if="updateState === 'available'" class="update-summary">
-              <section
-                v-if="updatePresentation.releaseNotes.hasNotes"
-                class="release-notes-section"
-                aria-label="更新说明"
-              >
-                <div
-                  id="update-release-notes"
-                  class="release-notes-scroll"
-                  role="region"
-                  tabindex="0"
-                  aria-label="更新内容"
-                >
-                  <Markdown :content="updatePresentation.releaseNotes.content" />
+            <transition name="stage-reveal" mode="out-in">
+              <div :key="updateState" class="update-stage">
+                <div v-if="updateState === 'checking'" class="status-copy">
+                  <span class="status-spinner" aria-hidden="true"></span>
+                  <p>正在确认是否有新版本</p>
                 </div>
-              </section>
 
-              <p v-else class="update-reassurance">本次更新包含体验优化和问题修复。</p>
-            </div>
+                <div v-else-if="updateState === 'available'" class="update-summary">
+                  <section
+                    v-if="updatePresentation.releaseNotes.hasNotes"
+                    class="release-notes-section"
+                    aria-label="更新说明"
+                  >
+                    <div
+                      id="update-release-notes"
+                      class="release-notes-scroll"
+                      role="region"
+                      tabindex="0"
+                      aria-label="更新内容"
+                    >
+                      <div class="notes-overview">
+                        <span>本次更新</span>
+                        <span v-if="updatePresentation.releaseNotes.itemCount"
+                          >{{ updatePresentation.releaseNotes.itemCount }} 项改进</span
+                        >
+                      </div>
+                      <section
+                        v-for="(section, index) in updatePresentation.releaseNotes.sections"
+                        :key="index"
+                        class="release-group"
+                        :class="'group-' + sectionKind(section.title)"
+                      >
+                        <h3>
+                          <span class="group-icon" aria-hidden="true">
+                            <Sparkles v-if="sectionKind(section.title) === 'feature'" :size="16" />
+                            <Wrench v-else-if="sectionKind(section.title) === 'fix'" :size="16" />
+                            <Zap v-else :size="16" />
+                          </span>
+                          {{ section.title }}
+                        </h3>
+                        <ul>
+                          <li v-for="(item, itemIndex) in section.items" :key="itemIndex">
+                            {{ item }}
+                          </li>
+                        </ul>
+                      </section>
+                    </div>
+                  </section>
 
-            <div v-else-if="updateState === 'downloading'" class="download-panel">
-              <div class="download-progress-heading">
-                <span>{{ downloadStatusText }}</span>
-                <strong>{{ downloadPercent }}%</strong>
+                  <p v-else class="update-reassurance">本次更新包含体验优化和问题修复。</p>
+                </div>
+
+                <div v-else-if="updateState === 'downloading'" class="download-panel">
+                  <div class="download-progress-heading">
+                    <span>{{ downloadStatusText }}</span>
+                    <strong>{{ downloadPercent }}%</strong>
+                  </div>
+                  <div
+                    class="progress-bar"
+                    role="progressbar"
+                    aria-label="更新下载进度"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    :aria-valuenow="downloadPercent"
+                  >
+                    <div class="progress-fill" :style="{ width: downloadPercent + '%' }"></div>
+                  </div>
+                  <div class="download-stats">
+                    <span>{{ formattedDownloadSize }}</span>
+                    <span>{{ formattedDownloadSpeed }}</span>
+                    <span>{{ downloadRemainingText }}</span>
+                  </div>
+                </div>
+
+                <div v-else-if="updateState === 'downloaded'" class="status-copy success-copy">
+                  <span class="status-primary">重启应用后将自动完成安装。</span>
+                  <span>也可以选择稍后安装。</span>
+                </div>
+
+                <div v-else-if="updateState === 'no-update'" class="status-copy success-copy">
+                  <span class="status-primary">无需更新</span>
+                  <span>继续记录和整理你的空间回忆吧。</span>
+                </div>
+
+                <div v-else-if="updateState === 'error'" class="error-panel">
+                  <p>{{ errorPresentation.title }}</p>
+                  <span>{{ errorPresentation.detail }}</span>
+                  <span class="error-reassurance">{{ errorPresentation.reassurance }}</span>
+                </div>
               </div>
-              <div
-                class="progress-bar"
-                role="progressbar"
-                aria-label="更新下载进度"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                :aria-valuenow="downloadPercent"
-              >
-                <div class="progress-fill" :style="{ width: downloadPercent + '%' }"></div>
-              </div>
-              <div class="download-stats">
-                <span>{{ formattedDownloadSize }}</span>
-                <span>{{ formattedDownloadSpeed }}</span>
-                <span>{{ downloadRemainingText }}</span>
-              </div>
-            </div>
-
-            <div v-else-if="updateState === 'downloaded'" class="status-copy success-copy">
-              <span class="status-primary">重启应用后将自动完成安装。</span>
-              <span>也可以选择稍后安装。</span>
-            </div>
-
-            <div v-else-if="updateState === 'no-update'" class="status-copy success-copy">
-              <span class="status-primary">无需更新</span>
-              <span>继续记录和整理你的空间回忆吧。</span>
-            </div>
-
-            <div v-else-if="updateState === 'error'" class="error-panel">
-              <p>{{ errorPresentation.title }}</p>
-              <span>{{ errorPresentation.detail }}</span>
-              <span class="error-reassurance">{{ errorPresentation.reassurance }}</span>
-            </div>
+            </transition>
           </main>
 
           <footer v-if="showFooter()" class="update-footer">
@@ -161,7 +195,7 @@
                     <path d="m7 10 5 5 5-5" />
                     <path d="M12 15V3" />
                   </svg>
-                  立即下载
+                  下载新版本
                 </button>
               </template>
 
@@ -227,7 +261,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { formatBytes } from '@renderer/utils/formatters'
 import { APP_DOWNLOAD_PAGE, APP_HOMEPAGE } from '@shared/const'
-import Markdown from '@renderer/components/Markdown/index.vue'
+import { ArrowRight, Sparkles, Wrench, Zap } from '@lucide/vue'
 import {
   buildUpdatePresentation,
   getManualDownloadChoices,
@@ -287,6 +321,8 @@ const dialogVisible = computed({
 const updatePresentation = computed(() => buildUpdatePresentation(props.updateInfo))
 const versionLabel = computed(() => updatePresentation.value.versionLabel)
 const errorPresentation = computed(() => getUpdateErrorPresentation(props.errorInfo))
+const sectionKind = (title) =>
+  /新功能|features?/i.test(title) ? 'feature' : /修复|fix/i.test(title) ? 'fix' : 'improvement'
 const manualDownloadChoices = computed(() =>
   getManualDownloadChoices({
     officialUrl: APP_DOWNLOAD_PAGE,
@@ -449,14 +485,19 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
 
 .dialog-fade-enter-active,
 .dialog-fade-leave-active {
-  transition: opacity 180ms ease;
+  transition: opacity 220ms ease;
 }
 
 .dialog-fade-enter-active .update-container,
 .dialog-fade-leave-active .update-container {
   transition:
-    transform 180ms ease,
-    opacity 180ms ease;
+    transform 280ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 220ms ease;
+}
+
+.dialog-fade-leave-active,
+.dialog-fade-leave-active .update-container {
+  transition-duration: 160ms;
 }
 
 .dialog-fade-enter-from,
@@ -467,19 +508,19 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
 .dialog-fade-enter-from .update-container,
 .dialog-fade-leave-to .update-container {
   opacity: 0;
-  transform: translateY(8px) scale(0.985);
+  transform: translateY(12px) scale(0.965);
 }
 
 .update-container {
   display: flex;
   flex-direction: column;
-  width: min(472px, calc(100vw - 48px));
-  max-height: min(600px, calc(100vh - 48px));
+  width: min(580px, calc(100vw - 48px));
+  max-height: min(700px, calc(100dvh - 48px));
   overflow: hidden;
   color: var(--ds-text-primary);
   background: var(--ds-bg-1);
-  border: 1px solid var(--ds-border-light);
-  border-radius: var(--theme-radius-xl);
+  border: 1px solid var(--ds-material-border);
+  border-radius: 24px;
   box-shadow: var(--ds-shadow-xl);
   outline: none;
 }
@@ -487,8 +528,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
 .update-header {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 20px 22px 18px;
+  gap: 18px;
+  flex-shrink: 0;
+  padding: 28px 28px 24px;
+  background: radial-gradient(ellipse at 0% 0%, var(--theme-brand-soft), transparent 72%);
   border-bottom: 1px solid var(--ds-border-light);
 }
 
@@ -496,10 +539,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 56px;
+  height: 56px;
   color: var(--theme-text-inverse);
-  border-radius: var(--theme-radius-lg);
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 var(--ds-material-highlight);
 }
 
 .update-icon svg {
@@ -510,8 +554,30 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
 .update-icon.icon-checking,
 .update-icon.icon-available,
 .update-icon.icon-downloading {
-  background: linear-gradient(135deg, var(--theme-brand-hover), var(--theme-brand));
-  box-shadow: var(--theme-shadow-brand);
+  color: var(--theme-brand-text);
+  background: var(--theme-brand-soft);
+  border: 1px solid var(--theme-brand-border);
+}
+
+.update-icon.icon-available svg {
+  animation: sparkle-arrive 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.update-eyebrow {
+  margin: 0 0 7px;
+  color: var(--theme-brand-accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.is-release .update-title {
+  font-size: 26px;
+  line-height: 1.25;
+}
+
+.is-release .update-icon {
+  align-self: center;
 }
 
 .update-icon.icon-downloaded,
@@ -545,11 +611,28 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
 }
 
 .update-version {
-  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
   color: var(--theme-brand-accent);
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 650;
   line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.previous-version {
+  color: var(--ds-text-tertiary);
+  font-weight: 500;
+}
+.target-version {
+  padding: 3px 8px;
+  color: var(--theme-brand-text);
+  background: var(--theme-brand-soft);
+  border-radius: 6px;
 }
 
 .update-subtitle {
@@ -563,8 +646,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   color: var(--ds-text-tertiary);
   cursor: pointer;
@@ -592,9 +675,33 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
   display: flex;
   flex: 0 1 auto;
   align-items: stretch;
-  min-height: 112px;
-  padding: 20px 22px;
+  min-height: 0;
+  padding: 24px 28px;
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ds-border-strong) transparent;
+}
+
+.update-stage {
+  width: 100%;
+  min-width: 0;
+}
+.stage-reveal-enter-active {
+  transition:
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stage-reveal-leave-active {
+  transition: opacity 100ms ease;
+}
+.stage-reveal-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.stage-reveal-leave-to {
+  opacity: 0;
 }
 
 .update-summary,
@@ -607,6 +714,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
 .update-summary {
   display: grid;
   align-content: start;
+  gap: 22px;
 }
 
 .download-progress-heading,
@@ -626,93 +734,81 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
 }
 
 .release-notes-scroll {
-  max-height: min(260px, calc(100dvh - 260px));
-  padding: 4px 14px 12px;
-  overflow: auto;
-  overscroll-behavior: contain;
-  background: color-mix(in srgb, var(--ds-bg-3) 72%, transparent);
-  border: 1px solid var(--ds-border-light);
-  border-radius: 12px;
-  scrollbar-color: color-mix(in srgb, var(--ds-text-tertiary) 50%, transparent) transparent;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.release-notes-scroll :deep(.markdown-content) {
+.notes-overview {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  color: var(--ds-text-tertiary);
+  font-size: 12px;
+}
+.notes-overview > :first-child {
   color: var(--ds-text-secondary);
-  font-size: 13px;
-  line-height: 1.6;
+  font-weight: 600;
 }
 
-.release-notes-scroll :deep(.markdown-content h3) {
+.release-group + .release-group {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--ds-border-faint);
+}
+.release-group h3 {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 0 10px;
-  margin: 10px 0 7px;
+  gap: 10px;
+  margin: 0 0 12px;
   color: var(--ds-text-primary);
-  font-size: 13px;
-  font-weight: 700;
-  background: color-mix(in srgb, var(--ds-bg-2) 72%, transparent);
-  border: 1px solid var(--ds-border-light);
-  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 650;
 }
-
-.release-notes-scroll :deep(.markdown-content h3::before) {
-  flex: 0 0 auto;
-  width: 17px;
-  height: 17px;
-  content: '';
-  background-color: color-mix(in srgb, var(--ds-accent-blue) 16%, transparent);
-  background-image: url("data:image/svg+xml,%3Csvg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2367a7ff' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='m12 3-1.7 5.3L5 10l5.3 1.7L12 17l1.7-5.3L19 10l-5.3-1.7L12 3Z'/%3E%3Cpath d='m19 15-.7 2.3L16 18l2.3.7L19 21l.7-2.3L22 18l-2.3-.7L19 15Z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  border: 1px solid color-mix(in srgb, var(--ds-accent-blue) 30%, transparent);
-  border-radius: 5px;
-}
-
-.release-notes-scroll :deep(.markdown-content h3:nth-of-type(2)::before) {
-  background-image: url("data:image/svg+xml,%3Csvg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%234bd7a5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='m20 6-11 11-5-5'/%3E%3C/svg%3E");
-  background-color: color-mix(in srgb, var(--ds-state-success) 14%, transparent);
-  border-color: color-mix(in srgb, var(--ds-state-success) 28%, transparent);
-}
-
-.release-notes-scroll :deep(.markdown-content h3:nth-of-type(3)::before) {
-  background-image: url("data:image/svg+xml,%3Csvg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23b093ff' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 3v18M5 10l7-7 7 7M5 21h14'/%3E%3C/svg%3E");
-  background-color: var(--theme-info-soft);
-  border-color: var(--theme-info-border);
-}
-
-.release-notes-scroll :deep(.markdown-content p),
-.release-notes-scroll :deep(.markdown-content ul),
-.release-notes-scroll :deep(.markdown-content ol) {
-  margin: 7px 0;
-}
-
-.release-notes-scroll :deep(.markdown-content ul),
-.release-notes-scroll :deep(.markdown-content ol) {
-  padding-left: 22px;
-}
-
-.release-notes-scroll :deep(.markdown-content li) {
-  padding-left: 2px;
-  margin: 6px 0;
-}
-
-.release-notes-scroll :deep(.markdown-content li::marker) {
+.group-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
   color: var(--ds-accent-blue);
+  background: var(--ds-accent-blue-soft);
+  border-radius: 8px;
+}
+.group-fix .group-icon {
+  color: var(--ds-state-success);
+  background: var(--ds-accent-green-soft);
+}
+.group-improvement .group-icon {
+  color: var(--theme-brand-accent);
+  background: var(--theme-brand-soft);
+}
+.release-group ul {
+  display: grid;
+  gap: 10px;
+  padding: 0 0 0 38px;
+  margin: 0;
+  list-style: none;
+}
+.release-group li {
+  position: relative;
+  color: var(--ds-text-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.release-group li::before {
+  position: absolute;
+  top: 0.7em;
+  left: -16px;
+  width: 4px;
+  height: 4px;
+  content: '';
+  background: var(--ds-text-quaternary);
+  border-radius: 50%;
 }
 
-.release-notes-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-
-.release-notes-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.release-notes-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--ds-text-tertiary) 48%, transparent);
-  border-radius: 999px;
+.update-footer {
+  flex-shrink: 0;
 }
 
 .status-copy {
@@ -722,6 +818,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
   gap: 9px;
   color: var(--ds-text-secondary);
   text-align: center;
+  min-height: 120px;
+  align-content: center;
 }
 
 .status-copy p,
@@ -814,7 +912,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
 }
 
 .update-footer {
-  padding: 14px 22px 16px;
+  padding: 18px 28px 22px;
+  background: var(--ds-bg-2);
   border-top: 1px solid var(--ds-border-light);
 }
 
@@ -869,7 +968,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
 }
 
 .btn:active {
-  transform: translateY(0);
+  transform: scale(0.98);
+  transition-duration: 90ms;
 }
 
 .btn:focus-visible,
@@ -913,6 +1013,16 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
   }
 }
 
+@keyframes sparkle-arrive {
+  from {
+    opacity: 0;
+    transform: rotate(-12deg) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .dialog-fade-enter-active,
   .dialog-fade-leave-active,
@@ -920,12 +1030,30 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
   .dialog-fade-leave-active .update-container,
   .progress-fill,
   .btn,
-  .close-btn {
+  .close-btn,
+  .stage-reveal-enter-active,
+  .stage-reveal-leave-active {
     transition: none;
   }
 
-  .status-spinner {
+  .status-spinner,
+  .update-icon.icon-available svg {
     animation: none;
+  }
+  .stage-reveal-enter-from {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .dialog-overlay {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more) {
+  .update-container {
+    border-color: var(--ds-text-tertiary);
   }
 }
 
@@ -936,6 +1064,19 @@ onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
 
   .update-container {
     width: min(100%, calc(100vw - 32px));
+  }
+  .is-release .update-title {
+    font-size: 22px;
+  }
+  .update-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 15px;
+  }
+  .update-header {
+    gap: 12px;
+    padding-top: 20px;
+    padding-bottom: 20px;
   }
 
   .update-header,
