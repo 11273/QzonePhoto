@@ -362,6 +362,7 @@ import {
 import { isMac as isMacPlatform } from '@renderer/utils/platform'
 import { IPC_APP, IPC_SHELL, IPC_WINDOW } from '@shared/ipc-channels'
 import { APP_DESCRIPTION, APP_HOMEPAGE, APP_WEBSITE } from '@shared/const'
+import { createBackgroundRefresh } from '@shared/background-refresh.mjs'
 import { Bell } from '@lucide/vue'
 import UpdateDialog from '@renderer/components/UpdateManager/UpdateDialog.vue'
 import FeedbackDialog from '@renderer/components/FeedbackDialog/index.vue'
@@ -445,7 +446,7 @@ const noticeVisible = ref(false)
 const notices = ref([])
 const activeNotice = ref(null)
 const noticeReadVersion = ref(0)
-let appNoticeChecked = false
+let lastAutoOpenedNotice = ''
 let feedbackUnreadTimer = null
 const silentChecking = ref(false)
 const pendingNoticeAutoOpen = ref(false)
@@ -744,15 +745,11 @@ const openFeedback = async () => {
   feedbackVisible.value = true
 }
 
-const refreshFeedbackUnread = async () => {
+const refreshFeedbackUnread = createBackgroundRefresh(async () => {
   if (!apiBaseUrl.value || !window.QzoneAPI?.app?.fetchFeedbackThreads) return
-  try {
-    const result = await window.QzoneAPI.app.fetchFeedbackThreads()
-    feedbackUnreadCount.value = countUnreadFeedbackThreads(result?.threads || [])
-  } catch {
-    // 未读提示是辅助信息，网络失败时保持当前状态，不干扰标题栏和反馈入口。
-  }
-}
+  const result = await window.QzoneAPI.app.fetchFeedbackThreads({ background: true })
+  feedbackUnreadCount.value = countUnreadFeedbackThreads(result?.threads || [])
+})
 
 const getNoticeStorageKey = (notice) =>
   notice?.id ? `qzone.notice.dismissed.${notice.id}.${notice.updatedAt || ''}` : ''
@@ -777,6 +774,7 @@ const openNoticeCenter = async () => {
     reportAppEvent('notice_shown', { source: 'manual', target: activeNotice.value.id || '' })
   }
   await fetchAppNotice({ force: true, openWhenUnread: false })
+  lastAutoOpenedNotice = getNoticeStorageKey(activeNotice.value)
 }
 
 // 系统刷新
@@ -1089,12 +1087,11 @@ const loadApiConfig = async (forceRefresh = false) => {
   }
 }
 
-const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => {
-  if ((appNoticeChecked && !force) || !apiBaseUrl.value) return
-  appNoticeChecked = true
-
-  try {
+const fetchAppNotice = createBackgroundRefresh(
+  async ({ force = false, openWhenUnread = true } = {}) => {
+    if (!apiBaseUrl.value) return
     const payload = await window.QzoneAPI.app.fetchNotices({
+      background: true,
       forceRefresh: force,
       page: window.location.hash || '#/index'
     })
@@ -1106,7 +1103,14 @@ const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => 
     notices.value = nextNotices.length ? nextNotices : currentNotice?.id ? [currentNotice] : []
     activeNotice.value = currentNotice?.id ? currentNotice : notices.value[0] || null
 
-    if (openWhenUnread && activeNotice.value && !isNoticeDismissed(activeNotice.value)) {
+    const noticeKey = getNoticeStorageKey(activeNotice.value)
+    if (
+      openWhenUnread &&
+      activeNotice.value &&
+      !isNoticeDismissed(activeNotice.value) &&
+      noticeKey !== lastAutoOpenedNotice
+    ) {
+      lastAutoOpenedNotice = noticeKey
       reportAppEvent('notice_shown', { source: 'auto', target: activeNotice.value.id || '' })
       if (dialogVisible.value || pendingUpdateDialogOpen.value) {
         pendingNoticeAutoOpen.value = true
@@ -1115,10 +1119,9 @@ const fetchAppNotice = async ({ force = false, openWhenUnread = true } = {}) => 
         noticeVisible.value = true
       }
     }
-  } catch (error) {
-    console.debug('[AppNotice] check skipped:', error)
-  }
-}
+  },
+  { minIntervalMs: 5 * 60000, maxBackoffMs: 30 * 60000 }
+)
 
 const reportAppEvent = (event, properties = {}) => {
   if (!window.QzoneAPI?.app?.reportHealth) return
@@ -1192,7 +1195,13 @@ onMounted(async () => {
   await Promise.all([loadAppInfo(), loadApiConfig()])
   fetchAppNotice()
   refreshFeedbackUnread()
-  feedbackUnreadTimer = window.setInterval(refreshFeedbackUnread, 5 * 60 * 1000)
+  feedbackUnreadTimer = window.setInterval(
+    () => {
+      refreshFeedbackUnread()
+      fetchAppNotice()
+    },
+    5 * 60 * 1000
+  )
   scheduleActionDensity()
   clearInitialTitlebarFocus()
   // 获取初始窗口状态
@@ -1203,7 +1212,10 @@ onMounted(async () => {
   }
   // 监听窗口状态变化
   removeListeners.push(window.api.on(IPC_WINDOW.MAXIMIZED, handleWindowMaximized))
-  const handleWindowFocus = () => refreshFeedbackUnread()
+  const handleWindowFocus = () => {
+    refreshFeedbackUnread()
+    fetchAppNotice()
+  }
   window.addEventListener('focus', handleWindowFocus)
   removeListeners.push(() => window.removeEventListener('focus', handleWindowFocus))
   resizeObserver = new ResizeObserver(() => scheduleActionDensity())

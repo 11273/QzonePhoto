@@ -113,6 +113,7 @@ export async function fetchFeedbackThreads() {
   if (response.status >= 400 || data?.ok === false) {
     throw new Error(data?.message || '反馈消息读取失败')
   }
+  if (!Array.isArray(data.data?.threads)) throw new Error('反馈消息暂时无法读取')
   return {
     threads: Array.isArray(data.data?.threads) ? data.data.threads : []
   }
@@ -223,7 +224,16 @@ export async function fetchNotices(options = {}) {
       method: shouldReportHealth ? 'post' : 'get',
       data: body
     })
+    if (response.status >= 400 || response.data?.ok === false) {
+      throw new Error('公告暂时无法读取')
+    }
     const data = response?.data?.data || response?.data || {}
+    if (
+      typeof data !== 'object' ||
+      (!Object.hasOwn(data, 'notice') && !Array.isArray(data.notices))
+    ) {
+      throw new Error('公告返回数据不完整')
+    }
     return {
       notice: data.notice || null,
       notices: Array.isArray(data.notices) ? data.notices : data.notice ? [data.notice] : [],
@@ -246,6 +256,9 @@ export async function reportHealthEvent(payload = {}) {
     method: 'post',
     data: body
   })
+  if (response.status >= 400 || response.data?.ok === false) {
+    throw new Error('后台状态上报暂时不可用')
+  }
   return response?.data?.data || response?.data || { stored: true }
 }
 
