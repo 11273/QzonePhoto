@@ -342,36 +342,11 @@ jobs:
             local key="$2"
             local cache_control="$3"
             local content_type="${4:-}"
-            local size
-            local sha512
-            size="$(stat --format=%s "$file")"
-            sha512="$(openssl dgst -sha512 -binary "$file" | base64 -w0)"
-            args=(s3 cp "$file" "s3://${R2_BUCKET}/${key}" --endpoint-url "${R2_ENDPOINT}" --cache-control "${cache_control}" --metadata "qzone-sha512=${sha512}" --only-show-errors)
+            local args=(--file="$file" --key="$key" --cacheControl="$cache_control")
             if [ -n "${content_type}" ]; then
-              args+=(--content-type "${content_type}")
+              args+=(--contentType="${content_type}")
             fi
-            aws "${args[@]}"
-            remote_size="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
-              --endpoint-url "${R2_ENDPOINT}" --query ContentLength --output text)"
-            remote_sha512="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
-              --endpoint-url "${R2_ENDPOINT}" --query 'Metadata."qzone-sha512"' --output text)"
-            remote_cache_control="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
-              --endpoint-url "${R2_ENDPOINT}" --query CacheControl --output text)"
-            normalized_remote_cache_control="$(tr -d '[:space:]' <<<"${remote_cache_control}")"
-            normalized_expected_cache_control="$(tr -d '[:space:]' <<<"${cache_control}")"
-            test "${remote_size}" = "${size}" && test "${remote_sha512}" = "${sha512}" && \
-              test "${normalized_remote_cache_control}" = "${normalized_expected_cache_control}" || {
-              echo "R2 object verification failed for ${key}"
-              return 1
-            }
-            if [ -n "${content_type}" ]; then
-              remote_content_type="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" \
-                --endpoint-url "${R2_ENDPOINT}" --query ContentType --output text)"
-              test "${remote_content_type}" = "${content_type}" || {
-                echo "R2 content type verification failed for ${key}"
-                return 1
-              }
-            fi
+            node scripts/upload-r2-object.mjs "${args[@]}"
           }
 
           upload_immutable_release_object() {
