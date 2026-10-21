@@ -7,6 +7,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { compileFunction } from 'node:vm'
+import { Readable } from 'node:stream'
 import { setTimeout as delay } from 'node:timers/promises'
 import { build } from 'esbuild'
 import { RollingDownloadThroughput } from '../src/shared/download-throughput.mjs'
@@ -184,6 +185,50 @@ const sendImageSample = (res) =>
   res
     .writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': imageSample.length })
     .end(imageSample)
+
+test('download photo key stays on QQ media hosts, not arbitrary or deceptive URLs', async (t) => {
+  const service = await createService(t)
+  service.serviceManager = new Map([['photo', { qq_photo_key: 'synthetic-photo-key' }]])
+  const axios = createRequire(import.meta.url)('axios')
+  const adapter = axios.defaults.adapter
+  t.after(() => {
+    axios.defaults.adapter = adapter
+  })
+  let cookie
+  axios.defaults.adapter = async (config) => {
+    cookie = config.headers.get('Cookie')
+    return {
+      status: 200,
+      config,
+      headers: { 'content-type': 'image/jpeg', 'content-length': imageSample.length },
+      data: Readable.from([imageSample])
+    }
+  }
+  for (const [url, trusted] of [
+    ['https://a1.photo.store.qq.com/image', true],
+    ['https://a.qpic.cn/image', true],
+    ['https://photo.store.qq.com.attacker.test/image', false],
+    ['https://evilqq.com/image', false],
+    ['https://evilqpic.cn/image', false],
+    ['https://qq.com@attacker.test/image', false],
+    ['http://photo.store.qq.com/image', true]
+  ]) {
+    const task = makeTask(service, `cookie-${service.activeTasks.size}`, url)
+    task.request_headers = {
+      [trusted ? 'Cookie' : 'cookie']: 'uin=synthetic; p_skey=synthetic-secret'
+    }
+    await service.downloadFile(
+      task,
+      path.join(service.downloadPath, task.filename),
+      axios.CancelToken.source()
+    )
+    assert.equal(
+      cookie || '',
+      trusted ? 'uin=synthetic; p_skey=synthetic-secret; qq_photo_key=synthetic-photo-key' : '',
+      url
+    )
+  }
+})
 
 test('real HTTP benchmark: automatic multi-image downloads outperform fixed three without exceeding six', async (t) => {
   const payload = await fs.readFile(

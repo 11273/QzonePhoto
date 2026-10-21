@@ -13,6 +13,25 @@ const QZONE_COOKIE_URLS = [
   'https://qzs.qq.com'
 ]
 
+const isDomainOrSubdomain = (hostname, domain) =>
+  hostname === domain || hostname.endsWith(`.${domain}`)
+
+const isRendererDocument = (value, rendererUrl) => {
+  try {
+    const url = new URL(value)
+    const renderer = new URL(rendererUrl)
+    return (
+      !url.username &&
+      !url.password &&
+      url.protocol === renderer.protocol &&
+      url.host === renderer.host &&
+      url.pathname === renderer.pathname
+    )
+  } catch {
+    return false
+  }
+}
+
 const rawQqUin = (uin) =>
   String(uin || '')
     .replace(/^o/, '')
@@ -341,23 +360,22 @@ export class WindowManager {
     })
 
     // 防止页面导航到外部链接
-    win.webContents.on('will-navigate', (event, url) => {
-      if (url === recoveryUrl) {
+    const guardNavigation = (event) => {
+      const url = event.url
+      if (isRendererDocument(url, recoveryUrl)) {
         showingStartupFailure = false
         return
       }
-      // 只允许加载应用内的URL
-      if (
-        !url.startsWith('file://') &&
-        !url.startsWith(process.env['ELECTRON_RENDERER_URL'] || '')
-      ) {
-        event.preventDefault()
-        if (isQzoneWebUrl(url)) {
-          this.openQzoneWeb({ url })
-          return
-        }
-        openSafeExternal(url)
+      event.preventDefault()
+      if (isQzoneWebUrl(url)) {
+        this.openQzoneWeb({ url })
+        return
       }
+      openSafeExternal(url)
+    }
+    win.webContents.on('will-navigate', guardNavigation)
+    win.webContents.on('will-redirect', (event) => {
+      if (event.isMainFrame) guardNavigation(event)
     })
 
     const filter = { urls: ['*://*.qq.com/*', '*://*.qpic.cn/*', '*://*/*'] }
@@ -376,17 +394,17 @@ export class WindowManager {
 
         const isQzoneImage =
           details.resourceType === 'image' &&
-          (url.hostname.endsWith('qpic.cn') ||
-            url.hostname.includes('photo.store.qq.com') ||
-            url.hostname.includes('qzone.qq.com'))
+          ['qpic.cn', 'photo.store.qq.com', 'qzone.qq.com'].some((domain) =>
+            isDomainOrSubdomain(url.hostname, domain)
+          )
 
         if (isQzoneImage) {
           referer = 'https://user.qzone.qq.com/'
           origin = 'https://user.qzone.qq.com'
         }
 
-        // 对 photo.store.qq.com 请求注入 qq_photo_key cookie
-        if (url.hostname.includes('photo.store.qq.com')) {
+        // 图片凭据仅发送给真正的图片域名，不能用子串匹配主机名。
+        if (isDomainOrSubdomain(url.hostname, 'photo.store.qq.com')) {
           const photoService = this.services?.get(ServiceNames.PHOTO)
           if (photoService?.qq_photo_key) {
             const existing = details.requestHeaders['Cookie'] || ''

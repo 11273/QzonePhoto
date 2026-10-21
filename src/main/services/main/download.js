@@ -1627,13 +1627,25 @@ export class DownloadService {
         ...(task.request_headers || {})
       }
 
-      // qq.com 图片下载需要 qq_photo_key cookie
+      // QQ 图片凭据不能随接口返回的任意下载地址一起发送。
       try {
-        const qq_photo_key = this.serviceManager?.get(ServiceNames.PHOTO)?.qq_photo_key
-        if (qq_photo_key) {
-          headers['Cookie'] = headers['Cookie']
-            ? `${headers['Cookie']}; qq_photo_key=${qq_photo_key}`
-            : `qq_photo_key=${qq_photo_key}`
+        const url = new URL(task.url)
+        const isQzoneMedia =
+          ['http:', 'https:'].includes(url.protocol) &&
+          ['qq.com', 'qpic.cn'].some(
+            (domain) => url.hostname === domain || url.hostname.endsWith(`.${domain}`)
+          )
+        if (!isQzoneMedia) {
+          for (const name of Object.keys(headers)) {
+            if (name.toLowerCase() === 'cookie') delete headers[name]
+          }
+        } else {
+          const qq_photo_key = this.serviceManager?.get(ServiceNames.PHOTO)?.qq_photo_key
+          if (qq_photo_key) {
+            headers['Cookie'] = headers['Cookie']
+              ? `${headers['Cookie']}; qq_photo_key=${qq_photo_key}`
+              : `qq_photo_key=${qq_photo_key}`
+          }
         }
       } catch {
         // ignore: 服务未就绪或缺少 key 时不附加 cookie
