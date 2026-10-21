@@ -1377,9 +1377,14 @@ export class UploadService {
         const len = end - offset
 
         // 按 offset 读分片
-        const buf = Buffer.allocUnsafe(len)
+        const buf = Buffer.alloc(len)
         try {
-          await fileHandle.read(buf, 0, len, offset)
+          let filled = 0
+          while (filled < len) {
+            const { bytesRead } = await fileHandle.read(buf, filled, len - filled, offset + filled)
+            if (bytesRead === 0) throw new Error('文件已变化或被截断，请重新选择后上传')
+            filled += bytesRead
+          }
         } catch (e) {
           if (!firstError) firstError = new Error('读取分片失败: ' + e.message)
           return
