@@ -161,6 +161,10 @@ export function createUploadHandlers(service) {
       return uploadService.getConcurrency()
     },
 
+    [IPC_UPLOAD.GET_SPEED_LIMIT]: async () => uploadService.getSpeedLimit(),
+    [IPC_UPLOAD.SET_SPEED_LIMIT]: async (_event, context) =>
+      uploadService.setSpeedLimit(context.payload),
+
     // 设置并发数
     [IPC_UPLOAD.SET_CONCURRENCY]: async (event, context) => {
       return uploadService.setConcurrency(context.payload)

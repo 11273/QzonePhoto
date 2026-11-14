@@ -111,7 +111,7 @@ function doRequest(origin, reqHeaders, payload) {
  * @param {Object} headers 请求头（小写 key）
  * @returns {Promise<{status:number, data:any}>}
  */
-export async function h2Post(url, body, headers = {}) {
+export async function h2Post(url, body, headers = {}, transfer = {}) {
   const u = new URL(url)
   const reqHeaders = {
     ':method': 'POST',
@@ -129,6 +129,12 @@ export async function h2Post(url, body, headers = {}) {
   let lastErr
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      // Account for the actual JSON/base64 body, including retries; control APIs pass no limiter.
+      const wait = transfer.limiter?.consume(
+        transfer.limiter.rate ? Buffer.byteLength(payload) : 0,
+        transfer
+      )
+      if (wait) await wait
       return await doRequest(u.origin, reqHeaders, payload)
     } catch (e) {
       lastErr = e

@@ -228,7 +228,8 @@ async function uploadFileInChunks(
   fileLen,
   sliceSize,
   isVideo,
-  logPrefix = '[uploadFileInChunks]'
+  logPrefix = '[uploadFileInChunks]',
+  transfer = {}
 ) {
   const appid = isVideo ? APP_IDS.VIDEO_QZONE : APP_IDS.PIC_QZONE
   const uploadUrl = isVideo ? UPLOAD_ENDPOINTS.FILE_UPLOAD_VIDEO : UPLOAD_ENDPOINTS.FILE_UPLOAD
@@ -272,7 +273,12 @@ async function uploadFileInChunks(
       finalUrl = `${uploadUrl}?${queryParams.toString()}`
     }
 
-    const uploadResponse = await h2Post(finalUrl, uploadPayload, buildHeaders(uin, p_skey))
+    const uploadResponse = await h2Post(
+      finalUrl,
+      uploadPayload,
+      buildHeaders(uin, p_skey),
+      transfer
+    )
 
     console.log(
       `${logPrefix} 分片上传: offset=${offset}, end=${end}, flag=${uploadResponse.data?.data?.flag}`
@@ -418,7 +424,8 @@ export async function fileUpload(
   checksum = '',
   sliceSize = DEFAULTS.SLICE_SIZE,
   isVideo = false,
-  totalSize = 0
+  totalSize = 0,
+  transfer = {}
 ) {
   const appid = isVideo ? APP_IDS.VIDEO_QZONE : APP_IDS.PIC_QZONE
   const uploadUrl = isVideo ? UPLOAD_ENDPOINTS.FILE_UPLOAD_VIDEO : UPLOAD_ENDPOINTS.FILE_UPLOAD
@@ -455,7 +462,7 @@ export async function fileUpload(
   }
 
   // 走 HTTP/2 单连接多路复用，对齐网页版上传性能
-  const response = await h2Post(finalUrl, payload, buildHeaders(uin, p_skey))
+  const response = await h2Post(finalUrl, payload, buildHeaders(uin, p_skey), transfer)
   return response.data
 }
 
@@ -496,7 +503,8 @@ export async function uploadVideoCover(
   albumName,
   originalVideoName,
   batchId,
-  mutliPicInfo
+  mutliPicInfo,
+  transfer = {}
 ) {
   const logPrefix = '[uploadVideoCover]'
 
@@ -568,7 +576,8 @@ export async function uploadVideoCover(
       fileLen,
       sliceSize,
       false, // 封面是图片，不是视频
-      logPrefix
+      logPrefix,
+      transfer
     )
 
     console.log(`${logPrefix} 封面上传成功`)

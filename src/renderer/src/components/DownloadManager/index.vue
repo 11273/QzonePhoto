@@ -83,6 +83,11 @@
                   <span>下载与文件保存偏好</span>
                 </header>
                 <div class="settings-panel-grid">
+                  <TransferSpeedLimit
+                    direction="download"
+                    :active="downloadSettingsVisible"
+                    class="settings-panel-item"
+                  />
                   <div class="settings-panel-item">
                     <div class="settings-panel-copy">
                       <label for="download-concurrency">并发任务</label>
@@ -752,6 +757,7 @@ import {
 import Pagination from '@renderer/components/Pagination/index.vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import AppActionButton from '@renderer/components/AppActionButton/index.vue'
+import TransferSpeedLimit from '@renderer/components/TransferSpeedLimit/index.vue'
 import AppDialogHeader from '@renderer/components/AppDialogHeader/index.vue'
 import MediaPreview from '@renderer/components/MediaPreview/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'

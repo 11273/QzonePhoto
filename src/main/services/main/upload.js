@@ -1,6 +1,8 @@
 import { app } from 'electron'
 import path from 'path'
 import fs from 'fs-extra'
+import { TransferRateLimiter } from '@main/utils/transfer-rate-limiter.mjs'
+import { normalizeTransferRate } from '@shared/transfer-rate.mjs'
 import logger from '@main/core/logger'
 import { is } from '@electron-toolkit/utils'
 import { Low } from 'lowdb'
@@ -368,6 +370,12 @@ export class UploadService {
 
   // 加载设置
   loadSettings() {
+    this.getSpeedLimiter().setRate(0)
+    try {
+      this.getSpeedLimiter().setRate(this.getSetting('speedLimitBps') ?? 0)
+    } catch {
+      /* invalid legacy setting stays unlimited */
+    }
     try {
       const savedConcurrency = this.getSetting('concurrency')
       if (savedConcurrency) {
@@ -441,6 +449,30 @@ export class UploadService {
   // 获取/设置并发数
   getConcurrency() {
     return this.concurrency
+  }
+
+  getSpeedLimiter() {
+    return (this.speedLimiter ||= new TransferRateLimiter())
+  }
+
+  getSpeedLimit() {
+    return this.getSpeedLimiter().rate
+  }
+
+  async setSpeedLimit(value) {
+    const rate = normalizeTransferRate(value)
+    if (!this.db?.data) throw new Error('上传设置尚未就绪，请稍后重试')
+    const settings = (this.db.data.settings ||= {})
+    const previous = settings.speedLimitBps
+    settings.speedLimitBps = rate
+    try {
+      await this.db.write()
+    } catch (error) {
+      settings.speedLimitBps = previous
+      throw error
+    }
+    this.getSpeedLimiter().setRate(rate)
+    return rate
   }
 
   async setConcurrency(newConcurrency) {
@@ -1405,7 +1437,11 @@ export class UploadService {
             '',
             sliceSize,
             task.isVideo || false,
-            total
+            total,
+            {
+              limiter: this.getSpeedLimiter(),
+              isCancelled: () => cancelToken.cancelled || Boolean(firstError)
+            }
           )
         } catch (e) {
           if (!firstError) firstError = e
@@ -1528,7 +1564,8 @@ export class UploadService {
           task.albumName,
           task.filename,
           task.batchId,
-          mutliPicInfo
+          mutliPicInfo,
+          { limiter: this.getSpeedLimiter(), isCancelled: () => cancelToken.cancelled }
         )
 
         console.log('[UploadService] 视频封面上传成功')

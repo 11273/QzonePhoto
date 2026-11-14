@@ -182,6 +182,8 @@ try {
 
       // 设置管理
       getConcurrency: () => ipcClient.call(IPC_DOWNLOAD.GET_CONCURRENCY),
+      getSpeedLimit: () => ipcClient.call(IPC_DOWNLOAD.GET_SPEED_LIMIT),
+      setSpeedLimit: (rate) => ipcClient.call(IPC_DOWNLOAD.SET_SPEED_LIMIT, rate),
       setConcurrency: (concurrency) => ipcClient.call(IPC_DOWNLOAD.SET_CONCURRENCY, concurrency),
       getConcurrencySettings: () => ipcClient.call(IPC_DOWNLOAD.GET_CONCURRENCY_SETTINGS),
       setAutomaticConcurrency: (enabled) =>
@@ -259,6 +261,8 @@ try {
 
       // 设置管理
       getConcurrency: () => ipcClient.call(IPC_UPLOAD.GET_CONCURRENCY),
+      getSpeedLimit: () => ipcClient.call(IPC_UPLOAD.GET_SPEED_LIMIT),
+      setSpeedLimit: (rate) => ipcClient.call(IPC_UPLOAD.SET_SPEED_LIMIT, rate),
       setConcurrency: (concurrency) => ipcClient.call(IPC_UPLOAD.SET_CONCURRENCY, concurrency),
 
       // 用户管理

@@ -2,6 +2,9 @@ import { app, dialog, shell } from 'electron'
 import axios from 'axios'
 import path from 'path'
 import fs from 'fs'
+import { pipeline } from 'node:stream/promises'
+import { TransferRateLimiter } from '@main/utils/transfer-rate-limiter.mjs'
+import { normalizeTransferRate } from '@shared/transfer-rate.mjs'
 import logger from '@main/core/logger'
 import { is } from '@electron-toolkit/utils'
 import { Low } from 'lowdb'
@@ -279,6 +282,12 @@ export class DownloadService {
 
   // 加载设置
   loadSettings() {
+    this.getSpeedLimiter().setRate(0)
+    try {
+      this.getSpeedLimiter().setRate(this.getSetting('speedLimitBps') ?? 0)
+    } catch {
+      /* invalid legacy setting stays unlimited */
+    }
     this.concurrency = DEFAULT_CONCURRENCY
     try {
       const savedConcurrency = this.getSetting('concurrency')
@@ -361,6 +370,30 @@ export class DownloadService {
   // 获取/设置并发数
   getConcurrency() {
     return this.concurrency
+  }
+
+  getSpeedLimiter() {
+    return (this.speedLimiter ||= new TransferRateLimiter())
+  }
+
+  getSpeedLimit() {
+    return this.getSpeedLimiter().rate
+  }
+
+  async setSpeedLimit(value) {
+    const rate = normalizeTransferRate(value)
+    if (!this.db?.data) throw new Error('下载设置尚未就绪，请稍后重试')
+    const settings = (this.db.data.settings ||= {})
+    const previous = settings.speedLimitBps
+    settings.speedLimitBps = rate
+    try {
+      await this.db.write()
+    } catch (error) {
+      settings.speedLimitBps = previous
+      throw error
+    }
+    this.getSpeedLimiter().setRate(rate)
+    return rate
   }
 
   async setConcurrency(newConcurrency) {
@@ -1567,7 +1600,7 @@ export class DownloadService {
         policy.observeSuccess({
           type: task.type,
           bytes: task.downloaded,
-          elapsedMs: Date.now() - startedAt,
+          elapsedMs: Math.max(0, Date.now() - startedAt - (responseMeta.rateLimitWaitMs || 0)),
           epoch
         })
         return { ...responseMeta, media }
@@ -1670,13 +1703,20 @@ export class DownloadService {
       }
 
       writer = fs.createWriteStream(filePath)
+      const timeout = task.type === 'image' ? this.imageRequestTimeout || 30000 : 0
+      const transfer = this.getSpeedLimiter().createStream((waiting) => {
+        // Headers still use the original timeout. Intentional backpressure is not a stalled socket.
+        if (timeout && response.request && !response.request.destroyed) {
+          response.request.setTimeout?.(waiting ? 0 : timeout)
+        }
+      })
 
       const totalBytes = parseInt(response.headers['content-length'], 10) || 0
       // API estimates may describe a different quality. Only use this response's
       // length for progress, otherwise display an indeterminate transfer.
       task.total = Math.max(0, totalBytes)
 
-      response.data.on('data', (chunk) => {
+      transfer.on('data', (chunk) => {
         task.downloaded += chunk.length
         const now = Date.now()
         this.downloadThroughput.record(chunk.length, now)
@@ -1693,14 +1733,8 @@ export class DownloadService {
         }
       })
 
-      response.data.pipe(writer)
-
-      await new Promise((resolve, reject) => {
-        writer.on('finish', resolve)
-        writer.on('error', reject)
-        response.data.on('error', reject)
-      })
-      return { contentType }
+      await pipeline(response.data, transfer, writer)
+      return { contentType, rateLimitWaitMs: transfer.waitMs }
     } catch (error) {
       policy.observeFailure(error)
       response?.data?.destroy()

@@ -80,6 +80,23 @@
       </div>
 
       <div class="actions-right">
+        <el-popover
+          v-model:visible="uploadLimitVisible"
+          trigger="click"
+          placement="bottom-start"
+          :width="320"
+        >
+          <template #reference>
+            <AppActionButton ui-size="compact" title="调整全部上传任务的速度上限"
+              >上传限速</AppActionButton
+            >
+          </template>
+          <TransferSpeedLimit
+            direction="upload"
+            :active="uploadLimitVisible"
+            @keydown.esc.capture.stop.prevent="uploadLimitVisible = false"
+          />
+        </el-popover>
         <!-- 批量操作 -->
         <AppActionButton
           v-if="hasActiveTasks"
@@ -414,6 +431,7 @@ import { Archive } from '@lucide/vue'
 import EmptyState from '@renderer/components/EmptyState/index.vue'
 import AppActionButton from '@renderer/components/AppActionButton/index.vue'
 import AppDialogHeader from '@renderer/components/AppDialogHeader/index.vue'
+import TransferSpeedLimit from '@renderer/components/TransferSpeedLimit/index.vue'
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import { describeUploadError, uploadErrorDetail } from '@renderer/utils/upload-error'
 
@@ -432,6 +450,7 @@ const visible = computed({
 
 // 数据状态
 const loading = ref(false)
+const uploadLimitVisible = ref(false)
 const loadError = ref('')
 const currentTasks = ref([])
 const taskStats = ref({
@@ -1084,6 +1103,7 @@ watch(
       await loadTasks()
       await loadStats()
     } else {
+      uploadLimitVisible.value = false
       await window.QzoneAPI.upload.setManagerOpen(false)
       // 关闭对话框时不清理监听器，保持后台更新
       console.log('[UploadManager] 关闭弹窗，保持监听器活跃以接收后台更新')

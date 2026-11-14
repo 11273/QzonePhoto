@@ -113,8 +113,13 @@
           >
             <header class="upload-settings-heading">
               <strong>上传设置</strong>
-              <span>当前批次生效</span>
+              <span>上传与显示偏好</span>
             </header>
+            <TransferSpeedLimit
+              direction="upload"
+              :active="uploadSettingsVisible"
+              class="upload-settings-row"
+            />
             <div class="upload-settings-row">
               <div class="upload-settings-copy">
                 <label>并发数</label>
@@ -628,6 +633,7 @@ import { uploadErrorDetail, uploadErrorMessage } from '@renderer/utils/upload-er
 import { usePrivacyStore } from '@renderer/store/privacy.store'
 import LoadingState from '@renderer/components/LoadingState/index.vue'
 import AppNumberStepper from '@renderer/components/AppNumberStepper/index.vue'
+import TransferSpeedLimit from '@renderer/components/TransferSpeedLimit/index.vue'
 
 const privacyStore = usePrivacyStore()
 import {
@@ -2455,6 +2461,7 @@ onUnmounted(async () => {
 }
 
 .upload-settings-popover.el-popper {
+  max-width: calc(100vw - 24px);
   padding: 12px;
   border-color: var(--theme-border);
   background: var(--theme-surface-overlay);

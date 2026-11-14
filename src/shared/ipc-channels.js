@@ -143,6 +143,8 @@ export const IPC_DOWNLOAD = {
   SET_DEFAULT_PATH: 'download:setDefaultPath',
   /** 获取并发数 */
   GET_CONCURRENCY: 'download:getConcurrency',
+  GET_SPEED_LIMIT: 'download:getSpeedLimit',
+  SET_SPEED_LIMIT: 'download:setSpeedLimit',
   /** 设置并发数 */
   SET_CONCURRENCY: 'download:setConcurrency',
   GET_CONCURRENCY_SETTINGS: 'download:getConcurrencySettings',
@@ -214,6 +216,8 @@ export const IPC_UPLOAD = {
   CLEAR_TASKS: 'upload:clearTasks',
   /** 获取并发数 */
   GET_CONCURRENCY: 'upload:getConcurrency',
+  GET_SPEED_LIMIT: 'upload:getSpeedLimit',
+  SET_SPEED_LIMIT: 'upload:setSpeedLimit',
   /** 设置并发数 */
   SET_CONCURRENCY: 'upload:setConcurrency',
   /** 设置上传管理器打开状态 */

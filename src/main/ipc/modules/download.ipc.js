@@ -145,6 +145,10 @@ export function createDownloadHandlers(service) {
       return downloadService.getConcurrency()
     },
 
+    [IPC_DOWNLOAD.GET_SPEED_LIMIT]: async () => downloadService.getSpeedLimit(),
+    [IPC_DOWNLOAD.SET_SPEED_LIMIT]: async (_event, context) =>
+      downloadService.setSpeedLimit(context.payload),
+
     // 设置并发数
     [IPC_DOWNLOAD.SET_CONCURRENCY]: async (event, context) => {
       return downloadService.setConcurrency(context.payload)

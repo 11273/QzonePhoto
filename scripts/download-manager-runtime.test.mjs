@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
+import { createWriteStream } from 'node:fs'
+import { pipeline } from 'node:stream/promises'
 import http from 'node:http'
 import { createRequire } from 'node:module'
 import os from 'node:os'
@@ -79,6 +81,7 @@ const createService = async (t) => {
     updateTrigger: () => {}
   })
   t.after(async () => {
+    service.speedLimiter?.setRate(0)
     service.processQueue = () => {}
     for (const token of service.cancelTokens.values()) token.cancel('test cleanup')
     await delay(150)
@@ -185,6 +188,135 @@ const sendImageSample = (res) =>
   res
     .writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': imageSample.length })
     .end(imageSample)
+
+test('real HTTP aggregate limit covers concurrent files and restores identical unlimited bytes', async (t) => {
+  const payload = Buffer.alloc(128 * 1024, 7)
+  const url = await serveDownloadScenario(t, (_req, res) => {
+    res
+      .writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': payload.length })
+      .end(payload)
+  })
+  const service = await createService(t)
+  await service.setSpeedLimit(128 * 1024)
+  const started = performance.now()
+  await Promise.all(
+    [0, 1].map(async (i) => {
+      const task = makeTask(service, `limited-${i}`, url)
+      const file = path.join(service.downloadPath, task.filename)
+      const result = await service.downloadFile(task, file, { token: undefined })
+      assert.ok(result.rateLimitWaitMs > 0)
+      assert.deepEqual(await fs.readFile(file), payload)
+    })
+  )
+  const elapsed = performance.now() - started
+  t.diagnostic(`2 × 128KB HTTP downloads at total 128KB/s: ${Math.round(elapsed)}ms`)
+  assert.ok(elapsed >= 1950 && elapsed < 4500, `aggregate limit failed: ${elapsed}ms`)
+  await service.setSpeedLimit(0)
+  const task = makeTask(service, 'unlimited-after-limit', url)
+  const result = await service.downloadFile(task, path.join(service.downloadPath, task.filename), {
+    token: undefined
+  })
+  assert.equal(result.rateLimitWaitMs, 0)
+})
+
+test('real HTTP low limits do not trigger the image idle timeout; cancellation and dynamic changes stay prompt', async (t) => {
+  const payload = Buffer.alloc(64 * 1024, 8)
+  const url = await serveDownloadScenario(t, (_req, res) => {
+    res
+      .writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': payload.length })
+      .end(payload)
+  })
+  const service = await createService(t)
+  service.imageRequestTimeout = 100
+  await service.setSpeedLimit(32 * 1024)
+  const task = makeTask(service, 'low-rate', url)
+  await service.downloadFile(task, path.join(service.downloadPath, task.filename), {
+    token: undefined
+  })
+  assert.deepEqual(await fs.readFile(path.join(service.downloadPath, task.filename)), payload)
+
+  const axios = createRequire(import.meta.url)('axios')
+  await service.setSpeedLimit(1024)
+  const token = axios.CancelToken.source()
+  const cancelledTask = makeTask(service, 'cancel-limited', url)
+  const file = path.join(service.downloadPath, cancelledTask.filename)
+  const transfer = service.downloadFile(cancelledTask, file, token)
+  await waitUntil(() => service.getSpeedLimiter().queue.length > 0, 'limiter did not wait')
+  const rejected = assert.rejects(transfer, (error) => axios.isCancel(error))
+  token.cancel('test pause')
+  await rejected
+  assert.equal(service.getSpeedLimiter().queue.length, 0)
+  await assert.rejects(fs.access(file))
+
+  const dynamic = makeTask(service, 'dynamic-limit', url)
+  const dynamicFile = path.join(service.downloadPath, dynamic.filename)
+  const pending = service.downloadFile(dynamic, dynamicFile, axios.CancelToken.source())
+  await waitUntil(() => service.getSpeedLimiter().queue.length > 0, 'dynamic limiter did not wait')
+  const started = performance.now()
+  await service.setSpeedLimit(0)
+  await pending
+  assert.ok(performance.now() - started < 1000)
+  assert.deepEqual(await fs.readFile(dynamicFile), payload)
+})
+
+test('download limits persist, validate before saving and leave the old value on storage failure', async (t) => {
+  const service = await createService(t)
+  assert.equal(service.getSpeedLimit(), 0)
+  await service.setSpeedLimit(524288)
+  assert.equal(service.db.data.settings.speedLimitBps, 524288)
+  service.speedLimiter = undefined
+  service.loadSettings()
+  assert.equal(service.getSpeedLimit(), 524288)
+  await assert.rejects(service.setSpeedLimit(-1), TypeError)
+  service.db.write = async () => {
+    throw new Error('disk full')
+  }
+  await assert.rejects(service.setSpeedLimit(0), /disk full/)
+  assert.equal(service.getSpeedLimit(), 524288)
+  assert.equal(service.db.data.settings.speedLimitBps, 524288)
+})
+
+test('real HTTP unlimited streaming has no artificial wait and stays near the original direct-pipe path', async (t) => {
+  const payload = Buffer.alloc(4 * 1024 ** 2, 3)
+  const url = await serveDownloadScenario(t, (_req, res) => {
+    res
+      .writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': payload.length })
+      .end(payload)
+  })
+  const service = await createService(t)
+  const axios = createRequire(import.meta.url)('axios')
+  const direct = []
+  const current = []
+  for (let i = 0; i < 3; i++) {
+    let started = performance.now()
+    const response = await axios({ url, responseType: 'stream' })
+    await pipeline(
+      response.data,
+      createWriteStream(path.join(service.downloadPath, `direct-${i}.bin`))
+    )
+    direct.push(performance.now() - started)
+    const task = makeTask(service, `fast-${i}`, url)
+    started = performance.now()
+    const result = await service.downloadFile(
+      task,
+      path.join(service.downloadPath, task.filename),
+      { token: undefined }
+    )
+    current.push(performance.now() - started)
+    assert.equal(result.rateLimitWaitMs, 0)
+    assert.deepEqual(await fs.readFile(path.join(service.downloadPath, task.filename)), payload)
+  }
+  const median = (values) => [...values].sort((a, b) => a - b)[1]
+  t.diagnostic(
+    `4MB loopback median: original direct pipe ${median(direct).toFixed(1)}ms; unlimited limiter ${median(current).toFixed(1)}ms`
+  )
+  assert.ok(
+    median(current) <= median(direct) * 2 + 100,
+    'unlimited must not introduce a fixed delay'
+  )
+  assert.equal(service.getSpeedLimiter().timer, null)
+  assert.equal(service.getSpeedLimiter().queue.length, 0)
+})
 
 test('download photo key stays on QQ media hosts, not arbitrary or deceptive URLs', async (t) => {
   const service = await createService(t)

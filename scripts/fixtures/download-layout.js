@@ -1,6 +1,6 @@
 import { createApp, h, nextTick, ref } from 'vue'
 import { createPinia } from 'pinia'
-import { ElConfigProvider } from 'element-plus'
+import ElementPlus, { ElConfigProvider } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import '@renderer/assets/main.css'
 import '@renderer/styles/design-tokens.css'
@@ -14,6 +14,8 @@ import '@renderer/styles/themes/qzone-dark.css'
 import '@renderer/styles/element-theme.css'
 import '@renderer/styles/ui-refinement.css'
 import DownloadManager from '@renderer/components/DownloadManager/index.vue'
+import UploadDialog from '@renderer/components/UploadDialog/index.vue'
+import UploadManager from '@renderer/components/UploadManager/index.vue'
 
 // No real IPC, login, network transfers, files or persistent account data are used.
 const noop = async () => {}
@@ -23,6 +25,28 @@ const activeListeners = new Set()
 let fixtureConcurrency = 3
 let fixtureAutomaticConcurrency = true
 let rejectConcurrencyChange = false
+const fixtureRates = { download: 0, upload: 0 }
+const rateKeys = []
+document.addEventListener(
+  'keydown',
+  (event) => rateKeys.push({ key: event.key, target: event.target?.getAttribute('aria-label') }),
+  true
+)
+window.rateDebugState = () => ({
+  rates: fixtureRates,
+  keys: rateKeys,
+  focused: document.activeElement?.getAttribute('aria-label'),
+  value: document.activeElement?.value
+})
+let rejectRateSave = false
+const rateAPI = (direction) => ({
+  getSpeedLimit: async () => fixtureRates[direction],
+  setSpeedLimit: async (rate) => {
+    if (rejectRateSave) throw new Error('保存失败，请重试')
+    fixtureRates[direction] = rate
+    return rate
+  }
+})
 const imageSource = new URL('./download-preview.svg', import.meta.url).href
 const videoSource = new URLSearchParams(location.search).get('videoSource') || ''
 const localImageSource = new URLSearchParams(location.search).get('localImageSource') || imageSource
@@ -85,7 +109,32 @@ const mergeQueryChanges = (changes) => {
     .filter((task) => !task.deleted)
 }
 window.QzoneAPI = {
+  upload: {
+    ...rateAPI('upload'),
+    getConcurrency: async () => 1,
+    getTasks: async () => ({
+      tasks: [{ ...tasks[1], status: 'uploading', filename: 'sample.jpg' }],
+      pagination: { total: 1, totalPages: 1 }
+    }),
+    getStats: async () => ({
+      total: 1,
+      uploading: 1,
+      completed: 0,
+      waiting: 0,
+      paused: 0,
+      error: 0,
+      cancelled: 0
+    }),
+    getAlbumsWithStats: async () => [],
+    getPendingTasksByAlbum: async () => [],
+    getTasksBySession: async () => [],
+    setManagerOpen: noop,
+    onStatsUpdate: () => () => {},
+    onDetailedStatusUpdate: () => () => {},
+    onTaskChanges: () => () => {}
+  },
   download: {
+    ...rateAPI('download'),
     getTasks: async ({ status = null, page = 1, pageSize = 10 } = {}) => {
       const filtered = queryTasks.filter((task) => !status || task.status === status)
       const result = JSON.parse(
@@ -161,6 +210,7 @@ window.QzoneAPI = {
 }
 sessionStorage.setItem('global-privacy-mode', 'false')
 const managerOpen = ref(true)
+const rateMode = ref(new URLSearchParams(location.search).get('mode') || 'download')
 window.isDownloadFixtureOpen = () => managerOpen.value
 createApp({
   render: () =>
@@ -169,16 +219,27 @@ createApp({
       { locale: zhCn },
       {
         default: () =>
-          h(DownloadManager, {
-            modelValue: managerOpen.value,
-            'onUpdate:modelValue': (value) => {
-              managerOpen.value = value
+          h(
+            rateMode.value === 'upload'
+              ? UploadDialog
+              : rateMode.value === 'upload-manager'
+                ? UploadManager
+                : DownloadManager,
+            {
+              modelValue: managerOpen.value,
+              visible: managerOpen.value,
+              contextMode: 'global',
+              albumName: '限速回归相册',
+              'onUpdate:modelValue': (value) => {
+                managerOpen.value = value
+              }
             }
-          })
+          )
       }
     )
 })
   .use(createPinia())
+  .use(ElementPlus)
   .mount('#app')
 
 window.downloadLayoutReady = (async () => {
@@ -737,6 +798,91 @@ window.waitForDownloadSettingsClosed = () =>
     const popup = document.querySelector('.download-settings-popover')
     return !popup || getComputedStyle(popup).display === 'none'
   }, 'Escape did not close settings')
+
+window.exerciseTransferLimitSettings = async () => {
+  const mode = rateMode.value
+  const direction = mode === 'download' ? 'download' : 'upload'
+  const selector =
+    mode === 'download'
+      ? '[title="调整下载与保存设置"]'
+      : mode === 'upload'
+        ? '.upload-settings-trigger'
+        : '[title="调整全部上传任务的速度上限"]'
+  await waitFor(() => document.querySelector(selector), 'settings entry missing')
+  document.querySelector(selector).click()
+  const limitSelector = `select[aria-label="${direction === 'download' ? '下载' : '上传'}限速"]`
+  await waitFor(
+    () => document.querySelector(limitSelector) && !document.querySelector(limitSelector).disabled,
+    'rate did not load'
+  )
+  const select = document.querySelector(limitSelector)
+  const root = select.closest('.transfer-limit-setting')
+  ensure(select.value === '0', 'untouched rate must be unlimited')
+  const change = async (value) => {
+    select.focus()
+    select.value = value
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await nextTick()
+    await waitFor(() => !select.disabled, 'saving never completed')
+  }
+  await change(String(512 * 1024))
+  ensure(fixtureRates[direction] === 512 * 1024, 'preset did not save')
+  await change('custom')
+  const input = root.querySelector('input')
+  const unit = root.querySelector('.limit-custom select')
+  const fill = async (value) => {
+    input.value = value
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    unit.value = '1024'
+    unit.dispatchEvent(new Event('change', { bubbles: true }))
+    await nextTick()
+    root
+      .querySelector('form')
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await nextTick()
+    await waitFor(() => !select.disabled, 'custom saving never completed')
+  }
+  await fill('')
+  ensure(root.querySelector('[role="alert"]'), 'empty custom rate needs an inline error')
+  ensure(fixtureRates[direction] === 512 * 1024, 'empty input must not disable throttling')
+  await fill('256')
+  ensure(fixtureRates[direction] === 256 * 1024, 'custom KB/s conversion failed')
+  rejectRateSave = true
+  await change(String(2 * 1024 ** 2))
+  rejectRateSave = false
+  ensure(
+    fixtureRates[direction] === 256 * 1024 && select.value === 'custom',
+    'failed save must retain old rate'
+  )
+  ensure(root.querySelector('[role="alert"]'), 'failed save needs visible feedback')
+  await change('0')
+  ensure(fixtureRates[direction] === 0, 'unlimited did not restore')
+  await change('custom')
+  const nextInput = root.querySelector('input')
+  nextInput.value = '300.5'
+  nextInput.dispatchEvent(new Event('input', { bubbles: true }))
+  root.querySelector('.limit-custom select').value = '1024'
+  root.querySelector('.limit-custom select').dispatchEvent(new Event('change', { bubbles: true }))
+  await nextTick()
+  await sleep(250)
+  nextInput.focus()
+  const rect = root.getBoundingClientRect()
+  ensure(
+    rect.width > 0 && rect.left >= 0 && rect.right <= innerWidth + 1,
+    'limit controls are hidden or overflow viewport'
+  )
+  ensure(root.scrollWidth <= root.clientWidth + 1, 'custom controls overflow horizontally')
+  ensure(
+    fixtureRates[direction === 'download' ? 'upload' : 'download'] === 0,
+    'directions are not independent'
+  )
+  return true
+}
+window.checkRateEnterSaved = () =>
+  waitFor(
+    () => fixtureRates[rateMode.value === 'download' ? 'download' : 'upload'] === 300.5 * 1024,
+    'Enter did not apply the custom rate'
+  )
 
 window.exerciseDownloadBatchViewport = async () => {
   document.querySelector('.batch-summary-trigger').click()

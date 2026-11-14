@@ -96,6 +96,18 @@ test('real preload accepts every normal QR state, including expiry, without cons
   assert.doesNotMatch(JSON.stringify(app.logs), /private-secret|private-account|login-redirect/)
 })
 
+test('transfer settings cross the real preload as independent typed IPC requests', async () => {
+  const app = setup()
+  for (const direction of ['download', 'upload']) {
+    app.respond({ code: 0, data: 0 })
+    assert.equal(await app.QzoneAPI[direction].getSpeedLimit(), 0)
+    assert.equal(app.requests.at(-1).channel, `${direction}:getSpeedLimit`)
+    app.respond({ code: 0, data: 524288 })
+    assert.equal(await app.QzoneAPI[direction].setSpeedLimit(524288), 524288)
+    assert.equal(app.requests.at(-1).channel, `${direction}:setSpeedLimit`)
+  }
+})
+
 test('QR transport, malformed and unknown responses still fail; other Qzone APIs keep business validation', async () => {
   const app = setup()
   for (const response of [
