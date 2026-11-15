@@ -5,6 +5,7 @@ import fs from 'fs'
 import { pipeline } from 'node:stream/promises'
 import { TransferRateLimiter } from '@main/utils/transfer-rate-limiter.mjs'
 import { normalizeTransferRate } from '@shared/transfer-rate.mjs'
+import { downloadHlsVideo, isHlsDownload, requestHlsResource } from '@main/utils/hls-download.mjs'
 import logger from '@main/core/logger'
 import { is } from '@electron-toolkit/utils'
 import { Low } from 'lowdb'
@@ -1041,7 +1042,12 @@ export class DownloadService {
           tasks.push(task)
           taskIds.push(task.id)
         } else {
-          const videoInfo = await this.getVideoDetailInfo(video, userInfo, album, headers)
+          // The video-library API already supplies its playback source and has no
+          // photo album/picKey for the floatview API. Keep that source intact.
+          const videoInfo =
+            video.sourceKey === 'video' && (video.raw || video.url)
+              ? { ...video, video_download_url: video.raw || video.url }
+              : await this.getVideoDetailInfo(video, userInfo, album, headers)
           if (videoInfo) {
             const filename = this.generatePhotoFilename(videoInfo)
             const task = this.createTask({
@@ -1647,54 +1653,98 @@ export class DownloadService {
     return requestHeaders
   }
 
-  // 下载文件 - 保持原有逻辑
+  buildDownloadRequestHeaders(task, downloadUrl = task.url) {
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      ...(task.request_headers || {})
+    }
+
+    // QQ 图片凭据不能随接口返回的任意下载地址一起发送。
+    try {
+      const url = new URL(downloadUrl)
+      const isQzoneMedia =
+        ['http:', 'https:'].includes(url.protocol) &&
+        ['qq.com', 'qpic.cn'].some(
+          (domain) => url.hostname === domain || url.hostname.endsWith(`.${domain}`)
+        )
+      if (!isQzoneMedia) {
+        for (const name of Object.keys(headers)) {
+          if (name.toLowerCase() === 'cookie') delete headers[name]
+        }
+      } else {
+        const qq_photo_key = this.serviceManager?.get(ServiceNames.PHOTO)?.qq_photo_key
+        if (qq_photo_key) {
+          headers['Cookie'] = headers['Cookie']
+            ? `${headers['Cookie']}; qq_photo_key=${qq_photo_key}`
+            : `qq_photo_key=${qq_photo_key}`
+        }
+      }
+    } catch {
+      // ignore: 服务未就绪或缺少 key 时不附加 cookie
+    }
+    return headers
+  }
+
+  // 下载文件 - 保持直链流式下载，HLS 分段复用同一限速与取消逻辑。
   async downloadFile(task, filePath, cancelToken) {
     const policy = this.getConcurrencyPolicy()
     let response = null
     let writer = null
     let lastProgressUpdate = Date.now()
+    const onData = (chunk) => {
+      task.downloaded += chunk.length
+      const now = Date.now()
+      this.downloadThroughput.record(chunk.length, now)
+      this.taskThroughputs.get(task.id)?.record(chunk.length, now)
+      this.refreshTaskSpeed(task)
+
+      if (now - lastProgressUpdate >= 100) {
+        task.progress =
+          task.total > 0 ? Math.min(99, Math.floor((task.downloaded / task.total) * 100)) : 0
+        lastProgressUpdate = now
+        this.triggerUpdate([task.id])
+      }
+    }
 
     try {
-      const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        ...(task.request_headers || {})
-      }
-
-      // QQ 图片凭据不能随接口返回的任意下载地址一起发送。
-      try {
-        const url = new URL(task.url)
-        const isQzoneMedia =
-          ['http:', 'https:'].includes(url.protocol) &&
-          ['qq.com', 'qpic.cn'].some(
-            (domain) => url.hostname === domain || url.hostname.endsWith(`.${domain}`)
-          )
-        if (!isQzoneMedia) {
-          for (const name of Object.keys(headers)) {
-            if (name.toLowerCase() === 'cookie') delete headers[name]
-          }
-        } else {
-          const qq_photo_key = this.serviceManager?.get(ServiceNames.PHOTO)?.qq_photo_key
-          if (qq_photo_key) {
-            headers['Cookie'] = headers['Cookie']
-              ? `${headers['Cookie']}; qq_photo_key=${qq_photo_key}`
-              : `qq_photo_key=${qq_photo_key}`
-          }
-        }
-      } catch {
-        // ignore: 服务未就绪或缺少 key 时不附加 cookie
-      }
-
-      response = await axios({
-        method: 'get',
-        url: task.url,
-        responseType: 'stream',
-        cancelToken: cancelToken.token,
-        // Axios' socket/response timeout, not a total-duration cap for large videos.
-        ...(task.type === 'image' && { timeout: this.imageRequestTimeout || 30000 }),
-        headers
-      })
+      const request = () =>
+        axios({
+          method: 'get',
+          url: task.url,
+          responseType: 'stream',
+          cancelToken: cancelToken.token,
+          // Axios' socket/response timeout, not a total-duration cap for large videos.
+          ...(task.type === 'image' && { timeout: this.imageRequestTimeout || 30000 }),
+          headers: this.buildDownloadRequestHeaders(task)
+        })
+      response = isHlsDownload(task.url)
+        ? await requestHlsResource(request, cancelToken.token)
+        : await request()
 
       const contentType = String(response.headers['content-type'] || '')
+      if (task.type === 'video' && isHlsDownload(task.url, contentType)) {
+        task.total = 0 // Playlist bytes are not the video size.
+        return await downloadHlsVideo({
+          url: task.url,
+          filePath,
+          response,
+          fetchResource: (url, range, signal) =>
+            axios({
+              method: 'get',
+              url,
+              responseType: 'stream',
+              cancelToken: cancelToken.token,
+              signal,
+              headers: {
+                ...this.buildDownloadRequestHeaders(task, url),
+                ...(range && { Range: range })
+              }
+            }),
+          limiter: this.getSpeedLimiter(),
+          cancelToken,
+          onData
+        })
+      }
       if (/^(?:text\/|application\/(?:json|xml|javascript|xhtml\+xml))/i.test(contentType)) {
         response.data.destroy()
         const error = new Error(`下载地址返回了非媒体内容（${contentType.split(';')[0]}）`)
@@ -1716,22 +1766,7 @@ export class DownloadService {
       // length for progress, otherwise display an indeterminate transfer.
       task.total = Math.max(0, totalBytes)
 
-      transfer.on('data', (chunk) => {
-        task.downloaded += chunk.length
-        const now = Date.now()
-        this.downloadThroughput.record(chunk.length, now)
-        this.taskThroughputs.get(task.id)?.record(chunk.length, now)
-        this.refreshTaskSpeed(task)
-
-        // 更新进度
-        if (now - lastProgressUpdate >= 100) {
-          // Only a verified, saved file is 100%; unknown lengths stay indeterminate.
-          task.progress =
-            task.total > 0 ? Math.min(99, Math.floor((task.downloaded / task.total) * 100)) : 0
-          lastProgressUpdate = now
-          this.triggerUpdate([task.id])
-        }
-      })
+      transfer.on('data', onData)
 
       await pipeline(response.data, transfer, writer)
       return { contentType, rateLimitWaitMs: transfer.waitMs }

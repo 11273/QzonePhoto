@@ -11,7 +11,10 @@ import { fileURLToPath } from 'node:url'
 import { compileFunction } from 'node:vm'
 import { Readable } from 'node:stream'
 import { setTimeout as delay } from 'node:timers/promises'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { build } from 'esbuild'
+import ffmpegStatic from 'ffmpeg-static'
 import { RollingDownloadThroughput } from '../src/shared/download-throughput.mjs'
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url))
@@ -188,6 +191,351 @@ const sendImageSample = (res) =>
   res
     .writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': imageSample.length })
     .end(imageSample)
+
+const runFfmpeg = promisify(execFile)
+const createHlsScenario = async (
+  t,
+  { format = 'mpegts', encrypted = false, singleFile = false } = {}
+) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'qzone-hls-source-'))
+  t.after(() => fs.rm(directory, { recursive: true, force: true }))
+  const extra = []
+  if (encrypted) {
+    await fs.writeFile(path.join(directory, 'secret.key'), Buffer.alloc(16, 7))
+    await fs.writeFile(path.join(directory, 'key.info'), `secret.key\n${directory}/secret.key\n`)
+    extra.push('-hls_key_info_file', path.join(directory, 'key.info'))
+  }
+  if (singleFile) extra.push('-hls_flags', 'single_file')
+  await runFfmpeg(ffmpegStatic, [
+    '-nostdin',
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc2=size=96x64:rate=10',
+    '-f',
+    'lavfi',
+    '-i',
+    'sine=frequency=440:sample_rate=44100',
+    '-t',
+    '2.4',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-threads',
+    '1',
+    '-g',
+    '10',
+    '-c:a',
+    'aac',
+    '-f',
+    'hls',
+    '-hls_time',
+    '1',
+    '-hls_list_size',
+    '0',
+    '-hls_segment_type',
+    format,
+    ...extra,
+    path.join(directory, 'index.m3u8')
+  ])
+  await fs.writeFile(
+    path.join(directory, 'master.m3u8'),
+    '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=128000\nindex.m3u8?variant=1\n'
+  )
+  const requests = []
+  const state = {
+    missing: '',
+    invalid: '',
+    truncated: '',
+    failures: {},
+    redirect: false,
+    alternateSegment: ''
+  }
+  const url = await serveDownloadScenario(t, async (req, res) => {
+    const requestUrl = new URL(req.url, 'http://localhost')
+    const name = path.basename(requestUrl.pathname)
+    requests.push({ name, range: req.headers.range, cookie: req.headers.cookie })
+    if (state.redirect && name === 'redirect.m3u8') {
+      res.writeHead(302, { Location: '/nested/index.m3u8' }).end()
+      return
+    }
+    if (state.missing === name || state.failures[name] > 0) {
+      if (state.failures[name]) state.failures[name]--
+      res.writeHead(404).end()
+      return
+    }
+    if (state.invalid === name) {
+      res
+        .writeHead(200, { 'Content-Type': 'application/octet-stream' })
+        .end('not a valid video segment')
+      return
+    }
+    let payload
+    try {
+      payload = await fs.readFile(path.join(directory, name))
+    } catch {
+      res.writeHead(404).end()
+      return
+    }
+    if (state.alternateSegment && name === 'index.m3u8') {
+      payload = Buffer.from(payload.toString().replace(/index0\.ts/, state.alternateSegment))
+    }
+    const type = name.endsWith('.m3u8') ? 'application/x-mpeg' : 'application/octet-stream'
+    if (state.truncated === name) {
+      res.writeHead(200, { 'Content-Type': type, 'Content-Length': payload.length })
+      res.write(payload.subarray(0, 64))
+      setTimeout(() => res.destroy(), 20)
+      return
+    }
+    const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range || '')
+    if (range && !name.endsWith('.m3u8')) {
+      const start = Number(range[1])
+      const end = range[2] ? Math.min(Number(range[2]), payload.length - 1) : payload.length - 1
+      res
+        .writeHead(206, {
+          'Content-Type': type,
+          'Content-Length': end - start + 1,
+          'Content-Range': `bytes ${start}-${end}/${payload.length}`,
+          'Accept-Ranges': 'bytes'
+        })
+        .end(payload.subarray(start, end + 1))
+    } else
+      res.writeHead(200, { 'Content-Type': type, 'Content-Length': payload.length }).end(payload)
+  })
+  return { url, requests, directory, state }
+}
+
+const decodedFrames = async (filename) => {
+  const { stdout } = await runFfmpeg(ffmpegStatic, [
+    '-nostdin',
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    ...(filename.endsWith('.m3u8') ? ['-allowed_extensions', 'ALL'] : []), // Own generated fixture key.
+    '-i',
+    filename,
+    '-map',
+    '0:v:0',
+    '-f',
+    'framemd5',
+    '-'
+  ])
+  return stdout
+    .split('\n')
+    .filter((line) => line && !line.startsWith('#'))
+    .map((line) => line.split(',').at(-1).trim())
+}
+
+test('real HLS: TS, master, AES-128 and fMP4 byte ranges save complete playable MP4 files', async (t) => {
+  for (const options of [
+    { name: 'ts' },
+    { name: 'master', master: true },
+    { name: 'aes', encrypted: true },
+    { name: 'fmp4', format: 'fmp4', singleFile: true }
+  ]) {
+    await t.test(options.name, async (t) => {
+      const service = await createService(t)
+      const source = await createHlsScenario(t, options)
+      const task = makeTask(
+        service,
+        options.name,
+        `${source.url}/${options.master ? 'master' : 'index'}.m3u8`,
+        'video'
+      )
+      task.total = 2048 // The response is a tiny playlist, never the completed video.
+      await service.executeDownload(task)
+      assert.equal(task.status, 'completed', task.error)
+      assert.equal(task.progress, 100)
+      const output = path.join(service.downloadPath, task.filename)
+      const bytes = await fs.readFile(output)
+      assert.equal(bytes.subarray(4, 8).toString(), 'ftyp')
+      assert.ok(bytes.length > 10000)
+      assert.equal(task.total, bytes.length)
+      assert.deepEqual(
+        await decodedFrames(output),
+        await decodedFrames(path.join(source.directory, 'index.m3u8'))
+      )
+      await runFfmpeg(ffmpegStatic, [
+        '-v',
+        'error',
+        '-i',
+        output,
+        '-map',
+        '0:a:0',
+        '-f',
+        'null',
+        '-'
+      ])
+      assert.ok(source.requests.some((request) => request.name === 'index.m3u8'))
+      if (options.encrypted)
+        assert.ok(source.requests.some((request) => request.name === 'secret.key'))
+      if (options.singleFile) assert.ok(source.requests.some((request) => request.range))
+      assert.equal(
+        (await fs.readdir(service.downloadPath)).some((name) => name.startsWith('.qzonephoto-')),
+        false
+      )
+    })
+  }
+})
+
+test('real HLS: missing segments fail without a partial MP4, and retry after recovery succeeds', async (t) => {
+  const service = await createService(t)
+  const source = await createHlsScenario(t)
+  source.state.missing = 'index2.ts'
+  const task = makeTask(service, 'missing-segment', `${source.url}/index.m3u8`, 'video')
+  const output = path.join(service.downloadPath, task.filename)
+  await service.executeDownload(task)
+  assert.equal(task.status, 'error')
+  assert.match(task.error, /404/)
+  assert.deepEqual(await fs.readdir(service.downloadPath), [])
+  source.state.missing = ''
+  task.status = 'waiting'
+  await service.executeDownload(task)
+  assert.equal(task.status, 'completed', task.error)
+  assert.equal((await decodedFrames(output)).length, 24)
+})
+
+test('real HLS: malformed or interrupted segments cannot silently produce a shortened successful video', async (t) => {
+  for (const failure of ['invalid', 'truncated']) {
+    await t.test(failure, async (t) => {
+      const service = await createService(t)
+      const source = await createHlsScenario(t)
+      source.state[failure] = 'index1.ts'
+      const task = makeTask(service, failure, `${source.url}/index.m3u8`, 'video')
+      await service.executeDownload(task)
+      assert.equal(task.status, 'error')
+      assert.deepEqual(await fs.readdir(service.downloadPath), [])
+    })
+  }
+})
+
+test('real HLS: transient CDN 404 responses retry both playlists and segments without losing frames', async (t) => {
+  const service = await createService(t)
+  const source = await createHlsScenario(t)
+  source.state.failures = { 'index.m3u8': 1, 'index1.ts': 2 }
+  const task = makeTask(service, 'transient-hls', `${source.url}/index.m3u8`, 'video')
+  await service.executeDownload(task)
+  assert.equal(task.status, 'completed', task.error)
+  assert.equal((await decodedFrames(path.join(service.downloadPath, task.filename))).length, 24)
+  assert.equal(source.requests.filter((request) => request.name === 'index.m3u8').length, 2)
+  assert.ok(source.requests.filter((request) => request.name === 'index1.ts').length >= 3)
+})
+
+test('real HLS: pause interrupts a long Retry-After before the first playlist is received', async (t) => {
+  const service = await createService(t)
+  let calls = 0
+  const url = await serveDownloadScenario(t, (_req, res) => {
+    calls++
+    res.writeHead(429, { 'Retry-After': '30' }).end()
+  })
+  const task = makeTask(service, 'hls-backoff-pause', `${url}/index.m3u8`, 'video')
+  service.processQueue()
+  await waitUntil(() => calls === 1, 'playlist request was not sent')
+  await delay(30)
+  await service.pauseTask(task.id)
+  await waitUntil(
+    () => service.downloadingTasks.size === 0,
+    'paused task retained a queue slot',
+    1000
+  )
+  assert.equal(task.status, 'paused')
+  assert.equal(calls, 1)
+  assert.deepEqual(await fs.readdir(service.downloadPath), [])
+})
+
+test('video-library batch keeps its HLS source without querying a nonexistent photo album', async (t) => {
+  const service = await createService(t)
+  const source = await createHlsScenario(t)
+  service.getVideoDetailInfo = () => assert.fail('video-library records have no photo album/picKey')
+  const ids = await service.processBatch(
+    [
+      {
+        id: 'library-video',
+        name: 'library-video',
+        is_video: true,
+        sourceKey: 'video',
+        url: `${source.url}/index.m3u8`,
+        raw: `${source.url}/index.m3u8`
+      }
+    ],
+    service.downloadPath,
+    { id: 'video', name: '我的视频', sourceKey: 'video' },
+    { uin: 'o12345', p_skey: 'synthetic-private-key' },
+    {},
+    { id: 'library-batch', autoStart: false }
+  )
+  assert.equal(ids.length, 1)
+  const task = service.activeTasks.get(ids[0])
+  assert.equal(task.status, 'paused')
+  assert.equal(task.url, `${source.url}/index.m3u8`)
+  await service.resumeTask(task.id)
+  await waitUntil(() => task.status === 'completed', 'video-library batch did not save a video')
+  assert.equal((await decodedFrames(path.join(service.downloadPath, task.filename))).length, 24)
+})
+
+test('real HLS: relative redirects and untrusted segment hosts preserve credential boundaries', async (t) => {
+  const service = await createService(t)
+  const source = await createHlsScenario(t)
+  source.state.redirect = true
+  // localhost is a distinct media host; credentials must be rechecked for each resource.
+  source.state.alternateSegment = `${source.url.replace('127.0.0.1', 'localhost')}/index0.ts`
+  const task = makeTask(service, 'redirect-hls', `${source.url}/redirect.m3u8`, 'video')
+  task.request_headers = {
+    Cookie: 'p_skey=synthetic-private-cookie',
+    Referer: 'https://user.qzone.qq.com/'
+  }
+  await service.executeDownload(task)
+  assert.equal(task.status, 'completed', task.error)
+  assert.ok(source.requests.some((request) => request.name === 'index0.ts'))
+  assert.ok(source.requests.every((request) => !request.cookie))
+})
+
+test('real HLS: aggregate limit, immediate pause/resume and restoring unlimited preserve the queue', async (t) => {
+  const service = await createService(t)
+  const source = await createHlsScenario(t)
+  await service.setSpeedLimit(16 * 1024)
+  const tasks = [0, 1].map((id) =>
+    makeTask(service, `limited-hls-${id}`, `${source.url}/index.m3u8`, 'video')
+  )
+  service.processQueue()
+  await waitUntil(() => tasks.every((task) => task.downloaded > 8192), 'limited HLS did not stream')
+  assert.ok(
+    tasks.every((task) => task.status === 'downloading' && task.progress < 100 && task.total === 0)
+  )
+  const bytes = tasks.reduce((sum, task) => sum + task.downloaded, 0)
+  assert.ok(bytes < 50000, `unexpected limit burst: ${bytes}`)
+  await service.pauseTask(tasks[0].id)
+  await service.resumeTask(tasks[0].id)
+  await service.setSpeedLimit(0)
+  await waitUntil(
+    () => tasks.every((task) => task.status === 'completed'),
+    tasks.map((task) => task.error).join('; '),
+    12000
+  )
+  assert.equal(service.getSpeedLimiter().queue.length, 0)
+  assert.equal(service.getSpeedLimiter().timer, null)
+  assert.equal(service.downloadingTasks.size, 0)
+  assert.equal(service.cancelTokens.size, 0)
+  for (const task of tasks)
+    assert.equal((await decodedFrames(path.join(service.downloadPath, task.filename))).length, 24)
+  assert.equal((await fs.readdir(service.downloadPath)).length, 2)
+})
+
+test('real HLS: local-file references are rejected rather than read by FFmpeg', async (t) => {
+  const service = await createService(t)
+  const source = await createHlsScenario(t)
+  source.state.alternateSegment = `file://${source.directory}/secret.key`
+  const task = makeTask(service, 'local-reference', `${source.url}/index.m3u8`, 'video')
+  await service.executeDownload(task)
+  assert.equal(task.status, 'error')
+  assert.match(task.error, /不支持的分段地址/)
+  assert.deepEqual(await fs.readdir(service.downloadPath), [])
+})
 
 test('real HTTP aggregate limit covers concurrent files and restores identical unlimited bytes', async (t) => {
   const payload = Buffer.alloc(128 * 1024, 7)
