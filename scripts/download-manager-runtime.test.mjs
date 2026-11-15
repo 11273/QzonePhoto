@@ -250,6 +250,7 @@ const createHlsScenario = async (
   const requests = []
   const state = {
     missing: '',
+    denied: '',
     invalid: '',
     truncated: '',
     failures: {},
@@ -260,6 +261,10 @@ const createHlsScenario = async (
     const requestUrl = new URL(req.url, 'http://localhost')
     const name = path.basename(requestUrl.pathname)
     requests.push({ name, range: req.headers.range, cookie: req.headers.cookie })
+    if (state.denied === name) {
+      res.writeHead(403).end()
+      return
+    }
     if (state.redirect && name === 'redirect.m3u8') {
       res.writeHead(302, { Location: '/nested/index.m3u8' }).end()
       return
@@ -476,6 +481,285 @@ test('video-library batch keeps its HLS source without querying a nonexistent ph
   await service.resumeTask(task.id)
   await waitUntil(() => task.status === 'completed', 'video-library batch did not save a video')
   assert.equal((await decodedFrames(path.join(service.downloadPath, task.filename))).length, 24)
+})
+
+test('friend-photo feed queries the real photo album and preserves the friend owner', async (t) => {
+  const service = await createService(t)
+  const calls = []
+  service.serviceManager = new Map([
+    [
+      'photo',
+      {
+        getVideoInfo: async (params) => {
+          calls.push(params)
+          return { is_video: true, video_download_url: 'https://media.example/video.m3u8' }
+        }
+      }
+    ]
+  ])
+  const result = await service.addFeedsTasks(
+    {
+      uin: 'o10001',
+      friendUin: '20002',
+      batch: { id: 'friend-photos', autoStart: false },
+      feeds: [
+        {
+          skey: 'photo-feed-key',
+          albumId: 'real-photo-album',
+          time: 1700000000,
+          photos: [
+            {
+              name: 'friend-video',
+              is_video: true,
+              picKey: 'photo-video-key',
+              pre: 'https://image.example/cover.jpg'
+            }
+          ]
+        }
+      ]
+    },
+    { p_skey: 'synthetic-key' }
+  )
+  assert.deepEqual(calls, [
+    { hostUin: '20002', topicId: 'real-photo-album', picKey: 'photo-video-key' }
+  ])
+  assert.equal(service.getTaskFromDB(result.taskIds[0]).url, 'https://media.example/video.m3u8')
+})
+
+test('feed video uses supplied video fields instead of downloading its cover or querying a feed as an album', async (t) => {
+  const service = await createService(t)
+  let calls = 0
+  service.serviceManager = new Map([
+    [
+      'photo',
+      {
+        getVideoInfo: async () => {
+          calls++
+          return null
+        }
+      }
+    ]
+  ])
+  const result = await service.addFeedsTasks(
+    {
+      uin: 'o10001',
+      batch: { id: 'direct-feed-video', autoStart: false },
+      feeds: [
+        {
+          skey: 'shuoshuo-id',
+          time: 1700000000,
+          photos: [
+            {
+              name: 'feed-video',
+              is_video: true,
+              picKey: 'not-an-album-reference',
+              video_info: { video_url: 'https://media.example/stream.m3u8' },
+              raw: 'https://image.example/original-cover.jpg',
+              url: 'https://image.example/cover.jpg',
+              pre: 'https://image.example/small-cover.jpg'
+            }
+          ]
+        }
+      ]
+    },
+    { p_skey: 'synthetic-key' }
+  )
+  const task = service.getTaskFromDB(result.taskIds[0])
+  assert.equal(task.url, 'https://media.example/stream.m3u8')
+  assert.equal(calls, 0)
+  assert.equal(task.type, 'video')
+})
+
+const addSourceVideo = async (service, source, { kind, friend }, format, suffix = '') => {
+  const owner = friend ? '20002' : 'o10001'
+  const url = `${source.url}/${format === 'hls' ? 'index.m3u8' : 'movie.mp4'}`
+  const albumId = `real-${kind}-album`
+  const picKey = `${kind}-${format}-${suffix}`
+  const calls = []
+  service.serviceManager = new Map([
+    [
+      'photo',
+      {
+        getVideoInfo: async (params, headers) => {
+          calls.push(params)
+          assert.equal(params.hostUin, owner)
+          assert.equal(params.topicId, albumId)
+          assert.equal(params.picKey, picKey)
+          assert.equal(headers.p_skey, 'synthetic-key')
+          return {
+            name: picKey,
+            is_video: true,
+            video_info: { download_url: url },
+            pre: `${source.url}/cover.jpg`
+          }
+        }
+      }
+    ]
+  ])
+  const referenced = kind === 'album' || kind === 'photos'
+  const photo = {
+    name: picKey,
+    is_video: true,
+    sourceKey: kind === 'library' ? 'video' : kind,
+    pre: `${source.url}/cover.jpg`,
+    ...(referenced
+      ? { picKey, albumId, ownerUin: owner }
+      : { id: picKey, video_play_url: url, url: `${source.url}/cover.jpg` })
+  }
+  const common = {
+    uin: 'o10001',
+    friendUin: friend ? owner : null,
+    batch: { id: `${kind}-${format}-${friend}-${suffix}`, autoStart: false }
+  }
+  const result =
+    kind === 'album'
+      ? await service.addAlbumTasks(
+          { ...common, album: { id: albumId, name: picKey }, photos: [photo] },
+          { p_skey: 'synthetic-key' }
+        )
+      : await service.addFeedsTasks(
+          {
+            ...common,
+            feeds: [{ skey: `feed-${picKey}`, albumId: referenced ? albumId : '', photos: [photo] }]
+          },
+          { p_skey: 'synthetic-key' }
+        )
+  assert.equal(result.taskIds.length, 1)
+  const task = service.activeTasks.get(result.taskIds[0])
+  assert.equal(task.url, url)
+  assert.equal(task.type, 'video')
+  assert.equal(calls.length, referenced ? 1 : 0)
+  if (friend) assert.match(task.directory, /好友相册[\\/]20002[\\/]/)
+  return task
+}
+
+test('all video entrypoints: MP4/HLS retry, pause, resume and disabling the live limit preserve complete files', async (t) => {
+  const source = await createHlsScenario(t)
+  await runFfmpeg(ffmpegStatic, [
+    '-v',
+    'error',
+    '-i',
+    path.join(source.directory, 'index.m3u8'),
+    '-c',
+    'copy',
+    path.join(source.directory, 'movie.mp4')
+  ])
+  const expected = await decodedFrames(path.join(source.directory, 'movie.mp4'))
+  for (const kind of ['album', 'photos', 'timeline', 'library']) {
+    for (const friend of [false, true]) {
+      for (const format of ['mp4', 'hls']) {
+        await t.test(`${friend ? 'friend' : 'self'} ${kind} ${format}`, async (t) => {
+          const marks = []
+          const started = performance.now()
+          const mark = (label) => marks.push([label, Math.round(performance.now() - started)])
+          const service = await createService(t)
+          service.db.data.settings.writeFeedDescription = false
+          const task = await addSourceVideo(service, source, { kind, friend }, format)
+          source.state.denied = format === 'hls' ? 'index.m3u8' : 'movie.mp4'
+          await service.resumeTask(task.id)
+          await waitUntil(() => task.status === 'error', 'HTTP error did not settle')
+          mark('initial HTTP error')
+          assert.match(task.error, /403/)
+          source.state.denied = ''
+          await service.setSpeedLimit(16 * 1024)
+          await service.retryTask(task.id)
+          await waitUntil(() => task.downloaded > 2048, 'retry did not start transmitting')
+          mark('limited bytes received')
+          const pauseStarted = performance.now()
+          await service.pauseTask(task.id)
+          await waitUntil(
+            () => !service.downloadingTasks.size,
+            'pause retained an active stream',
+            1000
+          )
+          mark('pause settled')
+          assert.ok(
+            performance.now() - pauseStarted < 700,
+            'pause drained buffered bytes instead of stopping'
+          )
+          const pausedBytes = task.downloaded
+          const requests = source.requests.length
+          await delay(70)
+          assert.equal(task.status, 'paused')
+          assert.equal(task.downloaded, pausedBytes)
+          assert.equal(source.requests.length, requests)
+          assert.equal(service.getSpeedLimiter().queue.length, 0)
+          assert.equal(service.getSpeedLimiter().timer, null)
+          assert.equal(
+            service.getConcurrencyPolicy().blockedUntil,
+            0,
+            'user pause must not trigger network backoff for the remaining queue'
+          )
+          await service.resumeTask(task.id)
+          await service.setSpeedLimit(0)
+          mark('unlimited restored')
+          await waitUntil(() => task.status === 'completed', task.error || 'resume did not finish')
+          mark('completed')
+          const output = path.join(task.directory, task.filename)
+          assert.deepEqual(await decodedFrames(output), expected)
+          assert.equal(task.progress, 100)
+          assert.equal(task.error, null)
+          assert.equal(service.downloadingTasks.size, 0)
+          assert.equal(service.cancelTokens.size, 0)
+          assert.equal(
+            (await fs.readdir(service.downloadPath, { recursive: true })).some((name) =>
+              name.includes('.qzonephoto-')
+            ),
+            false
+          )
+          if (kind === 'album' && !friend) t.diagnostic(JSON.stringify({ format, marks }))
+        })
+      }
+    }
+  }
+})
+
+test('album, feed and friend video downloads share one total bandwidth budget alongside images', async (t) => {
+  const source = await createHlsScenario(t)
+  await runFfmpeg(ffmpegStatic, [
+    '-v',
+    'error',
+    '-i',
+    path.join(source.directory, 'index.m3u8'),
+    '-c',
+    'copy',
+    path.join(source.directory, 'movie.mp4')
+  ])
+  await fs.writeFile(path.join(source.directory, 'image.jpg'), imageSample)
+  const service = await createService(t)
+  service.db.data.settings.writeFeedDescription = false
+  const tasks = []
+  for (const [kind, friend, format] of [
+    ['album', false, 'hls'],
+    ['photos', true, 'mp4'],
+    ['timeline', true, 'hls']
+  ]) {
+    tasks.push(await addSourceVideo(service, source, { kind, friend }, format, 'shared'))
+  }
+  const image = makeTask(service, 'mixed-image', `${source.url}/image.jpg`)
+  let transferred = 0
+  const record = service.downloadThroughput.record.bind(service.downloadThroughput)
+  service.downloadThroughput.record = (bytes, now) => {
+    transferred += bytes
+    return record(bytes, now)
+  }
+  await service.setSpeedLimit(64 * 1024)
+  const started = performance.now()
+  await service.resumeAll()
+  await waitUntil(
+    () => [...tasks, image].every((task) => task.status === 'completed'),
+    'mixed source queue did not finish',
+    12000
+  )
+  const elapsed = performance.now() - started
+  t.diagnostic(
+    `mixed album/feed/friend/image: ${transferred} bytes at total 64KB/s in ${Math.round(elapsed)}ms`
+  )
+  assert.ok(transferred > 100000)
+  assert.ok(elapsed >= (transferred / (64 * 1024) - 0.15) * 1000)
+  assert.equal(service.getSpeedLimiter().queue.length, 0)
+  assert.equal(service.getSpeedLimiter().timer, null)
+  assert.deepEqual(await fs.readFile(path.join(image.directory, image.filename)), imageSample)
 })
 
 test('real HLS: relative redirects and untrusted segment hosts preserve credential boundaries', async (t) => {

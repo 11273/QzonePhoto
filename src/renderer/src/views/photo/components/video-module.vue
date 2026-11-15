@@ -302,6 +302,7 @@
 </template>
 
 <script setup>
+import { resolveVideoDownloadSource } from '@shared/video-download-source.mjs'
 import { ref, computed, onMounted, inject, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { VideoPlay, Loading, Warning, Hide } from '@element-plus/icons-vue'
@@ -859,7 +860,9 @@ const formatFileSize = (bytes) => {
 const rawUin = (uin) => String(uin || '').replace(/^o/, '')
 
 const queueVideoDownloads = async (list, batch = null) => {
-  const downloadable = list.filter((video) => getVideoDownloadUrl(video))
+  const downloadable = list
+    .map((video) => ({ video, url: resolveVideoDownloadSource(video) }))
+    .filter(({ url }) => url)
   if (!downloadable.length) return []
 
   const hostUin = effectiveHostUin.value
@@ -876,11 +879,11 @@ const queueVideoDownloads = async (list, batch = null) => {
         sourceKey: 'video',
         referer: `https://user.qzone.qq.com/${rawUin(hostUin || accountUin)}`,
         dateMode: 'media',
-        photos: downloadable.map((video, index) => ({
+        photos: downloadable.map(({ video, url }, index) => ({
           id: video.vid || video.id || `video_${index + 1}`,
           name: video.title || video.desc || `video_${index + 1}`,
-          url: getVideoDownloadUrl(video),
-          raw: getVideoDownloadUrl(video),
+          url,
+          raw: url,
           pre: video.pre,
           size: video.size || 0,
           is_video: true,
@@ -898,7 +901,7 @@ const queueVideoDownloads = async (list, batch = null) => {
 
 const downloadAllVideos = async () => {
   if (downloadingAll.value) return
-  const list = displayVideos.value.filter((video) => getVideoDownloadUrl(video))
+  const list = displayVideos.value.filter((video) => resolveVideoDownloadSource(video))
   if (!list.length) {
     ElMessage.warning('当前没有可下载的视频')
     return

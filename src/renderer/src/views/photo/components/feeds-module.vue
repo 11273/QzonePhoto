@@ -660,6 +660,7 @@
 </template>
 
 <script setup>
+import { resolveVideoDownloadSource } from '@shared/video-download-source.mjs'
 import { ref, reactive, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading, Hide, Picture, VideoPlay } from '@element-plus/icons-vue'
@@ -3284,16 +3285,27 @@ const buildFeedDownloadPayload = (feed) => ({
   referer: feed.isFav
     ? `https://user.qzone.qq.com/${selfUin.value}/myhome/favorite`
     : `https://user.qzone.qq.com/${normalizeQzoneUin(feed.uin) || selfUin.value}`,
-  photos: feed.media.map((media, index) => ({
-    id: media.id || `${feed.tid}_${index}`,
-    name: media.name || `${media.type === 'video' ? 'video' : 'photo'}_${index + 1}`,
-    url: media.origin || media.url || media.thumb,
-    raw: media.origin || media.url || media.thumb,
-    pre: media.thumb || media.origin || media.url,
-    is_video: media.type === 'video' || media.is_video,
-    modifytime: media.modifytime || feed.abstime || 0,
-    sourceKey: feed.isFav ? 'fav' : activeKey.value
-  }))
+  photos: feed.media.map((media, index) => {
+    const isVideo = isVideoMedia(media)
+    const url = isVideo
+      ? resolveVideoDownloadSource(media)
+      : media.origin || media.url || media.thumb
+    return {
+      id: media.id || `${feed.tid}_${index}`,
+      name: media.name || `${media.type === 'video' ? 'video' : 'photo'}_${index + 1}`,
+      url,
+      raw: url,
+      pre: isVideo
+        ? media.thumb || media.pre || media.cover || ''
+        : media.thumb || media.origin || media.url,
+      is_video: isVideo,
+      picKey: media.picKey || media.lloc || '',
+      albumId: media.albumId || '',
+      ownerUin: media.ownerUin || '',
+      modifytime: media.modifytime || feed.abstime || 0,
+      sourceKey: feed.isFav ? 'fav' : activeKey.value
+    }
+  })
 })
 const addFeedDownloadTasks = async (feedList, batch = null) => {
   const groups = new Map()

@@ -6,6 +6,7 @@ import { pipeline } from 'node:stream/promises'
 import { TransferRateLimiter } from '@main/utils/transfer-rate-limiter.mjs'
 import { normalizeTransferRate } from '@shared/transfer-rate.mjs'
 import { downloadHlsVideo, isHlsDownload, requestHlsResource } from '@main/utils/hls-download.mjs'
+import { resolveVideoDownloadSource } from '@shared/video-download-source.mjs'
 import logger from '@main/core/logger'
 import { is } from '@electron-toolkit/utils'
 import { Low } from 'lowdb'
@@ -916,6 +917,7 @@ export class DownloadService {
       const authorUin = String(feed.authorUin || '').replace(/^o/, '')
       const virtualAlbum = {
         id: feed.skey || feed.albumId || dirName,
+        photoAlbumId: feed.albumId || '',
         name: feed.albumName || '说说',
         sourceKey: feed.sourceKey || '',
         referer: feed.referer || '',
@@ -1017,12 +1019,12 @@ export class DownloadService {
       }
 
       const video = photo
+      const directVideoUrl = resolveVideoDownloadSource(video)
       try {
         if (!userInfo?.uin || !userInfo?.p_skey) {
-          console.error('无法获取用户信息，跳过视频处理', userInfo)
           const filename = this.generatePhotoFilename(video)
           const task = this.createTask({
-            url: video.raw || video.url || video.pre,
+            url: directVideoUrl,
             filename,
             directory: albumDir,
             total: video.size || 0,
@@ -1045,17 +1047,13 @@ export class DownloadService {
           // The video-library API already supplies its playback source and has no
           // photo album/picKey for the floatview API. Keep that source intact.
           const videoInfo =
-            video.sourceKey === 'video' && (video.raw || video.url)
-              ? { ...video, video_download_url: video.raw || video.url }
+            video.sourceKey === 'video' && directVideoUrl
+              ? { ...video, video_download_url: directVideoUrl }
               : await this.getVideoDetailInfo(video, userInfo, album, headers)
           if (videoInfo) {
             const filename = this.generatePhotoFilename(videoInfo)
             const task = this.createTask({
-              url:
-                videoInfo.video_download_url ||
-                videoInfo.video_play_url ||
-                videoInfo?.video_info?.video_url ||
-                videoInfo.pre,
+              url: resolveVideoDownloadSource(videoInfo) || directVideoUrl,
               filename,
               directory: albumDir,
               total: videoInfo.video_size || videoInfo.size || 0,
@@ -1077,10 +1075,10 @@ export class DownloadService {
             tasks.push(task)
             taskIds.push(task.id)
           } else {
-            console.warn(`获取视频详细信息失败，使用原始信息: ${video.name}`)
+            if (!directVideoUrl) console.warn(`未获取到视频播放地址: ${video.name}`)
             const filename = this.generatePhotoFilename(video)
             const task = this.createTask({
-              url: video.raw || video.url || video.pre,
+              url: directVideoUrl,
               filename,
               directory: albumDir,
               total: video.size || 0,
@@ -1105,7 +1103,7 @@ export class DownloadService {
         console.error(`处理视频 ${video.name} 失败:`, error)
         const filename = this.generatePhotoFilename(video)
         const task = this.createTask({
-          url: video.raw || video.url || video.pre,
+          url: directVideoUrl,
           filename,
           directory: albumDir,
           total: video.size || 0,
@@ -1441,6 +1439,9 @@ export class DownloadService {
     try {
       await fs.promises.mkdir(task.directory, { recursive: true })
       cancelToken.token.throwIfRequested()
+      if (task.type === 'video' && !task.url) {
+        throw new Error('QQ 空间未返回可用的视频地址，请刷新来源页面后重试')
+      }
       let filePath = path.join(task.directory, task.filename)
 
       // 检查文件是否已存在
@@ -1690,7 +1691,16 @@ export class DownloadService {
     const policy = this.getConcurrencyPolicy()
     let response = null
     let writer = null
+    let transfer = null
     let lastProgressUpdate = Date.now()
+    const abort = (reason) => {
+      // A small response may already be fully buffered, so cancelling Axios
+      // alone cannot interrupt the remaining rate-limit wait or file write.
+      transfer?.destroy(reason)
+      response?.data?.destroy()
+      writer?.destroy()
+    }
+    cancelToken.token?.subscribe(abort)
     const onData = (chunk) => {
       task.downloaded += chunk.length
       const now = Date.now()
@@ -1754,7 +1764,7 @@ export class DownloadService {
 
       writer = fs.createWriteStream(filePath)
       const timeout = task.type === 'image' ? this.imageRequestTimeout || 30000 : 0
-      const transfer = this.getSpeedLimiter().createStream((waiting) => {
+      transfer = this.getSpeedLimiter().createStream((waiting) => {
         // Headers still use the original timeout. Intentional backpressure is not a stalled socket.
         if (timeout && response.request && !response.request.destroyed) {
           response.request.setTimeout?.(waiting ? 0 : timeout)
@@ -1771,12 +1781,14 @@ export class DownloadService {
       await pipeline(response.data, transfer, writer)
       return { contentType, rateLimitWaitMs: transfer.waitMs }
     } catch (error) {
-      policy.observeFailure(error)
+      if (!cancelToken.token?.reason) policy.observeFailure(error)
       response?.data?.destroy()
       error?.response?.data?.destroy?.()
       writer?.destroy()
       await fs.promises.unlink(filePath).catch(() => {})
       throw error
+    } finally {
+      cancelToken.token?.unsubscribe(abort)
     }
   }
 
@@ -2263,21 +2275,17 @@ export class DownloadService {
   // 获取视频详细信息
   async getVideoDetailInfo(video, userInfo, albumInfo = null, headers = null) {
     try {
+      const topicId = video.albumId || video.topicId || (albumInfo?.photoAlbumId ?? albumInfo?.id)
+      const picKey = video.picKey || video.lloc
+      const hostUin = video.ownerUin || userInfo.hostUin || userInfo.uin
+      // Feed/video-library IDs are not photo-album references. Direct sources
+      // need no floatview lookup and must not generate a failed API request.
+      if (!topicId || !picKey) return null
+
       // 从服务管理器获取照片服务
       const photoService = this.serviceManager?.get(ServiceNames.PHOTO)
       if (!photoService) {
         console.error('无法获取照片服务')
-        return null
-      }
-
-      // 使用相册ID作为topicId
-      const topicId = albumInfo?.id
-      const picKey = video.picKey || video.lloc
-      const hostUin = userInfo.hostUin || userInfo.uin
-
-      // 参数验证
-      if (!topicId || !picKey) {
-        console.error('获取视频详细信息参数不完整:', { topicId, picKey, hostUin })
         return null
       }
 

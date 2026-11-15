@@ -376,6 +376,7 @@
 </template>
 
 <script setup>
+import { resolveVideoDownloadSource } from '@shared/video-download-source.mjs'
 import { ref, computed, provide, inject, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useUserStore } from '@renderer/store/user.store'
 import { useDownloadStore } from '@renderer/store/download.store'
@@ -805,6 +806,7 @@ const cleanPhotoData = (photos) => {
       url: photo.url,
       pre: photo.pre,
       raw: photo.raw,
+      ...(isVideoPhoto(photo) && { video_download_url: resolveVideoDownloadSource(photo) }),
       lloc: photo.lloc,
       modifytime: photo.modifytime,
       uploadtime: photo.uploadtime,

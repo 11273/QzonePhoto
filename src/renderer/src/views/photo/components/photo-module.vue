@@ -708,6 +708,7 @@
 </template>
 
 <script setup>
+import { resolveVideoDownloadSource } from '@shared/video-download-source.mjs'
 import { ref, reactive, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import {
   VideoPlay,
@@ -975,8 +976,10 @@ const groupedFeeds = computed(() => {
 const getDownloadableMedia = (feed) => {
   return (feed?.media || [])
     .map((media, index) => {
-      const isVideo = media.type === 'video' || media.is_video
-      const url = media.raw || media.bigUrl || media.url || media.src || ''
+      const isVideo = isVideoMedia(media)
+      const url = isVideo
+        ? resolveVideoDownloadSource(media)
+        : media.raw || media.bigUrl || media.url || media.src || ''
       const pre = isVideo
         ? mediaPreviewCover(media)
         : media.thumb || media.pre || media.cover || media.url || media.bigUrl || ''
@@ -988,10 +991,12 @@ const getDownloadableMedia = (feed) => {
         id: media.id || picKey || `${feed.id}_${index}`,
         name: media.name || `${isVideo ? 'video' : 'photo'}_${index + 1}`,
         url,
-        raw: media.raw || media.bigUrl || '',
+        raw: isVideo ? url : media.raw || media.bigUrl || '',
         pre,
         picKey,
         lloc: media.lloc || picKey,
+        albumId: media.albumId || feed.albumId || '',
+        ownerUin: media.ownerUin || feed.owner?.uin || '',
         is_video: isVideo,
         modifytime: media.modifytime || Number(feed.time) || 0,
         uploadtime: media.uploadtime || '',
