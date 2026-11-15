@@ -338,7 +338,8 @@ export async function fileBatchControl(
   batchId = null,
   mutliPicInfo = null,
   isVideo = false,
-  playTime = 0
+  playTime = 0,
+  transfer = {}
 ) {
   const uploadTime = Date.now()
   const finalBatchId = batchId || Date.now() * 1000 + Math.floor(Math.random() * 1000)
@@ -389,7 +390,10 @@ export async function fileBatchControl(
     checksum
   })
 
-  const response = await h2Post(url, payload, buildHeaders(uin, p_skey))
+  const response = await h2Post(url, payload, buildHeaders(uin, p_skey), {
+    signal: transfer.signal,
+    isCancelled: transfer.isCancelled
+  })
 
   console.log(`[fileBatchControl] 初始化响应: ret=${response.data.ret}`)
 
@@ -555,7 +559,10 @@ export async function uploadVideoCover(
 
     console.log(`${logPrefix} 初始化封面上传`)
 
-    const initResponse = await h2Post(url, payload, buildHeaders(uin, p_skey))
+    const initResponse = await h2Post(url, payload, buildHeaders(uin, p_skey), {
+      signal: transfer.signal,
+      isCancelled: transfer.isCancelled
+    })
 
     console.log(`${logPrefix} 初始化响应: ret=${initResponse.data.ret}`)
 
@@ -583,6 +590,7 @@ export async function uploadVideoCover(
     console.log(`${logPrefix} 封面上传成功`)
     return uploadResult
   } catch (error) {
+    if (error.cancelled || error.code === 'ERR_CANCELED') throw error
     console.error(`${logPrefix} 失败:`, error.message)
     throw new Error(`视频封面上传失败: ${error.message}`)
   }

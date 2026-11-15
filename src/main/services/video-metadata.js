@@ -9,15 +9,21 @@ import { pathToFileURL } from 'url'
 /**
  * 获取视频元数据（时长 + 封面）
  * @param {string} videoPath 视频文件路径
+ * @param {AbortSignal} [signal] 上传暂停时终止封面提取
  * @returns {Promise<{duration: number, cover: string}>} cover 为 base64 data URL
  */
-export async function getVideoMetadata(videoPath) {
+export async function getVideoMetadata(videoPath, signal) {
   return new Promise((resolve, reject) => {
     let win = null
     let settled = false
+    let checkInterval
+    let timeout
     const finish = (fn) => {
       if (settled) return
       settled = true
+      clearInterval(checkInterval)
+      clearTimeout(timeout)
+      signal?.removeEventListener('abort', abort)
       try {
         if (win && !win.isDestroyed()) win.close()
       } catch {
@@ -25,6 +31,13 @@ export async function getVideoMetadata(videoPath) {
       }
       fn()
     }
+    const abort = () =>
+      finish(() => reject(Object.assign(new Error('上传已取消'), { cancelled: true })))
+    if (signal?.aborted) {
+      abort()
+      return
+    }
+    signal?.addEventListener('abort', abort, { once: true })
 
     try {
       win = new BrowserWindow({
@@ -94,10 +107,12 @@ export async function getVideoMetadata(videoPath) {
         </html>
       `
 
-      win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+      win
+        .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+        .catch((error) => finish(() => reject(error)))
 
       // 轮询检查结果
-      const checkInterval = setInterval(async () => {
+      checkInterval = setInterval(async () => {
         if (settled) return
         try {
           if (!win || win.isDestroyed()) {
@@ -124,7 +139,7 @@ export async function getVideoMetadata(videoPath) {
       }, 200)
 
       // 超时处理（30 秒 — 大视频解码慢）
-      setTimeout(() => {
+      timeout = setTimeout(() => {
         clearInterval(checkInterval)
         finish(() => reject(new Error('获取视频元数据超时')))
       }, 30000)

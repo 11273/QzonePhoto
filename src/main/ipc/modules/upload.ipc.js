@@ -69,25 +69,25 @@ export function createUploadHandlers(service) {
 
     // 暂停任务
     [IPC_UPLOAD.PAUSE_TASK]: async (event, context) => {
-      uploadService.pauseTask(context.payload)
+      await uploadService.pauseTask(context.payload)
       return { success: true }
     },
 
     // 继续任务
     [IPC_UPLOAD.RESUME_TASK]: async (event, context) => {
-      uploadService.resumeTask(context.payload)
+      await uploadService.resumeTask(context.payload)
       return { success: true }
     },
 
     // 重试任务
     [IPC_UPLOAD.RETRY_TASK]: async (event, context) => {
-      uploadService.retryTask(context.payload)
+      await uploadService.retryTask(context.payload)
       return { success: true }
     },
 
     // 删除任务
     [IPC_UPLOAD.DELETE_TASK]: async (event, context) => {
-      uploadService.deleteTask(context.payload)
+      await uploadService.deleteTask(context.payload)
       return { success: true }
     },
 

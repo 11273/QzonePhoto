@@ -56,6 +56,18 @@ const CHUNK_PARALLELISM = 4 // 单文件内并发分片数
 const DEFAULT_PAGE_SIZE = 50
 const MAX_ACTIVE_TASKS_IN_MEMORY = 500
 
+const uploadCancelled = () =>
+  Object.assign(new Error('上传已取消'), { cancelled: true, code: 'ERR_CANCELED' })
+const createUploadRun = () => ({ cancelled: false, controller: new AbortController() })
+const cancelUploadRun = (run) => {
+  if (!run) return
+  run.cancelled = true
+  run.controller?.abort()
+}
+const checkUploadRun = (run) => {
+  if (run?.cancelled) throw uploadCancelled()
+}
+
 export class UploadService {
   constructor() {
     // 核心配置
@@ -1119,7 +1131,9 @@ export class UploadService {
 
     // 从内存中获取等待中的任务
     const waitingTasks = Array.from(this.activeTasks.values())
-      .filter((task) => task.status === UPLOAD_TASK_STATUS.WAITING)
+      .filter(
+        (task) => task.status === UPLOAD_TASK_STATUS.WAITING && !this.uploadingTasks.has(task.id)
+      )
       .sort((a, b) => {
         if (a.priority !== b.priority) return a.priority - b.priority
         return a.create_time - b.create_time
@@ -1162,44 +1176,44 @@ export class UploadService {
 
   // 执行上传
   async executeUpload(task) {
+    if (this.uploadingTasks.has(task.id)) return
+    const run = createUploadRun()
+    let finish
+    run.done = new Promise((resolve) => {
+      finish = resolve
+    })
     this.uploadingTasks.add(task.id)
+    this.cancelTokens.set(task.id, run)
     task.status = UPLOAD_TASK_STATUS.UPLOADING
     task.speed = 0
     task.progress = 0
 
-    // 更新数据库
-    await this.updateTaskInDB(task)
-
-    // 【核心改进】立即推送上传开始状态
-    this.pushTaskProgressDirect(task, true) // immediate=true 立即推送
-
-    // 同时触发事件推送器（用于统计信息等）
-    this.triggerUpdate([task.id])
-
     try {
+      await this.updateTaskInDB(task)
+      checkUploadRun(run)
+      this.pushTaskProgressDirect(task, true)
+      this.triggerUpdate([task.id])
       // 初始化上传（如果还没有会话）
       if (!task.session || !task.md5) {
-        await this.initializeUpload(task)
+        await this.initializeUpload(task, run)
       }
 
       // 执行分片上传
-      await this.performChunkedUpload(task)
+      checkUploadRun(run)
+      await this.performChunkedUpload(task, run)
+      checkUploadRun(run)
 
-      if (task.status !== UPLOAD_TASK_STATUS.CANCELLED) {
+      if (task.status === UPLOAD_TASK_STATUS.UPLOADING) {
         task.status = UPLOAD_TASK_STATUS.COMPLETED
         task.progress = 100
         task.speed = 0
         // console.log(`[UploadService] 任务上传完成: ${task.filename}`)
       }
     } catch (error) {
-      if (error.cancelled) {
-        // 如果任务已经是 PAUSED 状态，不要覆盖为 CANCELLED
-        // pauseTask 会先设置状态为 PAUSED，然后触发取消操作
-        if (task.status !== UPLOAD_TASK_STATUS.PAUSED) {
+      if (run.cancelled || error.cancelled) {
+        // A rapid resume changes PAUSED to WAITING while the old run settles.
+        if (![UPLOAD_TASK_STATUS.PAUSED, UPLOAD_TASK_STATUS.WAITING].includes(task.status)) {
           task.status = UPLOAD_TASK_STATUS.CANCELLED
-          // console.log(`[UploadService] 任务已取消: ${task.filename}`)
-        } else {
-          // console.log(`[UploadService] 任务已暂停: ${task.filename}`)
         }
       } else {
         task.status = UPLOAD_TASK_STATUS.ERROR
@@ -1209,41 +1223,39 @@ export class UploadService {
       }
       task.speed = 0
     } finally {
-      this.uploadingTasks.delete(task.id)
-      this.cancelTokens.delete(task.id)
-
-      // 先更新数据库
-      await this.updateTaskInDB(task)
-
-      // 【核心改进】立即推送任务状态变化（完成/失败/取消）
-      this.pushTaskProgressDirect(task, true) // immediate=true 立即推送
-
-      // 同时触发事件推送器（用于统计信息等）
-      this.triggerUpdate([task.id])
-
-      // 最后才从 activeTasks 中移除完成或取消的任务
-      // 注意：暂停的任务(PAUSED)需要保留在内存中，以便用户恢复上传
-      if (
-        task.status === UPLOAD_TASK_STATUS.COMPLETED ||
-        task.status === UPLOAD_TASK_STATUS.CANCELLED
-      ) {
-        // 延迟删除，确保推送完成后再删除
-        setTimeout(() => {
-          this.activeTasks.delete(task.id)
-          // console.log(`[UploadService] 任务已从内存清除: ${task.filename}`)
-        }, 1000)
-      } else if (task.status === UPLOAD_TASK_STATUS.PAUSED) {
-        // console.log(`[UploadService] 暂停的任务保留在内存中: ${task.filename}`)
+      try {
+        // Deleting a task must not let an old response resurrect its UI record.
+        if (this.activeTasks.get(task.id) === task) {
+          await this.updateTaskInDB(task)
+          this.pushTaskProgressDirect(task, true)
+          this.triggerUpdate([task.id])
+          if ([UPLOAD_TASK_STATUS.COMPLETED, UPLOAD_TASK_STATUS.CANCELLED].includes(task.status)) {
+            setTimeout(() => {
+              if (
+                this.activeTasks.get(task.id) === task &&
+                [UPLOAD_TASK_STATUS.COMPLETED, UPLOAD_TASK_STATUS.CANCELLED].includes(
+                  task.status
+                ) &&
+                !this.uploadingTasks.has(task.id)
+              )
+                this.activeTasks.delete(task.id)
+            }, 1000)
+          }
+        }
+      } finally {
+        // Hold the slot until all old requests and state updates have settled.
+        this.uploadingTasks.delete(task.id)
+        if (this.cancelTokens.get(task.id) === run) this.cancelTokens.delete(task.id)
+        finish()
+        setTimeout(() => this.processQueue(), 100)
       }
-
-      // 继续处理队列
-      setTimeout(() => this.processQueue(), 100)
     }
   }
 
   // 初始化上传（简化版）
-  async initializeUpload(task) {
+  async initializeUpload(task, run) {
     try {
+      checkUploadRun(run)
       // 验证必要参数
       if (!this.currentUin || !this.currentPSkey) {
         throw new Error('用户认证信息不完整')
@@ -1254,16 +1266,20 @@ export class UploadService {
       }
 
       await this.ensurePreparedTaskFile(task)
+      checkUploadRun(run)
 
       // 检查文件是否存在
       const fileInfo = await getFileInfo(task.filePath)
+      checkUploadRun(run)
       if (!fileInfo) {
         throw new Error('文件不存在或无法访问')
       }
 
       // 获取文件信息和MD5
       if (!task.md5) {
-        task.md5 = await calculateFileMD5(task.filePath)
+        const md5 = await calculateFileMD5(task.filePath, run?.controller.signal)
+        checkUploadRun(run)
+        task.md5 = md5
         if (!task.md5) {
           throw new Error('无法计算文件MD5')
         }
@@ -1307,6 +1323,8 @@ export class UploadService {
         }
       }
 
+      checkUploadRun(run)
+
       // 调用初始化API
       const result = await fileBatchControl(
         this.currentUin,
@@ -1324,8 +1342,10 @@ export class UploadService {
         task.batchId, // 传递任务的批次ID
         mutliPicInfo, // 传递批次信息
         isVideo, // 是否为视频
-        playTime // 视频时长
+        playTime, // 视频时长
+        { signal: run?.controller.signal, isCancelled: () => run?.cancelled }
       )
+      checkUploadRun(run)
 
       // 保存视频标识到任务
       if (isVideo) {
@@ -1353,6 +1373,7 @@ export class UploadService {
 
       return result.data
     } catch (error) {
+      checkUploadRun(run)
       // 增强错误处理，提供更友好的错误信息
       let errorMessage = error.message
       if (error.message.includes('ENOENT') || error.message.includes('文件不存在')) {
@@ -1369,7 +1390,9 @@ export class UploadService {
   }
 
   // 执行上传（流式读取 + 多路并发分片）
-  async performChunkedUpload(task) {
+  async performChunkedUpload(task, run) {
+    const cancelToken = run || createUploadRun()
+    checkUploadRun(cancelToken)
     // 验证文件路径
     if (!task.filePath) {
       throw new Error('文件路径为空')
@@ -1382,13 +1405,16 @@ export class UploadService {
     } catch {
       throw new Error('文件已被移动或删除，无法读取')
     }
+    if (cancelToken.cancelled) {
+      await fileHandle.close().catch(() => {})
+      throw uploadCancelled()
+    }
 
     const sliceSize = this.defaultChunkSize
     const total = task.total
     const totalChunks = Math.ceil(total / sliceSize)
 
     // 取消令牌
-    const cancelToken = { cancelled: false }
     this.cancelTokens.set(task.id, cancelToken)
 
     // 并发状态
@@ -1398,6 +1424,12 @@ export class UploadService {
     let nextSeq = 0
     let finalResult = null // 服务端返回 flag===1 那次响应（带 sVid）
     let firstError = null
+    const fail = (error) => {
+      if (!firstError) {
+        firstError = error
+        cancelToken.controller.abort()
+      }
+    }
 
     const worker = async () => {
       while (!cancelToken.cancelled && !firstError) {
@@ -1418,9 +1450,10 @@ export class UploadService {
             filled += bytesRead
           }
         } catch (e) {
-          if (!firstError) firstError = new Error('读取分片失败: ' + e.message)
+          fail(new Error('读取分片失败: ' + e.message))
           return
         }
+        if (cancelToken.cancelled || firstError) return
         const chunkData = buf.toString('base64')
 
         let result
@@ -1440,18 +1473,18 @@ export class UploadService {
             total,
             {
               limiter: this.getSpeedLimiter(),
+              signal: cancelToken.controller.signal,
               isCancelled: () => cancelToken.cancelled || Boolean(firstError)
             }
           )
         } catch (e) {
-          if (!firstError) firstError = e
+          fail(e)
           return
         }
+        if (cancelToken.cancelled || firstError) return
 
         if (!result || result.ret !== 0 || !result.data) {
-          if (!firstError) {
-            firstError = new Error(`上传分片失败: ${result?.msg || `错误代码: ${result?.ret}`}`)
-          }
+          fail(new Error(`上传分片失败: ${result?.msg || `错误代码: ${result?.ret}`}`))
           return
         }
 
@@ -1460,7 +1493,7 @@ export class UploadService {
         task.uploaded = bytesDone
         const now = Date.now()
         if (total > 0) {
-          const newProgress = Math.round((bytesDone / total) * 100)
+          const newProgress = Math.min(99, Math.round((bytesDone / total) * 100))
           const shouldUpdateSpeed = now - lastTime >= 500
           if (shouldUpdateSpeed) {
             const timeDiff = (now - lastTime) / 1000
@@ -1493,7 +1526,7 @@ export class UploadService {
     }
 
     if (cancelToken.cancelled) {
-      throw { cancelled: true, message: '上传已取消' }
+      throw uploadCancelled()
     }
     if (firstError) {
       // 网络错误友好处理
@@ -1509,10 +1542,8 @@ export class UploadService {
       throw new Error('上传完成但未收到服务端最终响应')
     }
 
-    // 完成处理：进度=100 + 视频封面上传
+    // A video is complete only after its cover has also been saved.
     const result = finalResult
-    task.progress = 100
-    task.uploaded = task.total
 
     // 如果是视频上传，需要上传封面
     if (task.isVideo && result.data.biz && result.data.biz.sVid) {
@@ -1528,7 +1559,7 @@ export class UploadService {
           console.log('[UploadService] 使用任务中保存的视频封面:', coverPath)
         } else {
           console.log('[UploadService] 任务中无封面，开始动态提取视频元数据...')
-          const metadata = await getVideoMetadata(task.filePath)
+          const metadata = await getVideoMetadata(task.filePath, cancelToken.controller.signal)
           if (metadata && metadata.cover) {
             coverPath = await extractVideoCover(metadata.cover, task.filePath)
             console.log('[UploadService] 动态提取视频封面成功:', coverPath)
@@ -1536,6 +1567,8 @@ export class UploadService {
             throw new Error('无法提取视频封面')
           }
         }
+
+        checkUploadRun(cancelToken)
 
         // 计算批次信息
         const batchTasks = this.db.data.tasks.filter((t) => t.batchId === task.batchId)
@@ -1565,11 +1598,16 @@ export class UploadService {
           task.filename,
           task.batchId,
           mutliPicInfo,
-          { limiter: this.getSpeedLimiter(), isCancelled: () => cancelToken.cancelled }
+          {
+            limiter: this.getSpeedLimiter(),
+            signal: cancelToken.controller.signal,
+            isCancelled: () => cancelToken.cancelled
+          }
         )
 
         console.log('[UploadService] 视频封面上传成功')
       } catch (coverError) {
+        checkUploadRun(cancelToken)
         console.error('[UploadService] 视频封面处理失败:', coverError)
         // 封面上传失败，整个任务失败
         throw new Error(`视频封面上传失败: ${coverError.message}`)
@@ -1580,6 +1618,9 @@ export class UploadService {
         }
       }
     }
+    checkUploadRun(cancelToken)
+    task.progress = 100
+    task.uploaded = task.total
   }
 
   // 任务操作方法
@@ -1589,7 +1630,7 @@ export class UploadService {
       if (task.status === UPLOAD_TASK_STATUS.UPLOADING) {
         const cancelToken = this.cancelTokens.get(taskId)
         if (cancelToken) {
-          cancelToken.cancelled = true
+          cancelUploadRun(cancelToken)
         }
       }
 
@@ -1603,9 +1644,7 @@ export class UploadService {
       task.session = null
       task.md5 = null
 
-      // 清理上传状态
-      this.uploadingTasks.delete(taskId)
-      this.cancelTokens.delete(taskId)
+      // The old run retains its slot until active requests have stopped.
 
       this.activeTasks.set(taskId, task)
       await this.updateTaskInDB(task)
@@ -1794,24 +1833,19 @@ export class UploadService {
   async deleteTask(taskId) {
     const task = this.activeTasks.get(taskId) || this.getTaskFromDB(taskId)
     if (task) {
-      // 取消正在上传的任务
-      if (task.status === UPLOAD_TASK_STATUS.UPLOADING) {
-        const cancelToken = this.cancelTokens.get(taskId)
-        if (cancelToken) {
-          cancelToken.cancelled = true
-        }
-      }
+      const run = this.cancelTokens.get(taskId)
+      cancelUploadRun(run)
+      if (run) task.status = UPLOAD_TASK_STATUS.CANCELLED
 
       // 从内存和数据库中删除
       this.activeTasks.delete(taskId)
-      this.uploadingTasks.delete(taskId)
-      this.cancelTokens.delete(taskId)
 
       const index = this.db.data.tasks.findIndex((t) => t.id === taskId)
       if (index !== -1) {
         this.db.data.tasks.splice(index, 1)
         await this.db.write()
       }
+      await run?.done
       await this.cleanupPreparedTaskFiles([task])
 
       // 触发更新，通知前端任务已删除，包含原始任务的 albumId 信息
@@ -1836,7 +1870,7 @@ export class UploadService {
       if ([UPLOAD_TASK_STATUS.WAITING, UPLOAD_TASK_STATUS.UPLOADING].includes(task.status)) {
         const cancelToken = this.cancelTokens.get(taskId)
         if (cancelToken) {
-          cancelToken.cancelled = true
+          cancelUploadRun(cancelToken)
         }
         task.status = UPLOAD_TASK_STATUS.PAUSED
         task.speed = 0
@@ -1845,10 +1879,9 @@ export class UploadService {
       }
     }
 
-    this.uploadingTasks.clear()
-    this.cancelTokens.clear()
     await this.saveDatabase()
     this.triggerUpdate(changedTaskIds)
+    await Promise.all([...this.cancelTokens.values()].map((run) => run.done))
   }
 
   // 取消特定相册或会话的任务
@@ -1867,14 +1900,12 @@ export class UploadService {
         // 取消正在上传的任务
         const cancelToken = this.cancelTokens.get(taskId)
         if (cancelToken) {
-          cancelToken.cancelled = true
+          cancelUploadRun(cancelToken)
         }
 
         // 标记为已取消
         task.status = UPLOAD_TASK_STATUS.CANCELLED
         task.speed = 0
-        this.uploadingTasks.delete(taskId)
-        this.cancelTokens.delete(taskId)
 
         await this.updateTaskInDB(task)
         changedTaskIds.push(taskId)
@@ -1915,21 +1946,19 @@ export class UploadService {
         }
       })
       const allTasks = Array.from(allTasksMap.values())
+      const pendingRuns = []
 
       // 删除每个任务
       for (const task of allTasks) {
-        // 如果任务正在上传，先取消
-        if (task.status === UPLOAD_TASK_STATUS.UPLOADING) {
-          const cancelToken = this.cancelTokens.get(task.id)
-          if (cancelToken) {
-            cancelToken.cancelled = true
-          }
+        const run = this.cancelTokens.get(task.id)
+        cancelUploadRun(run)
+        if (run) {
+          task.status = UPLOAD_TASK_STATUS.CANCELLED
+          pendingRuns.push(run.done)
         }
 
         // 从内存中删除
         this.activeTasks.delete(task.id)
-        this.uploadingTasks.delete(task.id)
-        this.cancelTokens.delete(task.id)
 
         // 从数据库中删除
         const index = this.db.data.tasks.findIndex((t) => t.id === task.id)
@@ -1940,6 +1969,7 @@ export class UploadService {
 
       // 保存数据库
       await this.saveDatabase()
+      await Promise.all(pendingRuns)
       await this.cleanupPreparedTaskFiles(allTasks)
 
       // 触发更新（通知前端任务已删除），包含原始任务的 albumId 信息
@@ -1968,7 +1998,7 @@ export class UploadService {
       if ([UPLOAD_TASK_STATUS.WAITING, UPLOAD_TASK_STATUS.UPLOADING].includes(task.status)) {
         const cancelToken = this.cancelTokens.get(taskId)
         if (cancelToken) {
-          cancelToken.cancelled = true
+          cancelUploadRun(cancelToken)
         }
 
         // 暂停任务：重置上传进度，下次继续时从头开始
@@ -1986,8 +2016,6 @@ export class UploadService {
       }
     }
 
-    this.uploadingTasks.clear()
-    this.cancelTokens.clear()
     await this.saveDatabase()
     this.triggerUpdate(changedTaskIds)
 
@@ -2002,7 +2030,8 @@ export class UploadService {
       (task) => task.status === UPLOAD_TASK_STATUS.PAUSED
     )
 
-    for (const task of pausedTasks) {
+    for (const savedTask of pausedTasks) {
+      const task = this.activeTasks.get(savedTask.id) || savedTask
       // 继续任务：确保从头开始上传
       task.status = UPLOAD_TASK_STATUS.WAITING
       task.speed = 0

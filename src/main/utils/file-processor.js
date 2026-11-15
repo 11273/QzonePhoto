@@ -14,10 +14,12 @@ const readFile = promisify(fs.readFile)
  * @param {string} filePath 文件路径
  * @returns {Promise<string>} MD5 哈希值
  */
-export async function calculateFileMD5(filePath) {
+export async function calculateFileMD5(filePath, signal) {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('md5')
-    const stream = fs.createReadStream(filePath)
+    const stream = signal
+      ? fs.createReadStream(filePath, { signal })
+      : fs.createReadStream(filePath)
 
     stream.on('error', reject)
     stream.on('data', (chunk) => hash.update(chunk))
@@ -314,7 +316,7 @@ export async function extractVideoCover(base64Cover, videoPath) {
   }
 
   const videoBasename = path.basename(videoPath, path.extname(videoPath))
-  const filename = `${videoBasename}_cover_${Date.now()}.jpg`
+  const filename = `${videoBasename}_cover_${crypto.randomUUID()}.jpg`
   return saveBase64ToTempFile(base64Cover, filename)
 }
 

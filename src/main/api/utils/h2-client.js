@@ -14,6 +14,7 @@
 
 import http2 from 'node:http2'
 import zlib from 'node:zlib'
+import { setTimeout as delay } from 'node:timers/promises'
 
 const sessions = new Map() // origin -> ClientHttp2Session
 
@@ -66,12 +67,17 @@ function isRetryableH2Error(err) {
   return false
 }
 
-function doRequest(origin, reqHeaders, payload) {
+const cancelled = () =>
+  Object.assign(new Error('上传已取消'), { code: 'ERR_CANCELED', cancelled: true })
+
+function doRequest(origin, reqHeaders, payload, transfer) {
   const session = getSession(origin)
   return new Promise((resolve, reject) => {
     let stream
     try {
-      stream = session.request(reqHeaders)
+      stream = transfer.signal
+        ? session.request(reqHeaders, { signal: transfer.signal })
+        : session.request(reqHeaders)
     } catch (e) {
       reject(e)
       return
@@ -85,6 +91,12 @@ function doRequest(origin, reqHeaders, payload) {
     })
     stream.on('data', (c) => chunks.push(c))
     stream.on('end', () => {
+      if (status < 200 || status >= 300) {
+        const error = new Error(`上传请求失败（HTTP ${status}）`)
+        error.response = { status }
+        reject(error)
+        return
+      }
       const raw = Buffer.concat(chunks)
       const decoded = decodeBody(raw, respEncoding)
       const text = decoded.toString('utf-8')
@@ -99,6 +111,9 @@ function doRequest(origin, reqHeaders, payload) {
     stream.on('error', (e) => {
       // 暴露原始 error code，便于上层判断重试
       reject(e)
+    })
+    stream.on('close', () => {
+      if (!stream.readableEnded) reject(new Error('上传连接已中断，请重试'))
     })
     stream.end(payload)
   })
@@ -129,14 +144,16 @@ export async function h2Post(url, body, headers = {}, transfer = {}) {
   let lastErr
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      if (transfer.signal?.aborted || transfer.isCancelled?.()) throw cancelled()
       // Account for the actual JSON/base64 body, including retries; control APIs pass no limiter.
       const wait = transfer.limiter?.consume(
         transfer.limiter.rate ? Buffer.byteLength(payload) : 0,
         transfer
       )
       if (wait) await wait
-      return await doRequest(u.origin, reqHeaders, payload)
+      return await doRequest(u.origin, reqHeaders, payload, transfer)
     } catch (e) {
+      if (transfer.signal?.aborted || transfer.isCancelled?.()) throw cancelled()
       lastErr = e
       if (!isRetryableH2Error(e) || attempt === maxAttempts) throw e
       // 触发当前 session 重建：close 后下次 getSession 会建新的
@@ -150,7 +167,12 @@ export async function h2Post(url, body, headers = {}, transfer = {}) {
       }
       sessions.delete(u.origin)
       // 指数退避（50ms / 100ms / 200ms）
-      await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt - 1)))
+      try {
+        await delay(50 * Math.pow(2, attempt - 1), undefined, { signal: transfer.signal })
+      } catch (error) {
+        if (transfer.signal?.aborted) throw cancelled()
+        throw error
+      }
     }
   }
   throw lastErr
