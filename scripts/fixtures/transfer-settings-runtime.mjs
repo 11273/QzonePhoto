@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { app, BrowserWindow } from 'electron'
+import { getVideoMetadata } from '../../src/main/services/video-metadata.js'
 
 app.setPath('userData', process.env.QZONE_RATE_PROFILE)
 app.disableHardwareAcceleration()
@@ -63,11 +64,28 @@ app
               `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }))`
             )
             await window.webContents.executeJavaScript('window.checkRateEnterSaved()')
+            if (mode === 'upload' && width === 1080 && zoom === 1) {
+              assert.equal(
+                await window.webContents.executeJavaScript('window.exerciseUploadSubmission()'),
+                true
+              )
+            }
             cases++
           }
         }
       }
       assert.deepEqual(errors, [])
+      const openWindows = BrowserWindow.getAllWindows().length
+      for (const abortBeforeStart of [true, false]) {
+        const controller = new AbortController()
+        if (abortBeforeStart) controller.abort()
+        const pending = getVideoMetadata('/isolated-upload-cancel.mp4', controller.signal)
+        if (!abortBeforeStart) controller.abort()
+        await assert.rejects(pending, (error) => error.cancelled === true)
+        await delay(30)
+        assert.equal(BrowserWindow.getAllWindows().length, openWindows)
+      }
+      console.log('UPLOAD_ENTRY_OK: batch cover, single retry and native metadata cancellation')
       console.log(`TRANSFER_SETTINGS_OK: ${cases} real dialog/viewport/zoom cases passed`)
       window.destroy()
       app.exit(0)

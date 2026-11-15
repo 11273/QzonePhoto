@@ -799,6 +799,88 @@ window.waitForDownloadSettingsClosed = () =>
     return !popup || getComputedStyle(popup).display === 'none'
   }, 'Escape did not close settings')
 
+window.exerciseUploadSubmission = async () => {
+  const components = new Set()
+  for (const element of document.querySelectorAll('*')) {
+    let item = element.__vueParentComponent
+    while (item && !components.has(item)) {
+      components.add(item)
+      item = item.parent
+    }
+  }
+  const component = [...components].find(
+    (item) => typeof item?.setupState?.startUploadAll === 'function'
+  )
+  ensure(component, 'upload dialog component missing')
+  const state = component.setupState
+  const api = window.QzoneAPI.upload
+  const saved = { addTask: api.addTask, addBatchTasks: api.addBatchTasks, retryTask: api.retryTask }
+  const requests = []
+  api.addBatchTasks = async (...args) => {
+    requests.push({ method: 'batch', args })
+    return ['photo-task', 'video-task']
+  }
+  api.addTask = async (...args) => {
+    requests.push({ method: 'single', args })
+    return 'retried-video-task'
+  }
+  api.retryTask = async (id) => requests.push({ method: 'retry', id })
+  try {
+    state.pickTargetAlbum({ id: 'test-upload-album', name: '上传回归相册' })
+    const cover = 'data:image/jpeg;base64,c3ludGhldGljLWNvdmVy'
+    for (const name of ['photo.jpg', 'video.mp4']) {
+      state.localFiles.push({
+        uid: name,
+        name,
+        title: name,
+        path: `/isolated-upload/${name}`,
+        size: 65537,
+        type: name.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg',
+        preview: imageSource,
+        uploadStatus: 'normal',
+        videoDuration: name.endsWith('.mp4') ? 4000 : null,
+        videoCover: name.endsWith('.mp4') ? cover : null,
+        metadataPromise: Promise.resolve()
+      })
+    }
+    await state.startUploadAll()
+    const batch = requests.find((request) => request.method === 'batch')
+    ensure(batch?.args[1] === 'test-upload-album', 'batch lost the selected album')
+    ensure(batch.args[0][1].videoDuration === 4000, 'batch lost video duration')
+    ensure(batch.args[0][1].videoCover === cover, 'batch lost the already extracted video cover')
+    const video = state.localFiles[1]
+    ensure(video.taskId === 'video-task', 'batch task IDs were not attached to local files')
+    video.taskId = null
+    video.uploadStatus = 'failed'
+    await state.retryUpload(video)
+    const single = requests.find((request) => request.method === 'single')
+    ensure(single?.args.length === 1, 'single upload must use the IPC options contract')
+    const options = single.args[0]
+    ensure(options.albumId === 'test-upload-album', 'retry lost the selected album')
+    ensure(
+      options.filePath === video.path && options.filename === video.name,
+      'retry lost its file'
+    )
+    ensure(
+      options.videoDuration === 4000 && options.videoCover === cover,
+      'retry lost video metadata'
+    )
+    ensure(video.taskId === 'retried-video-task', 'retry lost the returned task ID')
+    await state.retryUpload(video)
+    ensure(
+      requests.filter((request) => request.method === 'single').length === 1,
+      'retry duplicated a task'
+    )
+    ensure(
+      requests.some((request) => request.method === 'retry' && request.id === video.taskId),
+      'existing task retry used the wrong ID'
+    )
+    return true
+  } finally {
+    Object.assign(api, saved)
+  }
+}
+
 window.exerciseTransferLimitSettings = async () => {
   const mode = rateMode.value
   const direction = mode === 'download' ? 'download' : 'upload'

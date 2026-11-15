@@ -1441,7 +1441,8 @@ const startUploadAll = async () => {
         title: file.title,
         size: file.size,
         type: file.type,
-        videoDuration: file.videoDuration || null
+        videoDuration: file.videoDuration || null,
+        videoCover: file.videoCover || null
       }))
 
     if (filesToUpload.length === 0) {
@@ -1546,22 +1547,21 @@ const retryUpload = async (file) => {
       file.errorMessage = ''
 
       // 重新添加上传任务
-      const taskResult = await window.QzoneAPI.upload.addTask(
-        {
-          path: file.path,
-          name: file.name,
-          title: file.title,
-          size: file.size,
-          type: file.type
-        },
-        effectiveAlbumId.value,
-        effectiveAlbumName.value
-      )
+      await file.metadataPromise
+      const taskId = await window.QzoneAPI.upload.addTask({
+        filePath: file.path,
+        filename: file.name,
+        picTitle: file.title,
+        total: file.size,
+        albumId: effectiveAlbumId.value,
+        albumName: effectiveAlbumName.value,
+        sessionId: currentSessionId.value,
+        videoDuration: file.videoDuration || null,
+        videoCover: file.videoCover || null
+      })
 
       // 保存新的任务ID
-      if (taskResult?.taskId) {
-        file.taskId = taskResult.taskId
-      }
+      file.taskId = taskId
 
       ElMessage.success('已重新开始上传')
     }
